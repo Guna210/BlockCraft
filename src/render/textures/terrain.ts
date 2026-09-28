@@ -5,43 +5,155 @@ import {
   LCG,
   setPixel,
   fillSolid,
-  SimpleNoise,
   RGB,
+  RGBA,
+  hexToRgb,
 } from './noise';
 
-export function genGrassTop(): TextureData {
+const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) => hexToRgb(h));
+const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) => hexToRgb(h));
+const PAL_GRASS = ['#3f6b24', '#4f842d', '#63a038', '#7cbd47', '#9bd35e'].map((h) => hexToRgb(h));
+const PAL_SAND = ['#b89c62', '#c9b27a', '#d8c28a', '#e6d29c', '#f1e2b4'].map((h) => hexToRgb(h));
+const PAL_GRAVEL = ['#4e4e53', '#67676d', '#818188', '#9c9ca3', '#7a6a5a', '#96836f'].map((h) =>
+  hexToRgb(h),
+);
+const PAL_GLASS_FRAME = hexToRgb('#dff3fa', 220);
+const PAL_GLASS_GLINT = hexToRgb('#ffffff', 170);
+const PAL_GLASS_PANE = hexToRgb('#e9f6fb', 25);
+
+export function getStonePalette() {
+  return PAL_STONE;
+}
+
+export function genStone(): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(12345);
-  const baseColor: RGB = [85, 153, 51]; // Green
-  const varColor1: RGB = [75, 140, 45];
-  const varColor2: RGB = [95, 165, 60];
+  const lcg = new LCG(45678);
+  fillSolid(data, PAL_STONE[1]!);
+
+  for (let i = 0; i < 8; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = PAL_STONE[lcg.nextInt(0, PAL_STONE.length - 1)]!;
+
+    const clusterSize = lcg.nextInt(3, 8);
+    let px = cx,
+      py = cy;
+    for (let j = 0; j < clusterSize; j++) {
+      setPixel(data, (px + 16) % 16, (py + 16) % 16, color);
+      px += lcg.nextInt(-1, 1);
+      py += lcg.nextInt(-1, 1);
+    }
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = PAL_STONE[0]!;
+    const dx = lcg.nextInt(-1, 1);
+    const dy = lcg.nextInt(1, 2);
+    setPixel(data, cx, cy, color);
+    setPixel(data, (cx + dx + 16) % 16, (cy + dy) % 16, color);
+  }
+
+  return data;
+}
+
+export function genCobblestone(): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(56789);
+  fillSolid(data, PAL_STONE[0]!);
+
+  const numStones = lcg.nextInt(6, 9);
+  const stoneCenters = Array.from({ length: numStones }, () => [
+    lcg.nextInt(0, 15),
+    lcg.nextInt(0, 15),
+  ]);
 
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
-      const r = lcg.nextFloat();
-      let color = baseColor;
-      if (r < 0.2) color = varColor1;
-      else if (r > 0.8) color = varColor2;
-      setPixel(data, x, y, color);
+      let minDist = 999;
+      let closestIdx = -1;
+      let secondMinDist = 999;
+
+      for (let i = 0; i < numStones; i++) {
+        const cx = stoneCenters[i]![0]!;
+        const cy = stoneCenters[i]![1]!;
+
+        let dx = Math.abs(x - cx);
+        if (dx > 8) dx = 16 - dx;
+        let dy = Math.abs(y - cy);
+        if (dy > 8) dy = 16 - dy;
+
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDist) {
+          secondMinDist = minDist;
+          minDist = dist;
+          closestIdx = i;
+        } else if (dist < secondMinDist) {
+          secondMinDist = dist;
+        }
+      }
+
+      if (secondMinDist - minDist < 1.0) continue;
+      if (minDist > 3.5) continue;
+
+      const cx = stoneCenters[closestIdx]![0]!;
+      const cy = stoneCenters[closestIdx]![1]!;
+      let dx = x - cx;
+      let dy = y - cy;
+      if (dx > 8) dx -= 16;
+      if (dx < -8) dx += 16;
+      if (dy > 8) dy -= 16;
+      if (dy < -8) dy += 16;
+
+      let shadeIdx = 2;
+      if (dx <= 0 && dy <= 0) shadeIdx = 4;
+      else if (dx >= 0 && dy >= 0) shadeIdx = 1;
+
+      setPixel(data, x, y, PAL_STONE[shadeIdx]!);
     }
   }
+
   return data;
 }
 
 export function genDirt(): TextureData {
   const data = createEmptyTexture();
   const lcg = new LCG(23456);
-  const baseColor: RGB = [102, 68, 34]; // Brown
-  const varColor1: RGB = [85, 51, 17];
-  const varColor2: RGB = [119, 85, 51];
+  fillSolid(data, PAL_DIRT[2]!);
 
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const r = lcg.nextFloat();
-      let color = baseColor;
-      if (r < 0.3) color = varColor1;
-      else if (r > 0.7) color = varColor2;
-      setPixel(data, x, y, color);
+  for (let i = 0; i < 15; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = lcg.nextFloat() < 0.5 ? PAL_DIRT[1]! : PAL_DIRT[3]!;
+
+    setPixel(data, cx, cy, color);
+    if (lcg.nextFloat() < 0.5) setPixel(data, (cx + 1) % 16, cy, color);
+    if (lcg.nextFloat() < 0.5) setPixel(data, cx, (cy + 1) % 16, color);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    setPixel(data, cx, cy, PAL_DIRT[4]!);
+  }
+
+  return data;
+}
+
+export function genGrassTop(): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(12345);
+  fillSolid(data, PAL_GRASS[2]!);
+
+  for (let i = 0; i < 20; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const h = lcg.nextInt(2, 3);
+    const color = lcg.nextFloat() < 0.5 ? PAL_GRASS[0]! : PAL_GRASS[4]!;
+
+    for (let dy = 0; dy < h; dy++) {
+      setPixel(data, cx, (cy + dy) % 16, color);
     }
   }
   return data;
@@ -52,75 +164,21 @@ export function genGrassSide(): TextureData {
   const grassTop = genGrassTop();
   const lcg = new LCG(34567);
 
-  // Fringe overhang
   for (let x = 0; x < 16; x++) {
-    const fringeDepth = lcg.nextInt(2, 5);
+    const fringeDepth = lcg.nextInt(3, 6);
     for (let y = 0; y < fringeDepth; y++) {
       const i = (y * 16 + x) * 4;
-      data[i] = grassTop[i]!;
-      data[i + 1] = grassTop[i + 1]!;
-      data[i + 2] = grassTop[i + 2]!;
-    }
-    // Bottom fringe pixel is darker
-    const yi = fringeDepth - 1;
-    const ii = (yi * 16 + x) * 4;
-    data[ii] = Math.max(0, data[ii]! - 20);
-    data[ii + 1] = Math.max(0, data[ii + 1]! - 20);
-    data[ii + 2] = Math.max(0, data[ii + 2]! - 20);
-  }
-  return data;
-}
-
-export function genStone(): TextureData {
-  const data = createEmptyTexture();
-  const noise = new SimpleNoise(45678);
-  const baseColor: RGB = [128, 128, 128];
-
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const n = noise.noise2D(x * 0.2, y * 0.2); // [-1, 1]
-      const offset = Math.round(n * 15);
-      setPixel(data, x, y, [
-        baseColor[0]! + offset,
-        baseColor[1]! + offset,
-        baseColor[2]! + offset,
-      ]);
-    }
-  }
-  return data;
-}
-
-export function genCobblestone(): TextureData {
-  const data = createEmptyTexture();
-  const lcg = new LCG(56789);
-  fillSolid(data, [100, 100, 100]);
-
-  // Draw somewhat irregular blocks
-  for (let i = 0; i < 15; i++) {
-    const cx = lcg.nextInt(0, 15);
-    const cy = lcg.nextInt(0, 15);
-    const w = lcg.nextInt(3, 6);
-    const h = lcg.nextInt(3, 6);
-    const colorOffset = lcg.nextInt(-20, 20);
-    const c: RGB = [128 + colorOffset, 128 + colorOffset, 128 + colorOffset];
-    const shadow: RGB = [c[0]! - 30, c[1]! - 30, c[2]! - 30];
-    const highlight: RGB = [c[0]! + 20, c[1]! + 20, c[2]! + 20];
-
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        let drawColor = c;
-        if (x === 0 || y === 0) drawColor = highlight;
-        if (x === w - 1 || y === h - 1) drawColor = shadow;
-        // make corners rounder randomly
-        if (
-          (x === 0 && y === 0) ||
-          (x === w - 1 && y === 0) ||
-          (x === 0 && y === h - 1) ||
-          (x === w - 1 && y === h - 1)
-        ) {
-          if (lcg.nextFloat() < 0.5) continue;
-        }
-        setPixel(data, (cx + x) % 16, (cy + y) % 16, drawColor);
+      if (y === fringeDepth - 1) {
+        const color = PAL_GRASS[0]!;
+        data[i] = color[0]!;
+        data[i + 1] = color[1]!;
+        data[i + 2] = color[2]!;
+        data[i + 3] = 255;
+      } else {
+        data[i] = grassTop[i]!;
+        data[i + 1] = grassTop[i + 1]!;
+        data[i + 2] = grassTop[i + 2]!;
+        data[i + 3] = 255;
       }
     }
   }
@@ -130,55 +188,79 @@ export function genCobblestone(): TextureData {
 export function genSand(): TextureData {
   const data = createEmptyTexture();
   const lcg = new LCG(67890);
-  const baseColor: RGB = [218, 210, 153];
+  fillSolid(data, PAL_SAND[2]!);
 
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const r = lcg.nextFloat();
-      let color = baseColor;
-      if (r < 0.1)
-        color = [200, 190, 140]; // darker speckles
-      else if (r > 0.9) color = [230, 225, 170]; // lighter speckles
-      setPixel(data, x, y, color);
-    }
+  for (let i = 0; i < 30; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = lcg.nextFloat() < 0.5 ? PAL_SAND[0]! : PAL_SAND[4]!;
+    setPixel(data, cx, cy, color);
   }
+
+  for (let x = 0; x < 16; x++) {
+    const y = Math.floor(x * 0.5) + lcg.nextInt(-1, 1);
+    setPixel(data, x, (y + 16) % 16, PAL_SAND[1]!);
+    setPixel(data, (x + 8) % 16, (y + 8) % 16, PAL_SAND[4]!);
+  }
+
   return data;
 }
 
 export function genGravel(): TextureData {
   const data = createEmptyTexture();
   const lcg = new LCG(78901);
-  const baseColor: RGB = [136, 126, 126];
+  fillSolid(data, PAL_GRAVEL[0]!);
 
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const offset = lcg.nextInt(-25, 25);
-      const isPinkish = lcg.nextFloat() < 0.05;
-      const c = isPinkish
-        ? [160, 130, 130]
-        : [baseColor[0]! + offset, baseColor[1]! + offset, baseColor[2]! + offset];
-      setPixel(data, x, y, c as RGB);
+  const numPebbles = lcg.nextInt(6, 9);
+
+  for (let p = 0; p < numPebbles; p++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const w = lcg.nextInt(3, 5);
+    const h = lcg.nextInt(3, 5);
+    const isWarm = lcg.nextFloat() < 0.3;
+
+    const baseCol = isWarm ? PAL_GRAVEL[4]! : PAL_GRAVEL[2]!;
+    const hlCol = isWarm ? PAL_GRAVEL[5]! : PAL_GRAVEL[3]!;
+    const shCol = isWarm ? PAL_GRAVEL[4]! : PAL_GRAVEL[1]!;
+
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        if (
+          (dx === 0 && dy === 0) ||
+          (dx === w - 1 && dy === 0) ||
+          (dx === 0 && dy === h - 1) ||
+          (dx === w - 1 && dy === h - 1)
+        ) {
+          if (lcg.nextFloat() < 0.7) continue;
+        }
+
+        let shade = baseCol;
+        if (dx <= 1 && dy <= 1) shade = hlCol;
+        else if (dx >= w - 2 && dy >= h - 2) shade = shCol;
+
+        setPixel(data, (cx + dx) % 16, (cy + dy) % 16, shade);
+      }
     }
   }
+
   return data;
 }
 
 export function genGlass(): TextureData {
   const data = createEmptyTexture();
-  fillSolid(data, [200, 230, 255, 60]); // translucent light blue
+  fillSolid(data, PAL_GLASS_PANE);
 
-  // Frame
   for (let i = 0; i < 16; i++) {
-    setPixel(data, i, 0, [230, 245, 255, 200]);
-    setPixel(data, i, 15, [180, 210, 230, 200]);
-    setPixel(data, 0, i, [230, 245, 255, 200]);
-    setPixel(data, 15, i, [180, 210, 230, 200]);
+    setPixel(data, i, 0, PAL_GLASS_FRAME);
+    setPixel(data, i, 15, PAL_GLASS_FRAME);
+    setPixel(data, 0, i, PAL_GLASS_FRAME);
+    setPixel(data, 15, i, PAL_GLASS_FRAME);
   }
 
-  // Shine streak
-  setPixel(data, 2, 2, [255, 255, 255, 220]);
-  setPixel(data, 3, 3, [255, 255, 255, 180]);
-  setPixel(data, 4, 4, [255, 255, 255, 120]);
+  setPixel(data, 2, 2, PAL_GLASS_GLINT);
+  setPixel(data, 3, 3, PAL_GLASS_GLINT);
+  setPixel(data, 4, 4, PAL_GLASS_GLINT);
 
   return data;
 }
