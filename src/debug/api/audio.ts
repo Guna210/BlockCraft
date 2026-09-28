@@ -1,6 +1,5 @@
 import { soundLibrary } from '../../audio/recipes';
 import { LCG } from '../../audio/math';
-import { SynthesisEngine } from '../../audio/engine';
 
 export interface AudioRenderResult {
   id: string;

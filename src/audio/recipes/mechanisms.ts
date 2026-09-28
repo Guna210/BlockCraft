@@ -36,8 +36,8 @@ export const mechanisms: Record<string, SoundRecipe> = {
   'mechanism.piston': {
     duration: 0.3,
     render: (ctx: SoundRecipeContext) => {
-      SynthesisEngine.playNoise(ctx, 0.2, 'lowpass', 1000, 0.8);
-      SynthesisEngine.playOscillator(ctx, 'square', 100, 0.15, 0.5, 0.01);
+      SynthesisEngine.playNoise(ctx, 0.2, 'lowpass', 1000, 0.5);
+      SynthesisEngine.playOscillator(ctx, 'square', 100, 0.15, 0.4, 0.01);
     },
   },
   'mechanism.button': {

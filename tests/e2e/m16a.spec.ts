@@ -102,7 +102,22 @@ test.describe('M16a: Synthesis library', () => {
       expect(r1!.peak, `Sound ${id} Peak is too high`).toBeLessThan(0.8);
 
       if (id === 'weather.thunder' || id === 'entity.explosion') {
-        expect(r1!.lengthSamples, `Reverb tail is missing for ${id}`).toBeGreaterThan(44100 * 0.8);
+        // Evaluate energy after the primary recipe sound duration
+        const tailStartSeconds = id === 'weather.thunder' ? 3.5 : 1.2;
+        const tailStartSample = Math.floor(44100 * tailStartSeconds);
+
+        expect(r1!.lengthSamples, `Reverb tail is missing for ${id}`).toBeGreaterThan(
+          tailStartSample + 44100 * 0.2,
+        );
+
+        let tailEnergy = 0;
+        for (let i = tailStartSample; i < r1!.lengthSamples; i++) {
+          const sampleL = r1!.channels[0]?.[i] ?? 0;
+          const sampleR = r1!.channels[1]?.[i] ?? 0;
+          tailEnergy += sampleL * sampleL + sampleR * sampleR;
+        }
+
+        expect(tailEnergy, `Reverb tail is silent for ${id}`).toBeGreaterThan(0.0001);
       }
 
       const soundHash = `${r1!.rms.toFixed(6)}_${r1!.peak.toFixed(6)}`;

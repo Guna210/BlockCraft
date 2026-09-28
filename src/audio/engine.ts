@@ -58,6 +58,7 @@ export class SynthesisEngine {
     filterType: BiquadFilterType = 'lowpass',
     frequency = 1000,
     peakLevel = 1,
+    endFrequency?: number,
   ) {
     const { ctx: audioCtx, t0, random } = ctx;
     const noiseBuffer = createNoiseBuffer(audioCtx, Math.max(duration, reverbDuration), random);
@@ -66,7 +67,10 @@ export class SynthesisEngine {
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = filterType;
-    filter.frequency.value = frequency;
+    filter.frequency.setValueAtTime(frequency, t0);
+    if (endFrequency !== undefined) {
+      filter.frequency.linearRampToValueAtTime(endFrequency, t0 + duration);
+    }
 
     const gain = audioCtx.createGain();
     SynthesisEngine.applySimpleEnvelope(gain.gain, t0, duration, peakLevel, 0.01);
