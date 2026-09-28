@@ -1,5 +1,6 @@
 import { initDebugApi } from './debug/api/index';
 import { markReady, renderStats } from './debug/api/core';
+import { GLWrapper } from './render/gl';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -42,6 +43,13 @@ function main() {
     return;
   }
 
+  const params = new URLSearchParams(window.location.search);
+  const debug = params.get('debug') === '1';
+
+  const glWrapper = new GLWrapper(gl, debug, () => {
+    renderStats.glErrors++;
+  });
+
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -57,7 +65,7 @@ function main() {
   const s = 1.0;
   const l = 0.7; // Lighter blue
   const [r, g, b] = hslToRgb(h, s, l);
-  gl.clearColor(r, g, b, 1.0);
+  glWrapper.gl.clearColor(r, g, b, 1.0);
 
   let lastTime = performance.now();
   let frameCount = 0;
@@ -69,7 +77,7 @@ function main() {
     const dt = time - lastTime;
     lastTime = time;
 
-    gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
+    glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
 
     const endTime = performance.now();
     cpuTimes.push(endTime - startTime);
