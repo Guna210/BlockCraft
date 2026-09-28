@@ -166,3 +166,59 @@ describe('Procedural Textures & Atlas (M01b)', () => {
     });
   });
 });
+
+describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
+  it('duplicate rect test checks bounds and overlap', () => {
+    const PADDING = 4;
+    // Generate an atlas
+    const atlasTiles = new Map<string, TextureData>();
+    for (const [name, generator] of Object.entries(textureGenerators)) {
+      if (!generator) continue;
+      const result = generator();
+      if (Array.isArray(result)) {
+        for (let i = 0; i < result.length; i++) {
+          atlasTiles.set(`${name}_${i}`, result[i]!);
+        }
+      } else {
+        atlasTiles.set(name, result);
+      }
+    }
+    const atlas = new TextureAtlas(atlasTiles);
+
+    const rects = Array.from(atlas.rects.values());
+    for (let i = 0; i < rects.length; i++) {
+      const r1 = rects[i]!;
+      // Inside bounds
+      expect(r1.x).toBeGreaterThanOrEqual(0);
+      expect(r1.y).toBeGreaterThanOrEqual(0);
+      expect(r1.x + r1.w).toBeLessThanOrEqual(atlas.width);
+      expect(r1.y + r1.h).toBeLessThanOrEqual(atlas.height);
+
+      // No overlap with other rects (including padding since they are cells)
+      for (let j = i + 1; j < rects.length; j++) {
+        const r2 = rects[j]!;
+        // Padded cell rects
+        const cell1 = {
+          x: r1.x - PADDING,
+          y: r1.y - PADDING,
+          w: r1.w + PADDING * 2,
+          h: r1.h + PADDING * 2,
+        };
+        const cell2 = {
+          x: r2.x - PADDING,
+          y: r2.y - PADDING,
+          w: r2.w + PADDING * 2,
+          h: r2.h + PADDING * 2,
+        };
+
+        const overlap = !(
+          cell1.x + cell1.w <= cell2.x ||
+          cell1.x >= cell2.x + cell2.w ||
+          cell1.y + cell1.h <= cell2.y ||
+          cell1.y >= cell2.y + cell2.h
+        );
+        expect(overlap, `Rect ${i} overlaps with Rect ${j}`).toBe(false);
+      }
+    }
+  });
+});
