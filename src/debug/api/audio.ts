@@ -37,20 +37,6 @@ export const audioApi = {
 
     const random = new LCG(seed);
 
-    // Some sounds might use reverb in the future, if they do they will route through it.
-    // For now we just render the recipe directly to context destination.
-    // If the recipe needs to construct reverb, it can, but typically the engine handles it.
-    // Actually, in the spec "convolution reverb with generated impulse responses" is mentioned.
-    // Let's create a global reverb node for this context in case recipes want to connect to it.
-
-    const reverbNode = offlineCtx.createConvolver();
-    // Use a fixed length and decay for deterministic IR
-    reverbNode.buffer = SynthesisEngine.createReverbIR(offlineCtx, random, 1.5, 2.0);
-    reverbNode.connect(offlineCtx.destination);
-
-    // Recipes currently connect to destination directly in the recipes we wrote.
-    // That's fine. We will just measure what ends up in destination.
-
     const renderCtx = {
       ctx: offlineCtx,
       t0: 0,

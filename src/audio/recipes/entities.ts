@@ -44,8 +44,8 @@ export const entities: Record<string, SoundRecipe> = {
   'entity.explosion': {
     duration: 1.5,
     render: (ctx: SoundRecipeContext) => {
-      // Big boom noise
-      SynthesisEngine.playNoise(ctx, 1.2, 'lowpass', 800, 0.6);
+      // Big boom noise with reverb
+      SynthesisEngine.playNoiseWithReverb(ctx, 1.2, 1.5, 'lowpass', 800, 0.4);
 
       const { ctx: audioCtx, t0 } = ctx;
       const osc = audioCtx.createOscillator();
@@ -54,7 +54,7 @@ export const entities: Record<string, SoundRecipe> = {
       osc.frequency.exponentialRampToValueAtTime(20, t0 + 1.0);
 
       const gain = audioCtx.createGain();
-      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 1.0, 0.6, 0.02);
+      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 1.0, 0.4, 0.02);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);

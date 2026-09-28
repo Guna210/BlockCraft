@@ -36,6 +36,6 @@ export const blocks: Record<string, SoundRecipe> = {
   'place.wood': createBlockSound(0.15, 70, 'lowpass', 1200, 0.8),
   'place.gravel': createBlockSound(0.15, 60, 'bandpass', 3000, 0.7),
   'place.snow': createBlockSound(0.2, 30, 'lowpass', 1000, 0.7),
-  'place.glass': createBlockSound(0.1, 800, 'highpass', 4000, 0.5),
+  'place.glass': createBlockSound(0.1, 800, 'highpass', 4000, 0.4),
   'place.foliage': createBlockSound(0.15, 40, 'lowpass', 700, 0.7),
 };

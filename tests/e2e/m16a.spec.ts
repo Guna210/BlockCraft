@@ -97,9 +97,13 @@ test.describe('M16a: Synthesis library', () => {
 
       // Logging
       console.log(`${id}: RMS=${r1!.rms}, Peak=${r1!.peak}`);
-      // RMS > 0.01 and peak < 1.0
+      // RMS > 0.01 and peak < 0.8
       expect(r1!.rms, `Sound ${id} RMS is too low`).toBeGreaterThan(0.01);
       expect(r1!.peak, `Sound ${id} Peak is too high`).toBeLessThan(0.8);
+
+      if (id === 'weather.thunder' || id === 'entity.explosion') {
+        expect(r1!.lengthSamples, `Reverb tail is missing for ${id}`).toBeGreaterThan(44100 * 0.8);
+      }
 
       const soundHash = `${r1!.rms.toFixed(6)}_${r1!.peak.toFixed(6)}`;
       expect(seenHashes.has(soundHash), `Sound ${id} is identical to another sound`).toBe(false);
