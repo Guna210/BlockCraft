@@ -16,6 +16,7 @@ BlockCraft is an original browser voxel sandbox game specified in `SPEC.md`. It 
 - Touch code owned by other tasks only as far as your task needs, and explain each such change in your handoff notes.
 - A task that introduces a block or item also adds its texture generator, its registry entry, and (from M09b onward) its icon.
 - No forward stubs: never add placeholder code for a later task.
+- `SPEC.md` and `AGENTS.md` belong to the repository owner. Never edit them. If you believe either is wrong or contradictory, explain it in your handoff notes or in `blockers/<ID>.md`.
 
 ## 3. Build loop
 
@@ -56,6 +57,7 @@ A task is done only when all of these hold:
 
 ## 7. Git, branches and pull requests
 
+- This repository's default branch is named `master`. Wherever SPEC.md or this file says `main`, it means `master`.
 - Let Jules's own publish flow create the branch and PR. Do not push to `main`, merge PRs, force-push, rewrite history, or change git configuration or remotes.
 - One task, one PR. Title it `<ID>: <task title> — verified` only if every item in §4 holds; otherwise `[INCOMPLETE] <ID>: <task title>`.
 - The PR description contains your handoff notes (§12).
