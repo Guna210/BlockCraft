@@ -372,6 +372,7 @@ A task whose PR shows a red CI check is not verified, whatever its own VM run re
 - `.github/workflows/**`
 - `playwright.config.*`
 - `scripts/verify.*` and `scripts/lint-placeholders.*` (the `package.json` entries for `verify`, `verify:quick` and `lint:placeholders` stay one-line calls into these files)
+- `SPEC.md` and `AGENTS.md`
 
 Only the repository owner applies `harness-change`. It is expected on M21b (Playwright must start the multiplayer server) and on any PR where the owner agrees CI needs a longer timeout.
 
