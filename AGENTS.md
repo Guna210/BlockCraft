@@ -50,7 +50,7 @@ A task is done only when all of these hold:
 ## 6. Test integrity
 
 - Never weaken, delete, skip (`.skip`, `.only`, `test.fixme`) or loosen the thresholds of an existing test to make it pass. Fix the game instead.
-- `tests/harness/`, `.github/workflows/`, `playwright.config.*`, `scripts/verify.*` and `scripts/lint-placeholders.*` are the verification harness. After M00b is merged they are read-only, and the harness guard (SPEC §5.7) fails any PR that changes them without the owner's `harness-change` label. If you believe the harness has a bug, write it up in `blockers/<ID>.md` with evidence and work around it in game code. If your task row says it needs a harness change, make the minimal change and state in the PR description that it needs the label.
+- The paths and `package.json` scripts listed in SPEC §5.7 are the verification harness. After M00b is merged they are read-only, and the harness guard (SPEC §5.7) fails any PR that changes them without the owner's `harness-change` label. If you believe the harness has a bug, write it up in `blockers/<ID>.md` with evidence and work around it in game code. If your task row says it needs a harness change, make the minimal change and state in the PR description that it needs the label.
 - Never special-case test conditions in game code (for example `if (navigator.webdriver)`). The debug API (SPEC §4) is the only sanctioned test hook.
 - Never hardcode values that tests read (for example a fixed FPS number).
 - Add assertions to another milestone's e2e spec only where a task row explicitly says so.
