@@ -12,7 +12,7 @@ declare global {
 
 export interface ScreenshotOpts {
   name: string;
-  milestone?: string; // defaults to 'm00'
+  milestone: string;
 }
 
 type FixtureContext = {
@@ -80,7 +80,7 @@ export const test = base.extend<FixtureContext>({
     }
 
     const capture = async (opts: ScreenshotOpts): Promise<PNG> => {
-      const milestone = opts.milestone || 'm00';
+      const milestone = opts.milestone;
       const mDir = path.join(screenshotDir, milestone);
       if (!fs.existsSync(mDir)) {
         fs.mkdirSync(mDir, { recursive: true });

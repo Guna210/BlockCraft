@@ -26,19 +26,21 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            const response = await github.rest.pulls.listFiles({
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
               repo,
               pull_number: prNumber,
+              per_page: 100
             });
 
-            const changedFiles = response.data.map(f => f.filename);
+            const changedFiles = files.flatMap(f => f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]);
             const protectedPatterns = [
               /^tests\/harness\//,
               /^\.github\/workflows\//,
               /^playwright\.config\./,
-              /^scripts\/verify\./,
+              /^scripts\/verify/,
               /^scripts\/lint-placeholders\./,
+              /^vitest\.config\./,
               /^SPEC\.md$/,
               /^AGENTS\.md$/,
             ];
@@ -47,8 +49,41 @@ jobs:
               protectedPatterns.some(pattern => pattern.test(file))
             );
 
-            if (violations.length > 0) {
-              core.setFailed(`Protected harness files were changed without the 'harness-change' label:\n${violations.join('\n')}`);
+            let allViolations = [...violations];
+
+            if (changedFiles.includes('package.json')) {
+              try {
+                const baseResponse = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: 'package.json',
+                  ref: context.payload.pull_request.base.sha
+                });
+                const headResponse = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: 'package.json',
+                  ref: context.payload.pull_request.head.sha
+                });
+
+                if (baseResponse.data.type === 'file' && headResponse.data.type === 'file') {
+                  const basePkg = JSON.parse(Buffer.from(baseResponse.data.content, 'base64').toString());
+                  const headPkg = JSON.parse(Buffer.from(headResponse.data.content, 'base64').toString());
+
+                  const protectedScripts = ['typecheck', 'lint', 'lint:placeholders', 'test:unit', 'test:e2e', 'verify', 'verify:quick'];
+                  for (const script of protectedScripts) {
+                    if (basePkg.scripts?.[script] !== headPkg.scripts?.[script]) {
+                      allViolations.push(`package.json script changed: ${script}`);
+                    }
+                  }
+                }
+              } catch (e) {
+                core.warning('Failed to fetch package.json content for scripts comparison: ' + e.message);
+              }
+            }
+
+            if (allViolations.length > 0) {
+              core.setFailed(`Protected harness files or scripts were changed without the 'harness-change' label:\n${allViolations.join('\n')}`);
             } else {
-              core.info('No protected harness files were changed.');
+              core.info('No protected harness files or scripts were changed.');
             }

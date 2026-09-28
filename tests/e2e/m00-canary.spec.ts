@@ -31,7 +31,7 @@ test('Canary: Blank canvas should fail assertNotBlank', async ({
     }
   });
 
-  const png = await assertAndSaveScreenshot({ name: 'canary-blank' });
+  const png = await assertAndSaveScreenshot({ name: 'canary-blank', milestone: 'm00' });
   assertNotBlank(png);
 });
 
@@ -51,6 +51,6 @@ test('Canary: Magenta canvas should fail assertNoMissingTexture', async ({
     }
   });
 
-  const png = await assertAndSaveScreenshot({ name: 'canary-magenta' });
+  const png = await assertAndSaveScreenshot({ name: 'canary-magenta', milestone: 'm00' });
   assertNoMissingTexture(png);
 });
