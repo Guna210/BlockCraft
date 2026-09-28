@@ -1,5 +1,8 @@
+import { audioApi } from './audio';
+
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  audio?: typeof audioApi;
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;
@@ -39,6 +42,7 @@ export const renderStats = {
 export const api: BlockCraftDebugAPI = {
   ready: () => readyPromise,
   getRenderStats: () => ({ ...renderStats }),
+  audio: audioApi,
 };
 
 export function markReady() {
