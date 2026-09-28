@@ -1,0 +1,47 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check .",
+    "lint:placeholders": "node scripts/lint-placeholders.mjs",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "verify": "node scripts/verify.mjs",
+    "verify:quick": "node scripts/verify-quick.mjs",
+    "bench": "node scripts/bench.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Guna210/BlockCraft.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Guna210/BlockCraft/issues"
+  },
+  "homepage": "https://github.com/Guna210/BlockCraft#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.3",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-playwright": "^2.12.0",
+    "eslint-plugin-prettier": "^5.5.6",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

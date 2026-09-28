@@ -1,0 +1,102 @@
+import { initDebugApi } from './debug/api/index';
+import { markReady, renderStats } from './debug/api/core';
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  let r, g, b;
+
+  if (s === 0) {
+    r = g = b = l; // achromatic
+  } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hueToRgb(p, q, h + 1 / 3);
+    g = hueToRgb(p, q, h);
+    b = hueToRgb(p, q, h - 1 / 3);
+  }
+
+  return [r, g, b];
+}
+
+function hueToRgb(p: number, q: number, t: number) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+
+function main() {
+  initDebugApi();
+
+  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+  const errorScreen = document.getElementById('error-screen') as HTMLDivElement;
+
+  if (!canvas) return;
+
+  const gl = canvas.getContext('webgl2');
+
+  if (!gl) {
+    canvas.style.display = 'none';
+    errorScreen.style.display = 'block';
+    return;
+  }
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl!.viewport(0, 0, canvas.width, canvas.height);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Sky blue color: hue 200 (approx 200/360 = 0.55), s: 1.0, l: 0.5
+  // Let's use a nice sky blue
+  const h = 200 / 360;
+  const s = 1.0;
+  const l = 0.7; // Lighter blue
+  const [r, g, b] = hslToRgb(h, s, l);
+  gl.clearColor(r, g, b, 1.0);
+
+  let lastTime = performance.now();
+  let frameCount = 0;
+  let fpsTimer = 0;
+  const cpuTimes: number[] = [];
+
+  function render(time: number) {
+    const startTime = performance.now();
+    const dt = time - lastTime;
+    lastTime = time;
+
+    gl!.clear(gl!.COLOR_BUFFER_BIT | gl!.DEPTH_BUFFER_BIT);
+
+    const endTime = performance.now();
+    cpuTimes.push(endTime - startTime);
+
+    frameCount++;
+    fpsTimer += dt;
+    if (fpsTimer >= 1000) {
+      renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);
+      frameCount = 0;
+      fpsTimer = 0;
+
+      // Calculate P95 CPU time
+      if (cpuTimes.length > 0) {
+        cpuTimes.sort((a, b) => a - b);
+        const p95Index = Math.floor(cpuTimes.length * 0.95);
+        renderStats.frameCpuMsP95 = cpuTimes[p95Index] || 0;
+        cpuTimes.length = 0;
+      }
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame((time) => {
+    markReady();
+    render(time);
+  });
+}
+
+main();
