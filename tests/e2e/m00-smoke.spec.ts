@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import type { BlockCraftDebugAPI } from '../../src/debug/api/core';
+
+declare global {
+  interface Window {
+    __blockcraft?: BlockCraftDebugAPI;
+  }
+}
 
 test('M00 smoke test: page loads with 0 errors', async ({ page }) => {
   const errors: string[] = [];
@@ -13,11 +20,11 @@ test('M00 smoke test: page loads with 0 errors', async ({ page }) => {
 
   // Wait for the ready promise on the debug API
   await page.waitForFunction(() => {
-    return (window as any).__blockcraft?.ready;
+    return window.__blockcraft?.ready;
   });
 
   await page.evaluate(async () => {
-    await (window as any).__blockcraft.ready();
+    await window.__blockcraft!.ready();
   });
 
   expect(errors).toHaveLength(0);
