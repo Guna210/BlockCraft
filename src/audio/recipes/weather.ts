@@ -13,34 +13,8 @@ export const weather: Record<string, SoundRecipe> = {
       // Crackle
       SynthesisEngine.playNoise(ctx, 0.5, 'highpass', 3000, 0.4);
 
-      // Rumble
-      const { ctx: audioCtx, t0, random } = ctx;
-
-      const rumbleDur = 3.5;
-      const noiseBuffer = audioCtx.createBuffer(
-        1,
-        Math.ceil(audioCtx.sampleRate * rumbleDur),
-        audioCtx.sampleRate,
-      );
-      const data = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = random.nextFloat(-1, 1);
-
-      const noiseSource = audioCtx.createBufferSource();
-      noiseSource.buffer = noiseBuffer;
-
-      const filter = audioCtx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(400, t0);
-      filter.frequency.linearRampToValueAtTime(100, t0 + rumbleDur);
-
-      const gain = audioCtx.createGain();
-      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, rumbleDur, 0.2, 0.1);
-
-      noiseSource.connect(filter);
-      filter.connect(gain);
-      gain.connect(audioCtx.destination);
-      noiseSource.start(t0);
-      noiseSource.stop(t0 + rumbleDur);
+      // Rumble with reverb
+      SynthesisEngine.playNoiseWithReverb(ctx, 3.5, 4.0, 'lowpass', 400, 0.2);
     },
   },
   'ambience.fluid': {

@@ -11,30 +11,7 @@ export interface SoundRecipe {
   render: (ctx: SoundRecipeContext) => void;
 }
 
-// ADSR envelope parameters
-export interface EnvelopeParams {
-  attack: number;
-  decay: number;
-  sustain: number;
-  release: number;
-  peakLevel?: number;
-}
-
 export class SynthesisEngine {
-  // Helpers to apply envelopes
-  static applyEnvelope(param: AudioParam, t0: number, env: EnvelopeParams) {
-    const peak = env.peakLevel ?? 1;
-    param.setValueAtTime(0, t0);
-    param.linearRampToValueAtTime(peak, t0 + env.attack);
-    param.exponentialRampToValueAtTime(
-      Math.max(env.sustain * peak, 0.001),
-      t0 + env.attack + env.decay,
-    );
-    param.setValueAtTime(Math.max(env.sustain * peak, 0.001), t0 + env.attack + env.decay);
-    // The release will happen at the end of the duration (handled by the caller if needed, or we just let it decay)
-    // Note: For simple sound effects, we might just use decay instead of full ADSR if we know duration.
-  }
-
   static applySimpleEnvelope(
     param: AudioParam,
     t0: number,
@@ -72,6 +49,48 @@ export class SynthesisEngine {
 
     noiseSource.start(t0);
     noiseSource.stop(t0 + duration);
+  }
+
+  static playNoiseWithReverb(
+    ctx: SoundRecipeContext,
+    duration: number,
+    reverbDuration: number,
+    filterType: BiquadFilterType = 'lowpass',
+    frequency = 1000,
+    peakLevel = 1,
+  ) {
+    const { ctx: audioCtx, t0, random } = ctx;
+    const noiseBuffer = createNoiseBuffer(audioCtx, Math.max(duration, reverbDuration), random);
+    const noiseSource = audioCtx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+
+    const gain = audioCtx.createGain();
+    SynthesisEngine.applySimpleEnvelope(gain.gain, t0, duration, peakLevel, 0.01);
+
+    const convolver = audioCtx.createConvolver();
+    convolver.buffer = SynthesisEngine.createReverbIR(audioCtx, random, reverbDuration, 3.0);
+
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1.0;
+
+    noiseSource.connect(filter);
+    filter.connect(gain);
+
+    // Dry signal
+    gain.connect(masterGain);
+
+    // Wet signal
+    gain.connect(convolver);
+    convolver.connect(masterGain);
+
+    masterGain.connect(audioCtx.destination);
+
+    noiseSource.start(t0);
+    noiseSource.stop(t0 + Math.max(duration, reverbDuration));
   }
 
   static playOscillator(
