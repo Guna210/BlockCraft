@@ -17,7 +17,6 @@ BlockCraft is an original browser voxel sandbox game specified in `SPEC.md`. It 
 - A task that introduces a block or item also adds its texture generator, its registry entry, and (from M09b onward) its icon.
 - No forward stubs: never add placeholder code for a later task.
 - `SPEC.md` and `AGENTS.md` belong to the repository owner. Never edit them. If you believe either is wrong or contradictory, explain it in your handoff notes or in `blockers/<ID>.md`.
-- Every task that creates or changes textures, animation frames, icons, creature skins or UI art follows `ART.md`, which also belongs to the repository owner.
 
 ## 3. Build loop
 

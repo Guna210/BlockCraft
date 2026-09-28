@@ -8,6 +8,7 @@ export interface AudioRenderResult {
   lengthSamples: number;
   rms: number;
   peak: number;
+  channels: Float32Array[];
 }
 
 export const audioApi = {
@@ -18,10 +19,15 @@ export const audioApi = {
       return null;
     }
 
-    // Include reverb tail. Let's add 1.5 seconds for reverb tail.
-    // Also add to duration if sound takes longer to ring out.
-    // In engine, reverb is optional per sound, but we'll render extra time for any tail.
-    const duration = recipe.duration + 1.5;
+    // Environmental reverb belongs to M16b, so short sounds should stay short.
+    // We add just a tiny buffer to avoid cutting off natural release tails, but keep
+    // sounds like footsteps under 0.5s total as requested.
+    let duration = recipe.duration;
+    if (duration <= 0.3) {
+      duration += 0.1; // short tail buffer for fast sounds
+    } else {
+      duration += 0.5; // longer tail for large sounds
+    }
 
     // Always use 44100 sample rate for determinism across environments
     const sampleRate = 44100;
@@ -59,8 +65,10 @@ export const audioApi = {
     let sumSquares = 0;
     const numChannels = renderedBuffer.numberOfChannels;
 
+    const channels: Float32Array[] = [];
     for (let c = 0; c < numChannels; c++) {
       const data = renderedBuffer.getChannelData(c);
+      channels.push(data);
       for (let i = 0; i < data.length; i++) {
         const val = data[i] ?? 0;
         if (Math.abs(val) > peak) {
@@ -78,6 +86,7 @@ export const audioApi = {
       lengthSamples,
       rms,
       peak,
+      channels,
     };
   },
 

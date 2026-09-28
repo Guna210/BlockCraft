@@ -4,7 +4,7 @@ export const entities: Record<string, SoundRecipe> = {
   'player.hurt': {
     duration: 0.25,
     render: (ctx: SoundRecipeContext) => {
-      SynthesisEngine.playOscillator(ctx, 'sawtooth', 150, 0.2, 0.5, 0.01);
+      SynthesisEngine.playOscillator(ctx, 'sawtooth', 150, 0.2, 0.4, 0.01);
 
       const { ctx: audioCtx, t0 } = ctx;
       const osc = audioCtx.createOscillator();
@@ -13,7 +13,7 @@ export const entities: Record<string, SoundRecipe> = {
       osc.frequency.exponentialRampToValueAtTime(100, t0 + 0.2);
 
       const gain = audioCtx.createGain();
-      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.2, 0.6, 0.01);
+      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.2, 0.4, 0.01);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);
@@ -45,7 +45,7 @@ export const entities: Record<string, SoundRecipe> = {
     duration: 1.5,
     render: (ctx: SoundRecipeContext) => {
       // Big boom noise
-      SynthesisEngine.playNoise(ctx, 1.2, 'lowpass', 800, 0.9);
+      SynthesisEngine.playNoise(ctx, 1.2, 'lowpass', 800, 0.6);
 
       const { ctx: audioCtx, t0 } = ctx;
       const osc = audioCtx.createOscillator();
@@ -54,7 +54,7 @@ export const entities: Record<string, SoundRecipe> = {
       osc.frequency.exponentialRampToValueAtTime(20, t0 + 1.0);
 
       const gain = audioCtx.createGain();
-      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 1.0, 0.8, 0.02);
+      SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 1.0, 0.6, 0.02);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);

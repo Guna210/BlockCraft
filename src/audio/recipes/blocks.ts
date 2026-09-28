@@ -24,9 +24,9 @@ export const blocks: Record<string, SoundRecipe> = {
   'break.stone': createBlockSound(0.15, 80, 'bandpass', 3000, 0.7),
   'break.sand': createBlockSound(0.3, 40, 'lowpass', 1500, 0.5),
   'break.wood': createBlockSound(0.25, 70, 'lowpass', 1500, 0.6),
-  'break.gravel': createBlockSound(0.25, 60, 'bandpass', 4000, 0.8),
+  'break.gravel': createBlockSound(0.25, 60, 'bandpass', 4000, 0.6),
   'break.snow': createBlockSound(0.3, 30, 'lowpass', 1200, 0.6),
-  'break.glass': createBlockSound(0.2, 1000, 'highpass', 5000, 0.6),
+  'break.glass': createBlockSound(0.2, 1000, 'highpass', 5000, 0.4),
   'break.foliage': createBlockSound(0.2, 40, 'lowpass', 800, 0.7),
 
   // Place sounds (typically shorter and slightly quieter)
