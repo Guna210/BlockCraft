@@ -5,108 +5,134 @@ import {
   LCG,
   setPixel,
   fillSolid,
-  SimpleNoise,
   RGB,
+  RGBA,
+  hexToRgb,
 } from './noise';
 
-function genLogTop(baseColor: RGB, ringColor: RGB, seed: number): TextureData {
+const PAL_OAK_BARK = ['#1f140d', '#45311f', '#5b422a', '#7e5b3a'].map((h) => hexToRgb(h));
+const PAL_OAK_WOOD = ['#6e5230', '#8a6a3f', '#a5824f', '#bf9a62'].map((h) => hexToRgb(h));
+
+const PAL_BIRCH_BARK = ['#2b2a28', '#4a4843', '#b9b5aa', '#d8d5cc', '#eeede6'].map((h) =>
+  hexToRgb(h),
+);
+const PAL_BIRCH_WOOD = ['#a88f5f', '#c2aa76', '#d6c08b', '#e6d3a2'].map((h) => hexToRgb(h));
+
+const PAL_PINE_BARK = ['#110a06', '#35231a', '#4a3224', '#6c4c37'].map((h) => hexToRgb(h));
+const PAL_PINE_WOOD = ['#472c14', '#6f4c2e', '#855d39', '#ae7b4b'].map((h) => hexToRgb(h));
+
+const PAL_LEAVES = ['#24481a', '#2f5e22', '#3f7a2c', '#55983a', '#6fb14a'].map((h) => hexToRgb(h));
+const PAL_LEAVES_TRANS = hexToRgb('#000000', 0);
+
+function genLogSide(barkPal: RGBA[], seed: number, style: 'oak' | 'birch' | 'pine'): TextureData {
   const data = createEmptyTexture();
-  const noise = new SimpleNoise(seed);
-  fillSolid(data, baseColor);
+  const lcg = new LCG(seed);
+  fillSolid(data, barkPal[barkPal.length > 4 ? 3 : 2]!);
 
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const dx = x - 7.5;
-      const dy = y - 7.5;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const n = noise.noise2D(x * 0.1, y * 0.1);
-
-      const ring = Math.sin((dist + n * 2) * 1.5); // Ring pattern
-      if (ring > 0.5 && dist < 7) {
-        setPixel(data, x, y, ringColor);
+  if (style === 'birch') {
+    for (let i = 0; i < 20; i++) {
+      const x = lcg.nextInt(0, 15);
+      const y = lcg.nextInt(0, 15);
+      const w = lcg.nextInt(2, 4);
+      const markCol = lcg.nextFloat() < 0.5 ? barkPal[0]! : barkPal[1]!;
+      for (let dx = 0; dx < w; dx++) {
+        setPixel(data, (x + dx) % 16, y, markCol);
       }
-
-      // Bark border
-      if (dist >= 7) {
-        const barkDark: RGB = [baseColor[0]! - 40, baseColor[1]! - 40, baseColor[2]! - 40];
-        setPixel(data, x, y, barkDark);
+    }
+  } else {
+    for (let x = 0; x < 16; x += lcg.nextInt(2, 4)) {
+      const w = lcg.nextInt(1, 2);
+      for (let y = 0; y < 16; y++) {
+        for (let dx = 0; dx < w; dx++) {
+          let shadeIdx = 1;
+          if (dx === 0) shadeIdx = 3;
+          else if (dx === w - 1) shadeIdx = 0;
+          setPixel(data, (x + dx) % 16, y, barkPal[shadeIdx]!);
+        }
       }
     }
   }
+
   return data;
 }
 
-function genLogSide(baseColor: RGB, barkColor: RGB, seed: number): TextureData {
+function genLogTop(woodPal: RGBA[], barkPal: RGBA[], seed: number): TextureData {
   const data = createEmptyTexture();
-  const noise = new SimpleNoise(seed);
+  fillSolid(data, woodPal[2]!);
 
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
-      // vertical noise lines
-      const n = noise.noise2D(x * 0.5, y * 0.1);
-      const isBark = Math.abs(n) > 0.3;
-      const c = isBark ? barkColor : baseColor;
-      const offset = Math.floor(n * 10);
-      setPixel(data, x, y, [c[0]! + offset, c[1]! + offset, c[2]! + offset]);
+      if (x === 0 || x === 15 || y === 0 || y === 15) {
+        setPixel(data, x, y, barkPal[1]!);
+      } else if ((x === 1 || x === 14) && (y === 1 || y === 14)) {
+        setPixel(data, x, y, barkPal[1]!);
+      }
     }
   }
+
+  for (let r = 2; r < 6; r += 2) {
+    for (let y = 2; y < 14; y++) {
+      for (let x = 2; x < 14; x++) {
+        const dx = x - 7.5;
+        const dy = y - 7.5;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (Math.abs(dist - r) < 0.5) {
+          setPixel(data, x, y, woodPal[1]!);
+        }
+      }
+    }
+  }
+
+  setPixel(data, 7, 7, woodPal[0]!);
+  setPixel(data, 8, 7, woodPal[0]!);
+  setPixel(data, 7, 8, woodPal[0]!);
+  setPixel(data, 8, 8, woodPal[0]!);
+
   return data;
 }
 
 export function genOakLogTop(): TextureData {
-  return genLogTop([160, 130, 90], [130, 100, 60], 111);
+  return genLogTop(PAL_OAK_WOOD, PAL_OAK_BARK, 111);
 }
 export function genOakLogSide(): TextureData {
-  return genLogSide([100, 80, 50], [70, 50, 30], 112);
+  return genLogSide(PAL_OAK_BARK, 112, 'oak');
 }
 export function genBirchLogTop(): TextureData {
-  return genLogTop([210, 200, 170], [180, 170, 140], 221);
+  return genLogTop(PAL_BIRCH_WOOD, PAL_BIRCH_BARK, 221);
 }
 export function genBirchLogSide(): TextureData {
-  const data = genLogSide([230, 230, 220], [200, 200, 190], 222);
-  const lcg = new LCG(223);
-  // Birch black streaks
-  for (let i = 0; i < 20; i++) {
-    const x = lcg.nextInt(0, 15);
-    const y = lcg.nextInt(0, 15);
-    const w = lcg.nextInt(2, 4);
-    for (let dx = 0; dx < w; dx++) {
-      if (x + dx < 16) setPixel(data, x + dx, y, [50, 50, 50]);
-    }
-  }
-  return data;
+  return genLogSide(PAL_BIRCH_BARK, 222, 'birch');
 }
 export function genPineLogTop(): TextureData {
-  return genLogTop([130, 90, 50], [100, 60, 30], 331);
+  return genLogTop(PAL_PINE_WOOD, PAL_PINE_BARK, 331);
 }
 export function genPineLogSide(): TextureData {
-  return genLogSide([80, 50, 30], [50, 30, 20], 332);
+  return genLogSide(PAL_PINE_BARK, 332, 'pine');
 }
 
-function genPlanks(baseColor: RGB, seed: number): TextureData {
+function genPlanks(woodPal: RGBA[], seed: number): TextureData {
   const data = createEmptyTexture();
-  const noise = new SimpleNoise(seed);
   const lcg = new LCG(seed);
+  fillSolid(data, woodPal[2]!);
 
-  for (let y = 0; y < 16; y++) {
-    const isBorder = y % 4 === 0;
+  for (let row = 0; row < 4; row++) {
+    const yBase = row * 4;
+    const seamX = lcg.nextInt(4, 12);
 
-    for (let x = 0; x < 16; x++) {
-      const n = noise.noise2D(x * 0.2, y * 0.1);
-      let offset = Math.floor(n * 15);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 16; x++) {
+        const isSeamY = y === 0;
+        const isSeamX = x === seamX;
 
-      // Plank shifting
-      const shift = lcg.nextInt(-5, 5);
-      offset += shift;
-
-      if (isBorder || x % 16 === 0) {
-        setPixel(data, x, y, [baseColor[0]! - 30, baseColor[1]! - 30, baseColor[2]! - 30]);
-      } else {
-        setPixel(data, x, y, [
-          baseColor[0]! + offset,
-          baseColor[1]! + offset,
-          baseColor[2]! + offset,
-        ]);
+        if (isSeamY || isSeamX) {
+          setPixel(data, x, yBase + y, woodPal[0]!);
+        } else if (y === 1 || x === seamX + 1) {
+          setPixel(data, x, yBase + y, woodPal[3]!);
+        } else {
+          if (lcg.nextFloat() < 0.1) {
+            setPixel(data, x, yBase + y, woodPal[1]!);
+          }
+        }
       }
     }
   }
@@ -114,33 +140,34 @@ function genPlanks(baseColor: RGB, seed: number): TextureData {
 }
 
 export function genOakPlanks(): TextureData {
-  return genPlanks([160, 130, 90], 441);
+  return genPlanks(PAL_OAK_WOOD, 441);
 }
 export function genBirchPlanks(): TextureData {
-  return genPlanks([210, 200, 170], 442);
+  return genPlanks(PAL_BIRCH_WOOD, 442);
 }
 export function genPinePlanks(): TextureData {
-  return genPlanks([140, 100, 60], 443);
+  return genPlanks(PAL_PINE_WOOD, 443);
 }
 
-function genLeaves(baseColor: RGB, seed: number): TextureData {
+function genLeaves(baseSeed: number): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(seed);
-  fillSolid(data, [0, 0, 0, 0]); // transparent base if cutout is needed, but for simplicity let's make it opaque or solid with holes
+  const lcg = new LCG(baseSeed);
+  fillSolid(data, PAL_LEAVES_TRANS);
 
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      if (lcg.nextFloat() < 0.2) {
-        // Transparent hole
-        setPixel(data, x, y, [0, 0, 0, 0]);
-      } else {
-        const offset = lcg.nextInt(-20, 20);
-        setPixel(data, x, y, [
-          baseColor[0]! + offset,
-          baseColor[1]! + offset,
-          baseColor[2]! + offset,
-          255,
-        ]);
+  for (let i = 0; i < 25; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const size = lcg.nextInt(2, 4);
+
+    for (let dy = 0; dy < size; dy++) {
+      for (let dx = 0; dx < size; dx++) {
+        if ((dx === 0 && dy === 0) || (dx === size - 1 && dy === size - 1)) continue;
+
+        let col = PAL_LEAVES[2]!;
+        if (dx === 1 && dy === 0) col = PAL_LEAVES[4]!;
+        else if (dx === size - 2 && dy === size - 1) col = PAL_LEAVES[0]!;
+
+        setPixel(data, (cx + dx) % 16, (cy + dy) % 16, col);
       }
     }
   }
@@ -148,11 +175,11 @@ function genLeaves(baseColor: RGB, seed: number): TextureData {
 }
 
 export function genOakLeaves(): TextureData {
-  return genLeaves([50, 120, 40], 551);
+  return genLeaves(551);
 }
 export function genBirchLeaves(): TextureData {
-  return genLeaves([80, 140, 60], 552);
+  return genLeaves(552);
 }
 export function genPineLeaves(): TextureData {
-  return genLeaves([40, 90, 40], 553);
+  return genLeaves(553);
 }
