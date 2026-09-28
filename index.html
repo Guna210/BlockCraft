@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlockCraft</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #000;
+      }
+      #game-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #error-screen {
+        display: none;
+        color: white;
+        font-family: sans-serif;
+        text-align: center;
+        padding-top: 20%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="error-screen">
+      <h1>WebGL2 is not supported</h1>
+      <p>Your browser or device does not support WebGL2, which is required to run BlockCraft.</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
