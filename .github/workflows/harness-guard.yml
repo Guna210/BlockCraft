@@ -1,0 +1,54 @@
+name: Harness Guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  check-harness-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check for harness label
+        id: check_label
+        run: |
+          HAS_LABEL=$(jq '.pull_request.labels | map(.name == "harness-change") | any' $GITHUB_EVENT_PATH)
+          echo "has_label=$HAS_LABEL" >> $GITHUB_OUTPUT
+
+      - name: Fetch changed files and check protection
+        if: steps.check_label.outputs.has_label != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const response = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            const changedFiles = response.data.map(f => f.filename);
+            const protectedPatterns = [
+              /^tests\/harness\//,
+              /^\.github\/workflows\//,
+              /^playwright\.config\./,
+              /^scripts\/verify\./,
+              /^scripts\/lint-placeholders\./,
+              /^SPEC\.md$/,
+              /^AGENTS\.md$/,
+            ];
+
+            const violations = changedFiles.filter(file =>
+              protectedPatterns.some(pattern => pattern.test(file))
+            );
+
+            if (violations.length > 0) {
+              core.setFailed(`Protected harness files were changed without the 'harness-change' label:\n${violations.join('\n')}`);
+            } else {
+              core.info('No protected harness files were changed.');
+            }
