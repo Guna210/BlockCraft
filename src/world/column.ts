@@ -7,16 +7,15 @@ export class ChunkColumn {
 
   public readonly cx: number;
   public readonly cz: number;
+  private readonly defaultStateId: number;
 
   private sections: (ChunkSection | null)[];
 
   constructor(cx: number, cz: number, defaultStateId: number = 0) {
     this.cx = cx;
     this.cz = cz;
-    this.sections = new Array(ChunkColumn.SECTION_COUNT);
-    for (let i = 0; i < ChunkColumn.SECTION_COUNT; i++) {
-      this.sections[i] = new ChunkSection(defaultStateId);
-    }
+    this.defaultStateId = defaultStateId;
+    this.sections = new Array(ChunkColumn.SECTION_COUNT).fill(null);
   }
 
   public getSection(sectionY: number): ChunkSection | null {
@@ -35,7 +34,7 @@ export class ChunkColumn {
     const localY = y & 15;
     const section = this.sections[sectionY];
 
-    if (!section) return 0;
+    if (!section) return this.defaultStateId;
     return section.getBlockStateId(x, localY, z);
   }
 
@@ -49,7 +48,10 @@ export class ChunkColumn {
 
     let section = this.sections[sectionY];
     if (!section) {
-      section = new ChunkSection(0);
+      if (stateId === this.defaultStateId) {
+        return; // Still uniform section matching defaultStateId, no need to allocate
+      }
+      section = new ChunkSection(this.defaultStateId);
       this.sections[sectionY] = section;
     }
 

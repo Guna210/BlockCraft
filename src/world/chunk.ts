@@ -1,43 +1,42 @@
 /**
  * ChunkSection represents a 16x16x16 block section within a chunk column.
  *
- * Palette Compression & Bit-Packing:
- * - Palette contains distinct block-state IDs (Uint16).
- * - Entry reference counts are tracked to allow palette compaction.
+ * Uniform & Palette Storage:
+ * - Uniform sections (bitsPerEntry === 0) store only `uniformStateId: number` (4 bytes).
+ *   `palette`, `refCounts`, and `indices` are null until a write introduces a second state ID.
+ * - Non-uniform sections allocate bit-packed index arrays and palette Uint16Arrays.
  * - Bit-width steps through:
- *   - 0 bits: Uniform section (1 entry, indices = null)
+ *   - 0 bits: Uniform section (palette, refCounts, indices = null)
  *   - 1 bit: <= 2 palette entries (512 bytes indices)
  *   - 2 bits: <= 4 palette entries (1024 bytes indices)
  *   - 4 bits: <= 16 palette entries (2048 bytes indices)
  *   - 8 bits: <= 256 palette entries (4096 bytes indices)
  *   - 16 bits: > 256 palette entries (8192 bytes indices)
+ * - When compaction reduces the live palette entry count to 1, buffers are freed
+ *   and the section returns to uniform (palette, refCounts, indices = null).
  *
  * Byte-Accounting Method for getByteSize():
- * Total Bytes = palette.byteLength + refCounts.byteLength + (indices ? indices.byteLength : 0) + OBJECT_OVERHEAD
- * where OBJECT_OVERHEAD = 32 bytes for JS class instance properties and header.
- * For an all-air or uniform section:
- * - palette (Uint16Array(1)): 2 bytes
- * - refCounts (Uint16Array(1)): 2 bytes
- * - indices: 0 bytes
- * - OBJECT_OVERHEAD: 32 bytes
- * Total: 36 bytes <= 64 bytes criterion.
+ * Total Bytes = (palette ? palette.byteLength : 0) + (refCounts ? refCounts.byteLength : 0) + (indices ? indices.byteLength : 0)
+ * For a uniform section (palette = null, refCounts = null, indices = null):
+ * getByteSize() returns 4 bytes (for uniformStateId).
  */
 
 export class ChunkSection {
   public static readonly SECTION_SIZE = 16;
   public static readonly TOTAL_BLOCKS = 4096; // 16 * 16 * 16
-  private static readonly OBJECT_OVERHEAD = 32;
 
-  private palette: Uint16Array;
-  private refCounts: Uint16Array;
-  private indices: Uint8Array | Uint16Array | null = null;
+  public uniformStateId: number;
+  public palette: Uint16Array | null = null;
+  public refCounts: Uint16Array | null = null;
+  public indices: Uint8Array | Uint16Array | null = null;
   private bitsPerEntry: number = 0;
 
   constructor(initialStateId: number = 0) {
-    this.palette = new Uint16Array([initialStateId]);
-    this.refCounts = new Uint16Array([ChunkSection.TOTAL_BLOCKS]);
-    this.bitsPerEntry = 0;
+    this.uniformStateId = initialStateId;
+    this.palette = null;
+    this.refCounts = null;
     this.indices = null;
+    this.bitsPerEntry = 0;
   }
 
   public getBitsPerEntry(): number {
@@ -45,51 +44,38 @@ export class ChunkSection {
   }
 
   public getPaletteSize(): number {
-    return this.palette.length;
+    return this.palette ? this.palette.length : 1;
   }
 
   public getPalette(): number[] {
-    return Array.from(this.palette);
+    return this.palette ? Array.from(this.palette) : [this.uniformStateId];
   }
 
   public getRefCount(paletteIdx: number): number {
+    if (!this.palette || !this.refCounts) {
+      return paletteIdx === 0 ? ChunkSection.TOTAL_BLOCKS : 0;
+    }
     return this.refCounts[paletteIdx] ?? 0;
   }
 
   public getByteSize(): number {
+    if (!this.palette || !this.refCounts) {
+      return 4; // Size of uniformStateId primitive
+    }
     const paletteBytes = this.palette.byteLength;
     const refCountBytes = this.refCounts.byteLength;
     const indicesBytes = this.indices ? this.indices.byteLength : 0;
-    return paletteBytes + refCountBytes + indicesBytes + ChunkSection.OBJECT_OVERHEAD;
+    return paletteBytes + refCountBytes + indicesBytes;
   }
 
   public getBlockStateId(x: number, y: number, z: number): number {
-    if (this.bitsPerEntry === 0 || !this.indices) {
-      return this.palette[0]!;
+    if (this.bitsPerEntry === 0 || !this.indices || !this.palette) {
+      return this.uniformStateId;
     }
 
     const idx = (y << 8) | (z << 4) | x;
-    let paletteIdx = 0;
-
-    if (this.bitsPerEntry === 1) {
-      const byteIdx = idx >> 3;
-      const bitOffset = idx & 7;
-      paletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 1;
-    } else if (this.bitsPerEntry === 2) {
-      const byteIdx = idx >> 2;
-      const bitOffset = (idx & 3) << 1;
-      paletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 3;
-    } else if (this.bitsPerEntry === 4) {
-      const byteIdx = idx >> 1;
-      const bitOffset = (idx & 1) << 2;
-      paletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 15;
-    } else if (this.bitsPerEntry === 8) {
-      paletteIdx = (this.indices as Uint8Array)[idx]!;
-    } else if (this.bitsPerEntry === 16) {
-      paletteIdx = (this.indices as Uint16Array)[idx]!;
-    }
-
-    return this.palette[paletteIdx]!;
+    const paletteIdx = this.readIndex(idx);
+    return this.palette[paletteIdx] ?? this.uniformStateId;
   }
 
   public setBlockStateId(x: number, y: number, z: number, newStateId: number): void {
@@ -97,6 +83,15 @@ export class ChunkSection {
     const oldStateId = this.getBlockStateId(x, y, z);
 
     if (oldStateId === newStateId) return;
+
+    // If currently uniform (palette === null), transition to 2-entry palette
+    if (this.palette === null) {
+      this.palette = new Uint16Array([this.uniformStateId, newStateId]);
+      this.refCounts = new Uint16Array([ChunkSection.TOTAL_BLOCKS - 1, 1]);
+      this.reallocateForBits(1); // 2 entries -> 1 bit/entry
+      this.writeIndex(idx, 1);
+      return;
+    }
 
     // Find or add palette index for newStateId
     let newPaletteIdx = -1;
@@ -116,8 +111,8 @@ export class ChunkSection {
         this.reallocateForBits(reqBits);
       }
 
-      const oldPalette = this.palette;
-      const oldRefCounts = this.refCounts;
+      const oldPalette = this.palette!;
+      const oldRefCounts = this.refCounts!;
 
       this.palette = new Uint16Array(newPaletteSize);
       this.refCounts = new Uint16Array(newPaletteSize);
@@ -131,41 +126,47 @@ export class ChunkSection {
     }
 
     // Get current palette index at (x,y,z)
-    let oldPaletteIdx = 0;
-    if (this.bitsPerEntry > 0 && this.indices) {
-      if (this.bitsPerEntry === 1) {
-        const byteIdx = idx >> 3;
-        const bitOffset = idx & 7;
-        oldPaletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 1;
-      } else if (this.bitsPerEntry === 2) {
-        const byteIdx = idx >> 2;
-        const bitOffset = (idx & 3) << 1;
-        oldPaletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 3;
-      } else if (this.bitsPerEntry === 4) {
-        const byteIdx = idx >> 1;
-        const bitOffset = (idx & 1) << 2;
-        oldPaletteIdx = ((this.indices as Uint8Array)[byteIdx]! >> bitOffset) & 15;
-      } else if (this.bitsPerEntry === 8) {
-        oldPaletteIdx = (this.indices as Uint8Array)[idx]!;
-      } else if (this.bitsPerEntry === 16) {
-        oldPaletteIdx = (this.indices as Uint16Array)[idx]!;
-      }
-    }
+    const oldPaletteIdx = this.readIndex(idx);
 
     // Write new palette index into indices buffer
     this.writeIndex(idx, newPaletteIdx);
 
     // Update reference counts
-    const oldVal = this.refCounts[oldPaletteIdx] ?? 0;
-    this.refCounts[oldPaletteIdx] = oldVal - 1;
+    if (this.refCounts) {
+      const oldVal = this.refCounts[oldPaletteIdx] ?? 0;
+      this.refCounts[oldPaletteIdx] = oldVal - 1;
 
-    const newVal = this.refCounts[newPaletteIdx] ?? 0;
-    this.refCounts[newPaletteIdx] = newVal + 1;
+      const newVal = this.refCounts[newPaletteIdx] ?? 0;
+      this.refCounts[newPaletteIdx] = newVal + 1;
 
-    // If old palette entry refCount reached 0, trigger palette compaction
-    if (this.refCounts[oldPaletteIdx] === 0) {
-      this.compactPalette();
+      // If old palette entry refCount reached 0, trigger palette compaction
+      if (this.refCounts[oldPaletteIdx] === 0) {
+        this.compactPalette();
+      }
     }
+  }
+
+  private readIndex(blockIdx: number): number {
+    if (!this.indices) return 0;
+
+    if (this.bitsPerEntry === 1) {
+      const byteIdx = blockIdx >> 3;
+      const bitOffset = blockIdx & 7;
+      return (((this.indices as Uint8Array)[byteIdx] ?? 0) >> bitOffset) & 1;
+    } else if (this.bitsPerEntry === 2) {
+      const byteIdx = blockIdx >> 2;
+      const bitOffset = (blockIdx & 3) << 1;
+      return (((this.indices as Uint8Array)[byteIdx] ?? 0) >> bitOffset) & 3;
+    } else if (this.bitsPerEntry === 4) {
+      const byteIdx = blockIdx >> 1;
+      const bitOffset = (blockIdx & 1) << 2;
+      return (((this.indices as Uint8Array)[byteIdx] ?? 0) >> bitOffset) & 15;
+    } else if (this.bitsPerEntry === 8) {
+      return (this.indices as Uint8Array)[blockIdx] ?? 0;
+    } else if (this.bitsPerEntry === 16) {
+      return (this.indices as Uint16Array)[blockIdx] ?? 0;
+    }
+    return 0;
   }
 
   private writeIndex(blockIdx: number, paletteIdx: number): void {
@@ -254,13 +255,12 @@ export class ChunkSection {
 
         this.writeIndex(i, pIdx);
       }
-    } else if (oldBits === 0) {
-      // All blocks had palette index 0
-      // UintTypedArray is initialized to 0 by default, so nothing extra needed!
     }
   }
 
   private compactPalette(): void {
+    if (!this.palette || !this.refCounts) return;
+
     // Count active palette entries
     let activeCount = 0;
     for (let i = 0; i < this.palette.length; i++) {
@@ -289,18 +289,22 @@ export class ChunkSection {
       }
     }
 
+    // If compacted down to 1 entry: return to uniform state!
+    if (activeCount === 1) {
+      this.uniformStateId = newPalette[0]!;
+      this.palette = null;
+      this.refCounts = null;
+      this.indices = null;
+      this.bitsPerEntry = 0;
+      return;
+    }
+
     const reqBits = this.calculateBitsPerEntry(activeCount);
     const oldIndices = this.indices;
     const oldBits = this.bitsPerEntry;
 
     this.palette = newPalette;
     this.refCounts = newRefCounts;
-
-    if (reqBits === 0) {
-      this.bitsPerEntry = 0;
-      this.indices = null;
-      return;
-    }
 
     // Allocate new indices buffer for reqBits
     this.bitsPerEntry = reqBits;
