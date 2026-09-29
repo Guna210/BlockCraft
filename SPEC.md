@@ -189,7 +189,7 @@ Available only when the page is loaded with `?debug=1`. This is the **only** way
 interface BlockCraftDebugAPI {
   // Lifecycle
   ready(): Promise<void>; // resolves when menu is interactive
-  createWorld(opts: { name: string; seed: string; mode: 'survival' | 'creative' }): Promise<void>;
+  createWorld(opts: { name: string; seed: string; mode: 'survival' | 'creative'; type?: 'default' | 'flat' }): Promise<void>; // type defaults to 'default'
   loadWorld(name: string): Promise<void>;
   waitForTerrain(radiusChunks: number): Promise<void>; // resolves when all chunks within radius are generated, lit, meshed, and uploaded
   save(): Promise<void>;
@@ -535,7 +535,7 @@ Order: M02a → M02b → M02c.
 | Task | Builds | Owns |
 | --- | --- | --- |
 | **M03a** — Noise & RNG | `engine/rng.ts` (`xoshiro128**`, hash functions) and `gen/noise.ts` from scratch: 2D/3D OpenSimplex2 or Simplex, value noise, fBm, domain warping, ridged noise. Pure modules with no rendering dependencies | Its own unit tests: determinism per seed, output ranges, no NaNs, rough isotropy |
-| **M03b** — Terrain shape & pipeline | `gen/pipeline.ts` as an ordered list of generation stages that later tasks append to; 3D density with continentalness, erosion and peaks/valleys splines (oceans, plains, hills, mountains, overhangs, cliffs); rivers; Foundation Stone floor at y 0–4; runs in the gen worker; `createWorld` uses it; `worldHash`, `getHeight` | Unit: `worldHash` identical across 3 runs and worker counts 1, 2, 4 |
+| **M03b** — Terrain shape & pipeline | `gen/pipeline.ts` as an ordered list of generation stages that later tasks append to; 3D density with continentalness, erosion and peaks/valleys splines (oceans, plains, hills, mountains, overhangs, cliffs); rivers; Foundation Stone floor at y 0–4; runs in the gen worker; `createWorld` uses it by default and gains an optional `type: 'default' \| 'flat'`, where `'flat'` is M02c's flat world; M03b changes `tests/e2e/m02.spec.ts` only to pass `type: 'flat'` to its `createWorld` calls; `worldHash`, `getHeight` | Unit: `worldHash` identical across 3 runs and worker counts 1, 2, 4 |
 | **M03c** — Biomes & surface rules | ≥ 12 biomes from Appendix C chosen by temperature, humidity and continentalness; smooth grass/foliage tint blending; per-biome surface rules; `getBiome`, `locate('biome', …)` | Unit: ≥ 10 biomes in 2048×2048 and ocean coverage 20–50 % |
 | **M03d** — Caves & aquifers | cheese caverns, spaghetti tunnels, worm carvers; aquifers at local water levels; lava lakes below y=12 | Unit: ≥ 3 % cave air and a connected system ≥ 500 blocks |
 | **M03e** — Ores | every Overworld ore in Appendix A.4 with depth distributions and vein shapes; `locate('ore', …)` | Unit: ore counts within ±25 % and none above max height |
