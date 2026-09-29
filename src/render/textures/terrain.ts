@@ -1,16 +1,24 @@
 // src/render/textures/terrain.ts
 import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb } from './noise';
 
-const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) => hexToRgb(h));
-const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) => hexToRgb(h));
-const PAL_GRASS = ['#3f6b24', '#4f842d', '#63a038', '#7cbd47', '#9bd35e'].map((h) => hexToRgb(h));
-const PAL_SAND = ['#b89c62', '#c9b27a', '#d8c28a', '#e6d29c', '#f1e2b4'].map((h) => hexToRgb(h));
-const PAL_GRAVEL = ['#4e4e53', '#67676d', '#818188', '#9c9ca3', '#7a6a5a', '#96836f'].map((h) =>
+export const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) =>
   hexToRgb(h),
 );
-const PAL_GLASS_FRAME = hexToRgb('#dff3fa', 220);
-const PAL_GLASS_GLINT = hexToRgb('#ffffff', 170);
-const PAL_GLASS_PANE = hexToRgb('#e9f6fb', 25);
+export const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) =>
+  hexToRgb(h),
+);
+export const PAL_GRASS = ['#3f6b24', '#4f842d', '#63a038', '#7cbd47', '#9bd35e'].map((h) =>
+  hexToRgb(h),
+);
+export const PAL_SAND = ['#b89c62', '#c9b27a', '#d8c28a', '#e6d29c', '#f1e2b4'].map((h) =>
+  hexToRgb(h),
+);
+export const PAL_GRAVEL = ['#4e4e53', '#67676d', '#818188', '#9c9ca3', '#7a6a5a', '#96836f'].map(
+  (h) => hexToRgb(h),
+);
+export const PAL_GLASS_FRAME = hexToRgb('#dff3fa', 220);
+export const PAL_GLASS_GLINT = hexToRgb('#ffffff', 170);
+export const PAL_GLASS_PANE = hexToRgb('#e9f6fb', 25);
 
 export function getStonePalette() {
   return PAL_STONE;

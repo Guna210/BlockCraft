@@ -1,23 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { textureGenerators } from '../../src/render/textures/index';
+import { textureGenerators, texturePalettes } from '../../src/render/textures/index';
 import { TextureData } from '../../src/render/textures/noise';
 
 describe('ART.md Automated Checks', () => {
-  it('every tile uses at most 12 unique colors', () => {
+  it("every pixel of every tile belongs to that tile's declared palette, max 12 colors per palette", () => {
     for (const [name, generator] of Object.entries(textureGenerators)) {
       if (!generator) continue;
+
+      const palette = texturePalettes[name];
+      expect(palette).toBeDefined();
+      expect(palette!.length, `${name} palette has more than 12 colors`).toBeLessThanOrEqual(12);
+
+      // Create a fast lookup set for the palette colors
+      const validColors = new Set<string>();
+      for (const color of palette!) {
+        validColors.add(`${color[0]},${color[1]},${color[2]},${color[3]}`);
+      }
+
       const result = generator();
       const textures = Array.isArray(result) ? result : [result];
 
       for (const tex of textures) {
-        const colors = new Set<string>();
         for (let i = 0; i < tex.length; i += 4) {
           const colorKey = `${tex[i]},${tex[i + 1]},${tex[i + 2]},${tex[i + 3]}`;
-          colors.add(colorKey);
+          expect(
+            validColors.has(colorKey),
+            `${name} contains an undeclared color ${colorKey}`,
+          ).toBe(true);
         }
-        expect(colors.size, `${name} has more than 12 colors: ${colors.size}`).toBeLessThanOrEqual(
-          12,
-        );
       }
     }
   });

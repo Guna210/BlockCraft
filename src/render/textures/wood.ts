@@ -1,19 +1,21 @@
 // src/render/textures/wood.ts
 import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb, RGBA } from './noise';
 
-const PAL_OAK_BARK = ['#1f140d', '#45311f', '#5b422a', '#7e5b3a'].map((h) => hexToRgb(h));
-const PAL_OAK_WOOD = ['#6e5230', '#8a6a3f', '#a5824f', '#bf9a62'].map((h) => hexToRgb(h));
+export const PAL_OAK_BARK = ['#1f140d', '#45311f', '#5b422a', '#7e5b3a'].map((h) => hexToRgb(h));
+export const PAL_OAK_WOOD = ['#6e5230', '#8a6a3f', '#a5824f', '#bf9a62'].map((h) => hexToRgb(h));
 
-const PAL_BIRCH_BARK = ['#2b2a28', '#4a4843', '#b9b5aa', '#d8d5cc', '#eeede6'].map((h) =>
+export const PAL_BIRCH_BARK = ['#2b2a28', '#4a4843', '#b9b5aa', '#d8d5cc', '#eeede6'].map((h) =>
   hexToRgb(h),
 );
-const PAL_BIRCH_WOOD = ['#a88f5f', '#c2aa76', '#d6c08b', '#e6d3a2'].map((h) => hexToRgb(h));
+export const PAL_BIRCH_WOOD = ['#a88f5f', '#c2aa76', '#d6c08b', '#e6d3a2'].map((h) => hexToRgb(h));
 
-const PAL_PINE_BARK = ['#110a06', '#35231a', '#4a3224', '#6c4c37'].map((h) => hexToRgb(h));
-const PAL_PINE_WOOD = ['#472c14', '#6f4c2e', '#855d39', '#ae7b4b'].map((h) => hexToRgb(h));
+export const PAL_PINE_BARK = ['#110a06', '#35231a', '#4a3224', '#6c4c37'].map((h) => hexToRgb(h));
+export const PAL_PINE_WOOD = ['#472c14', '#6f4c2e', '#855d39', '#ae7b4b'].map((h) => hexToRgb(h));
 
-const PAL_LEAVES = ['#24481a', '#2f5e22', '#3f7a2c', '#55983a', '#6fb14a'].map((h) => hexToRgb(h));
-const PAL_LEAVES_TRANS = hexToRgb('#000000', 0);
+export const PAL_LEAVES = ['#24481a', '#2f5e22', '#3f7a2c', '#55983a', '#6fb14a'].map((h) =>
+  hexToRgb(h),
+);
+export const PAL_LEAVES_TRANS = hexToRgb('#000000', 0);
 
 function genLogSide(barkPal: RGBA[], seed: number, style: 'oak' | 'birch' | 'pine'): TextureData {
   const data = createEmptyTexture();

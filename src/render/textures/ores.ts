@@ -2,12 +2,14 @@
 import { TextureData, LCG, setPixel, RGBA, hexToRgb } from './noise';
 import { genStone } from './terrain';
 
-const PAL_COAL = ['#18181b', '#2a2a30', '#44444c'].map((h) => hexToRgb(h));
-const PAL_COPPER = ['#8a4b2a', '#b4683a', '#d8874a', '#4f9a86', '#7cc7b0'].map((h) => hexToRgb(h)); // Includes patina
-const PAL_IRON = ['#8f735f', '#b89a86', '#d9bea8', '#f0dccb'].map((h) => hexToRgb(h));
-const PAL_GOLD = ['#9c6f12', '#c7951f', '#f0c43a', '#fff08a'].map((h) => hexToRgb(h));
-const PAL_LUMITE = ['#155f70', '#1f8fa6', '#37c8e0', '#9ff4ff'].map((h) => hexToRgb(h));
-const PAL_SKYSHARD = ['#3f1f6b', '#5a2d91', '#8a4fd1', '#c69bff'].map((h) => hexToRgb(h));
+export const PAL_COAL = ['#18181b', '#2a2a30', '#44444c'].map((h) => hexToRgb(h));
+export const PAL_COPPER = ['#8a4b2a', '#b4683a', '#d8874a', '#4f9a86', '#7cc7b0'].map((h) =>
+  hexToRgb(h),
+); // Includes patina
+export const PAL_IRON = ['#8f735f', '#b89a86', '#d9bea8', '#f0dccb'].map((h) => hexToRgb(h));
+export const PAL_GOLD = ['#9c6f12', '#c7951f', '#f0c43a', '#fff08a'].map((h) => hexToRgb(h));
+export const PAL_LUMITE = ['#155f70', '#1f8fa6', '#37c8e0', '#9ff4ff'].map((h) => hexToRgb(h));
+export const PAL_SKYSHARD = ['#3f1f6b', '#5a2d91', '#8a4fd1', '#c69bff'].map((h) => hexToRgb(h));
 
 function genOre(
   orePal: RGBA[],
