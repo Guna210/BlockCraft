@@ -155,7 +155,7 @@ function getNextDegree(mode: string, currentDegree: number, prng: PRNG): number 
 export function getScalePitches(mood: Mood): number[] {
   const intervals = MODES[mood.scale.mode as keyof typeof MODES] || MODES.major;
   if (!intervals) return [];
-  return intervals.map((i) => (mood.scale.root + i) % 12);
+  return intervals.map((i) => mood.scale.root + i);
 }
 
 export function composeSequence(seedStr: string, contextId: string): CompositionSequence {
@@ -179,17 +179,21 @@ export function composeSequence(seedStr: string, contextId: string): Composition
     const chordDuration = 4; // 4 beats per chord
 
     // Determine chord notes (triad: root, third, fifth relative to scale degree)
-    // For pentatonic, just use adjacent scale notes
+    // Wrap around intervals by adding 12 when index goes out of bounds
     const chordPitches = [
       scale[currentDegree] ?? scale[0] ?? 0,
-      scale[(currentDegree + 2) % numDegrees] ?? scale[0] ?? 0,
-      scale[(currentDegree + 4) % numDegrees] ?? scale[0] ?? 0,
+      currentDegree + 2 >= numDegrees
+        ? (scale[(currentDegree + 2) % numDegrees] ?? 0) + 12
+        : (scale[currentDegree + 2] ?? 0),
+      currentDegree + 4 >= numDegrees
+        ? (scale[(currentDegree + 4) % numDegrees] ?? 0) + 12
+        : (scale[currentDegree + 4] ?? 0),
     ];
 
     // Add pad notes
-    for (const pitchClass of chordPitches) {
+    for (const pitchVal of chordPitches) {
       // Pad plays in a lower octave
-      const padPitch = mood.register - 12 + pitchClass;
+      const padPitch = mood.register - 12 + pitchVal;
       events.push({
         startTime: currentTime,
         durationInBeats: chordDuration,
@@ -218,16 +222,16 @@ export function composeSequence(seedStr: string, contextId: string): Composition
       if (prng.next() < mood.density) {
         // Pick a note from the scale, weighted towards chord tones
         const isChordTone = prng.next() < 0.7;
-        let pitchClass = scale[0] ?? 0;
+        let pitchVal = scale[0] ?? 0;
         if (isChordTone) {
-          pitchClass = chordPitches[Math.floor(prng.next() * chordPitches.length)] ?? pitchClass;
+          pitchVal = chordPitches[Math.floor(prng.next() * chordPitches.length)] ?? pitchVal;
         } else {
-          pitchClass = scale[Math.floor(prng.next() * scale.length)] ?? pitchClass;
+          pitchVal = scale[Math.floor(prng.next() * scale.length)] ?? pitchVal;
         }
 
         // Pick an octave offset
         const octaveOffset = (Math.floor(prng.next() * 3) - 1) * 12; // -12, 0, 12
-        const melodyPitch = mood.register + 12 + pitchClass + octaveOffset;
+        const melodyPitch = mood.register + 12 + pitchVal + octaveOffset;
 
         events.push({
           startTime: currentTime + beatInChord,

@@ -8,7 +8,10 @@ describe('Music Moods', () => {
 
     for (const biome of BIOME_IDS) {
       const mood = getMood(biome);
+      // Because we now build pitches as root+interval without % 12 for chord shape reasons,
+      // we must explicitly apply % 12 here to test pitch-class uniqueness.
       const pcs = getScalePitches(mood)
+        .map((p) => p % 12)
         .sort((a, b) => a - b)
         .join(',');
 
@@ -73,7 +76,7 @@ describe('Music Composer', () => {
     for (const biome of ['plains', 'desert', 'rainforest', 'hollowdeep']) {
       const seq = composeSequence('test-seed', biome);
       const mood = getMood(biome);
-      const scalePcs = new Set(getScalePitches(mood));
+      const scalePcs = new Set(getScalePitches(mood).map((p) => p % 12));
 
       for (const event of seq.events) {
         const pc = event.pitch % 12;
