@@ -1,8 +1,10 @@
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from './world';
 import { setWorldInstance } from './world-instance';
-import { generateFlatWorld, genStats } from '../gen/flat';
 import { WorkerPool } from '../mesh/worker-pool';
+import { GenWorkerPool } from '../workers/gen-worker-pool';
+import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
+import { hashString } from '../engine/rng';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { TextureAtlas, ATLAS_MAX_MIP } from '../render/atlas';
 import { textureGenerators } from '../render/textures/index';
@@ -27,7 +29,14 @@ export class WorldManager {
   public chunkRenderer: ChunkRenderer | null = null;
   public workerPool: WorkerPool;
   public lightWorkerPool: LightWorkerPool;
+  public genWorkerPool: GenWorkerPool;
+  public pipeline: TerrainPipeline;
   public tables: MeshLookupTables | null = null;
+
+  public worldSeedStr: string = 'blockcraft-test-seed-42';
+  public worldSeed: number = hashString('blockcraft-test-seed-42');
+  public worldType: 'default' | 'flat' = 'default';
+  public mainThreadGenCount: number = 0;
 
   private pendingTerrainPromises: Map<string, Promise<void>> = new Map();
 
@@ -41,6 +50,65 @@ export class WorldManager {
   private constructor() {
     this.workerPool = new WorkerPool();
     this.lightWorkerPool = new LightWorkerPool();
+    this.genWorkerPool = new GenWorkerPool();
+    this.pipeline = createDefaultPipeline();
+  }
+
+  public setWorkerPoolSize(size: number): void {
+    this.genWorkerPool.setPoolSize(size);
+  }
+
+  public resetMainThreadGenCount(): void {
+    this.mainThreadGenCount = 0;
+  }
+
+  public resetWorldToEmpty(
+    seed = 'blockcraft-test-seed-42',
+    type: 'default' | 'flat' = 'default',
+  ): void {
+    this.worldSeedStr = seed;
+    this.worldSeed = hashString(seed);
+    this.worldType = type;
+    this.world = new World();
+    setWorldInstance(this.world);
+    this.mainThreadGenCount = 0;
+  }
+
+  public generateColumnMainThread(cx: number, cz: number): void {
+    if (!this.world) return;
+    this.mainThreadGenCount++;
+    const col = this.world.getColumn(cx, cz, true)!;
+    if (this.worldType === 'flat') {
+      const registry = BlockRegistry.getInstance();
+      const stoneState = registry.getDefaultStateId('stone') ?? 1;
+      const dirtState = registry.getDefaultStateId('dirt') ?? 1;
+      const grassState = registry.getDefaultStateId('grass_block') ?? 1;
+      for (let sy = 0; sy < 3; sy++) {
+        const sec = col.getOrCreateSection(sy);
+        if (sec) sec.fill(stoneState);
+      }
+      const sec3 = col.getOrCreateSection(3);
+      if (sec3) {
+        for (let yLocal = 0; yLocal <= 12; yLocal++) {
+          for (let z = 0; z < 16; z++) {
+            for (let x = 0; x < 16; x++) sec3.setBlockStateId(x, yLocal, z, stoneState);
+          }
+        }
+        for (let yLocal = 13; yLocal <= 15; yLocal++) {
+          for (let z = 0; z < 16; z++) {
+            for (let x = 0; x < 16; x++) sec3.setBlockStateId(x, yLocal, z, dirtState);
+          }
+        }
+      }
+      const sec4 = col.getOrCreateSection(4);
+      if (sec4) {
+        for (let z = 0; z < 16; z++) {
+          for (let x = 0; x < 16; x++) sec4.setBlockStateId(x, 0, z, grassState);
+        }
+      }
+    } else {
+      this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
+    }
   }
 
   public initGL(glWrapper: GLWrapper, camera: Camera): void {
@@ -121,12 +189,17 @@ export class WorldManager {
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
 
-  public async createWorld(_opts?: {
+  public async createWorld(opts?: {
     name?: string;
     seed?: string;
     mode?: 'survival' | 'creative';
+    type?: 'default' | 'flat';
   }): Promise<void> {
     const radiusChunks = 4;
+
+    this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
+    this.worldSeed = hashString(this.worldSeedStr);
+    this.worldType = opts?.type ?? 'default';
 
     // Clear cached terrain promises and dispose old GPU section meshes
     this.pendingTerrainPromises.clear();
@@ -134,9 +207,33 @@ export class WorldManager {
       this.chunkRenderer.clearAllMeshes();
     }
 
-    // Create flat world
-    this.world = generateFlatWorld(radiusChunks);
+    this.world = new World();
     setWorldInstance(this.world);
+
+    // Generate terrain via GenWorkerPool
+    const genPromises: Promise<void>[] = [];
+    for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+      for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+        const job = this.genWorkerPool
+          .enqueueGenJob(this.worldSeed, cx, cz, this.worldType)
+          .then((res) => {
+            const col = this.world!.getColumn(res.cx, res.cz, true)!;
+            for (const secData of res.sections) {
+              const sec = col.getOrCreateSection(secData.sy);
+              if (sec) {
+                if (secData.states) {
+                  sec.loadBlockStatesFrom(secData.states);
+                } else if (secData.uniformStateId !== null) {
+                  sec.fill(secData.uniformStateId);
+                }
+              }
+            }
+          });
+        genPromises.push(job);
+      }
+    }
+
+    await Promise.all(genPromises);
 
     // Initial light propagation for loaded world region via light worker
     await this.lightWorkerPool.propagateRegion(
@@ -148,9 +245,15 @@ export class WorldManager {
       this.world.getLightEngine().tables,
     );
 
-    // Set camera spawn at y=80 looking at horizon
+    // Set camera spawn position
     if (this.camera) {
-      this.camera.position = vec3.fromValues(0.5, 80.0, 0.5);
+      if (this.worldType === 'flat') {
+        this.camera.position = vec3.fromValues(0.5, 80.0, 0.5);
+      } else {
+        const ySurface = this.world.getHeight(0, 0);
+        // Spawn camera just above the terrain surface at documented land position (0.5, ySurface + 1.82, 0.5)
+        this.camera.position = vec3.fromValues(0.5, ySurface + 1.82, 0.5);
+      }
       this.camera.yaw = -Math.PI / 2;
       this.camera.pitch = -0.05;
       this.camera.updateView();
@@ -203,9 +306,9 @@ export class WorldManager {
 
   public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {
     return {
-      genMsP95: genStats.genMsP95,
+      genMsP95: this.genWorkerPool.genMsP95,
       meshMsP95: this.workerPool.meshMsP95,
-      queueLength: this.workerPool.queueLength,
+      queueLength: this.workerPool.queueLength + this.genWorkerPool.queueLength,
     };
   }
 

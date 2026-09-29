@@ -25,13 +25,66 @@ export interface SectionLightResult {
   cx: number;
   sy: number;
   cz: number;
-  lightData: Uint8Array;
+  lightData: Uint8Array | null;
+  uniformSky?: number;
 }
 
 export interface LightWorkerJobResponse {
   id: number;
   results: SectionLightResult[];
   duration: number;
+}
+
+class WorkerLightWorld {
+  private colMap = new Map<number, Map<number, Uint16Array | number>>();
+  private lastColKey = -1;
+  private lastSecMap: Map<number, Uint16Array | number> | undefined = undefined;
+
+  constructor(columnsData: ColumnLightData[]) {
+    for (const col of columnsData) {
+      const key = ((col.cx + 32768) << 16) | ((col.cz + 32768) & 0xffff);
+      const secMap = new Map<number, Uint16Array | number>();
+      for (const sec of col.sections) {
+        if (sec.states) {
+          secMap.set(sec.sy, sec.states);
+        } else if (sec.uniformStateId !== undefined) {
+          secMap.set(sec.sy, sec.uniformStateId);
+        }
+      }
+      this.colMap.set(key, secMap);
+    }
+  }
+
+  public hasColumn(cx: number, cz: number): boolean {
+    const key = ((cx + 32768) << 16) | ((cz + 32768) & 0xffff);
+    return this.colMap.has(key);
+  }
+
+  public getBlockStateId(x: number, y: number, z: number): number {
+    if (y < 0 || y > 319) return 0;
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const colKey = ((cx + 32768) << 16) | ((cz + 32768) & 0xffff);
+
+    let secMap = this.lastSecMap;
+    if (colKey !== this.lastColKey) {
+      secMap = this.colMap.get(colKey);
+      this.lastColKey = colKey;
+      this.lastSecMap = secMap;
+    }
+    if (!secMap) return 0;
+
+    const sy = y >> 4;
+    const secData = secMap.get(sy);
+    if (secData === undefined) return 0;
+    if (typeof secData === 'number') return secData;
+
+    const localX = ((x % 16) + 16) % 16;
+    const localY = y & 15;
+    const localZ = ((z % 16) + 16) % 16;
+    const idx = (localY << 8) | (localZ << 4) | localX;
+    return secData[idx] ?? 0;
+  }
 }
 
 export function performBulkLightPropagation(
@@ -41,35 +94,28 @@ export function performBulkLightPropagation(
   maxCz: number,
   columnsData: ColumnLightData[],
   tables: LightLookupTables,
+  worldTarget?: World,
 ): { results: SectionLightResult[]; lightEngine: LightEngine; world: World } {
-  const world = new World();
-  const lightEngine = world.getLightEngine();
-  lightEngine.tables = tables;
+  const world = worldTarget ?? new World();
 
-  lightEngine.suspendUpdates();
-
-  for (const colData of columnsData) {
-    for (const secData of colData.sections) {
-      if (secData.states) {
-        let idx = 0;
-        for (let ly = 0; ly < 16; ly++) {
-          const y = (secData.sy << 4) + ly;
-          for (let lz = 0; lz < 16; lz++) {
-            const z = colData.cz * 16 + lz;
-            for (let lx = 0; lx < 16; lx++) {
-              const x = colData.cx * 16 + lx;
-              const stateId = secData.states[idx++]!;
-              world.setBlockStateId(x, y, z, stateId);
-            }
-          }
+  if (!worldTarget) {
+    for (const colData of columnsData) {
+      const col = world.getColumn(colData.cx, colData.cz, true)!;
+      for (const secData of colData.sections) {
+        if (secData.states) {
+          const sec = col.getOrCreateSection(secData.sy);
+          sec?.loadBlockStatesFrom(secData.states);
+        } else if (secData.uniformStateId !== undefined && secData.uniformStateId !== 0) {
+          const sec = col.getOrCreateSection(secData.sy, secData.uniformStateId);
+          sec?.fill(secData.uniformStateId);
         }
-      } else if (secData.uniformStateId !== undefined && secData.uniformStateId !== 0) {
-        const col = world.getColumn(colData.cx, colData.cz, true)!;
-        const sec = col.getOrCreateSection(secData.sy, secData.uniformStateId);
-        sec?.fill(secData.uniformStateId);
       }
     }
   }
+
+  const lightEngine = world.getLightEngine();
+  lightEngine.tables = tables;
+  lightEngine.suspendUpdates();
 
   lightEngine.bulkPropagateRegion(world, minCx, minCz, maxCx, maxCz);
 
@@ -80,8 +126,27 @@ export function performBulkLightPropagation(
       for (let sy = 0; sy < 20; sy++) {
         const sec = lightEngine.storage.getSection(cx, sy, cz);
         if (sec) {
-          const copy = new Uint8Array(sec);
-          results.push({ cx, sy, cz, lightData: copy });
+          // Check if uniform
+          let isUniform = true;
+          const firstVal = sec[0]!;
+          for (let i = 1; i < 4096; i++) {
+            if (sec[i] !== firstVal) {
+              isUniform = false;
+              break;
+            }
+          }
+          if (isUniform) {
+            results.push({
+              cx,
+              sy,
+              cz,
+              lightData: null,
+              uniformSky: firstVal & 0x0f,
+            });
+          } else {
+            const copy = new Uint8Array(sec);
+            results.push({ cx, sy, cz, lightData: copy });
+          }
         }
       }
     }
@@ -98,17 +163,51 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
       event.data as LightWorkerJobRequest;
 
     const start = performance.now();
-    const { results } = performBulkLightPropagation(
-      minCx,
-      minCz,
-      maxCx,
-      maxCz,
-      columnsData,
-      tables,
-    );
+    const workerWorld = new WorkerLightWorld(columnsData);
+    const lightEngine = new LightEngine(tables);
+
+    // Propagate light using pure WorkerLightWorld
+    lightEngine.bulkPropagateRegion(workerWorld as unknown as World, minCx, minCz, maxCx, maxCz);
     const duration = performance.now() - start;
 
-    const transferables: Transferable[] = results.map((r) => r.lightData.buffer);
+    const results: SectionLightResult[] = [];
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cz = minCz; cz <= maxCz; cz++) {
+        if (!workerWorld.hasColumn(cx, cz)) continue;
+        for (let sy = 0; sy < 20; sy++) {
+          const sec = lightEngine.storage.getSection(cx, sy, cz);
+          if (sec) {
+            let isUniform = true;
+            const firstVal = sec[0]!;
+            for (let i = 1; i < 4096; i++) {
+              if (sec[i] !== firstVal) {
+                isUniform = false;
+                break;
+              }
+            }
+            if (isUniform) {
+              results.push({
+                cx,
+                sy,
+                cz,
+                lightData: null,
+                uniformSky: firstVal & 0x0f,
+              });
+            } else {
+              const copy = new Uint8Array(sec);
+              results.push({ cx, sy, cz, lightData: copy });
+            }
+          }
+        }
+      }
+    }
+
+    const transferables: Transferable[] = [];
+    for (const r of results) {
+      if (r.lightData) {
+        transferables.push(r.lightData.buffer);
+      }
+    }
 
     ctx.postMessage({ id, results, duration } as LightWorkerJobResponse, transferables);
   };

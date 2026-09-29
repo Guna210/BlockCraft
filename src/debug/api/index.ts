@@ -2,9 +2,10 @@ import { api } from './core';
 import { audioApi } from './audio';
 import { look } from './camera';
 import { showTestScene } from './test-scene';
-import { getBlock, setBlock, fill } from './world';
+import { getBlock, setBlock, fill, getHeight, worldHash } from './world';
 import { getLight } from './light';
 import { wireframe, setWireframe } from './wireframe';
+import { setWorkerPoolSize, getMainThreadGenCount, resetMainThreadGenCount } from './workers';
 import { WorldManager } from '../../world/world-manager';
 
 declare global {
@@ -23,6 +24,11 @@ export function initDebugApi() {
     api.setBlock = setBlock;
     api.fill = fill;
     api.getLight = getLight;
+    api.getHeight = getHeight;
+    api.worldHash = worldHash;
+    api.setWorkerPoolSize = setWorkerPoolSize;
+    api.getMainThreadGenCount = getMainThreadGenCount;
+    api.resetMainThreadGenCount = resetMainThreadGenCount;
     api.wireframe = wireframe;
     api.setWireframe = setWireframe;
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);

@@ -46,14 +46,7 @@ export class LightWorkerPool {
             sections.push({ sy, states: null, uniformStateId: sec.uniformStateId });
           } else {
             const states = new Uint16Array(4096);
-            let idx = 0;
-            for (let ly = 0; ly < 16; ly++) {
-              for (let lz = 0; lz < 16; lz++) {
-                for (let lx = 0; lx < 16; lx++) {
-                  states[idx++] = sec.getBlockStateId(lx, ly, lz);
-                }
-              }
-            }
+            sec.copyBlockStatesTo(states);
             sections.push({ sy, states });
           }
         }
@@ -80,8 +73,10 @@ export class LightWorkerPool {
           // Apply returned lit section light buffers to main thread LightStorage
           const storage = world.getLightEngine().storage;
           for (const res of response.results) {
-            const sec = storage.getOrCreateSection(res.cx, res.sy, res.cz);
-            sec.set(res.lightData);
+            const sec = storage.getOrCreateSection(res.cx, res.sy, res.cz, res.uniformSky ?? 0);
+            if (res.lightData) {
+              sec.set(res.lightData);
+            }
           }
 
           resolve();

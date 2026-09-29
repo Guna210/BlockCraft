@@ -23,6 +23,18 @@
       "bottom": "dirt"
     }
   },
+  "foundation_stone": {
+    "hardness": 1e9,
+    "blastResistance": 1e9,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "foundation_stone",
+      "side": "foundation_stone",
+      "bottom": "foundation_stone"
+    }
+  },
   "stone": {
     "hardness": 1.5,
     "blastResistance": 6.0,

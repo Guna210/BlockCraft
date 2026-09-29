@@ -7,6 +7,7 @@ export interface BlockCraftDebugAPI {
     name?: string;
     seed?: string;
     mode?: 'survival' | 'creative';
+    type?: 'default' | 'flat';
   }) => Promise<void>;
   waitForTerrain?: (radiusChunks: number) => Promise<void>;
   getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
@@ -34,6 +35,11 @@ export interface BlockCraftDebugAPI {
     id: string,
   ) => void;
   getLight?: (x: number, y: number, z: number) => { sky: number; block: number };
+  getHeight?: (x: number, z: number) => number;
+  worldHash?: (x1: number, z1: number, x2: number, z2: number) => string;
+  setWorkerPoolSize?: (size: number) => void;
+  getMainThreadGenCount?: () => number;
+  resetMainThreadGenCount?: () => void;
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;

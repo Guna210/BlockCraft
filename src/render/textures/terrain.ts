@@ -4,6 +4,9 @@ import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb } f
 export const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) =>
   hexToRgb(h),
 );
+export const PAL_FOUNDATION_STONE = ['#222427', '#323538', '#424549', '#54575b', '#6a6d71'].map(
+  (h) => hexToRgb(h),
+);
 export const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) =>
   hexToRgb(h),
 );
@@ -22,6 +25,39 @@ export const PAL_GLASS_PANE = hexToRgb('#e9f6fb', 25);
 
 export function getStonePalette() {
   return PAL_STONE;
+}
+
+export function genFoundationStone(seed: number = 45678): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(seed);
+  fillSolid(data, PAL_FOUNDATION_STONE[1]!);
+
+  for (let i = 0; i < 8; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = PAL_FOUNDATION_STONE[lcg.nextInt(0, PAL_FOUNDATION_STONE.length - 1)]!;
+
+    const clusterSize = lcg.nextInt(3, 8);
+    let px = cx,
+      py = cy;
+    for (let j = 0; j < clusterSize; j++) {
+      setPixel(data, ((px % 16) + 16) % 16, ((py % 16) + 16) % 16, color);
+      px += lcg.nextInt(-1, 1);
+      py += lcg.nextInt(-1, 1);
+    }
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const cx = lcg.nextInt(0, 15);
+    const cy = lcg.nextInt(0, 15);
+    const color = PAL_FOUNDATION_STONE[0]!;
+    const dx = lcg.nextInt(-1, 1);
+    const dy = lcg.nextInt(1, 2);
+    setPixel(data, cx, cy, color);
+    setPixel(data, (cx + dx + 16) % 16, (cy + dy + 16) % 16, color);
+  }
+
+  return data;
 }
 
 export function genStone(seed: number = 45678): TextureData {

@@ -768,23 +768,29 @@ export class LightEngine {
     const boundarySpillBlockSources: Array<{ x: number; y: number; z: number; oldLight: number }> =
       [];
 
-    // Check boundary columns around the region
-    for (let bx = minX - 1; bx <= maxX + 1; bx++) {
-      for (let bz = minZ - 1; bz <= maxZ + 1; bz++) {
-        const isBoundary = bx < minX || bx > maxX || bz < minZ || bz > maxZ;
-        if (!isBoundary) continue;
+    const checkBoundaryShaft = (bx: number, bz: number) => {
+      const bCx = Math.floor(bx / 16);
+      const bCz = Math.floor(bz / 16);
+      if (!world.hasColumn(bCx, bCz)) return;
 
-        const bCx = Math.floor(bx / 16);
-        const bCz = Math.floor(bz / 16);
-        if (!world.hasColumn(bCx, bCz)) continue;
-
-        for (let y = ChunkColumn.MIN_Y; y <= ChunkColumn.MAX_Y; y++) {
-          const bl = this.storage.getBlockLight(bx, y, bz);
-          if (bl > 0) {
-            boundarySpillBlockSources.push({ x: bx, y, z: bz, oldLight: bl });
-          }
+      for (let y = ChunkColumn.MIN_Y; y <= ChunkColumn.MAX_Y; y++) {
+        const bl = this.storage.getBlockLight(bx, y, bz);
+        if (bl > 0) {
+          boundarySpillBlockSources.push({ x: bx, y, z: bz, oldLight: bl });
         }
       }
+    };
+
+    // Check boundary shafts on North/South edges
+    for (let bx = minX - 1; bx <= maxX + 1; bx++) {
+      checkBoundaryShaft(bx, minZ - 1);
+      checkBoundaryShaft(bx, maxZ + 1);
+    }
+
+    // Check boundary shafts on East/West edges
+    for (let bz = minZ; bz <= maxZ; bz++) {
+      checkBoundaryShaft(minX - 1, bz);
+      checkBoundaryShaft(maxX + 1, bz);
     }
 
     // Clear all section light storage inside region
