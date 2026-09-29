@@ -3,6 +3,27 @@ export interface BlockCraftDebugAPI {
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
+  getBlock?: (
+    x: number,
+    y: number,
+    z: number,
+  ) => { id: string; state: Record<string, string | number> };
+  setBlock?: (
+    x: number,
+    y: number,
+    z: number,
+    id: string,
+    state?: Record<string, string | number>,
+  ) => void;
+  fill?: (
+    x1: number,
+    y1: number,
+    z1: number,
+    x2: number,
+    y2: number,
+    z2: number,
+    id: string,
+  ) => void;
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;
