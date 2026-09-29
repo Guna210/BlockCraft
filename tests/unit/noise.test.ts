@@ -5,7 +5,6 @@ import {
   makeValueNoise2D,
   makeValueNoise3D,
   makeFbm2D,
-  makeRidged3D,
 } from '../../src/gen/noise';
 
 describe('Noise Functions', () => {
