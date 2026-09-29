@@ -76,6 +76,46 @@ export class ChunkSection {
     return paletteBytes + refCountBytes + indicesBytes;
   }
 
+  public copyBlockStatesTo(out: Uint16Array): void {
+    if (this.bitsPerEntry === 0 || !this.indices || !this.palette) {
+      out.fill(this.uniformStateId);
+      return;
+    }
+    for (let y = 0; y < 16; y++) {
+      for (let z = 0; z < 16; z++) {
+        for (let x = 0; x < 16; x++) {
+          const idx = (y << 8) | (z << 4) | x;
+          const pIdx = this.readIndex(idx);
+          out[idx] = this.palette[pIdx] ?? this.uniformStateId;
+        }
+      }
+    }
+  }
+
+  public loadBlockStatesFrom(states: Uint16Array): void {
+    const firstState = states[0]!;
+    let isUniform = true;
+    for (let i = 1; i < 4096; i++) {
+      if (states[i] !== firstState) {
+        isUniform = false;
+        break;
+      }
+    }
+    if (isUniform) {
+      this.fill(firstState);
+      return;
+    }
+    this.fill(firstState);
+    for (let y = 0; y < 16; y++) {
+      for (let z = 0; z < 16; z++) {
+        for (let x = 0; x < 16; x++) {
+          const idx = (y << 8) | (z << 4) | x;
+          this.setBlockStateId(x, y, z, states[idx]!);
+        }
+      }
+    }
+  }
+
   public getBlockStateId(x: number, y: number, z: number): number {
     if (this.bitsPerEntry === 0 || !this.indices || !this.palette) {
       return this.uniformStateId;

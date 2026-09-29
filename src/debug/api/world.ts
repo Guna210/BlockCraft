@@ -1,5 +1,6 @@
 import { getWorldInstance, setWorldInstance } from '../../world/world-instance';
 import { World } from '../../world/world';
+import { WorldManager } from '../../world/world-manager';
 
 export function setDebugWorldInstance(world: World): void {
   setWorldInstance(world);
@@ -33,4 +34,15 @@ export function fill(
   id: string,
 ): void {
   getWorldInstance().fill(x1, y1, z1, x2, y2, z2, id);
+}
+
+export function getHeight(x: number, z: number): number {
+  return getWorldInstance().getHeight(x, z);
+}
+
+export function worldHash(x1: number, z1: number, x2: number, z2: number): string {
+  const world = getWorldInstance();
+  return world.worldHash(x1, z1, x2, z2, (cx, cz) => {
+    WorldManager.getInstance().generateColumnMainThread(cx, cz);
+  });
 }

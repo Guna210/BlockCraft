@@ -60,6 +60,7 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
         name: 'test-flat-world',
         seed: 'blockcraft-test-seed-42',
         mode: 'survival',
+        type: 'flat',
       });
     });
 
@@ -109,6 +110,7 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
         name: 'test-flat-world',
         seed: 'blockcraft-test-seed-42',
         mode: 'survival',
+        type: 'flat',
       });
       await window.__blockcraft!.waitForTerrain!(4);
     });
@@ -131,6 +133,7 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
         name: 'test-worker-world',
         seed: 'blockcraft-test-seed-42',
         mode: 'survival',
+        type: 'flat',
       });
     });
 
@@ -170,7 +173,7 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
   }) => {
     // World 1: create world and place a stone block at (0, 70, 0)
     await page.evaluate(async () => {
-      await window.__blockcraft!.createWorld!({ name: 'world1' });
+      await window.__blockcraft!.createWorld!({ name: 'world1', type: 'flat' });
       window.__blockcraft!.setBlock!(0, 70, 0, 'stone');
     });
 
@@ -179,7 +182,7 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
 
     // World 2: create world again in same session
     await page.evaluate(async () => {
-      await window.__blockcraft!.createWorld!({ name: 'world2' });
+      await window.__blockcraft!.createWorld!({ name: 'world2', type: 'flat' });
       await window.__blockcraft!.waitForTerrain!(4);
     });
 

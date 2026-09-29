@@ -30,6 +30,86 @@ export class World {
     return { cx, cz, localX, localZ };
   }
 
+  public hasColumn(cx: number, cz: number): boolean {
+    const key = World.getChunkKey(cx, cz);
+    return this.columns.has(key);
+  }
+
+  public getHeight(x: number, z: number): number {
+    for (let y = 319; y >= 0; y--) {
+      const stateId = this.getBlockStateId(x, y, z);
+      if (stateId === 0) continue;
+      const resolved = this.registry.getResolvedState(stateId);
+      if (!resolved) continue;
+      const blockId = resolved.blockId;
+      if (blockId !== 'air' && blockId !== 'water' && blockId !== 'lava') {
+        return y;
+      }
+    }
+    return 0;
+  }
+
+  public worldHash(
+    x1: number,
+    z1: number,
+    x2: number,
+    z2: number,
+    onDemandGenerateColumn?: (cx: number, cz: number) => void,
+  ): string {
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minZ = Math.min(z1, z2);
+    const maxZ = Math.max(z1, z2);
+
+    let h = 0x811c9dc5;
+
+    for (let z = minZ; z <= maxZ; z++) {
+      for (let x = minX; x <= maxX; x++) {
+        const cx = Math.floor(x / 16);
+        const cz = Math.floor(z / 16);
+
+        if (!this.hasColumn(cx, cz) && onDemandGenerateColumn) {
+          onDemandGenerateColumn(cx, cz);
+        }
+
+        for (let y = 0; y < 320; y++) {
+          const stateId = this.getBlockStateId(x, y, z);
+          const resolved = this.registry.getResolvedState(stateId);
+          const blockId = resolved ? resolved.blockId : 'air';
+
+          for (let i = 0; i < blockId.length; i++) {
+            h ^= blockId.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+          }
+
+          if (resolved && resolved.properties) {
+            const keys = Object.keys(resolved.properties).sort();
+            for (const k of keys) {
+              const v = String(resolved.properties[k]);
+              h ^= 0x3a; // ':'
+              h = Math.imul(h, 0x01000193);
+              for (let i = 0; i < k.length; i++) {
+                h ^= k.charCodeAt(i);
+                h = Math.imul(h, 0x01000193);
+              }
+              h ^= 0x3d; // '='
+              h = Math.imul(h, 0x01000193);
+              for (let i = 0; i < v.length; i++) {
+                h ^= v.charCodeAt(i);
+                h = Math.imul(h, 0x01000193);
+              }
+            }
+          }
+
+          h ^= 0x2c; // ','
+          h = Math.imul(h, 0x01000193);
+        }
+      }
+    }
+
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+
   public getColumn(cx: number, cz: number, createIfMissing: boolean = true): ChunkColumn | null {
     const key = World.getChunkKey(cx, cz);
     let col = this.columns.get(key);
