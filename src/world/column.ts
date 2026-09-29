@@ -25,6 +25,16 @@ export class ChunkColumn {
     return this.sections[sectionY] ?? null;
   }
 
+  public getOrCreateSection(sectionY: number, initialStateId: number = 0): ChunkSection | null {
+    if (sectionY < 0 || sectionY >= ChunkColumn.SECTION_COUNT) {
+      return null;
+    }
+    if (!this.sections[sectionY]) {
+      this.sections[sectionY] = new ChunkSection(initialStateId);
+    }
+    return this.sections[sectionY]!;
+  }
+
   public getBlockStateId(x: number, y: number, z: number): number {
     if (y < ChunkColumn.MIN_Y || y > ChunkColumn.MAX_Y) {
       return 0; // Air for out of bounds y

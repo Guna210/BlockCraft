@@ -3,6 +3,15 @@ export interface BlockCraftDebugAPI {
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
+  createWorld?: (opts?: {
+    name?: string;
+    seed?: string;
+    mode?: 'survival' | 'creative';
+  }) => Promise<void>;
+  waitForTerrain?: (radiusChunks: number) => Promise<void>;
+  getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
+  wireframe?: (enabled?: boolean) => boolean;
+  setWireframe?: (enabled: boolean) => void;
   getBlock?: (
     x: number,
     y: number,
