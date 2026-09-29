@@ -1,9 +1,12 @@
 import { initDebugApi } from './debug/api/index';
 import { markReady, renderStats } from './debug/api/core';
 import { setTestSceneInitializer } from './debug/api/test-scene';
+import { setActiveCamera } from './debug/api/camera';
 import { GLWrapper } from './render/gl';
 import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
+import { Camera } from './render/camera';
+import { WorldManager } from './world/world-manager';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -56,6 +59,12 @@ function main() {
   const input = new InputEngine(canvas);
   input.attach();
 
+  const camera = new Camera(window.innerWidth / window.innerHeight);
+  setActiveCamera(camera);
+
+  const worldManager = WorldManager.getInstance();
+  worldManager.initGL(glWrapper, camera);
+
   let testScene: TestScene | null = null;
   let firstFrameResolve: (() => void) | null = null;
 
@@ -73,6 +82,7 @@ function main() {
     if (testScene) {
       testScene.camera.setAspect(canvas.width / canvas.height);
     }
+    camera.setAspect(canvas.width / canvas.height);
   }
 
   window.addEventListener('resize', resize);
@@ -103,6 +113,9 @@ function main() {
         firstFrameResolve();
         firstFrameResolve = null;
       }
+    } else if (worldManager.world) {
+      camera.update(dt / 1000, input);
+      worldManager.render();
     }
 
     const endTime = performance.now();

@@ -39,6 +39,14 @@ export class ChunkSection {
     this.bitsPerEntry = 0;
   }
 
+  public fill(stateId: number): void {
+    this.uniformStateId = stateId;
+    this.palette = null;
+    this.refCounts = null;
+    this.indices = null;
+    this.bitsPerEntry = 0;
+  }
+
   public getBitsPerEntry(): number {
     return this.bitsPerEntry;
   }

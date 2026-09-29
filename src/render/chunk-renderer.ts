@@ -1,0 +1,365 @@
+import { mat4 } from 'gl-matrix';
+import { GLWrapper } from './gl';
+import { TextureAtlas } from './atlas';
+import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
+import { renderStats } from '../debug/api/core';
+import { wireframeEnabled } from '../debug/api/wireframe';
+
+const VS_CHUNK = `#version 300 es
+precision highp float;
+
+layout(location = 0) in uint a_word0;
+layout(location = 1) in uint a_word1;
+
+uniform mat4 u_viewProj;
+uniform vec3 u_sectionOrigin;
+
+out vec3 v_normal;
+out vec2 v_unwrappedUV;
+flat out uint v_tileIndex;
+
+const vec3 NORMALS[6] = vec3[6](
+  vec3(1.0, 0.0, 0.0),   // 0: +X
+  vec3(-1.0, 0.0, 0.0),  // 1: -X
+  vec3(0.0, 1.0, 0.0),   // 2: +Y
+  vec3(0.0, -1.0, 0.0),  // 3: -Y
+  vec3(0.0, 0.0, 1.0),   // 4: +Z
+  vec3(0.0, 0.0, -1.0)   // 5: -Z
+);
+
+void main() {
+  uint x = a_word0 & 31u;
+  uint y = (a_word0 >> 5u) & 31u;
+  uint z = (a_word0 >> 10u) & 31u;
+  uint normalIdx = (a_word0 >> 15u) & 7u;
+
+  uint tileIdx = a_word1 & 65535u;
+  float u_local = float((a_word1 >> 16u) & 255u);
+  float v_local = float((a_word1 >> 24u) & 255u);
+
+  vec3 localPos = vec3(float(x), float(y), float(z));
+  vec3 worldPos = u_sectionOrigin + localPos;
+
+  v_normal = NORMALS[normalIdx];
+  v_unwrappedUV = vec2(u_local, v_local);
+  v_tileIndex = tileIdx;
+
+  gl_Position = u_viewProj * vec4(worldPos, 1.0);
+}
+`;
+
+const FS_CHUNK = `#version 300 es
+precision highp float;
+
+in vec3 v_normal;
+in vec2 v_unwrappedUV;
+flat in uint v_tileIndex;
+
+uniform sampler2D u_atlasSampler;
+uniform vec2 u_atlasSize;
+uniform int u_isCutout;
+uniform int u_isWireframe;
+
+out vec4 fragColor;
+
+void main() {
+  if (u_isWireframe == 1) {
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  // Grid math derivation of atlas tile rect
+  uint cellsPerRow = uint(u_atlasSize.x / 24.0);
+  uint col = v_tileIndex % cellsPerRow;
+  uint row = v_tileIndex / cellsPerRow;
+
+  vec2 tilePos = vec2(float(col) * 24.0 + 4.0, float(row) * 24.0 + 4.0);
+  vec2 tileSize = vec2(16.0, 16.0);
+
+  vec2 uMinVmin = tilePos / u_atlasSize;
+  vec2 uSizeVsize = tileSize / u_atlasSize;
+
+  vec2 localUV = fract(v_unwrappedUV);
+
+  vec2 dUVdx = dFdx(v_unwrappedUV) * uSizeVsize;
+  vec2 dUVdy = dFdy(v_unwrappedUV) * uSizeVsize;
+
+  vec2 halfTexel = vec2(0.5) / u_atlasSize;
+  vec2 tileUV = clamp(uMinVmin + localUV * uSizeVsize, uMinVmin + halfTexel, uMinVmin + uSizeVsize - halfTexel);
+
+  vec4 texColor = textureGrad(u_atlasSampler, tileUV, dUVdx, dUVdy);
+
+  if (u_isCutout == 1 && texColor.a < 0.5) {
+    discard;
+  }
+
+  vec3 lightDir = normalize(vec3(0.4, 0.8, 0.5));
+  float diff = max(dot(v_normal, lightDir), 0.35);
+
+  fragColor = vec4(texColor.rgb * diff, texColor.a);
+}
+`;
+
+export interface GPUBucketMesh {
+  vao: WebGLVertexArrayObject;
+  vbo: WebGLBuffer;
+  ebo: WebGLBuffer;
+  lineEbo: WebGLBuffer;
+  indexCount: number;
+  lineIndexCount: number;
+}
+
+export interface GPUSectionMesh {
+  key: string;
+  sx: number;
+  sy: number;
+  sz: number;
+  opaque: GPUBucketMesh | null;
+  cutout: GPUBucketMesh | null;
+  translucent: GPUBucketMesh | null;
+}
+
+export class ChunkRenderer {
+  private glWrapper: GLWrapper;
+  private program: WebGLProgram;
+
+  private locViewProj: WebGLUniformLocation;
+  private locSectionOrigin: WebGLUniformLocation;
+  private locAtlasSampler: WebGLUniformLocation;
+  private locAtlasSize: WebGLUniformLocation;
+  private locIsCutout: WebGLUniformLocation;
+  private locIsWireframe: WebGLUniformLocation;
+
+  private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
+
+  constructor(glWrapper: GLWrapper) {
+    this.glWrapper = glWrapper;
+    this.program = this.glWrapper.createProgram(VS_CHUNK, FS_CHUNK);
+
+    const gl = this.glWrapper.gl;
+    this.locViewProj = gl.getUniformLocation(this.program, 'u_viewProj')!;
+    this.locSectionOrigin = gl.getUniformLocation(this.program, 'u_sectionOrigin')!;
+    this.locAtlasSampler = gl.getUniformLocation(this.program, 'u_atlasSampler')!;
+    this.locAtlasSize = gl.getUniformLocation(this.program, 'u_atlasSize')!;
+    this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
+    this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
+  }
+
+  public uploadSectionMesh(
+    sx: number,
+    sy: number,
+    sz: number,
+    meshData: SectionMeshData,
+  ): GPUSectionMesh {
+    const key = `${sx},${sy},${sz}`;
+    this.removeSectionMesh(key);
+
+    const opaque = this.createGPUBucketMesh(meshData.opaque);
+    const cutout = this.createGPUBucketMesh(meshData.cutout);
+    const translucent = this.createGPUBucketMesh(meshData.translucent);
+
+    const gpuMesh: GPUSectionMesh = {
+      key,
+      sx,
+      sy,
+      sz,
+      opaque,
+      cutout,
+      translucent,
+    };
+
+    this.sectionMeshes.set(key, gpuMesh);
+    return gpuMesh;
+  }
+
+  public removeSectionMesh(key: string): void {
+    const existing = this.sectionMeshes.get(key);
+    if (!existing) return;
+
+    this.freeGPUBucketMesh(existing.opaque);
+    this.freeGPUBucketMesh(existing.cutout);
+    this.freeGPUBucketMesh(existing.translucent);
+
+    this.sectionMeshes.delete(key);
+  }
+
+  public clearAllMeshes(): void {
+    for (const key of Array.from(this.sectionMeshes.keys())) {
+      this.removeSectionMesh(key);
+    }
+  }
+
+  private createGPUBucketMesh(bucket: MeshBucketData): GPUBucketMesh | null {
+    if (bucket.quadCount === 0 || bucket.vertices.length === 0) {
+      return null;
+    }
+
+    const gl = this.glWrapper.gl;
+    const vao = this.glWrapper.createVertexArray();
+    const vbo = this.glWrapper.createBuffer();
+    const ebo = this.glWrapper.createBuffer();
+    const lineEbo = this.glWrapper.createBuffer();
+
+    gl.bindVertexArray(vao);
+
+    // VBO (packed 2xuint32 per vertex)
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, bucket.vertices, gl.STATIC_DRAW);
+
+    // Stride = 8 bytes (2 uint32s)
+    const stride = 8;
+
+    // Attribute 0: word0 (1 unsigned int)
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribIPointer(0, 1, gl.UNSIGNED_INT, stride, 0);
+
+    // Attribute 1: word1 (1 unsigned int)
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, stride, 4);
+
+    // EBO (Triangles: 6 Uint32 indices per quad)
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, bucket.indices, gl.STATIC_DRAW);
+
+    // Line EBO (Lines: 8 Uint32 indices per quad)
+    const lineIndices = new Uint32Array(bucket.quadCount * 8);
+    for (let q = 0; q < bucket.quadCount; q++) {
+      const base = q * 4;
+      const o = q * 8;
+      lineIndices[o] = base;
+      lineIndices[o + 1] = base + 1;
+      lineIndices[o + 2] = base + 1;
+      lineIndices[o + 3] = base + 2;
+      lineIndices[o + 4] = base + 2;
+      lineIndices[o + 5] = base + 3;
+      lineIndices[o + 6] = base + 3;
+      lineIndices[o + 7] = base;
+    }
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineEbo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
+
+    // Re-bind triangle EBO as default for VAO
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+
+    gl.bindVertexArray(null);
+
+    return {
+      vao,
+      vbo,
+      ebo,
+      lineEbo,
+      indexCount: bucket.indices.length,
+      lineIndexCount: lineIndices.length,
+    };
+  }
+
+  private freeGPUBucketMesh(bucketMesh: GPUBucketMesh | null): void {
+    if (!bucketMesh) return;
+    this.glWrapper.deleteVertexArray(bucketMesh.vao);
+    this.glWrapper.deleteBuffer(bucketMesh.vbo);
+    this.glWrapper.deleteBuffer(bucketMesh.ebo);
+    this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
+  }
+
+  public render(viewProjMatrix: mat4, atlasTexture: WebGLTexture, atlas: TextureAtlas): void {
+    const gl = this.glWrapper.gl;
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+
+    gl.useProgram(this.program);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+    gl.uniform1i(this.locAtlasSampler, 0);
+    gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
+    gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
+
+    let drawCalls = 0;
+    let triangles = 0;
+
+    const meshes = Array.from(this.sectionMeshes.values());
+
+    // 1. Opaque Pass
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
+    gl.uniform1i(this.locIsCutout, 0);
+    gl.uniform1i(this.locIsWireframe, 0);
+
+    for (const mesh of meshes) {
+      if (mesh.opaque) {
+        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+        gl.bindVertexArray(mesh.opaque.vao);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.opaque.ebo);
+        this.glWrapper.drawElements(gl.TRIANGLES, mesh.opaque.indexCount, gl.UNSIGNED_INT, 0);
+        drawCalls++;
+        triangles += mesh.opaque.indexCount / 3;
+      }
+    }
+
+    // 2. Cutout Pass
+    gl.uniform1i(this.locIsCutout, 1);
+    for (const mesh of meshes) {
+      if (mesh.cutout) {
+        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+        gl.bindVertexArray(mesh.cutout.vao);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.cutout.ebo);
+        this.glWrapper.drawElements(gl.TRIANGLES, mesh.cutout.indexCount, gl.UNSIGNED_INT, 0);
+        drawCalls++;
+        triangles += mesh.cutout.indexCount / 3;
+      }
+    }
+
+    // 3. Translucent Pass
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.uniform1i(this.locIsCutout, 0);
+
+    for (const mesh of meshes) {
+      if (mesh.translucent) {
+        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+        gl.bindVertexArray(mesh.translucent.vao);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.translucent.ebo);
+        this.glWrapper.drawElements(gl.TRIANGLES, mesh.translucent.indexCount, gl.UNSIGNED_INT, 0);
+        drawCalls++;
+        triangles += mesh.translucent.indexCount / 3;
+      }
+    }
+
+    // Restore depth write
+    gl.depthMask(true);
+
+    // 4. Wireframe Overlay Pass (if enabled)
+    if (wireframeEnabled) {
+      gl.uniform1i(this.locIsWireframe, 1);
+      gl.uniform1i(this.locIsCutout, 0);
+      gl.enable(gl.POLYGON_OFFSET_FILL);
+      gl.polygonOffset(-1.0, -1.0);
+
+      for (const mesh of meshes) {
+        const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
+        for (const bucket of buckets) {
+          if (bucket) {
+            gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+            gl.bindVertexArray(bucket.vao);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
+            this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
+            drawCalls++;
+          }
+        }
+      }
+
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+    }
+
+    gl.bindVertexArray(null);
+
+    renderStats.drawCalls = drawCalls;
+    renderStats.triangles = triangles;
+    renderStats.chunksLoaded = meshes.length;
+    renderStats.chunksMeshed = meshes.length;
+    renderStats.chunksVisible = meshes.length;
+  }
+}
