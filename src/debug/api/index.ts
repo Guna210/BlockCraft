@@ -3,6 +3,7 @@ import { audioApi } from './audio';
 import { look } from './camera';
 import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill } from './world';
+import { getLight } from './light';
 import { wireframe, setWireframe } from './wireframe';
 import { WorldManager } from '../../world/world-manager';
 
@@ -21,6 +22,7 @@ export function initDebugApi() {
     api.getBlock = getBlock;
     api.setBlock = setBlock;
     api.fill = fill;
+    api.getLight = getLight;
     api.wireframe = wireframe;
     api.setWireframe = setWireframe;
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);

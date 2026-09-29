@@ -33,6 +33,7 @@ export interface BlockCraftDebugAPI {
     z2: number,
     id: string,
   ) => void;
+  getLight?: (x: number, y: number, z: number) => { sky: number; block: number };
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;

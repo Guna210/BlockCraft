@@ -10,6 +10,8 @@ import { TextureData } from '../render/textures/noise';
 import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
 import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
+import { getLightEngineInstance } from './lighting';
+import { LightWorkerPool } from '../workers/light-worker-pool';
 import { buildPaddedSection } from './padded';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
@@ -25,6 +27,7 @@ export class WorldManager {
   public atlasTexture: WebGLTexture | null = null;
   public chunkRenderer: ChunkRenderer | null = null;
   public workerPool: WorkerPool;
+  public lightWorkerPool: LightWorkerPool;
   public tables: MeshLookupTables | null = null;
 
   private pendingTerrainPromises: Map<string, Promise<void>> = new Map();
@@ -38,6 +41,7 @@ export class WorldManager {
 
   private constructor() {
     this.workerPool = new WorkerPool();
+    this.lightWorkerPool = new LightWorkerPool();
   }
 
   public initGL(glWrapper: GLWrapper, camera: Camera): void {
@@ -134,6 +138,16 @@ export class WorldManager {
     // Create flat world
     this.world = generateFlatWorld(radiusChunks);
     setWorldInstance(this.world);
+
+    // Initial light propagation for loaded world region via light worker
+    await this.lightWorkerPool.propagateRegion(
+      this.world,
+      -radiusChunks,
+      -radiusChunks,
+      radiusChunks,
+      radiusChunks,
+      getLightEngineInstance().tables,
+    );
 
     // Set camera spawn at y=80 looking at horizon
     if (this.camera) {

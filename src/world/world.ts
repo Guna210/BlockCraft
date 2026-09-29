@@ -1,5 +1,6 @@
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
+import { getLightEngineInstance } from './lighting';
 
 export class World {
   private columns: Map<string, ChunkColumn> = new Map();
@@ -28,6 +29,10 @@ export class World {
     const localX = ((x % 16) + 16) % 16;
     const localZ = ((z % 16) + 16) % 16;
     return { cx, cz, localX, localZ };
+  }
+
+  public hasColumn(cx: number, cz: number): boolean {
+    return this.columns.has(World.getChunkKey(cx, cz));
   }
 
   public getColumn(cx: number, cz: number, createIfMissing: boolean = true): ChunkColumn | null {
@@ -59,7 +64,15 @@ export class World {
 
     const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
     const col = this.getColumn(cx, cz, true)!;
+    const oldStateId = col.getBlockStateId(localX, y, localZ);
+    if (oldStateId === stateId) return;
+
     col.setBlockStateId(localX, y, localZ, stateId);
+    getLightEngineInstance().onBlockChange(this, x, y, z, oldStateId, stateId);
+  }
+
+  public getLight(x: number, y: number, z: number): { sky: number; block: number } {
+    return getLightEngineInstance().getLight(this, x, y, z);
   }
 
   public getBlock(
@@ -138,6 +151,9 @@ export class World {
       throw new Error(`Unknown block ID '${blockId}'.`);
     }
 
+    const lightEngine = getLightEngineInstance();
+    lightEngine.suspendUpdates();
+
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         for (let z = minZ; z <= maxZ; z++) {
@@ -145,5 +161,7 @@ export class World {
         }
       }
     }
+
+    lightEngine.resumeUpdates(this, minX, minY, minZ, maxX, maxY, maxZ);
   }
 }
