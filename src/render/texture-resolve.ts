@@ -52,6 +52,5 @@ export function resolveTexture(name: string, atlas: TextureAtlas): AtlasRect {
     return sentinelRect;
   }
 
-  // Fallback default rect if sentinel isn't present in the atlas map
-  return { x: 0, y: 0, w: 16, h: 16 };
+  throw new Error(`Texture atlas missing sentinel texture tile '${SENTINEL_KEY}'`);
 }

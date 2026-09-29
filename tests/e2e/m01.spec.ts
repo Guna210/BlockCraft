@@ -11,10 +11,10 @@ test('M01: 5x5 texture grid test scene renders correctly and updates on camera r
   assertAndSaveScreenshot,
   getRenderStats,
 }) => {
-  // Wait for a rendered frame
-  await page.evaluate(
-    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
-  );
+  // Trigger test scene rendering and wait for first rendered frame
+  await page.evaluate(async () => {
+    await window.__blockcraft!.showTestScene!();
+  });
 
   const stats = await getRenderStats();
   expect(stats.missingTextures).toEqual([]);
@@ -29,9 +29,9 @@ test('M01: 5x5 texture grid test scene renders correctly and updates on camera r
   assertNoMissingTexture(png1);
   assertColorVariance(png1, 18);
 
-  // Rotate camera 90 degrees (from yaw -PI/2 to 0) via debug look API
+  // Rotate camera 90 degrees (from yaw -PI/2 to 0) via debug look API directly
   await page.evaluate(() => {
-    window.__blockcraft?.look?.(0, -0.55);
+    window.__blockcraft!.look!(0, -0.6);
   });
 
   // Wait for a rendered frame

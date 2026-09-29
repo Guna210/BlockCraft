@@ -1,5 +1,6 @@
 import { initDebugApi } from './debug/api/index';
 import { markReady, renderStats } from './debug/api/core';
+import { setTestSceneInitializer } from './debug/api/test-scene';
 import { GLWrapper } from './render/gl';
 import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
@@ -55,13 +56,23 @@ function main() {
   const input = new InputEngine(canvas);
   input.attach();
 
-  const testScene = new TestScene(glWrapper, window.innerWidth / window.innerHeight);
+  let testScene: TestScene | null = null;
+  let firstFrameResolve: (() => void) | null = null;
+
+  setTestSceneInitializer(() => {
+    return new Promise<void>((resolve) => {
+      testScene = new TestScene(glWrapper, window.innerWidth / window.innerHeight);
+      firstFrameResolve = resolve;
+    });
+  });
 
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     gl!.viewport(0, 0, canvas.width, canvas.height);
-    testScene.camera.setAspect(canvas.width / canvas.height);
+    if (testScene) {
+      testScene.camera.setAspect(canvas.width / canvas.height);
+    }
   }
 
   window.addEventListener('resize', resize);
@@ -84,14 +95,14 @@ function main() {
     const dt = time - lastTime;
     lastTime = time;
 
-    const clearColor = glWrapper.gl.getParameter(glWrapper.gl.COLOR_CLEAR_VALUE) as Float32Array;
-    const isBlack = clearColor[0] === 0 && clearColor[1] === 0 && clearColor[2] === 0;
-    const isMagenta = clearColor[0] === 1 && clearColor[1] === 0 && clearColor[2] === 1;
-
     glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
 
-    if (!isBlack && !isMagenta) {
+    if (testScene) {
       testScene.render(dt / 1000, input);
+      if (firstFrameResolve) {
+        firstFrameResolve();
+        firstFrameResolve = null;
+      }
     }
 
     const endTime = performance.now();

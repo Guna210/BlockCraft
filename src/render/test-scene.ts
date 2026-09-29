@@ -136,10 +136,10 @@ export class TestScene {
 
     // 4. Setup Camera
     this.camera = new Camera(aspect);
-    // Camera starting position: looking down at 30-45 deg onto 5x5 grid
-    this.camera.position = vec3.fromValues(0, 3.2, 4.8);
+    // Camera starting position: looking down at 30-45 deg onto 5x5 grid with margin
+    this.camera.position = vec3.fromValues(0, 4.5, 5.8);
     this.camera.yaw = -Math.PI / 2;
-    this.camera.pitch = -0.52;
+    this.camera.pitch = -0.6;
     this.camera.updateView();
     setActiveCamera(this.camera);
 
