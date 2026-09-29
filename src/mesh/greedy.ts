@@ -8,7 +8,7 @@ export const DEFAULT_TINT_INDEX = 0;
 
 export interface MeshBucketData {
   vertices: Uint32Array;
-  indices: Uint16Array;
+  indices: Uint32Array;
   vertexCount: number;
   quadCount: number;
 }
@@ -23,7 +23,6 @@ export interface MeshLookupTables {
   isOpaqueCube: Uint8Array; // numStates
   renderLayer: Uint8Array; // numStates (0=none/air, 1=opaque, 2=cutout, 3=translucent)
   translucentGroup: Uint16Array; // numStates (unique ID per translucent type, 0 for non-translucent)
-  isLeaves: Uint8Array; // numStates (1 if leaves, 0 otherwise)
   logAxis: Uint8Array; // numStates (0=y or none, 1=x, 2=z)
   tileIndices: Uint16Array; // numStates * 6 (faces: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
 }
@@ -44,7 +43,6 @@ export function buildMeshLookupTables(
   const isOpaqueCube = new Uint8Array(numStates);
   const renderLayer = new Uint8Array(numStates);
   const translucentGroup = new Uint16Array(numStates);
-  const isLeaves = new Uint8Array(numStates);
   const logAxis = new Uint8Array(numStates);
   const tileIndices = new Uint16Array(numStates * 6);
 
@@ -59,7 +57,6 @@ export function buildMeshLookupTables(
 
     const def = resolved.definition;
     isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
-    isLeaves[stateId] = def.id.includes('leaves') ? 1 : 0;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -97,7 +94,6 @@ export function buildMeshLookupTables(
     isOpaqueCube,
     renderLayer,
     translucentGroup,
-    isLeaves,
     logAxis,
     tileIndices,
   };
@@ -134,13 +130,16 @@ export function shouldCullFace(
 const SCRATCH_MASK = new Uint32Array(16 * 16);
 const SCRATCH_VISITED = new Uint8Array(16 * 16);
 
-// Pre-allocated per-bucket vertex/index buffers (12,288 max quads = 49,152 verts = 98,304 uint32s)
-const MAX_VERTS_PER_BUCKET = 65536 * 2;
-const MAX_INDICES_PER_BUCKET = 65536 * 3;
+// Pre-allocated per-bucket vertex/index buffers
+// Max quads per bucket: 24,576 (e.g., 16³ leaf-leaf checkerboard has all 24,576 faces exposed)
+// 24,576 quads * 4 verts/quad = 98,304 verts * 2 uint32/vert = 196,608 uint32s
+// 24,576 quads * 6 indices/quad = 147,456 uint32s
+const MAX_VERTS_PER_BUCKET = 24576 * 4 * 2; // 196,608
+const MAX_INDICES_PER_BUCKET = 24576 * 6; // 147,456
 
 interface BucketScratch {
   vertices: Uint32Array;
-  indices: Uint16Array;
+  indices: Uint32Array;
   vertOffset: number;
   indexOffset: number;
   quadCount: number;
@@ -149,7 +148,7 @@ interface BucketScratch {
 function createBucketScratch(): BucketScratch {
   return {
     vertices: new Uint32Array(MAX_VERTS_PER_BUCKET),
-    indices: new Uint16Array(MAX_INDICES_PER_BUCKET),
+    indices: new Uint32Array(MAX_INDICES_PER_BUCKET),
     vertOffset: 0,
     indexOffset: 0,
     quadCount: 0,
@@ -437,7 +436,7 @@ function finishBucketData(scratch: BucketScratch): MeshBucketData {
 function emptyBucketData(): MeshBucketData {
   return {
     vertices: new Uint32Array(0),
-    indices: new Uint16Array(0),
+    indices: new Uint32Array(0),
     vertexCount: 0,
     quadCount: 0,
   };

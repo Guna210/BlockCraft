@@ -5,7 +5,7 @@
 
 ## Overview
 
-This decision record defines the packed vertex layout and merge key rules used by the BlockCraft greedy mesher (`src/mesh/greedy.ts`) as specified in SPEC §3.2.
+This decision record defines the packed vertex layout, Uint32 index format, and merge key rules used by the BlockCraft greedy mesher (`src/mesh/greedy.ts`) as specified in SPEC §3.2.
 
 ---
 
@@ -36,7 +36,13 @@ Each vertex is packed into two 32-bit unsigned integers (64 bits total) to optim
 
 ---
 
-## 2. Quad-Local UV Mapping in Block Units
+## 2. Uint32 Element Indexing (`Uint32Array`)
+
+Bucket indices are packed into a `Uint32Array` (uint32) rather than `Uint16Array` because worst-case cutout/translucent sections (such as a 16³ leaf-leaf checkerboard) produce up to 24,576 quads ($24,576 \times 4 = 98,304$ vertices and $24,576 \times 6 = 147,456$ indices). Since 98,304 exceeds the 65,535 limit of uint16 indices, uint32 indices and `gl.UNSIGNED_INT` draw calls are required.
+
+---
+
+## 3. Quad-Local UV Mapping in Block Units
 
 Quad-local UVs carry the width and height of the merged quad in integer block units (e.g. a 5×3 merged quad has corners with U = 0..5 and V = 0..3).
 
@@ -44,7 +50,7 @@ The M02c shader uses these quad-local block coordinates combined with the tile i
 
 ---
 
-## 3. Merge Key Rules
+## 4. Merge Key Rules
 
 For task M02b, two coplanar faces on the same slice plane merge into a single quad if and only if:
 1. They share the same face direction (normal index 0–5).
@@ -57,7 +63,7 @@ In M05b (Smooth Lighting & Ambient Occlusion), per-vertex sky light, block light
 
 ---
 
-## 4. Default Constants in M02b
+## 5. Default Constants in M02b
 
 Since lighting and AO calculation systems do not exist prior to M05, the following named constants are used during meshing:
 - `DEFAULT_SKY_LIGHT = 15` (fully lit sky)

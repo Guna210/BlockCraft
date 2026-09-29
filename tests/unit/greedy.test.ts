@@ -53,7 +53,7 @@ describe('Greedy Mesher (M02b)', () => {
     expect(mesh.cutout.quadCount).toBe(0);
     expect(mesh.translucent.quadCount).toBe(0);
     expect(mesh.opaque.vertices.length).toBe(6 * 4 * 2); // 6 quads * 4 verts * 2 uint32
-    expect(mesh.opaque.indices.length).toBe(6 * 6); // 6 quads * 6 uint16 indices
+    expect(mesh.opaque.indices.length).toBe(6 * 6); // 6 quads * 6 uint32 indices
   });
 
   it('3D checkerboard gives the correct naive face count (12,288 quads)', () => {
@@ -93,6 +93,142 @@ describe('Greedy Mesher (M02b)', () => {
     expect(mesh.translucent.quadCount).toBe(0);
     expect(mesh.opaque.vertices.length).toBe(12288 * 4 * 2);
     expect(mesh.opaque.indices.length).toBe(12288 * 6);
+  });
+
+  it('16³ leaf-leaf checkerboard produces 24,576 cutout quads without buffer overflow', () => {
+    const padded = new Uint16Array(PADDED_SECTION_VOLUME);
+    const oakLeaves = registry.getStateId('oak_leaves')!;
+    const birchLeaves = registry.getStateId('birch_leaves')!;
+    expect(oakLeaves).toBeDefined();
+    expect(birchLeaves).toBeDefined();
+
+    // Fill entire 16x16x16 section with alternating oak_leaves and birch_leaves
+    // Leaves keep faces between each other, so all 4,096 blocks expose all 6 faces = 24,576 quads!
+    for (let z = 0; z < 16; z++) {
+      for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < 16; x++) {
+          const state = (x + y + z) % 2 === 0 ? oakLeaves : birchLeaves;
+          padded[x + 1 + 18 * (y + 1 + 18 * (z + 1))] = state;
+        }
+      }
+    }
+
+    const mesh = greedyMesh(padded, tables);
+
+    expect(mesh.cutout.quadCount).toBe(24576);
+    expect(mesh.cutout.vertexCount).toBe(98304); // 24,576 quads * 4
+    expect(mesh.cutout.vertices.length).toBe(196608); // 98,304 verts * 2 uint32
+    expect(mesh.cutout.indices.length).toBe(147456); // 24,576 quads * 6 uint32
+
+    // Check maximum index value
+    let maxIdx = 0;
+    for (let i = 0; i < mesh.cutout.indices.length; i++) {
+      if (mesh.cutout.indices[i]! > maxIdx) {
+        maxIdx = mesh.cutout.indices[i]!;
+      }
+    }
+    expect(maxIdx).toBe(98303);
+  });
+
+  it('randomized reference test: total quad area per direction matches brute-force exposed face count over 60 random mixed sections', () => {
+    const allStates = registry.getAllStateIds();
+
+    for (let seed = 1; seed <= 60; seed++) {
+      const padded = new Uint16Array(PADDED_SECTION_VOLUME);
+
+      // Populate random section
+      for (let pz = 1; pz <= 16; pz++) {
+        for (let py = 1; py <= 16; py++) {
+          for (let px = 1; px <= 16; px++) {
+            // Include air (0) plus random states
+            const raw = (px * 31 + py * 17 + pz * 13 + seed * 97) % (allStates.length + 5);
+            if (raw < allStates.length) {
+              padded[px + 18 * (py + 18 * pz)] = allStates[raw]!;
+            } else {
+              padded[px + 18 * (py + 18 * pz)] = 0; // Air
+            }
+          }
+        }
+      }
+
+      // Brute-force count exposed faces per direction f (0..5)
+      const bruteForceCounts = [0, 0, 0, 0, 0, 0];
+      for (let f = 0; f < 6; f++) {
+        for (let z = 0; z < 16; z++) {
+          for (let y = 0; y < 16; y++) {
+            for (let x = 0; x < 16; x++) {
+              const selfPx = x + 1;
+              const selfPy = y + 1;
+              const selfPz = z + 1;
+              let neighPx = selfPx;
+              let neighPy = selfPy;
+              let neighPz = selfPz;
+
+              switch (f) {
+                case 0:
+                  neighPx++;
+                  break; // East (+X)
+                case 1:
+                  neighPx--;
+                  break; // West (-X)
+                case 2:
+                  neighPy++;
+                  break; // Top (+Y)
+                case 3:
+                  neighPy--;
+                  break; // Bottom (-Y)
+                case 4:
+                  neighPz++;
+                  break; // South (+Z)
+                case 5:
+                  neighPz--;
+                  break; // North (-Z)
+              }
+
+              const selfState = padded[selfPx + 18 * (selfPy + 18 * selfPz)]!;
+              const neighState = padded[neighPx + 18 * (neighPy + 18 * neighPz)]!;
+
+              if (!shouldCullFace(selfState, neighState, tables)) {
+                const currentCount = bruteForceCounts[f];
+                if (currentCount !== undefined) {
+                  bruteForceCounts[f] = currentCount + 1;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Run greedy mesher
+      const mesh = greedyMesh(padded, tables);
+
+      // Sum quad surface area per direction across all 3 buckets
+      const quadAreaPerDirection = [0, 0, 0, 0, 0, 0];
+      const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
+
+      for (const bucket of buckets) {
+        const verts = bucket.vertices;
+        for (let i = 0; i < verts.length; i += 8) {
+          // 8 uint32s per quad (4 verts * 2 uint32/vert)
+          const normalIndex = (verts[i]! >> 15) & 7;
+
+          // Word 1 of vert 0 (offset i+1) has u0, v0
+          // Word 1 of vert 2 (offset i+5) has u2, v2 (which is W, H for unrotated or H, W for rotated)
+          const u2 = (verts[i + 5]! >> 16) & 255;
+          const v2 = (verts[i + 5]! >> 24) & 255;
+          const quadArea = u2 * v2;
+
+          const currentArea = quadAreaPerDirection[normalIndex];
+          if (currentArea !== undefined) {
+            quadAreaPerDirection[normalIndex] = currentArea + quadArea;
+          }
+        }
+      }
+
+      for (let f = 0; f < 6; f++) {
+        expect(quadAreaPerDirection[f]).toBe(bruteForceCounts[f]);
+      }
+    }
   });
 
   it('two full-stone sections side by side produce no faces on their shared boundary', () => {
