@@ -6,60 +6,23 @@ import { TerrainStage } from './pipeline';
 
 export const SEA_LEVEL = 64;
 
-const HEIGHTS_SCRATCH = new Float32Array(256);
-const RIVER_SCRATCH = new Float32Array(256);
-
-// Spline function for Continentalness -> Base Height
-function splineContinentalness(c: number): number {
-  if (c < -0.45) {
-    // Deep Ocean: 32 - 48
-    const t = (c + 1.0) / 0.55;
-    return 32 + t * 16;
-  } else if (c < -0.15) {
-    // Ocean / Shore: 48 - 62
-    const t = (c + 0.45) / 0.3;
-    return 48 + t * 14;
-  } else if (c < 0.2) {
-    // Plains / Lowlands: 65 - 78
-    const t = (c + 0.15) / 0.35;
-    return 65 + t * 13;
-  } else if (c < 0.55) {
-    // Hills / Highlands: 78 - 115
-    const t = (c - 0.2) / 0.35;
-    return 78 + t * 37;
-  } else {
-    // High Mountains: 115 - 170
-    const t = Math.min(1.0, (c - 0.55) / 0.45);
-    return 115 + t * 55;
-  }
+interface CachedSamplers {
+  fbmCont: (x: number, y: number) => number;
+  fbmErosion: (x: number, y: number) => number;
+  ridgedPeaks: (x: number, y: number) => number;
+  ridgedRivers: (x: number, y: number) => number;
+  fbm3D: (x: number, y: number, z: number) => number;
+  s2Foundation: (x: number, y: number) => number;
 }
 
-// Spline function for Erosion -> Height Variation Factor
-function splineErosion(e: number): number {
-  // e high (> 0.3): flat, low variation
-  // e low (< -0.3): high variation, steep cliffs
-  if (e > 0.3) {
-    return 0.3;
-  } else if (e < -0.3) {
-    return 1.8;
-  } else {
-    const t = (e + 0.3) / 0.6;
-    return 1.8 - t * 1.5;
+let cachedStageSeed: number | null = null;
+let cachedSamplers: CachedSamplers | null = null;
+
+function getSamplersForSeed(stageSeed: number): CachedSamplers {
+  if (cachedStageSeed === stageSeed && cachedSamplers) {
+    return cachedSamplers;
   }
-}
 
-export function generateTerrainShape(
-  stageSeed: number,
-  cx: number,
-  cz: number,
-  column: ChunkColumn,
-): void {
-  const registry = BlockRegistry.getInstance();
-  const stoneState = registry.getDefaultStateId('stone') ?? 1;
-  const waterState = registry.getDefaultStateId('water') ?? 1;
-  const foundationState = registry.getDefaultStateId('foundation_stone') ?? 1;
-
-  // Derive per-channel seeds
   const seedCont = deriveSeed(stageSeed, 'cont');
   const seedErosion = deriveSeed(stageSeed, 'erosion');
   const seedPeaks = deriveSeed(stageSeed, 'peaks');
@@ -67,7 +30,6 @@ export function generateTerrainShape(
   const seed3D = deriveSeed(stageSeed, 'density3d');
   const seedFoundation = deriveSeed(stageSeed, 'foundation');
 
-  // Noise samplers
   const s2Cont = makeSimplex2D(seedCont);
   const fbmCont = makeFbm2D(s2Cont, 4, 2.0, 0.5);
 
@@ -85,13 +47,71 @@ export function generateTerrainShape(
 
   const s2Foundation = makeSimplex2D(seedFoundation);
 
-  // Pre-allocated scratch buffers to avoid heap allocations per column generation call
-  const heights = HEIGHTS_SCRATCH;
-  const riverFactors = RIVER_SCRATCH;
+  cachedStageSeed = stageSeed;
+  cachedSamplers = {
+    fbmCont,
+    fbmErosion,
+    ridgedPeaks,
+    ridgedRivers,
+    fbm3D,
+    s2Foundation,
+  };
+  return cachedSamplers;
+}
+
+// Spline function for Continentalness -> Base Height
+function splineContinentalness(c: number): number {
+  if (c < -0.45) {
+    const t = (c + 1.0) / 0.55;
+    return 32 + t * 16;
+  } else if (c < -0.15) {
+    const t = (c + 0.45) / 0.3;
+    return 48 + t * 14;
+  } else if (c < 0.2) {
+    const t = (c + 0.15) / 0.35;
+    return 65 + t * 13;
+  } else if (c < 0.55) {
+    const t = (c - 0.2) / 0.35;
+    return 78 + t * 37;
+  } else {
+    const t = Math.min(1.0, (c - 0.55) / 0.45);
+    return 115 + t * 55;
+  }
+}
+
+// Spline function for Erosion -> Height Variation Factor
+function splineErosion(e: number): number {
+  if (e > 0.3) {
+    return 0.3;
+  } else if (e < -0.3) {
+    return 1.8;
+  } else {
+    const t = (e + 0.3) / 0.6;
+    return 1.8 - t * 1.5;
+  }
+}
+
+// Scratch buffers allocated once per worker/thread environment
+const HEIGHTS_SCRATCH = new Float32Array(256);
+
+export function generateTerrainShape(
+  stageSeed: number,
+  cx: number,
+  cz: number,
+  column: ChunkColumn,
+): void {
+  const registry = BlockRegistry.getInstance();
+  const stoneState = registry.getDefaultStateId('stone') ?? 1;
+  const waterState = registry.getDefaultStateId('water') ?? 1;
+  const foundationState = registry.getDefaultStateId('foundation_stone') ?? 1;
+
+  const samplers = getSamplersForSeed(stageSeed);
+  const { fbmCont, fbmErosion, ridgedPeaks, ridgedRivers, fbm3D, s2Foundation } = samplers;
 
   const baseWorldX = cx * 16;
   const baseWorldZ = cz * 16;
 
+  // 1. Compute 2D heightmap
   for (let z = 0; z < 16; z++) {
     const wz = baseWorldZ + z;
     for (let x = 0; x < 16; x++) {
@@ -106,16 +126,12 @@ export function generateTerrainShape(
       let baseH = splineContinentalness(cont);
       const erosionFactor = splineErosion(erosion);
 
-      // Add peak/valley variation
       baseH += (peaks * 25.0 - 10.0) * erosionFactor;
 
-      // River carving (only in land areas where cont >= -0.15)
-      let riverVal = 0;
       if (cont >= -0.15 && riverNoise < 0.12) {
-        riverVal = (1.2 - riverNoise / 0.1) * (1.0 - Math.max(0, erosion));
+        let riverVal = (1.2 - riverNoise / 0.1) * (1.0 - Math.max(0, erosion));
         if (riverVal > 0) {
           riverVal = Math.min(1.0, riverVal);
-          // Carve down towards sea level - 6
           const targetRiverH = SEA_LEVEL - 6;
           if (baseH > targetRiverH) {
             baseH = baseH * (1.0 - riverVal) + targetRiverH * riverVal;
@@ -123,18 +139,21 @@ export function generateTerrainShape(
         }
       }
 
-      heights[idx] = baseH;
-      riverFactors[idx] = riverVal;
+      HEIGHTS_SCRATCH[idx] = baseH;
     }
   }
 
-  // 3D Density & Voxel Fill
+  // 2. Voxel Fill with Density Skipping
   for (let z = 0; z < 16; z++) {
     const wz = baseWorldZ + z;
     for (let x = 0; x < 16; x++) {
       const wx = baseWorldX + x;
       const colIdx = z * 16 + x;
-      const targetH = heights[colIdx]!;
+      const targetH = HEIGHTS_SCRATCH[colIdx]!;
+
+      // Active 3D noise sampling bounds around target surface height
+      const noiseMinY = Math.max(5, Math.floor(targetH - 24));
+      const noiseMaxY = Math.min(319, Math.ceil(targetH + 24));
 
       for (let y = 0; y < 320; y++) {
         // Foundation Stone floor rule (y 0..4)
@@ -160,18 +179,23 @@ export function generateTerrainShape(
           }
         }
 
-        // Density calculation
-        // Density = (targetH - y) + 3D noise
-        const n3d = fbm3D(wx * 0.015, y * 0.012, wz * 0.015) * 22.0;
+        // Fast density evaluation using bounds
+        let density: number;
 
-        // Density squashing above build height / sky
-        let density = targetH - y + n3d;
-        if (y > 220) {
-          density -= (y - 220) * 2.0;
+        if (y < noiseMinY) {
+          density = 100.0; // Guaranteed solid stone
+        } else if (y > noiseMaxY) {
+          density = -100.0; // Guaranteed air / water
+        } else {
+          // Inside surface transition zone: sample 3D noise
+          const n3d = fbm3D(wx * 0.015, y * 0.012, wz * 0.015) * 22.0;
+          density = targetH - y + n3d;
+          if (y > 220) {
+            density -= (y - 220) * 2.0;
+          }
         }
 
         if (density > 0) {
-          // Solid terrain -> Stone
           const secY = y >> 4;
           const yLocal = y & 15;
           const sec = column.getOrCreateSection(secY);
@@ -179,7 +203,6 @@ export function generateTerrainShape(
             sec.setBlockStateId(x, yLocal, z, stoneState);
           }
         } else if (y <= SEA_LEVEL) {
-          // Below or at sea level -> Water
           const secY = y >> 4;
           const yLocal = y & 15;
           const sec = column.getOrCreateSection(secY);
@@ -187,7 +210,6 @@ export function generateTerrainShape(
             sec.setBlockStateId(x, yLocal, z, waterState);
           }
         }
-        // y > sea level and density <= 0 is air (state 0 default in section)
       }
     }
   }
