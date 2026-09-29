@@ -1,6 +1,7 @@
 import { World } from './world';
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
+import { getWorldInstance } from './world-instance';
 
 export interface LightLookupTables {
   opacity: Uint8Array; // stateId -> 0..15
@@ -71,16 +72,26 @@ export function buildLightLookupTables(
 }
 
 export class LightStorage {
-  // key: "cx,sy,cz" -> Uint8Array(4096)
-  // byte format: (blockLight << 4) | skyLight
-  private sections: Map<string, Uint8Array> = new Map();
+  // Numeric key: ((cx + 32768) << 16) | ((cz + 32768) << 5) | (sy & 0x1F)
+  private sections: Map<number, Uint8Array> = new Map();
 
-  public static getSectionKey(cx: number, sy: number, cz: number): string {
-    return `${cx},${sy},${cz}`;
+  // Fast single-entry cache for inner loop access
+  private lastKey = -1;
+  private lastSec: Uint8Array | undefined = undefined;
+
+  public static getSectionKey(cx: number, sy: number, cz: number): number {
+    return (((cx + 32768) & 0xffff) << 16) | (((cz + 32768) & 0xffff) << 5) | (sy & 0x1f);
   }
 
   public getSection(cx: number, sy: number, cz: number): Uint8Array | undefined {
-    return this.sections.get(LightStorage.getSectionKey(cx, sy, cz));
+    const key = LightStorage.getSectionKey(cx, sy, cz);
+    if (key === this.lastKey) {
+      return this.lastSec;
+    }
+    const sec = this.sections.get(key);
+    this.lastKey = key;
+    this.lastSec = sec;
+    return sec;
   }
 
   public getOrCreateSection(
@@ -90,6 +101,9 @@ export class LightStorage {
     defaultSky: number = 0,
   ): Uint8Array {
     const key = LightStorage.getSectionKey(cx, sy, cz);
+    if (key === this.lastKey && this.lastSec) {
+      return this.lastSec;
+    }
     let sec = this.sections.get(key);
     if (!sec) {
       sec = new Uint8Array(4096);
@@ -98,11 +112,15 @@ export class LightStorage {
       }
       this.sections.set(key, sec);
     }
+    this.lastKey = key;
+    this.lastSec = sec;
     return sec;
   }
 
   public clear(): void {
     this.sections.clear();
+    this.lastKey = -1;
+    this.lastSec = undefined;
   }
 
   public getSkyLight(x: number, y: number, z: number, defaultSky: number = 0): number {
@@ -114,7 +132,7 @@ export class LightStorage {
     const localY = y & 15;
     const localZ = ((z % 16) + 16) % 16;
 
-    const sec = this.sections.get(LightStorage.getSectionKey(cx, sy, cz));
+    const sec = this.getSection(cx, sy, cz);
     if (!sec) return defaultSky;
     const idx = (localY << 8) | (localZ << 4) | localX;
     return sec[idx]! & 0x0f;
@@ -129,7 +147,7 @@ export class LightStorage {
     const localY = y & 15;
     const localZ = ((z % 16) + 16) % 16;
 
-    const sec = this.sections.get(LightStorage.getSectionKey(cx, sy, cz));
+    const sec = this.getSection(cx, sy, cz);
     if (!sec) return 0;
     const idx = (localY << 8) | (localZ << 4) | localX;
     return (sec[idx]! >> 4) & 0x0f;
@@ -189,7 +207,7 @@ export class LightEngine {
   private pendingChangesCount = 0;
 
   // Real instrumentation for touched sections
-  private touchedSectionsSet: Set<string> = new Set();
+  private touchedSectionsSet: Set<number> = new Set();
 
   // Preallocated queues for BFS Add & Remove
   private addX = new Int32Array(INITIAL_QUEUE_CAPACITY);
@@ -259,10 +277,6 @@ export class LightEngine {
 
   public getTouchedSectionsCount(): number {
     return this.touchedSectionsSet.size;
-  }
-
-  public getTouchedSections(): string[] {
-    return Array.from(this.touchedSectionsSet);
   }
 
   private markTouched(x: number, y: number, z: number): void {
@@ -442,7 +456,7 @@ export class LightEngine {
   }
 
   /**
-   * Recalculate sky light for a column or full region.
+   * Recalculate sky light for a column.
    */
   public propagateSkyLightColumn(world: World, cx: number, cz: number): void {
     if (!world.hasColumn(cx, cz)) return;
@@ -725,6 +739,62 @@ export class LightEngine {
   }
 
   /**
+   * Clears old light in region and removes spilling light from adjacent columns.
+   */
+  public clearRegionLightAndRemoveSpill(
+    world: World,
+    minCx: number,
+    minCz: number,
+    maxCx: number,
+    maxCz: number,
+  ): void {
+    const minX = minCx * 16;
+    const maxX = maxCx * 16 + 15;
+    const minZ = minCz * 16;
+    const maxZ = maxCz * 16 + 15;
+
+    // Collect block light sources on outer boundary
+    const boundarySpillBlockSources: Array<{ x: number; y: number; z: number; oldLight: number }> =
+      [];
+
+    // Check boundary columns around the region
+    for (let bx = minX - 1; bx <= maxX + 1; bx++) {
+      for (let bz = minZ - 1; bz <= maxZ + 1; bz++) {
+        const isBoundary = bx < minX || bx > maxX || bz < minZ || bz > maxZ;
+        if (!isBoundary) continue;
+
+        const bCx = Math.floor(bx / 16);
+        const bCz = Math.floor(bz / 16);
+        if (!world.hasColumn(bCx, bCz)) continue;
+
+        for (let y = ChunkColumn.MIN_Y; y <= ChunkColumn.MAX_Y; y++) {
+          const bl = this.storage.getBlockLight(bx, y, bz);
+          if (bl > 0) {
+            boundarySpillBlockSources.push({ x: bx, y, z: bz, oldLight: bl });
+          }
+        }
+      }
+    }
+
+    // Clear all section light storage inside region
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cz = minCz; cz <= maxCz; cz++) {
+        for (let sy = 0; sy < 20; sy++) {
+          const sec = this.storage.getSection(cx, sy, cz);
+          if (sec) {
+            sec.fill(0);
+          }
+        }
+      }
+    }
+
+    // Remove spilling block light if sources were removed
+    if (boundarySpillBlockSources.length > 0) {
+      this.removeBlockLight(world, boundarySpillBlockSources);
+    }
+  }
+
+  /**
    * Bulk initial light propagation for a loaded region of chunk columns.
    */
   public bulkPropagateRegion(
@@ -734,6 +804,9 @@ export class LightEngine {
     maxCx: number,
     maxCz: number,
   ): void {
+    // 0. Clear stale light in region and remove spilling light
+    this.clearRegionLightAndRemoveSpill(world, minCx, minCz, maxCx, maxCz);
+
     // 1. Initial sky light columns
     for (let cx = minCx; cx <= maxCx; cx++) {
       for (let cz = minCz; cz <= maxCz; cz++) {
@@ -772,15 +845,32 @@ export class LightEngine {
   }
 }
 
-let globalLightEngineInstance: LightEngine | null = null;
+let customFallbackEngine: LightEngine | null = null;
 
 export function getLightEngineInstance(): LightEngine {
-  if (!globalLightEngineInstance) {
-    globalLightEngineInstance = new LightEngine();
+  if (customFallbackEngine) {
+    return customFallbackEngine;
   }
-  return globalLightEngineInstance;
+  try {
+    const world = getWorldInstance();
+    if (world) {
+      return world.getLightEngine();
+    }
+  } catch {
+    // Fall back to default
+  }
+  customFallbackEngine = new LightEngine();
+  return customFallbackEngine;
 }
 
-export function setLightEngineInstance(engine: LightEngine): void {
-  globalLightEngineInstance = engine;
+export function setLightEngineInstance(engine: LightEngine | null): void {
+  customFallbackEngine = engine;
+  try {
+    const world = getWorldInstance();
+    if (world && engine) {
+      world.setLightEngine(engine);
+    }
+  } catch {
+    // Ignore if world instance not initialized yet
+  }
 }

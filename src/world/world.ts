@@ -1,13 +1,23 @@
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
-import { getLightEngineInstance } from './lighting';
+import { LightEngine, buildLightLookupTables } from './lighting';
 
 export class World {
   private columns: Map<string, ChunkColumn> = new Map();
   private registry: BlockRegistry;
+  private lightEngine: LightEngine;
 
   constructor() {
     this.registry = BlockRegistry.getInstance();
+    this.lightEngine = new LightEngine(buildLightLookupTables(this.registry));
+  }
+
+  public getLightEngine(): LightEngine {
+    return this.lightEngine;
+  }
+
+  public setLightEngine(engine: LightEngine): void {
+    this.lightEngine = engine;
   }
 
   public static getChunkKey(cx: number, cz: number): string {
@@ -68,11 +78,11 @@ export class World {
     if (oldStateId === stateId) return;
 
     col.setBlockStateId(localX, y, localZ, stateId);
-    getLightEngineInstance().onBlockChange(this, x, y, z, oldStateId, stateId);
+    this.lightEngine.onBlockChange(this, x, y, z, oldStateId, stateId);
   }
 
   public getLight(x: number, y: number, z: number): { sky: number; block: number } {
-    return getLightEngineInstance().getLight(this, x, y, z);
+    return this.lightEngine.getLight(this, x, y, z);
   }
 
   public getBlock(
@@ -151,8 +161,7 @@ export class World {
       throw new Error(`Unknown block ID '${blockId}'.`);
     }
 
-    const lightEngine = getLightEngineInstance();
-    lightEngine.suspendUpdates();
+    this.lightEngine.suspendUpdates();
 
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
@@ -162,6 +171,6 @@ export class World {
       }
     }
 
-    lightEngine.resumeUpdates(this, minX, minY, minZ, maxX, maxY, maxZ);
+    this.lightEngine.resumeUpdates(this, minX, minY, minZ, maxX, maxY, maxZ);
   }
 }

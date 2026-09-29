@@ -1,10 +1,10 @@
-import { ColumnLightData, SectionLightResult, LightWorkerJobResponse } from './light.worker';
-import { LightLookupTables, getLightEngineInstance } from '../world/lighting';
+import { ColumnLightData, LightWorkerJobResponse } from './light.worker';
+import { LightLookupTables } from '../world/lighting';
 import { World } from '../world/world';
 
 export class LightWorkerPool {
   private worker: Worker | null = null;
-  private isProcessing = false;
+  private nextJobId = 1;
 
   constructor() {
     if (typeof Worker !== 'undefined') {
@@ -64,12 +64,12 @@ export class LightWorkerPool {
     const worker = this.worker;
     if (!worker) {
       // Direct main thread fallback for non-worker environment
-      getLightEngineInstance().bulkPropagateRegion(world, minCx, minCz, maxCx, maxCz);
+      world.getLightEngine().bulkPropagateRegion(world, minCx, minCz, maxCx, maxCz);
       return;
     }
 
     return new Promise<void>((resolve, reject) => {
-      const jobId = Date.now();
+      const jobId = this.nextJobId++;
 
       const onMessage = (e: MessageEvent) => {
         const response = e.data as LightWorkerJobResponse;
@@ -78,7 +78,7 @@ export class LightWorkerPool {
           worker.removeEventListener('error', onError);
 
           // Apply returned lit section light buffers to main thread LightStorage
-          const storage = getLightEngineInstance().storage;
+          const storage = world.getLightEngine().storage;
           for (const res of response.results) {
             const sec = storage.getOrCreateSection(res.cx, res.sy, res.cz);
             sec.set(res.lightData);

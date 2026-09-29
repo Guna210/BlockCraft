@@ -43,7 +43,10 @@ export function performBulkLightPropagation(
   tables: LightLookupTables,
 ): { results: SectionLightResult[]; lightEngine: LightEngine; world: World } {
   const world = new World();
-  const lightEngine = new LightEngine(tables);
+  const lightEngine = world.getLightEngine();
+  lightEngine.tables = tables;
+
+  lightEngine.suspendUpdates();
 
   for (const colData of columnsData) {
     for (const secData of colData.sections) {
@@ -68,7 +71,6 @@ export function performBulkLightPropagation(
     }
   }
 
-  // Perform bulk initial light propagation
   lightEngine.bulkPropagateRegion(world, minCx, minCz, maxCx, maxCz);
 
   const results: SectionLightResult[] = [];
@@ -78,7 +80,6 @@ export function performBulkLightPropagation(
       for (let sy = 0; sy < 20; sy++) {
         const sec = lightEngine.storage.getSection(cx, sy, cz);
         if (sec) {
-          // Copy or transfer section buffer
           const copy = new Uint8Array(sec);
           results.push({ cx, sy, cz, lightData: copy });
         }

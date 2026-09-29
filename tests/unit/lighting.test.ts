@@ -25,7 +25,7 @@ describe('M05a — Light Engine', () => {
     const customEmission = new Map<number, number>([[torchStandInStateId, 14]]);
     const tables = buildLightLookupTables(registry, customEmission);
     const engine = new LightEngine(tables);
-    setLightEngineInstance(engine);
+    world.setLightEngine(engine);
 
     // Build 31³ dark room centered at (0, 64, 0): x, z in [-15, 15], y in [49, 79]
     // Shell of stone, interior of air
@@ -80,9 +80,6 @@ describe('M05a — Light Engine', () => {
     const stoneStateId = registry.getDefaultStateId('stone')!;
     const lavaStateId = registry.getDefaultStateId('lava')!;
 
-    const engine = new LightEngine(buildLightLookupTables(registry));
-    setLightEngineInstance(engine);
-
     // Enclosed 11³ room around (0, 64, 0)
     for (let x = -5; x <= 5; x++) {
       for (let y = 59; y <= 69; y++) {
@@ -108,7 +105,7 @@ describe('M05a — Light Engine', () => {
     const customEmission = new Map<number, number>([[torchStandInStateId, 14]]);
     const tables = buildLightLookupTables(registry, customEmission);
     const engine = new LightEngine(tables);
-    setLightEngineInstance(engine);
+    world.setLightEngine(engine);
 
     // Initialize columns (0, 0) [x: 0..15] and (1, 0) [x: 16..31]
     world.getColumn(0, 0, true);
@@ -125,12 +122,9 @@ describe('M05a — Light Engine', () => {
   test('Roof on removes sky light below, roof off restores 15', () => {
     const world = new World();
 
-    const engine = new LightEngine(buildLightLookupTables(registry));
-    setLightEngineInstance(engine);
-
     // Create a 16x16 column (0,0) exposed to sky
     world.getColumn(0, 0, true);
-    engine.propagateSkyLightColumn(world, 0, 0);
+    world.getLightEngine().propagateSkyLightColumn(world, 0, 0);
 
     // Initial sky light at y=100 and below is 15
     expect(world.getLight(8, 100, 8).sky).toBe(15);
@@ -151,24 +145,23 @@ describe('M05a — Light Engine', () => {
     expect(world.getLight(8, 50, 8).sky).toBe(15);
   });
 
-  test('Single edit touches <= 3 sections unless light spreads further', () => {
+  test('Single edit touches <= 3 sections even when light spreads across section boundary', () => {
     const world = new World();
     const airStateId = registry.getDefaultStateId('air')!;
-
-    const engine = new LightEngine(buildLightLookupTables(registry));
-    setLightEngineInstance(engine);
 
     // Pre-populate column (0,0) filled with stone
     world.getColumn(0, 0, true);
     world.fill(0, 0, 0, 15, 319, 15, 'stone');
 
+    const engine = world.getLightEngine();
+
     // Reset touched sections instrumentation
     engine.resetTouchedSections();
 
-    // Perform a single non-emitting block edit in solid stone (change stone at (8, 16, 8) to air)
-    world.setBlockStateId(8, 16, 8, airStateId);
+    // Remove a roof block at section boundary y=15 (border of sy=0 and sy=1)
+    world.setBlockStateId(8, 15, 8, airStateId);
 
-    // Instrumentation count check: edit in solid enclosed stone touches <= 3 sections
+    // Instrumentation count check: edit touches <= 3 sections
     const touchedCount = engine.getTouchedSectionsCount();
     expect(touchedCount).toBeGreaterThan(0);
     expect(touchedCount).toBeLessThanOrEqual(3);
@@ -180,7 +173,7 @@ describe('M05a — Light Engine', () => {
     const customEmission = new Map<number, number>([[torchStandInStateId, 14]]);
     const tables = buildLightLookupTables(registry, customEmission);
     const engine = new LightEngine(tables);
-    setLightEngineInstance(engine);
+    world.setLightEngine(engine);
 
     // Only load column (0, 0) [x: 0..15]
     world.getColumn(0, 0, true);
@@ -204,8 +197,7 @@ describe('M05a — Light Engine', () => {
 
     // --- Method A: Incremental Edits ---
     const worldInc = new World();
-    const engineInc = new LightEngine(tables);
-    setLightEngineInstance(engineInc);
+    const engineInc = worldInc.getLightEngine();
 
     // Initialize 2x2 column region: (0,0), (1,0), (0,1), (1,1)
     for (let cx = 0; cx <= 1; cx++) {
@@ -276,9 +268,6 @@ describe('M05a — Light Engine', () => {
   test('Opacity rules: air and glass pass sky light at 15 straight down; water and leaves attenuate by 2', () => {
     const world = new World();
 
-    const engine = new LightEngine(buildLightLookupTables(registry));
-    setLightEngineInstance(engine);
-
     // Column (0,0)
     world.getColumn(0, 0, true);
 
@@ -286,7 +275,7 @@ describe('M05a — Light Engine', () => {
     world.fill(0, 200, 0, 4, 200, 4, 'glass');
 
     // Propagate sky light
-    engine.propagateSkyLightColumn(world, 0, 0);
+    world.getLightEngine().propagateSkyLightColumn(world, 0, 0);
 
     // Air above glass is 15
     expect(world.getLight(2, 201, 2).sky).toBe(15);
@@ -309,5 +298,39 @@ describe('M05a — Light Engine', () => {
     world.fill(0, 100, 0, 4, 100, 4, 'oak_leaves');
     // Leaves attenuate by 2
     expect(world.getLight(2, 100, 2).sky).toBe(world.getLight(2, 101, 2).sky - 2);
+  });
+
+  test('world.fill clears old block light and removes spilling light when emitters are removed', () => {
+    const world = new World();
+
+    // 1. Fill a stone room at (0..10, 60..70, 0..10)
+    world.fill(0, 60, 0, 10, 70, 10, 'stone');
+    // Interior air at (1..9, 61..69, 1..9)
+    world.fill(1, 61, 1, 9, 69, 9, 'air');
+
+    // Place lava at (5, 65, 5)
+    world.setBlock(5, 65, 5, 'lava');
+
+    // Light next to lava at (6, 65, 5) should be 14
+    expect(world.getLight(6, 65, 5).block).toBe(14);
+
+    // Fill the room with solid stone again
+    world.fill(0, 60, 0, 10, 70, 10, 'stone');
+
+    // Light at (6, 65, 5) and (5, 65, 5) MUST return to 0!
+    expect(world.getLight(6, 65, 5).block).toBe(0);
+    expect(world.getLight(5, 65, 5).block).toBe(0);
+  });
+
+  test('Two worlds in one session maintain independent light state', () => {
+    const world1 = new World();
+    world1.getColumn(0, 0, true);
+    world1.setBlock(0, 64, 0, 'lava');
+    expect(world1.getLight(0, 64, 0).block).toBe(15);
+
+    const world2 = new World();
+    world2.getColumn(0, 0, true);
+    // World 2 has no lava placed at (0, 64, 0)
+    expect(world2.getLight(0, 64, 0).block).toBe(0);
   });
 });
