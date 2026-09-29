@@ -26,6 +26,7 @@ export function initDebugApi() {
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);
     api.waitForTerrain = (r) => WorldManager.getInstance().waitForTerrain(r);
     api.getWorkerStats = () => WorldManager.getInstance().getWorkerStats();
+    (window as unknown as Record<string, unknown>).WorldManager = WorldManager;
     window.__blockcraft = api;
   }
 }

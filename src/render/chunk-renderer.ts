@@ -1,6 +1,6 @@
 import { mat4 } from 'gl-matrix';
 import { GLWrapper } from './gl';
-import { TextureAtlas } from './atlas';
+import { TextureAtlas, CELL_SIZE } from './atlas';
 import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
@@ -57,6 +57,7 @@ flat in uint v_tileIndex;
 
 uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
+uniform float u_cellSize;
 uniform int u_isCutout;
 uniform int u_isWireframe;
 
@@ -69,11 +70,11 @@ void main() {
   }
 
   // Grid math derivation of atlas tile rect
-  uint cellsPerRow = uint(u_atlasSize.x / 24.0);
+  uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   uint col = v_tileIndex % cellsPerRow;
   uint row = v_tileIndex / cellsPerRow;
 
-  vec2 tilePos = vec2(float(col) * 24.0 + 4.0, float(row) * 24.0 + 4.0);
+  vec2 tilePos = vec2(float(col) * u_cellSize + 4.0, float(row) * u_cellSize + 4.0);
   vec2 tileSize = vec2(16.0, 16.0);
 
   vec2 uMinVmin = tilePos / u_atlasSize;
@@ -127,6 +128,7 @@ export class ChunkRenderer {
   private locSectionOrigin: WebGLUniformLocation;
   private locAtlasSampler: WebGLUniformLocation;
   private locAtlasSize: WebGLUniformLocation;
+  private locCellSize: WebGLUniformLocation;
   private locIsCutout: WebGLUniformLocation;
   private locIsWireframe: WebGLUniformLocation;
 
@@ -141,6 +143,7 @@ export class ChunkRenderer {
     this.locSectionOrigin = gl.getUniformLocation(this.program, 'u_sectionOrigin')!;
     this.locAtlasSampler = gl.getUniformLocation(this.program, 'u_atlasSampler')!;
     this.locAtlasSize = gl.getUniformLocation(this.program, 'u_atlasSize')!;
+    this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
   }
@@ -274,6 +277,7 @@ export class ChunkRenderer {
     gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
     gl.uniform1i(this.locAtlasSampler, 0);
     gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
+    gl.uniform1f(this.locCellSize, CELL_SIZE);
     gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
 
     let drawCalls = 0;

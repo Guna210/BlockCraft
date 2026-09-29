@@ -1,16 +1,48 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeAll } from 'vitest';
 import { WorkerPool } from '../../src/mesh/worker-pool';
 import { BlockRegistry } from '../../src/world/blocks/registry';
-import { buildMeshLookupTables } from '../../src/mesh/greedy';
+import { buildMeshLookupTables, greedyMesh } from '../../src/mesh/greedy';
+
+class MockWorker {
+  onmessage: ((e: MessageEvent) => void) | null = null;
+  onerror: ((e: ErrorEvent) => void) | null = null;
+
+  postMessage(data: unknown, _transferables?: Transferable[]) {
+    setTimeout(() => {
+      const { id, paddedSection, tables } = data as {
+        id: number;
+        paddedSection: Uint16Array;
+        tables: ReturnType<typeof buildMeshLookupTables>;
+      };
+      const start = performance.now();
+      const meshData = greedyMesh(paddedSection, tables);
+      const duration = performance.now() - start;
+      if (this.onmessage) {
+        this.onmessage({
+          data: { id, meshData, duration },
+        } as MessageEvent);
+      }
+    }, 0);
+  }
+
+  terminate() {}
+}
 
 describe('Worker Pool (M02c)', () => {
-  test('enqueues mesh job and reports meshMsP95 and queueLength', async () => {
+  beforeAll(() => {
+    if (typeof globalThis.Worker === 'undefined') {
+      (globalThis as unknown as Record<string, unknown>).Worker = MockWorker;
+    }
+  });
+
+  test('reports workerCount and enqueues mesh job', async () => {
     const registry = BlockRegistry.getInstance();
     const tables = buildMeshLookupTables(registry, () => 1);
     const pool = new WorkerPool(2);
 
+    expect(pool.workerCount).toBe(2);
+
     const paddedSection = new Uint16Array(18 * 18 * 18);
-    // Fill core with stone state
     const stoneState = registry.getDefaultStateId('stone') ?? 1;
     for (let py = 1; py <= 16; py++) {
       for (let pz = 1; pz <= 16; pz++) {

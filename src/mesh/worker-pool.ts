@@ -1,5 +1,4 @@
 import type { SectionMeshData, MeshLookupTables } from './greedy';
-import { greedyMesh } from './greedy';
 
 export interface MeshResult {
   key: string;
@@ -31,6 +30,10 @@ export class WorkerPool {
   private nextJobId = 1;
 
   constructor(poolSize?: number) {
+    if (typeof Worker === 'undefined') {
+      throw new Error('Web Workers are not supported in this environment');
+    }
+
     const defaultSize =
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency
         ? Math.max(2, navigator.hardwareConcurrency - 1)
@@ -38,68 +41,62 @@ export class WorkerPool {
 
     const size = poolSize || defaultSize;
 
-    if (typeof Worker !== 'undefined') {
-      try {
-        for (let i = 0; i < size; i++) {
-          const worker = new Worker(new URL('../workers/mesh.worker.ts', import.meta.url), {
-            type: 'module',
-          });
+    for (let i = 0; i < size; i++) {
+      const worker = new Worker(new URL('../workers/mesh.worker.ts', import.meta.url), {
+        type: 'module',
+      });
 
-          worker.onmessage = (e: MessageEvent) => {
-            const { meshData, duration } = e.data as {
-              id: number;
-              meshData: SectionMeshData;
-              duration: number;
-            };
+      worker.onmessage = (e: MessageEvent) => {
+        const { meshData, duration } = e.data as {
+          id: number;
+          meshData: SectionMeshData;
+          duration: number;
+        };
 
-            this.meshMsTimes.push(duration);
-            if (this.meshMsTimes.length > 100) {
-              this.meshMsTimes.shift();
-            }
-
-            const job = this.activeJobs.get(worker);
-            this.activeJobs.delete(worker);
-            this.idleWorkers.push(worker);
-
-            if (job) {
-              job.resolve({
-                key: job.key,
-                sx: job.sx,
-                sy: job.sy,
-                sz: job.sz,
-                meshData,
-                duration,
-              });
-            }
-
-            this.processQueue();
-          };
-
-          worker.onerror = (err: ErrorEvent) => {
-            const job = this.activeJobs.get(worker);
-            this.activeJobs.delete(worker);
-            console.error('Mesh worker error:', err);
-
-            if (job) {
-              job.reject(
-                err.error instanceof Error
-                  ? err.error
-                  : new Error(err.message || 'Mesh worker error'),
-              );
-            }
-
-            this.processQueue();
-          };
-
-          this.workers.push(worker);
-          this.idleWorkers.push(worker);
+        this.meshMsTimes.push(duration);
+        if (this.meshMsTimes.length > 100) {
+          this.meshMsTimes.shift();
         }
-      } catch (err) {
-        console.warn('Failed to initialize Web Workers, falling back to sync meshing:', err);
-        this.workers = [];
-        this.idleWorkers = [];
-      }
+
+        const job = this.activeJobs.get(worker);
+        this.activeJobs.delete(worker);
+        this.idleWorkers.push(worker);
+
+        if (job) {
+          job.resolve({
+            key: job.key,
+            sx: job.sx,
+            sy: job.sy,
+            sz: job.sz,
+            meshData,
+            duration,
+          });
+        }
+
+        this.processQueue();
+      };
+
+      worker.onerror = (err: ErrorEvent) => {
+        const job = this.activeJobs.get(worker);
+        this.activeJobs.delete(worker);
+        console.error('Mesh worker error:', err);
+
+        if (job) {
+          job.reject(
+            err.error instanceof Error ? err.error : new Error(err.message || 'Mesh worker error'),
+          );
+        }
+
+        this.processQueue();
+      };
+
+      this.workers.push(worker);
+      this.idleWorkers.push(worker);
     }
+  }
+
+  public get workerCount(): number {
+    return this.workers.length;
   }
 
   public get queueLength(): number {
@@ -135,22 +132,6 @@ export class WorkerPool {
         resolve,
         reject,
       };
-
-      // Fallback if no Web Workers are available
-      if (this.workers.length === 0) {
-        const start = performance.now();
-        try {
-          const meshData = greedyMesh(paddedSection, tables);
-          const duration = performance.now() - start;
-          this.meshMsTimes.push(duration);
-          if (this.meshMsTimes.length > 100) this.meshMsTimes.shift();
-
-          resolve({ key, sx, sy, sz, meshData, duration });
-        } catch (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
-        }
-        return;
-      }
 
       this.queue.push(job);
       this.processQueue();

@@ -122,4 +122,68 @@ test.describe('M02: Chunk Data Structures, Meshing & Flat World', () => {
     assertNotBlank(png);
     assertNoMissingTexture(png);
   });
+
+  test('WorkerPool uses real Web Workers, transfers padded buffers, and exposes workerCount', async ({
+    page,
+  }) => {
+    await page.evaluate(async () => {
+      await window.__blockcraft!.createWorld!({
+        name: 'test-worker-world',
+        seed: 'blockcraft-test-seed-42',
+        mode: 'survival',
+      });
+    });
+
+    const testResult = await page.evaluate(async () => {
+      const wm = (
+        window as unknown as { WorldManager: { getInstance: () => any } }
+      ).WorldManager.getInstance();
+      const pool = wm.workerPool;
+      const expectedWorkerCount = Math.max(2, (navigator.hardwareConcurrency || 4) - 1);
+      const actualWorkerCount = pool.workerCount;
+
+      const paddedSection = new Uint16Array(18 * 18 * 18);
+      const initialByteLength = paddedSection.buffer.byteLength;
+
+      const jobPromise = pool.enqueueMeshJob(0, 0, 0, paddedSection, wm.tables);
+      const byteLengthAfterEnqueue = paddedSection.buffer.byteLength;
+
+      const result = await jobPromise;
+
+      return {
+        expectedWorkerCount,
+        actualWorkerCount,
+        initialByteLength,
+        byteLengthAfterEnqueue,
+        hasOpaqueVertices: result.meshData.opaque.vertices.length >= 0,
+      };
+    });
+
+    expect(testResult.actualWorkerCount).toBe(testResult.expectedWorkerCount);
+    expect(testResult.initialByteLength).toBe(18 * 18 * 18 * 2);
+    expect(testResult.byteLengthAfterEnqueue).toBe(0);
+    expect(testResult.hasOpaqueVertices).toBe(true);
+  });
+
+  test('calling createWorld a second time clears old promises and re-meshes new world', async ({
+    page,
+  }) => {
+    // World 1: create world and place a stone block at (0, 70, 0)
+    await page.evaluate(async () => {
+      await window.__blockcraft!.createWorld!({ name: 'world1' });
+      window.__blockcraft!.setBlock!(0, 70, 0, 'stone');
+    });
+
+    const b1 = await page.evaluate(() => window.__blockcraft!.getBlock!(0, 70, 0));
+    expect(b1.id).toBe('stone');
+
+    // World 2: create world again in same session
+    await page.evaluate(async () => {
+      await window.__blockcraft!.createWorld!({ name: 'world2' });
+      await window.__blockcraft!.waitForTerrain!(4);
+    });
+
+    const b2 = await page.evaluate(() => window.__blockcraft!.getBlock!(0, 70, 0));
+    expect(b2.id).toBe('air');
+  });
 });

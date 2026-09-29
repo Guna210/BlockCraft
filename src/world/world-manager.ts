@@ -125,6 +125,12 @@ export class WorldManager {
   }): Promise<void> {
     const radiusChunks = 4;
 
+    // Clear cached terrain promises and dispose old GPU section meshes
+    this.pendingTerrainPromises.clear();
+    if (this.chunkRenderer) {
+      this.chunkRenderer.clearAllMeshes();
+    }
+
     // Create flat world
     this.world = generateFlatWorld(radiusChunks);
     setWorldInstance(this.world);
