@@ -1,0 +1,131 @@
+{
+  "oak_log": {
+    "hardness": 2.0,
+    "blastResistance": 2.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["y", "x", "z"],
+        "default": "y"
+      }
+    },
+    "textures": {
+      "top": "oak_log_top",
+      "side": "oak_log_side",
+      "bottom": "oak_log_top"
+    }
+  },
+  "birch_log": {
+    "hardness": 2.0,
+    "blastResistance": 2.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["y", "x", "z"],
+        "default": "y"
+      }
+    },
+    "textures": {
+      "top": "birch_log_top",
+      "side": "birch_log_side",
+      "bottom": "birch_log_top"
+    }
+  },
+  "pine_log": {
+    "hardness": 2.0,
+    "blastResistance": 2.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["y", "x", "z"],
+        "default": "y"
+      }
+    },
+    "textures": {
+      "top": "pine_log_top",
+      "side": "pine_log_side",
+      "bottom": "pine_log_top"
+    }
+  },
+  "oak_planks": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "oak_planks",
+      "side": "oak_planks",
+      "bottom": "oak_planks"
+    }
+  },
+  "birch_planks": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "birch_planks",
+      "side": "birch_planks",
+      "bottom": "birch_planks"
+    }
+  },
+  "pine_planks": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "pine_planks",
+      "side": "pine_planks",
+      "bottom": "pine_planks"
+    }
+  },
+  "oak_leaves": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "textures": {
+      "top": "oak_leaves",
+      "side": "oak_leaves",
+      "bottom": "oak_leaves"
+    }
+  },
+  "birch_leaves": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "textures": {
+      "top": "birch_leaves",
+      "side": "birch_leaves",
+      "bottom": "birch_leaves"
+    }
+  },
+  "pine_leaves": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "textures": {
+      "top": "pine_leaves",
+      "side": "pine_leaves",
+      "bottom": "pine_leaves"
+    }
+  }
+}

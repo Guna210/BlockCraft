@@ -38,7 +38,10 @@ export function createSentinelTile(): Uint8Array {
  * and returns the sentinel rect.
  */
 export function resolveTexture(name: string, atlas: TextureAtlas): AtlasRect {
-  const rect = atlas.rects.get(name);
+  let rect = atlas.rects.get(name);
+  if (!rect && atlas.rects.has(`${name}_0`)) {
+    rect = atlas.rects.get(`${name}_0`);
+  }
   if (rect) {
     return rect;
   }

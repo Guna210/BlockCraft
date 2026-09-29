@@ -1,0 +1,26 @@
+{
+  "water": {
+    "hardness": 100.0,
+    "blastResistance": 100.0,
+    "lightEmission": 0,
+    "renderLayer": "translucent",
+    "fullOpaqueCube": false,
+    "textures": {
+      "top": "water",
+      "side": "water",
+      "bottom": "water"
+    }
+  },
+  "lava": {
+    "hardness": 100.0,
+    "blastResistance": 100.0,
+    "lightEmission": 15,
+    "renderLayer": "translucent",
+    "fullOpaqueCube": false,
+    "textures": {
+      "top": "lava",
+      "side": "lava",
+      "bottom": "lava"
+    }
+  }
+}
