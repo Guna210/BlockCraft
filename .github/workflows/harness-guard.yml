@@ -11,79 +11,91 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - name: Check for harness label
-        id: check_label
-        run: |
-          HAS_LABEL=$(jq '.pull_request.labels | map(.name == "harness-change") | any' $GITHUB_EVENT_PATH)
-          echo "has_label=$HAS_LABEL" >> $GITHUB_OUTPUT
-
-      - name: Fetch changed files and check protection
-        if: steps.check_label.outputs.has_label != 'true'
+      - name: Check protected files, protected scripts and deletions
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = context.payload.pull_request.number;
+            const pr = context.payload.pull_request;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const labels = (pr.labels || []).map(l => l.name);
+            const hasHarnessLabel = labels.includes('harness-change');
+            const hasDeletionLabel = labels.includes('allow-deletion');
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
               repo,
-              pull_number: prNumber,
-              per_page: 100
+              pull_number: pr.number,
+              per_page: 100,
             });
 
-            const changedFiles = files.flatMap(f => f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]);
-            const protectedPatterns = [
-              /^tests\/harness\//,
-              /^\.github\/workflows\//,
-              /^playwright\.config\./,
-              /^scripts\/verify/,
-              /^scripts\/lint-placeholders\./,
-              /^vitest\.config\./,
-              /^SPEC\.md$/,
-              /^AGENTS\.md$/,
-            ];
+            const problems = [];
 
-            const violations = changedFiles.filter(file =>
-              protectedPatterns.some(pattern => pattern.test(file))
-            );
+            // 1. Protected harness files (bypassed only by the 'harness-change' label).
+            if (!hasHarnessLabel) {
+              const touched = files.flatMap(f =>
+                f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]
+              );
+              const protectedPatterns = [
+                /^tests\/harness\//,
+                /^\.github\/workflows\//,
+                /^playwright\.config\./,
+                /^scripts\/verify/,
+                /^scripts\/lint-placeholders\./,
+                /^vitest\.config\./,
+                /^SPEC\.md$/,
+                /^AGENTS\.md$/,
+                /^ART\.md$/,
+              ];
+              for (const file of touched) {
+                if (protectedPatterns.some(p => p.test(file))) {
+                  problems.push(`protected file changed: ${file}`);
+                }
+              }
 
-            let allViolations = [...violations];
-
-            if (changedFiles.includes('package.json')) {
-              try {
-                const baseResponse = await github.rest.repos.getContent({
-                  owner,
-                  repo,
-                  path: 'package.json',
-                  ref: context.payload.pull_request.base.sha
-                });
-                const headResponse = await github.rest.repos.getContent({
-                  owner,
-                  repo,
-                  path: 'package.json',
-                  ref: context.payload.pull_request.head.sha
-                });
-
-                if (baseResponse.data.type === 'file' && headResponse.data.type === 'file') {
-                  const basePkg = JSON.parse(Buffer.from(baseResponse.data.content, 'base64').toString());
-                  const headPkg = JSON.parse(Buffer.from(headResponse.data.content, 'base64').toString());
-
+              // Protected package.json scripts, compared against the point where the branch
+              // started (merge base), so changes merged to master since then don't count.
+              if (touched.includes('package.json')) {
+                try {
+                  const cmp = await github.rest.repos.compareCommitsWithBasehead({
+                    owner,
+                    repo,
+                    basehead: `${pr.base.sha}...${pr.head.sha}`,
+                  });
+                  const mergeBase = cmp.data.merge_base_commit.sha;
+                  const read = async ref => {
+                    const res = await github.rest.repos.getContent({ owner, repo, path: 'package.json', ref });
+                    return JSON.parse(Buffer.from(res.data.content, 'base64').toString());
+                  };
+                  const basePkg = await read(mergeBase);
+                  const headPkg = await read(pr.head.sha);
                   const protectedScripts = ['typecheck', 'lint', 'lint:placeholders', 'test:unit', 'test:e2e', 'verify', 'verify:quick'];
-                  for (const script of protectedScripts) {
-                    if (basePkg.scripts?.[script] !== headPkg.scripts?.[script]) {
-                      allViolations.push(`package.json script changed: ${script}`);
+                  for (const s of protectedScripts) {
+                    if (basePkg.scripts?.[s] !== headPkg.scripts?.[s]) {
+                      problems.push(`protected package.json script changed: ${s}`);
                     }
                   }
+                } catch (e) {
+                  problems.push('could not compare package.json scripts: ' + e.message);
                 }
-              } catch (e) {
-                core.warning('Failed to fetch package.json content for scripts comparison: ' + e.message);
               }
             }
 
-            if (allViolations.length > 0) {
-              core.setFailed(`Protected harness files or scripts were changed without the 'harness-change' label:\n${allViolations.join('\n')}`);
+            // 2. Deleted files (bypassed only by the 'allow-deletion' label).
+            // A task should only add or change files; deleting another task's work is almost always a mistake.
+            if (!hasDeletionLabel) {
+              for (const f of files) {
+                if (f.status === 'removed') {
+                  problems.push(`file deleted: ${f.filename}`);
+                }
+              }
+            }
+
+            if (problems.length > 0) {
+              core.setFailed(
+                "This PR needs the owner's review. Protected changes require the 'harness-change' label; " +
+                "deleted files require the 'allow-deletion' label.\n" + problems.join('\n')
+              );
             } else {
-              core.info('No protected harness files or scripts were changed.');
+              core.info('No protected files, protected scripts or deletions.');
             }

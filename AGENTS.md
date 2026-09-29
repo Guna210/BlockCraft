@@ -73,6 +73,7 @@ Other tasks run at the same time on other branches. To keep merges clean:
 - The debug API is one module per domain in `src/debug/api/`, each registered in `src/debug/api/index.ts` with one line.
 - Run Prettier only on files you changed. No repo-wide reformatting, renames or file moves unless your task row calls for them.
 - Add dependencies only when your task needs them. Runtime dependencies are restricted by SPEC §2.1.
+- Never delete files created by other tasks. A PR that deletes any file fails the harness guard unless the owner adds the `harness-change` label.
 
 ## 9. Environment
 
