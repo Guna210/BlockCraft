@@ -25,10 +25,13 @@ describe('BlockRegistry Unit Tests', () => {
     // 2: birch_log[axis=y]
     // 3: birch_log[axis=x]
     // 4: birch_log[axis=z]
+    // ...
+    // 10: foundation_stone
     expect(registry.getStateId('birch_leaves')).toBe(1);
     expect(registry.getStateId('birch_log', { axis: 'y' })).toBe(2);
     expect(registry.getStateId('birch_log', { axis: 'x' })).toBe(3);
     expect(registry.getStateId('birch_log', { axis: 'z' })).toBe(4);
+    expect(registry.getStateId('foundation_stone')).toBe(10);
   });
 
   it('all block IDs and texture names are unique and known', () => {
