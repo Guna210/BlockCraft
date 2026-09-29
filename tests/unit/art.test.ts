@@ -3,7 +3,7 @@ import { textureGenerators } from '../../src/render/textures/index';
 import { TextureData } from '../../src/render/textures/noise';
 
 describe('ART.md Automated Checks', () => {
-  it('every pixel belongs to the declared palette and max 12 colors', () => {
+  it('every tile uses at most 12 unique colors', () => {
     for (const [name, generator] of Object.entries(textureGenerators)) {
       if (!generator) continue;
       const result = generator();

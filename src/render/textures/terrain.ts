@@ -151,8 +151,8 @@ export function genGrassTop(seed: number = 12345): TextureData {
 }
 
 export function genGrassSide(seed: number = 34567): TextureData {
-  const data = genDirt();
-  const grassTop = genGrassTop();
+  const data = genDirt(seed);
+  const grassTop = genGrassTop(seed);
   const lcg = new LCG(seed);
 
   for (let x = 0; x < 16; x++) {

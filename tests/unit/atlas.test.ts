@@ -198,29 +198,48 @@ describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
   });
 
   it('generators are deterministic (same seed -> identical hash)', () => {
-    // Check that calling the generator with a specific seed
-    // produces the same output each time.
-    for (const generator of Object.values(textureGenerators)) {
+    // Generators that intentionally ignore seed logic for specific art reasons
+    const seedAgnosticGenerators = [
+      'glass',
+      'oak_log_top',
+      'birch_log_top',
+      'pine_log_top',
+      'water',
+      'lava',
+    ];
+
+    for (const [name, generator] of Object.entries(textureGenerators)) {
       if (!generator) continue;
 
       const result1 = generator(12345);
       const result2 = generator(12345);
+      const result3 = generator(99999);
 
       if (Array.isArray(result1)) {
         const arr2 = result2 as TextureData[];
+        const arr3 = result3 as TextureData[];
+
         expect(result1.length).toBe(arr2.length);
+        expect(result1.length).toBe(arr3.length);
+
         for (let i = 0; i < result1.length; i++) {
           expect(result1[i]).toEqual(arr2[i]);
+
+          if (seedAgnosticGenerators.includes(name)) {
+            expect(result1[i]).toEqual(arr3[i]);
+          } else {
+            expect(result1[i]).not.toEqual(arr3[i]);
+          }
         }
       } else {
         expect(result1).toEqual(result2);
-      }
 
-      // Also ensure different seeds produce different outputs for noises that vary.
-      // E.g., structural noises.
-      // Ensure we consume result3 to avoid typescript warnings
-      const result3 = generator(99999);
-      expect(result3).toBeDefined();
+        if (seedAgnosticGenerators.includes(name)) {
+          expect(result1).toEqual(result3);
+        } else {
+          expect(result1).not.toEqual(result3);
+        }
+      }
     }
   });
 });
