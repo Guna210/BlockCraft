@@ -10,7 +10,6 @@ import { TextureData } from '../render/textures/noise';
 import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
 import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
-import { getLightEngineInstance } from './lighting';
 import { LightWorkerPool } from '../workers/light-worker-pool';
 import { buildPaddedSection } from './padded';
 import { Camera } from '../render/camera';
@@ -146,7 +145,7 @@ export class WorldManager {
       -radiusChunks,
       radiusChunks,
       radiusChunks,
-      getLightEngineInstance().tables,
+      this.world.getLightEngine().tables,
     );
 
     // Set camera spawn at y=80 looking at horizon

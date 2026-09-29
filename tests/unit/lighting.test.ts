@@ -1,18 +1,32 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { World } from '../../src/world/world';
-import {
-  LightEngine,
-  buildLightLookupTables,
-  setLightEngineInstance,
-} from '../../src/world/lighting';
+import { LightEngine, LightStorage, buildLightLookupTables } from '../../src/world/lighting';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { performBulkLightPropagation } from '../../src/workers/light.worker';
+import { generateFlatWorld } from '../../src/gen/flat';
 
 describe('M05a — Light Engine', () => {
   let registry: BlockRegistry;
 
   beforeEach(() => {
     registry = BlockRegistry.getInstance();
+  });
+
+  test('LightStorage.getSectionKey produces 100% unique keys with zero collisions for |cx|,|cz| <= 64 and sy in 0..19', () => {
+    const keys = new Set<number>();
+    let totalSections = 0;
+
+    for (let cx = -64; cx <= 64; cx++) {
+      for (let cz = -64; cz <= 64; cz++) {
+        for (let sy = 0; sy < 20; sy++) {
+          const key = LightStorage.getSectionKey(cx, sy, cz);
+          keys.add(key);
+          totalSections++;
+        }
+      }
+    }
+
+    expect(keys.size).toBe(totalSections);
   });
 
   test('31³ dark room with torch stand-in (level 14) and removal queue returning to 0', () => {
@@ -265,6 +279,83 @@ describe('M05a — Light Engine', () => {
     expect(mismatches).toBe(0);
   }, 15000);
 
+  test('Multi-column differential test: 250 random edits across 3x3 columns match bulk recomputation', () => {
+    const world = new World();
+    const tables = buildLightLookupTables(registry);
+    const engine = world.getLightEngine();
+
+    // Initialize 3x3 columns: cx, cz in [-1, 1]
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        world.getColumn(cx, cz, true);
+        engine.propagateSkyLightColumn(world, cx, cz);
+      }
+    }
+
+    const blockTypes = ['air', 'stone', 'glass', 'water', 'lava'];
+
+    // Perform 250 random block edits across the 3x3 columns
+    let editCount = 0;
+    for (let i = 0; i < 250; i++) {
+      const rx = Math.floor(Math.random() * 48) - 16; // x in [-16, 31]
+      const rz = Math.floor(Math.random() * 48) - 16; // z in [-16, 31]
+      const ry = Math.floor(Math.random() * 40) + 40; // y in [40, 79]
+      const blockId = blockTypes[i % blockTypes.length]!;
+
+      world.setBlock(rx, ry, rz, blockId);
+      editCount++;
+
+      // Every 50 edits, compare incremental light with bulk recomputation
+      if (editCount % 50 === 0) {
+        const columnsData = [];
+        for (let cx = -1; cx <= 1; cx++) {
+          for (let cz = -1; cz <= 1; cz++) {
+            const sections = [];
+            for (let sy = 0; sy < 20; sy++) {
+              const states = new Uint16Array(4096);
+              let idx = 0;
+              for (let ly = 0; ly < 16; ly++) {
+                const y = (sy << 4) + ly;
+                for (let lz = 0; lz < 16; lz++) {
+                  const z = cz * 16 + lz;
+                  for (let lx = 0; lx < 16; lx++) {
+                    const x = cx * 16 + lx;
+                    states[idx++] = world.getBlockStateId(x, y, z);
+                  }
+                }
+              }
+              sections.push({ sy, states });
+            }
+            columnsData.push({ cx, cz, sections });
+          }
+        }
+
+        const { world: worldRef, lightEngine: engineRef } = performBulkLightPropagation(
+          -1,
+          -1,
+          1,
+          1,
+          columnsData,
+          tables,
+        );
+
+        let mismatches = 0;
+        for (let x = -16; x < 32; x++) {
+          for (let z = -16; z < 32; z++) {
+            for (let y = 40; y < 80; y++) {
+              const lightInc = world.getLight(x, y, z);
+              const lightRef = worldRef.getLight(x, y, z);
+              if (lightInc.sky !== lightRef.sky || lightInc.block !== lightRef.block) {
+                mismatches++;
+              }
+            }
+          }
+        }
+        expect(mismatches).toBe(0);
+      }
+    }
+  }, 40000);
+
   test('Opacity rules: air and glass pass sky light at 15 straight down; water and leaves attenuate by 2', () => {
     const world = new World();
 
@@ -333,4 +424,45 @@ describe('M05a — Light Engine', () => {
     // World 2 has no lava placed at (0, 64, 0)
     expect(world2.getLight(0, 64, 0).block).toBe(0);
   });
+
+  test('Benchmark bulk light propagation on flat world (informational)', () => {
+    const radius = 2; // 5x5 = 25 columns
+    const world = generateFlatWorld(radius);
+    const tables = buildLightLookupTables(registry);
+
+    const columnsData = [];
+    for (let cx = -radius; cx <= radius; cx++) {
+      for (let cz = -radius; cz <= radius; cz++) {
+        const sections = [];
+        for (let sy = 0; sy < 20; sy++) {
+          const sec = world.getColumn(cx, cz, false)?.getSection(sy);
+          if (!sec) {
+            sections.push({ sy, states: null, uniformStateId: 0 });
+          } else if (sec.getBitsPerEntry() === 0) {
+            sections.push({ sy, states: null, uniformStateId: sec.uniformStateId });
+          } else {
+            const states = new Uint16Array(4096);
+            let idx = 0;
+            for (let ly = 0; ly < 16; ly++) {
+              for (let lz = 0; lz < 16; lz++) {
+                for (let lx = 0; lx < 16; lx++) {
+                  states[idx++] = sec.getBlockStateId(lx, ly, lz);
+                }
+              }
+            }
+            sections.push({ sy, states });
+          }
+        }
+        columnsData.push({ cx, cz, sections });
+      }
+    }
+
+    const start = performance.now();
+    performBulkLightPropagation(-radius, -radius, radius, radius, columnsData, tables);
+    const duration = performance.now() - start;
+
+    console.log(
+      `[M05a Performance Benchmark] Bulk light propagation for ${columnsData.length} flat columns took ${duration.toFixed(2)} ms (${(duration / columnsData.length).toFixed(2)} ms/column).`,
+    );
+  }, 20000);
 });

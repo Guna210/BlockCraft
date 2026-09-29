@@ -1,7 +1,6 @@
 import { World } from './world';
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
-import { getWorldInstance } from './world-instance';
 
 export interface LightLookupTables {
   opacity: Uint8Array; // stateId -> 0..15
@@ -72,7 +71,7 @@ export function buildLightLookupTables(
 }
 
 export class LightStorage {
-  // Numeric key: ((cx + 32768) << 16) | ((cz + 32768) << 5) | (sy & 0x1F)
+  // Collision-free numeric key: ((cx + 32768) * 65536 + (cz + 32768)) * 32 + sy
   private sections: Map<number, Uint8Array> = new Map();
 
   // Fast single-entry cache for inner loop access
@@ -80,7 +79,7 @@ export class LightStorage {
   private lastSec: Uint8Array | undefined = undefined;
 
   public static getSectionKey(cx: number, sy: number, cz: number): number {
-    return (((cx + 32768) & 0xffff) << 16) | (((cz + 32768) & 0xffff) << 5) | (sy & 0x1f);
+    return ((cx + 32768) * 65536 + (cz + 32768)) * 32 + sy;
   }
 
   public getSection(cx: number, sy: number, cz: number): Uint8Array | undefined {
@@ -472,18 +471,30 @@ export class LightEngine {
         const x = startX + lx;
         const z = startZ + lz;
 
-        let curSky = 15;
+        // Find highest non-transparent block
+        let yOpaque = -1;
         for (let y = ChunkColumn.MAX_Y; y >= ChunkColumn.MIN_Y; y--) {
           const stateId = world.getBlockStateId(x, y, z);
           const op = this.getOpacity(stateId);
+          if (op > 0) {
+            yOpaque = y;
+            break;
+          }
+        }
 
-          if (curSky === 15 && op === 0) {
-            // Direct sky light 15 travels straight down without loss
-            this.storage.setSkyLight(x, y, z, 15);
-            this.markTouched(x, y, z);
-            this.pushAdd(x, y, z);
-          } else {
-            // Attenuate
+        // Fill sky light 15 directly down to yOpaque + 1
+        for (let y = ChunkColumn.MAX_Y; y > yOpaque; y--) {
+          this.storage.setSkyLight(x, y, z, 15);
+          this.markTouched(x, y, z);
+          this.pushAdd(x, y, z);
+        }
+
+        // Calculate sky light decay through yOpaque and below
+        if (yOpaque >= ChunkColumn.MIN_Y) {
+          let curSky = 15;
+          for (let y = yOpaque; y >= ChunkColumn.MIN_Y; y--) {
+            const stateId = world.getBlockStateId(x, y, z);
+            const op = this.getOpacity(stateId);
             curSky = Math.max(0, curSky - Math.max(1, op));
             this.storage.setSkyLight(x, y, z, curSky);
             this.markTouched(x, y, z);
@@ -842,35 +853,5 @@ export class LightEngine {
     if (sources.length > 0) {
       this.propagateBlockLight(world, sources);
     }
-  }
-}
-
-let customFallbackEngine: LightEngine | null = null;
-
-export function getLightEngineInstance(): LightEngine {
-  if (customFallbackEngine) {
-    return customFallbackEngine;
-  }
-  try {
-    const world = getWorldInstance();
-    if (world) {
-      return world.getLightEngine();
-    }
-  } catch {
-    // Fall back to default
-  }
-  customFallbackEngine = new LightEngine();
-  return customFallbackEngine;
-}
-
-export function setLightEngineInstance(engine: LightEngine | null): void {
-  customFallbackEngine = engine;
-  try {
-    const world = getWorldInstance();
-    if (world && engine) {
-      world.setLightEngine(engine);
-    }
-  } catch {
-    // Ignore if world instance not initialized yet
   }
 }
