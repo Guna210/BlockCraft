@@ -136,10 +136,12 @@ export class TestScene {
 
     // 4. Setup Camera
     this.camera = new Camera(aspect);
-    // Camera starting position: looking down at 30-45 deg onto 5x5 grid with margin
-    this.camera.position = vec3.fromValues(0, 4.5, 5.8);
+    // Set camera FOV slightly wider (75 deg) and position closer so grid fills >30% of screen with margin
+    this.camera.fov = 75 * (Math.PI / 180);
+    this.camera.updateProjection();
+    this.camera.position = vec3.fromValues(0, 4.0, 5.2);
     this.camera.yaw = -Math.PI / 2;
-    this.camera.pitch = -0.6;
+    this.camera.pitch = -0.62;
     this.camera.updateView();
     setActiveCamera(this.camera);
 
@@ -148,7 +150,7 @@ export class TestScene {
     const cutoutVerts: number[] = [];
     const translucentVerts: number[] = [];
 
-    const spacing = 1.8;
+    const spacing = 1.5;
     for (let i = 0; i < SCENE_MATERIALS.length; i++) {
       const mat = SCENE_MATERIALS[i]!;
       const row = Math.floor(i / 5);

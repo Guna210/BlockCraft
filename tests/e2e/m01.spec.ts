@@ -31,7 +31,7 @@ test('M01: 5x5 texture grid test scene renders correctly and updates on camera r
 
   // Rotate camera 90 degrees (from yaw -PI/2 to 0) via debug look API directly
   await page.evaluate(() => {
-    window.__blockcraft!.look!(0, -0.6);
+    window.__blockcraft!.look!(0, -0.62);
   });
 
   // Wait for a rendered frame
