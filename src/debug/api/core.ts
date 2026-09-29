@@ -1,5 +1,6 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  look?: (yaw: number, pitch: number) => void;
   audio?: typeof import('./audio').audioApi;
   getRenderStats(): {
     fps: number;
