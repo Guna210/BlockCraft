@@ -1,14 +1,5 @@
 // src/render/textures/terrain.ts
-import {
-  createEmptyTexture,
-  TextureData,
-  LCG,
-  setPixel,
-  fillSolid,
-  RGB,
-  RGBA,
-  hexToRgb,
-} from './noise';
+import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb } from './noise';
 
 const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) => hexToRgb(h));
 const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) => hexToRgb(h));
@@ -25,9 +16,9 @@ export function getStonePalette() {
   return PAL_STONE;
 }
 
-export function genStone(): TextureData {
+export function genStone(seed: number = 45678): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(45678);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_STONE[1]!);
 
   for (let i = 0; i < 8; i++) {
@@ -58,9 +49,9 @@ export function genStone(): TextureData {
   return data;
 }
 
-export function genCobblestone(): TextureData {
+export function genCobblestone(seed: number = 56789): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(56789);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_STONE[0]!);
 
   const numStones = lcg.nextInt(6, 9);
@@ -117,9 +108,9 @@ export function genCobblestone(): TextureData {
   return data;
 }
 
-export function genDirt(): TextureData {
+export function genDirt(seed: number = 23456): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(23456);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_DIRT[2]!);
 
   for (let i = 0; i < 15; i++) {
@@ -141,9 +132,9 @@ export function genDirt(): TextureData {
   return data;
 }
 
-export function genGrassTop(): TextureData {
+export function genGrassTop(seed: number = 12345): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(12345);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_GRASS[2]!);
 
   for (let i = 0; i < 20; i++) {
@@ -159,10 +150,10 @@ export function genGrassTop(): TextureData {
   return data;
 }
 
-export function genGrassSide(): TextureData {
+export function genGrassSide(seed: number = 34567): TextureData {
   const data = genDirt();
   const grassTop = genGrassTop();
-  const lcg = new LCG(34567);
+  const lcg = new LCG(seed);
 
   for (let x = 0; x < 16; x++) {
     const fringeDepth = lcg.nextInt(3, 6);
@@ -185,9 +176,9 @@ export function genGrassSide(): TextureData {
   return data;
 }
 
-export function genSand(): TextureData {
+export function genSand(seed: number = 67890): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(67890);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_SAND[2]!);
 
   for (let i = 0; i < 30; i++) {
@@ -206,9 +197,9 @@ export function genSand(): TextureData {
   return data;
 }
 
-export function genGravel(): TextureData {
+export function genGravel(seed: number = 78901): TextureData {
   const data = createEmptyTexture();
-  const lcg = new LCG(78901);
+  const lcg = new LCG(seed);
   fillSolid(data, PAL_GRAVEL[0]!);
 
   const numPebbles = lcg.nextInt(6, 9);
@@ -247,7 +238,7 @@ export function genGravel(): TextureData {
   return data;
 }
 
-export function genGlass(): TextureData {
+export function genGlass(_seed: number = 0): TextureData {
   const data = createEmptyTexture();
   fillSolid(data, PAL_GLASS_PANE);
 

@@ -34,7 +34,7 @@ import {
 } from './ores';
 import { genWaterFrames, genLavaFrames } from './fluids';
 
-export type TextureGenerator = () => TextureData | TextureData[];
+export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
 export const textureGenerators: Record<string, TextureGenerator> = {
   // Terrain

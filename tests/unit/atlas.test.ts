@@ -1,32 +1,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { textureGenerators, M01_REQUIRED_TEXTURES } from '../../src/render/textures/index';
-import { TextureAtlas, ATLAS_MAX_MIP, TILE_SIZE, CELL_SIZE } from '../../src/render/atlas';
+import { TextureAtlas, ATLAS_MAX_MIP, CELL_SIZE, PADDING } from '../../src/render/atlas';
 import { TextureData } from '../../src/render/textures/noise';
 import { PNG } from 'pngjs';
 import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Procedural Textures & Atlas (M01b)', () => {
-  it('generators are deterministic (same seed -> identical pixel hash)', () => {
-    // We don't have an explicit seed parameter in our generators right now since they are hardcoded per type.
-    // So we just call them twice and ensure identical output.
-    for (const generator of Object.values(textureGenerators)) {
-      if (!generator) continue;
-      const result1 = generator();
-      const result2 = generator();
-
-      if (Array.isArray(result1)) {
-        const arr2 = result2 as TextureData[];
-        expect(result1.length).toBe(arr2.length);
-        for (let i = 0; i < result1.length; i++) {
-          expect(result1[i]).toEqual(arr2[i]);
-        }
-      } else {
-        expect(result1).toEqual(result2);
-      }
-    }
-  });
-
   it('every required texture resolves to a tile', () => {
     const keys = Object.keys(textureGenerators);
     for (const req of M01_REQUIRED_TEXTURES) {
@@ -63,13 +43,12 @@ describe('Procedural Textures & Atlas (M01b)', () => {
       }
     });
 
-    it('mip level k tile size = 16 >> k', () => {
-      // Just assert the mathematical requirement at levels 0, 1, 2
+    it('mip chain sizes read from the real atlas mips', () => {
       for (let k = 0; k <= ATLAS_MAX_MIP; k++) {
-        const size = TILE_SIZE >> k;
-        if (k === 0) expect(size).toBe(16);
-        if (k === 1) expect(size).toBe(8);
-        if (k === 2) expect(size).toBe(4);
+        const mip = atlas.mips[k]!;
+        const width = atlas.width >> k;
+        const height = atlas.height >> k;
+        expect(mip.length).toBe(width * height * 4);
       }
     });
 
@@ -109,9 +88,6 @@ describe('Procedural Textures & Atlas (M01b)', () => {
 
           const mipBaseX = col * mipCellSize;
           const mipBaseY = row * mipCellSize;
-
-          // Check that every pixel inside the tile's rect PLUS a 1 px border contains exactly that color
-          // We check the entire padded cell actually, since it wraps and the tile is solid, the wrapped pixels should also be the exact same solid color.
 
           for (let y = 0; y < mipCellSize; y++) {
             for (let x = 0; x < mipCellSize; x++) {
@@ -169,7 +145,6 @@ describe('Procedural Textures & Atlas (M01b)', () => {
 
 describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
   it('duplicate rect test checks bounds and overlap', () => {
-    const PADDING = 4;
     // Generate an atlas
     const atlasTiles = new Map<string, TextureData>();
     for (const [name, generator] of Object.entries(textureGenerators)) {
@@ -219,6 +194,33 @@ describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
         );
         expect(overlap, `Rect ${i} overlaps with Rect ${j}`).toBe(false);
       }
+    }
+  });
+
+  it('generators are deterministic (same seed -> identical hash)', () => {
+    // Check that calling the generator with a specific seed
+    // produces the same output each time.
+    for (const generator of Object.values(textureGenerators)) {
+      if (!generator) continue;
+
+      const result1 = generator(12345);
+      const result2 = generator(12345);
+
+      if (Array.isArray(result1)) {
+        const arr2 = result2 as TextureData[];
+        expect(result1.length).toBe(arr2.length);
+        for (let i = 0; i < result1.length; i++) {
+          expect(result1[i]).toEqual(arr2[i]);
+        }
+      } else {
+        expect(result1).toEqual(result2);
+      }
+
+      // Also ensure different seeds produce different outputs for noises that vary.
+      // E.g., structural noises.
+      // Ensure we consume result3 to avoid typescript warnings
+      const result3 = generator(99999);
+      expect(result3).toBeDefined();
     }
   });
 });

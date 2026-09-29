@@ -58,21 +58,21 @@ function genOre(
   return data;
 }
 
-export function genCoalOre(): TextureData {
-  return genOre(PAL_COAL, 661);
+export function genCoalOre(seed: number = 661): TextureData {
+  return genOre(PAL_COAL, seed);
 }
-export function genCopperOre(): TextureData {
-  return genOre(PAL_COPPER, 662, 'patina');
+export function genCopperOre(seed: number = 662): TextureData {
+  return genOre(PAL_COPPER, seed, 'patina');
 }
-export function genIronOre(): TextureData {
-  return genOre(PAL_IRON, 663);
+export function genIronOre(seed: number = 663): TextureData {
+  return genOre(PAL_IRON, seed);
 }
-export function genGoldOre(): TextureData {
-  return genOre(PAL_GOLD, 664);
+export function genGoldOre(seed: number = 664): TextureData {
+  return genOre(PAL_GOLD, seed);
 }
-export function genLumiteOre(): TextureData {
-  return genOre(PAL_LUMITE, 665);
+export function genLumiteOre(seed: number = 665): TextureData {
+  return genOre(PAL_LUMITE, seed);
 }
-export function genSkyshardOre(): TextureData {
-  return genOre(PAL_SKYSHARD, 666, 'crystal');
+export function genSkyshardOre(seed: number = 666): TextureData {
+  return genOre(PAL_SKYSHARD, seed, 'crystal');
 }

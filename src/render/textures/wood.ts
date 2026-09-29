@@ -1,14 +1,5 @@
 // src/render/textures/wood.ts
-import {
-  createEmptyTexture,
-  TextureData,
-  LCG,
-  setPixel,
-  fillSolid,
-  RGB,
-  RGBA,
-  hexToRgb,
-} from './noise';
+import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb, RGBA } from './noise';
 
 const PAL_OAK_BARK = ['#1f140d', '#45311f', '#5b422a', '#7e5b3a'].map((h) => hexToRgb(h));
 const PAL_OAK_WOOD = ['#6e5230', '#8a6a3f', '#a5824f', '#bf9a62'].map((h) => hexToRgb(h));
@@ -56,7 +47,7 @@ function genLogSide(barkPal: RGBA[], seed: number, style: 'oak' | 'birch' | 'pin
   return data;
 }
 
-function genLogTop(woodPal: RGBA[], barkPal: RGBA[], seed: number): TextureData {
+function genLogTop(woodPal: RGBA[], barkPal: RGBA[]): TextureData {
   const data = createEmptyTexture();
   fillSolid(data, woodPal[2]!);
 
@@ -91,23 +82,23 @@ function genLogTop(woodPal: RGBA[], barkPal: RGBA[], seed: number): TextureData 
   return data;
 }
 
-export function genOakLogTop(): TextureData {
-  return genLogTop(PAL_OAK_WOOD, PAL_OAK_BARK, 111);
+export function genOakLogTop(_seed?: number): TextureData {
+  return genLogTop(PAL_OAK_WOOD, PAL_OAK_BARK);
 }
-export function genOakLogSide(): TextureData {
-  return genLogSide(PAL_OAK_BARK, 112, 'oak');
+export function genOakLogSide(seed: number = 112): TextureData {
+  return genLogSide(PAL_OAK_BARK, seed, 'oak');
 }
-export function genBirchLogTop(): TextureData {
-  return genLogTop(PAL_BIRCH_WOOD, PAL_BIRCH_BARK, 221);
+export function genBirchLogTop(_seed?: number): TextureData {
+  return genLogTop(PAL_BIRCH_WOOD, PAL_BIRCH_BARK);
 }
-export function genBirchLogSide(): TextureData {
-  return genLogSide(PAL_BIRCH_BARK, 222, 'birch');
+export function genBirchLogSide(seed: number = 222): TextureData {
+  return genLogSide(PAL_BIRCH_BARK, seed, 'birch');
 }
-export function genPineLogTop(): TextureData {
-  return genLogTop(PAL_PINE_WOOD, PAL_PINE_BARK, 331);
+export function genPineLogTop(_seed?: number): TextureData {
+  return genLogTop(PAL_PINE_WOOD, PAL_PINE_BARK);
 }
-export function genPineLogSide(): TextureData {
-  return genLogSide(PAL_PINE_BARK, 332, 'pine');
+export function genPineLogSide(seed: number = 332): TextureData {
+  return genLogSide(PAL_PINE_BARK, seed, 'pine');
 }
 
 function genPlanks(woodPal: RGBA[], seed: number): TextureData {
@@ -139,14 +130,14 @@ function genPlanks(woodPal: RGBA[], seed: number): TextureData {
   return data;
 }
 
-export function genOakPlanks(): TextureData {
-  return genPlanks(PAL_OAK_WOOD, 441);
+export function genOakPlanks(seed: number = 441): TextureData {
+  return genPlanks(PAL_OAK_WOOD, seed);
 }
-export function genBirchPlanks(): TextureData {
-  return genPlanks(PAL_BIRCH_WOOD, 442);
+export function genBirchPlanks(seed: number = 442): TextureData {
+  return genPlanks(PAL_BIRCH_WOOD, seed);
 }
-export function genPinePlanks(): TextureData {
-  return genPlanks(PAL_PINE_WOOD, 443);
+export function genPinePlanks(seed: number = 443): TextureData {
+  return genPlanks(PAL_PINE_WOOD, seed);
 }
 
 function genLeaves(baseSeed: number): TextureData {
@@ -174,12 +165,12 @@ function genLeaves(baseSeed: number): TextureData {
   return data;
 }
 
-export function genOakLeaves(): TextureData {
-  return genLeaves(551);
+export function genOakLeaves(seed: number = 551): TextureData {
+  return genLeaves(seed);
 }
-export function genBirchLeaves(): TextureData {
-  return genLeaves(552);
+export function genBirchLeaves(seed: number = 552): TextureData {
+  return genLeaves(seed);
 }
-export function genPineLeaves(): TextureData {
-  return genLeaves(553);
+export function genPineLeaves(seed: number = 553): TextureData {
+  return genLeaves(seed);
 }
