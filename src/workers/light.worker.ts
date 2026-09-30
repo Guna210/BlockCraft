@@ -1,5 +1,4 @@
-import { LightEngine, buildLightLookupTables } from '../world/lighting';
-import { World } from '../world/world';
+import { buildLightLookupTables, computeRegionLight, LightStorage } from '../world/lighting';
 import { BlockRegistry } from '../world/blocks/registry';
 
 const ctx: Worker = self as unknown as Worker;
@@ -16,7 +15,10 @@ export interface LightRegionRequest {
 }
 
 export interface SectionLightTransfer {
-  key: string; // "cx,sy,cz"
+  key: number; // numeric section key packed from cx, sy, cz
+  cx: number;
+  sy: number;
+  cz: number;
   lightData: Uint8Array; // 4096 bytes
 }
 
@@ -28,35 +30,7 @@ export interface LightRegionResponse {
 ctx.onmessage = (event: MessageEvent) => {
   const { id, radiusChunks, regionColumns } = event.data as LightRegionRequest;
 
-  // Pass false to World constructor to avoid creating an unused LightEngine inside World
-  const world = new World(false);
-  const engine = new LightEngine(tables);
-
-  // Populate world from regionColumns
-  for (const [key, sectionArray] of Object.entries(regionColumns)) {
-    const [ccxStr, cczStr] = key.split(',');
-    const ccx = parseInt(ccxStr!, 10);
-    const ccz = parseInt(cczStr!, 10);
-    const col = world.getColumn(ccx, ccz, true)!;
-
-    sectionArray.forEach((secData, sy) => {
-      const sec = col.getOrCreateSection(sy);
-      if (sec) {
-        if (typeof secData === 'number') {
-          sec.fill(secData);
-        } else if (secData instanceof Uint16Array) {
-          sec.loadBlockStatesFrom(secData);
-        }
-      }
-    });
-  }
-
-  // Initialize column light sequentially across all columns in the region in a single LightEngine
-  for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
-    for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
-      engine.initializeColumnLight(world, cx, cz);
-    }
-  }
+  const resultMap = computeRegionLight(radiusChunks, regionColumns, tables);
 
   const sections: SectionLightTransfer[] = [];
   const transferables: Transferable[] = [];
@@ -64,11 +38,11 @@ ctx.onmessage = (event: MessageEvent) => {
   for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
     for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
       for (let sy = 0; sy < 20; sy++) {
-        const raw = engine.storage.getRawData(cx, sy, cz);
+        const secKey = LightStorage.getSectionKey(cx, sy, cz);
+        const raw = resultMap.get(secKey);
         if (raw) {
-          const lightData = new Uint8Array(raw);
-          sections.push({ key: `${cx},${sy},${cz}`, lightData });
-          transferables.push(lightData.buffer);
+          sections.push({ key: secKey, cx, sy, cz, lightData: raw });
+          transferables.push(raw.buffer);
         }
       }
     }

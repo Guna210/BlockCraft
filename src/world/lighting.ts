@@ -52,19 +52,42 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
 }
 
 export class LightStorage {
-  private sections: Map<string, Uint8Array> = new Map();
-  public touchedSections: Set<string> = new Set();
+  // Map numeric section key to Uint8Array (4096 bytes)
+  private sections: Map<number, Uint8Array> = new Map();
+  public touchedSections: Set<number> = new Set();
 
-  public static getSectionKey(cx: number, sy: number, cz: number): string {
-    return `${cx},${sy},${cz}`;
+  /**
+   * Arithmetic section key packing (cx, sy, cz).
+   * Formula: ((cx + 32768) * 65536 + (cz + 32768)) * 32 + sy
+   * Range supported: |cx|, |cz| <= 32767, sy 0..31 (exact up to 2^53 in JS numbers).
+   */
+  public static getSectionKey(cx: number, sy: number, cz: number): number {
+    if (cx < -32767 || cx > 32767 || cz < -32767 || cz > 32767) {
+      throw new Error(
+        `Chunk coordinates (${cx}, ${cz}) out of supported key range [-32767, 32767].`,
+      );
+    }
+    if (sy < 0 || sy > 31) {
+      throw new Error(`Section Y coordinate ${sy} out of supported range [0, 31].`);
+    }
+    return ((cx + 32768) * 65536 + (cz + 32768)) * 32 + sy;
   }
 
   public getRawData(cx: number, sy: number, cz: number): Uint8Array | undefined {
     return this.sections.get(LightStorage.getSectionKey(cx, sy, cz));
   }
 
+  public getRawDataByKey(key: number): Uint8Array | undefined {
+    return this.sections.get(key);
+  }
+
   public setRawData(cx: number, sy: number, cz: number, data: Uint8Array): void {
     const key = LightStorage.getSectionKey(cx, sy, cz);
+    this.sections.set(key, data);
+    this.touchedSections.add(key);
+  }
+
+  public setRawDataByKey(key: number, data: Uint8Array): void {
     this.sections.set(key, data);
     this.touchedSections.add(key);
   }
@@ -200,7 +223,8 @@ export class LightEngine {
   private skyAddHead = 0;
   private skyAddTail = 0;
 
-  private heightmaps: Map<string, Int16Array> = new Map();
+  // Key: (cx + 32768) * 65536 + (cz + 32768)
+  private heightmaps: Map<number, Int16Array> = new Map();
 
   constructor(tables?: LightLookupTables) {
     if (tables) {
@@ -208,6 +232,10 @@ export class LightEngine {
     } else {
       this.tables = buildLightLookupTables(BlockRegistry.getInstance());
     }
+  }
+
+  private static getColumnKey(cx: number, cz: number): number {
+    return (cx + 32768) * 65536 + (cz + 32768);
   }
 
   private ensureBlockRemQueue(): void {
@@ -272,7 +300,10 @@ export class LightEngine {
     if (y < 0 || y > 319) {
       return { sky: y > 319 ? 15 : 0, block: 0 };
     }
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
     const sy = y >> 4;
     const ly = y & 15;
     return {
@@ -282,8 +313,11 @@ export class LightEngine {
   }
 
   public getHighestOpaqueY(world: World, x: number, z: number): number {
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
-    const key = `${cx},${cz}`;
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+    const key = LightEngine.getColumnKey(cx, cz);
     let hm = this.heightmaps.get(key);
     if (!hm) {
       hm = new Int16Array(256);
@@ -315,8 +349,11 @@ export class LightEngine {
     oldOp: number,
     newOp: number,
   ): { oldHighestY: number; newHighestY: number } {
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
-    const key = `${cx},${cz}`;
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+    const key = LightEngine.getColumnKey(cx, cz);
     let hm = this.heightmaps.get(key);
     if (!hm) {
       hm = new Int16Array(256);
@@ -363,7 +400,7 @@ export class LightEngine {
   }
 
   public clearColumnCache(cx: number, cz: number): void {
-    this.heightmaps.delete(`${cx},${cz}`);
+    this.heightmaps.delete(LightEngine.getColumnKey(cx, cz));
   }
 
   public initializeColumnLight(world: World, cx: number, cz: number): void {
@@ -475,7 +512,8 @@ export class LightEngine {
               const ny = y + DY[i]!;
               const nz = z + DZ[i]!;
               if (ny < 0 || ny > 319) continue;
-              const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
+              const ncx = Math.floor(nx / 16);
+              const ncz = Math.floor(nz / 16);
               if (!world.hasColumn(ncx, ncz)) continue;
 
               const stN = world.getBlockStateId(nx, ny, nz);
@@ -525,7 +563,10 @@ export class LightEngine {
     const oldEmit = this.tables.emissionTable[oldStateId] ?? 0;
     const newEmit = this.tables.emissionTable[newStateId] ?? 0;
 
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
     const sy = y >> 4;
     const ly = y & 15;
 
@@ -557,7 +598,8 @@ export class LightEngine {
         const ny = y + DY[i]!;
         const nz = z + DZ[i]!;
         if (ny >= 0 && ny <= 319) {
-          const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
+          const ncx = Math.floor(nx / 16);
+          const ncz = Math.floor(nz / 16);
           if (world.hasColumn(ncx, ncz)) {
             const nBL = this.getLight(nx, ny, nz).block;
             if (nBL > 1) {
@@ -596,7 +638,10 @@ export class LightEngine {
       // Clear vertical beam below (x, y, z) down to the first full opaque block
       if (y >= oldHighestY) {
         for (let cy = y - 1; cy >= 0; cy--) {
-          const { cx: ccx, cz: ccz, localX: clx, localZ: clz } = World.worldToChunk(x, z);
+          const ccx = Math.floor(x / 16);
+          const ccz = Math.floor(z / 16);
+          const clx = ((x % 16) + 16) % 16;
+          const clz = ((z % 16) + 16) % 16;
           const csy = cy >> 4;
           const cly = cy & 15;
           const cst = world.getBlockStateId(x, cy, z);
@@ -621,7 +666,10 @@ export class LightEngine {
         this.pushSkyAdd(x, y, z);
 
         for (let cy = y - 1; cy >= 0; cy--) {
-          const { cx: ccx, cz: ccz, localX: clx, localZ: clz } = World.worldToChunk(x, z);
+          const ccx = Math.floor(x / 16);
+          const ccz = Math.floor(z / 16);
+          const clx = ((x % 16) + 16) % 16;
+          const clz = ((z % 16) + 16) % 16;
           const csy = cy >> 4;
           const cly = cy & 15;
           const cst = world.getBlockStateId(x, cy, z);
@@ -641,7 +689,8 @@ export class LightEngine {
         const ny = y + DY[i]!;
         const nz = z + DZ[i]!;
         if (ny >= 0 && ny <= 319) {
-          const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
+          const ncx = Math.floor(nx / 16);
+          const ncz = Math.floor(nz / 16);
           if (world.hasColumn(ncx, ncz)) {
             const nSky = this.getLight(nx, ny, nz).sky;
             if (nSky > 1) {
@@ -718,7 +767,10 @@ export class LightEngine {
         const nz = rz + DZ[i]!;
         if (ny < 0 || ny > 319) continue;
 
-        const { cx: ncx, cz: ncz, localX: nlx, localZ: nlz } = World.worldToChunk(nx, nz);
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
         if (!world.hasColumn(ncx, ncz)) continue;
 
         const nsy = ny >> 4;
@@ -748,7 +800,10 @@ export class LightEngine {
       const az = this.blockAddZ[this.blockAddHead]!;
       this.blockAddHead++;
 
-      const { cx: acx, cz: acz, localX: alx, localZ: alz } = World.worldToChunk(ax, az);
+      const acx = Math.floor(ax / 16);
+      const acz = Math.floor(az / 16);
+      const alx = ((ax % 16) + 16) % 16;
+      const alz = ((az % 16) + 16) % 16;
       const asy = ay >> 4;
       const aly = ay & 15;
       const curBL = this.storage.getBlockLight(acx, asy, acz, alx, aly, alz);
@@ -760,7 +815,10 @@ export class LightEngine {
         const nz = az + DZ[i]!;
         if (ny < 0 || ny > 319) continue;
 
-        const { cx: ncx, cz: ncz, localX: nlx, localZ: nlz } = World.worldToChunk(nx, nz);
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
         if (!world.hasColumn(ncx, ncz)) continue;
 
         const st = world.getBlockStateId(nx, ny, nz);
@@ -797,7 +855,10 @@ export class LightEngine {
         const nz = rz + DZ[i]!;
         if (ny < 0 || ny > 319) continue;
 
-        const { cx: ncx, cz: ncz, localX: nlx, localZ: nlz } = World.worldToChunk(nx, nz);
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
         if (!world.hasColumn(ncx, ncz)) continue;
 
         const nsy = ny >> 4;
@@ -822,7 +883,10 @@ export class LightEngine {
       const az = this.skyAddZ[this.skyAddHead]!;
       this.skyAddHead++;
 
-      const { cx: acx, cz: acz, localX: alx, localZ: alz } = World.worldToChunk(ax, az);
+      const acx = Math.floor(ax / 16);
+      const acz = Math.floor(az / 16);
+      const alx = ((ax % 16) + 16) % 16;
+      const alz = ((az % 16) + 16) % 16;
       const asy = ay >> 4;
       const aly = ay & 15;
       const curSky = this.storage.getSkyLight(acx, asy, acz, alx, aly, alz);
@@ -837,7 +901,10 @@ export class LightEngine {
         const nz = az + DZ[i]!;
         if (ny < 0 || ny > 319) continue;
 
-        const { cx: ncx, cz: ncz, localX: nlx, localZ: nlz } = World.worldToChunk(nx, nz);
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
         if (!world.hasColumn(ncx, ncz)) continue;
 
         const st = world.getBlockStateId(nx, ny, nz);
@@ -863,4 +930,523 @@ export class LightEngine {
       }
     }
   }
+}
+
+/**
+ * Bulk Region Lighting on flat typed arrays.
+ * Accepts a grid of columns defined by radiusChunks (-radiusChunks..+radiusChunks).
+ * Flat array layout per column:
+ *   Width W = (2 * radiusChunks + 1) * 16, Depth D = (2 * radiusChunks + 1) * 16, Height H = 320.
+ *   Total region dimensions: dimX x 320 x dimZ.
+ *   Coordinates mapped to local 3D index: idx = y * (dimX * dimZ) + z * dimX + x.
+ */
+export function computeRegionLight(
+  radiusChunks: number,
+  regionColumns: Record<string, (Uint16Array | number)[]>,
+  tables: LightLookupTables,
+): Map<number, Uint8Array> {
+  const sideChunks = 2 * radiusChunks + 1;
+  const dimX = sideChunks * 16;
+  const dimZ = sideChunks * 16;
+  const areaXZ = dimX * dimZ;
+  const totalVolume = areaXZ * 320;
+
+  const opacityTable = tables.opacityTable;
+  const emissionTable = tables.emissionTable;
+
+  // 1. Unpack block states, opacity, and emission into flat typed arrays for the region
+  const opacityGrid = new Uint8Array(totalVolume);
+  const skyGrid = new Uint8Array(totalVolume);
+  const blockGrid = new Uint8Array(totalVolume);
+
+  // Buffer for block emitters to seed block BFS later: [xLocal, y, zLocal] packed or flat indices
+  // Using a flat Int32Array queue for block BFS seeding and propagation
+  let blockAddQueue = new Int32Array(524288);
+  let blockAddHead = 0;
+  let blockAddTail = 0;
+
+  for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+    const minX = (cx + radiusChunks) * 16;
+    for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+      const minZ = (cz + radiusChunks) * 16;
+      const key = `${cx},${cz}`;
+      const secArray = regionColumns[key];
+      if (!secArray) continue;
+
+      for (let sy = 0; sy < 20; sy++) {
+        const secData = secArray[sy];
+        const minY = sy * 16;
+
+        if (typeof secData === 'number') {
+          const stateId = secData;
+          const op = opacityTable[stateId] ?? 0;
+          const emit = emissionTable[stateId] ?? 0;
+
+          for (let ly = 0; ly < 16; ly++) {
+            const y = minY + ly;
+            const yOffset = y * areaXZ;
+            for (let lz = 0; lz < 16; lz++) {
+              const zLocal = minZ + lz;
+              const zOffset = yOffset + zLocal * dimX;
+              for (let lx = 0; lx < 16; lx++) {
+                const xLocal = minX + lx;
+                const idx = zOffset + xLocal;
+                opacityGrid[idx] = op;
+                if (emit > 0) {
+                  blockGrid[idx] = emit;
+                  if (blockAddTail >= blockAddQueue.length) {
+                    const newQ = new Int32Array(blockAddQueue.length * 2);
+                    newQ.set(blockAddQueue);
+                    blockAddQueue = newQ;
+                  }
+                  blockAddQueue[blockAddTail++] = idx;
+                }
+              }
+            }
+          }
+        } else if (secData instanceof Uint16Array) {
+          for (let ly = 0; ly < 16; ly++) {
+            const y = minY + ly;
+            const yOffset = y * areaXZ;
+            for (let lz = 0; lz < 16; lz++) {
+              const zLocal = minZ + lz;
+              const zOffset = yOffset + zLocal * dimX;
+              const secZOffset = (ly << 8) | (lz << 4);
+              for (let lx = 0; lx < 16; lx++) {
+                const xLocal = minX + lx;
+                const idx = zOffset + xLocal;
+                const stateId = secData[secZOffset | lx]!;
+                const op = opacityTable[stateId] ?? 0;
+                const emit = emissionTable[stateId] ?? 0;
+
+                opacityGrid[idx] = op;
+                if (emit > 0) {
+                  blockGrid[idx] = emit;
+                  if (blockAddTail >= blockAddQueue.length) {
+                    const newQ = new Int32Array(blockAddQueue.length * 2);
+                    newQ.set(blockAddQueue);
+                    blockAddQueue = newQ;
+                  }
+                  blockAddQueue[blockAddTail++] = idx;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Vertical Sky Light Pass for every column in region
+  // Beam mask per column (dimX * dimZ): stores current sky light at the column top or ray front
+  const skyCol = new Uint8Array(areaXZ);
+  skyCol.fill(15);
+
+  for (let y = 319; y >= 0; y--) {
+    const yOffset = y * areaXZ;
+    for (let xz = 0; xz < areaXZ; xz++) {
+      const idx = yOffset + xz;
+      const op = opacityGrid[idx]!;
+      let currentSky = skyCol[xz]!;
+
+      if (currentSky === 15 && op === 0) {
+        skyGrid[idx] = 15;
+      } else {
+        if (currentSky === 15) {
+          currentSky = Math.max(0, 15 - op);
+        } else {
+          currentSky = Math.max(0, currentSky - 1 - op);
+        }
+        skyCol[xz] = currentSky;
+        skyGrid[idx] = currentSky;
+      }
+    }
+  }
+
+  // 3. Seed Sky BFS Queue selectively
+  // Seed only cells whose sky light can actually spread to a neighbor inside the region
+  let skyAddQueue = new Int32Array(524288);
+  let skyAddHead = 0;
+  let skyAddTail = 0;
+
+  for (let y = 0; y < 320; y++) {
+    const yOffset = y * areaXZ;
+    for (let zLocal = 0; zLocal < dimZ; zLocal++) {
+      const zOffset = yOffset + zLocal * dimX;
+      for (let xLocal = 0; xLocal < dimX; xLocal++) {
+        const idx = zOffset + xLocal;
+        const sky = skyGrid[idx]!;
+        if (sky <= 1) continue;
+
+        const opSelf = opacityGrid[idx]!;
+
+        // Check 6 neighbors in region
+        // +X
+        if (xLocal + 1 < dimX) {
+          const nIdx = idx + 1;
+          if (opacityGrid[nIdx]! < 15 && skyGrid[nIdx]! < sky - (1 + opacityGrid[nIdx]!)) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+        // -X
+        if (xLocal - 1 >= 0) {
+          const nIdx = idx - 1;
+          if (opacityGrid[nIdx]! < 15 && skyGrid[nIdx]! < sky - (1 + opacityGrid[nIdx]!)) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+        // +Z
+        if (zLocal + 1 < dimZ) {
+          const nIdx = idx + dimX;
+          if (opacityGrid[nIdx]! < 15 && skyGrid[nIdx]! < sky - (1 + opacityGrid[nIdx]!)) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+        // -Z
+        if (zLocal - 1 >= 0) {
+          const nIdx = idx - dimX;
+          if (opacityGrid[nIdx]! < 15 && skyGrid[nIdx]! < sky - (1 + opacityGrid[nIdx]!)) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+        // +Y
+        if (y + 1 < 320) {
+          const nIdx = idx + areaXZ;
+          if (opacityGrid[nIdx]! < 15 && skyGrid[nIdx]! < sky - (1 + opacityGrid[nIdx]!)) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+        // -Y
+        if (y - 1 >= 0) {
+          const nIdx = idx - areaXZ;
+          const opN = opacityGrid[nIdx]!;
+          const target =
+            sky === 15 && opSelf === 0 ? (opN === 0 ? 15 : Math.max(0, 15 - opN)) : sky - (1 + opN);
+          if (opN < 15 && skyGrid[nIdx]! < target) {
+            if (skyAddTail >= skyAddQueue.length) {
+              const newQ = new Int32Array(skyAddQueue.length * 2);
+              newQ.set(skyAddQueue);
+              skyAddQueue = newQ;
+            }
+            skyAddQueue[skyAddTail++] = idx;
+            continue;
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Run Sky BFS across the region
+  while (skyAddHead < skyAddTail) {
+    const curIdx = skyAddQueue[skyAddHead++]!;
+    const curSky = skyGrid[curIdx]!;
+    if (curSky <= 1) continue;
+
+    // Decode flat coordinate
+    const curY = Math.floor(curIdx / areaXZ);
+    const rem = curIdx % areaXZ;
+    const curZ = Math.floor(rem / dimX);
+    const curX = rem % dimX;
+
+    const opSelf = opacityGrid[curIdx]!;
+    const isBeam = curSky === 15 && opSelf === 0;
+
+    // Check 6 directions
+    // 0: +X
+    if (curX + 1 < dimX) {
+      const nIdx = curIdx + 1;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+    // 1: -X
+    if (curX - 1 >= 0) {
+      const nIdx = curIdx - 1;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+    // 2: +Y
+    if (curY + 1 < 320) {
+      const nIdx = curIdx + areaXZ;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+    // 3: -Y
+    if (curY - 1 >= 0) {
+      const nIdx = curIdx - areaXZ;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = isBeam ? (opN === 0 ? 15 : Math.max(0, 15 - opN)) : curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+    // 4: +Z
+    if (curZ + 1 < dimZ) {
+      const nIdx = curIdx + dimX;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+    // 5: -Z
+    if (curZ - 1 >= 0) {
+      const nIdx = curIdx - dimX;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curSky - (1 + opN);
+        if (target > skyGrid[nIdx]!) {
+          skyGrid[nIdx] = target;
+          if (skyAddTail >= skyAddQueue.length) {
+            const newQ = new Int32Array(skyAddQueue.length * 2);
+            newQ.set(skyAddQueue);
+            skyAddQueue = newQ;
+          }
+          skyAddQueue[skyAddTail++] = nIdx;
+        }
+      }
+    }
+  }
+
+  // 5. Run Block BFS across the region
+  while (blockAddHead < blockAddTail) {
+    const curIdx = blockAddQueue[blockAddHead++]!;
+    const curBL = blockGrid[curIdx]!;
+    if (curBL <= 1) continue;
+
+    const curY = Math.floor(curIdx / areaXZ);
+    const rem = curIdx % areaXZ;
+    const curZ = Math.floor(rem / dimX);
+    const curX = rem % dimX;
+
+    // Check 6 directions
+    // +X
+    if (curX + 1 < dimX) {
+      const nIdx = curIdx + 1;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+    // -X
+    if (curX - 1 >= 0) {
+      const nIdx = curIdx - 1;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+    // +Y
+    if (curY + 1 < 320) {
+      const nIdx = curIdx + areaXZ;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+    // -Y
+    if (curY - 1 >= 0) {
+      const nIdx = curIdx - areaXZ;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+    // +Z
+    if (curZ + 1 < dimZ) {
+      const nIdx = curIdx + dimX;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+    // -Z
+    if (curZ - 1 >= 0) {
+      const nIdx = curIdx - dimX;
+      const opN = opacityGrid[nIdx]!;
+      if (opN < 15) {
+        const target = curBL - (1 + opN);
+        if (target > blockGrid[nIdx]!) {
+          blockGrid[nIdx] = target;
+          if (blockAddTail >= blockAddQueue.length) {
+            const newQ = new Int32Array(blockAddQueue.length * 2);
+            newQ.set(blockAddQueue);
+            blockAddQueue = newQ;
+          }
+          blockAddQueue[blockAddTail++] = nIdx;
+        }
+      }
+    }
+  }
+
+  // 6. Pack sky and block light into section Uint8Arrays
+  const resultMap = new Map<number, Uint8Array>();
+
+  for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+    const minX = (cx + radiusChunks) * 16;
+    for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+      const minZ = (cz + radiusChunks) * 16;
+
+      for (let sy = 0; sy < 20; sy++) {
+        const minY = sy * 16;
+        const lightData = new Uint8Array(4096);
+        let nonZero = false;
+
+        for (let ly = 0; ly < 16; ly++) {
+          const y = minY + ly;
+          const yOffset = y * areaXZ;
+          const secYOffset = ly << 8;
+
+          for (let lz = 0; lz < 16; lz++) {
+            const zLocal = minZ + lz;
+            const zOffset = yOffset + zLocal * dimX;
+            const secZOffset = secYOffset | (lz << 4);
+
+            for (let lx = 0; lx < 16; lx++) {
+              const xLocal = minX + lx;
+              const idx = zOffset + xLocal;
+              const sky = skyGrid[idx]!;
+              const block = blockGrid[idx]!;
+              const val = (sky << 4) | block;
+
+              if (val !== 0) {
+                nonZero = true;
+                lightData[secZOffset | lx] = val;
+              }
+            }
+          }
+        }
+
+        if (nonZero) {
+          const secKey = LightStorage.getSectionKey(cx, sy, cz);
+          resultMap.set(secKey, lightData);
+        }
+      }
+    }
+  }
+
+  return resultMap;
 }
