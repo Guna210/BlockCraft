@@ -177,6 +177,14 @@ export class BlockRegistry {
     return Array.from(this.idToStateMap.keys());
   }
 
+  public getMaxStateId(): number {
+    let max = 0;
+    for (const key of this.idToStateMap.keys()) {
+      if (key > max) max = key;
+    }
+    return max;
+  }
+
   public getFaceTexture(stateId: number, face: BlockFaceDirection): string | undefined {
     const state = this.idToStateMap.get(stateId);
     if (!state || !state.definition.textures) return undefined;

@@ -1,12 +1,15 @@
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
+import { LightEngine } from './lighting';
 
 export class World {
   private columns: Map<string, ChunkColumn> = new Map();
   private registry: BlockRegistry;
+  public lightEngine: LightEngine;
 
   constructor() {
     this.registry = BlockRegistry.getInstance();
+    this.lightEngine = new LightEngine();
   }
 
   public static getChunkKey(cx: number, cz: number): string {
@@ -132,14 +135,23 @@ export class World {
     return col.getBlockStateId(localX, y, localZ);
   }
 
+  public getLight(x: number, y: number, z: number): { sky: number; block: number } {
+    return this.lightEngine.getLight(x, y, z);
+  }
+
   public setBlockStateId(x: number, y: number, z: number, stateId: number): void {
     if (y < ChunkColumn.MIN_Y || y > ChunkColumn.MAX_Y) {
       return; // Ignore writes out of y bounds
     }
 
+    const oldStateId = this.getBlockStateId(x, y, z);
+    if (oldStateId === stateId) return;
+
     const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
     const col = this.getColumn(cx, cz, true)!;
     col.setBlockStateId(localX, y, localZ, stateId);
+
+    this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
   }
 
   public getBlock(

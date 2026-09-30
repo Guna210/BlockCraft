@@ -3,6 +3,7 @@ import { audioApi } from './audio';
 import { look } from './camera';
 import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getHeight, worldHash } from './world';
+import { getLight } from './light';
 import { wireframe, setWireframe } from './wireframe';
 import { setWorkerPoolSize, getMainThreadGenCount, resetMainThreadGenCount } from './workers';
 import { WorldManager } from '../../world/world-manager';
@@ -23,6 +24,7 @@ export function initDebugApi() {
     api.setBlock = setBlock;
     api.fill = fill;
     api.getHeight = getHeight;
+    api.getLight = getLight;
     api.worldHash = worldHash;
     api.setWorkerPoolSize = setWorkerPoolSize;
     api.getMainThreadGenCount = getMainThreadGenCount;

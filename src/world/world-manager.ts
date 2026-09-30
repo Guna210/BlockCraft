@@ -232,6 +232,13 @@ export class WorldManager {
 
     await Promise.all(genPromises);
 
+    // Light terrain within radius
+    for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+      for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+        this.world.lightEngine.initializeColumnLight(this.world, cx, cz);
+      }
+    }
+
     // Set camera spawn position
     if (this.camera) {
       if (this.worldType === 'flat') {

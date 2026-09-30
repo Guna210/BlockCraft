@@ -35,6 +35,7 @@ export interface BlockCraftDebugAPI {
     id: string,
   ) => void;
   getHeight?: (x: number, z: number) => number;
+  getLight?: (x: number, y: number, z: number) => { sky: number; block: number };
   worldHash?: (x1: number, z1: number, x2: number, z2: number) => string;
   setWorkerPoolSize?: (size: number) => void;
   getMainThreadGenCount?: () => number;
