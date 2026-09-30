@@ -8,39 +8,32 @@ const ctx: Worker = self as unknown as Worker;
 BlockRegistry.getInstance();
 const tables = buildLightLookupTables(BlockRegistry.getInstance());
 
-export interface LightWorkerRequest {
+export interface LightRegionRequest {
   id: number;
-  cx: number;
-  cz: number;
-  // Sections block data transferred as 20 Uint16Arrays (4096 entries each)
-  columnsData: Map<string, (Uint16Array | number)[]>;
+  radiusChunks: number;
+  // Region block data transferred as map of chunkKey -> array of section data
+  regionColumns: Record<string, (Uint16Array | number)[]>;
 }
 
 export interface SectionLightTransfer {
-  sy: number;
-  lightData: Uint8Array; // 4096 bytes: high nibble sky, low nibble block
+  key: string; // "cx,sy,cz"
+  lightData: Uint8Array; // 4096 bytes
 }
 
-export interface LightWorkerResponse {
+export interface LightRegionResponse {
   id: number;
-  cx: number;
-  cz: number;
   sections: SectionLightTransfer[];
 }
 
 ctx.onmessage = (event: MessageEvent) => {
-  const { id, cx, cz, columnsData } = event.data as {
-    id: number;
-    cx: number;
-    cz: number;
-    columnsData: Record<string, (Uint16Array | number)[]>;
-  };
+  const { id, radiusChunks, regionColumns } = event.data as LightRegionRequest;
 
-  const world = new World();
+  // Pass false to World constructor to avoid creating an unused LightEngine inside World
+  const world = new World(false);
   const engine = new LightEngine(tables);
 
-  // Populate world from columnsData
-  for (const [key, sectionArray] of Object.entries(columnsData)) {
+  // Populate world from regionColumns
+  for (const [key, sectionArray] of Object.entries(regionColumns)) {
     const [ccxStr, cczStr] = key.split(',');
     const ccx = parseInt(ccxStr!, 10);
     const ccz = parseInt(cczStr!, 10);
@@ -58,20 +51,28 @@ ctx.onmessage = (event: MessageEvent) => {
     });
   }
 
-  // Run light initialization over central column
-  engine.initializeColumnLight(world, cx, cz);
+  // Initialize column light sequentially across all columns in the region in a single LightEngine
+  for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+    for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+      engine.initializeColumnLight(world, cx, cz);
+    }
+  }
 
   const sections: SectionLightTransfer[] = [];
   const transferables: Transferable[] = [];
 
-  for (let sy = 0; sy < 20; sy++) {
-    const raw = engine.storage.getRawData(cx, sy, cz);
-    if (raw) {
-      const lightData = new Uint8Array(raw);
-      sections.push({ sy, lightData });
-      transferables.push(lightData.buffer);
+  for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
+    for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+      for (let sy = 0; sy < 20; sy++) {
+        const raw = engine.storage.getRawData(cx, sy, cz);
+        if (raw) {
+          const lightData = new Uint8Array(raw);
+          sections.push({ key: `${cx},${sy},${cz}`, lightData });
+          transferables.push(lightData.buffer);
+        }
+      }
     }
   }
 
-  ctx.postMessage({ id, cx, cz, sections } as LightWorkerResponse, transferables);
+  ctx.postMessage({ id, sections } as LightRegionResponse, transferables);
 };

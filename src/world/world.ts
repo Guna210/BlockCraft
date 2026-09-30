@@ -7,9 +7,9 @@ export class World {
   private registry: BlockRegistry;
   public lightEngine: LightEngine;
 
-  constructor() {
+  constructor(initLightEngine: boolean = true) {
     this.registry = BlockRegistry.getInstance();
-    this.lightEngine = new LightEngine();
+    this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
   }
 
   public static getChunkKey(cx: number, cz: number): string {
@@ -151,7 +151,9 @@ export class World {
     const col = this.getColumn(cx, cz, true)!;
     col.setBlockStateId(localX, y, localZ, stateId);
 
-    this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
+    if (this.lightEngine) {
+      this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
+    }
   }
 
   public getBlock(

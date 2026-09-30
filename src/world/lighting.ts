@@ -161,7 +161,7 @@ export class LightStorage {
   }
 }
 
-const QUEUE_CAPACITY = 1048576;
+const DEFAULT_QUEUE_CAPACITY = 524288;
 
 const DX = [1, -1, 0, 0, 0, 0];
 const DY = [0, 0, 1, -1, 0, 0];
@@ -171,30 +171,32 @@ export class LightEngine {
   public storage: LightStorage = new LightStorage();
   public tables: LightLookupTables;
 
-  // Preallocated BFS Queues
-  private blockRemX = new Int32Array(QUEUE_CAPACITY);
-  private blockRemY = new Int32Array(QUEUE_CAPACITY);
-  private blockRemZ = new Int32Array(QUEUE_CAPACITY);
-  private blockRemVal = new Uint8Array(QUEUE_CAPACITY);
+  // Lazy BFS Queues
+  private queueCapacity = DEFAULT_QUEUE_CAPACITY;
+
+  private blockRemX: Int32Array | null = null;
+  private blockRemY: Int32Array | null = null;
+  private blockRemZ: Int32Array | null = null;
+  private blockRemVal: Uint8Array | null = null;
   private blockRemHead = 0;
   private blockRemTail = 0;
 
-  private blockAddX = new Int32Array(QUEUE_CAPACITY);
-  private blockAddY = new Int32Array(QUEUE_CAPACITY);
-  private blockAddZ = new Int32Array(QUEUE_CAPACITY);
+  private blockAddX: Int32Array | null = null;
+  private blockAddY: Int32Array | null = null;
+  private blockAddZ: Int32Array | null = null;
   private blockAddHead = 0;
   private blockAddTail = 0;
 
-  private skyRemX = new Int32Array(QUEUE_CAPACITY);
-  private skyRemY = new Int32Array(QUEUE_CAPACITY);
-  private skyRemZ = new Int32Array(QUEUE_CAPACITY);
-  private skyRemVal = new Uint8Array(QUEUE_CAPACITY);
+  private skyRemX: Int32Array | null = null;
+  private skyRemY: Int32Array | null = null;
+  private skyRemZ: Int32Array | null = null;
+  private skyRemVal: Uint8Array | null = null;
   private skyRemHead = 0;
   private skyRemTail = 0;
 
-  private skyAddX = new Int32Array(QUEUE_CAPACITY);
-  private skyAddY = new Int32Array(QUEUE_CAPACITY);
-  private skyAddZ = new Int32Array(QUEUE_CAPACITY);
+  private skyAddX: Int32Array | null = null;
+  private skyAddY: Int32Array | null = null;
+  private skyAddZ: Int32Array | null = null;
   private skyAddHead = 0;
   private skyAddTail = 0;
 
@@ -205,6 +207,40 @@ export class LightEngine {
       this.tables = tables;
     } else {
       this.tables = buildLightLookupTables(BlockRegistry.getInstance());
+    }
+  }
+
+  private ensureBlockRemQueue(): void {
+    if (!this.blockRemX) {
+      this.blockRemX = new Int32Array(this.queueCapacity);
+      this.blockRemY = new Int32Array(this.queueCapacity);
+      this.blockRemZ = new Int32Array(this.queueCapacity);
+      this.blockRemVal = new Uint8Array(this.queueCapacity);
+    }
+  }
+
+  private ensureBlockAddQueue(): void {
+    if (!this.blockAddX) {
+      this.blockAddX = new Int32Array(this.queueCapacity);
+      this.blockAddY = new Int32Array(this.queueCapacity);
+      this.blockAddZ = new Int32Array(this.queueCapacity);
+    }
+  }
+
+  private ensureSkyRemQueue(): void {
+    if (!this.skyRemX) {
+      this.skyRemX = new Int32Array(this.queueCapacity);
+      this.skyRemY = new Int32Array(this.queueCapacity);
+      this.skyRemZ = new Int32Array(this.queueCapacity);
+      this.skyRemVal = new Uint8Array(this.queueCapacity);
+    }
+  }
+
+  private ensureSkyAddQueue(): void {
+    if (!this.skyAddX) {
+      this.skyAddX = new Int32Array(this.queueCapacity);
+      this.skyAddY = new Int32Array(this.queueCapacity);
+      this.skyAddZ = new Int32Array(this.queueCapacity);
     }
   }
 
@@ -276,22 +312,44 @@ export class LightEngine {
     x: number,
     z: number,
     y: number,
+    oldOp: number,
     newOp: number,
   ): { oldHighestY: number; newHighestY: number } {
-    const oldHighestY = this.getHighestOpaqueY(world, x, z);
-    let newHighestY = oldHighestY;
+    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
+    const key = `${cx},${cz}`;
+    let hm = this.heightmaps.get(key);
+    if (!hm) {
+      hm = new Int16Array(256);
+      hm.fill(-2);
+      this.heightmaps.set(key, hm);
+    }
+    const idx = (localZ << 4) | localX;
 
+    let oldHighestY = -1;
+    if (hm[idx]! !== -2) {
+      oldHighestY = hm[idx]!;
+    } else {
+      for (let cy = 319; cy >= 0; cy--) {
+        const cop =
+          cy === y ? oldOp : (this.tables.opacityTable[world.getBlockStateId(x, cy, z)] ?? 0);
+        if (cop > 0) {
+          oldHighestY = cy;
+          break;
+        }
+      }
+    }
+
+    let newHighestY = oldHighestY;
     if (newOp > 0) {
       if (y > oldHighestY) {
         newHighestY = y;
       }
-    } else {
+    } else if (oldOp > 0 && newOp === 0) {
       if (y === oldHighestY) {
         let h = -1;
         for (let cy = y - 1; cy >= 0; cy--) {
-          const stateId = world.getBlockStateId(x, cy, z);
-          const op = this.tables.opacityTable[stateId] ?? 0;
-          if (op > 0) {
+          const cop = this.tables.opacityTable[world.getBlockStateId(x, cy, z)] ?? 0;
+          if (cop > 0) {
             h = cy;
             break;
           }
@@ -300,15 +358,7 @@ export class LightEngine {
       }
     }
 
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
-    const key = `${cx},${cz}`;
-    let hm = this.heightmaps.get(key);
-    if (!hm) {
-      hm = new Int16Array(256);
-      this.heightmaps.set(key, hm);
-    }
-    hm[(localZ << 4) | localX] = newHighestY;
-
+    hm[idx] = newHighestY;
     return { oldHighestY, newHighestY };
   }
 
@@ -391,28 +441,34 @@ export class LightEngine {
             if (emit > 0) {
               this.storage.setBlockLight(cx, sy, cz, lx, ly, lz, emit);
               this.pushBlockAdd(x, y, z);
-            } else {
-              // Also check if existing block light from neighboring column exists
-              const bl = this.storage.getBlockLight(cx, sy, cz, lx, ly, lz);
-              if (bl > 1) {
-                this.pushBlockAdd(x, y, z);
-              }
             }
           }
         }
       }
     }
 
-    // Push boundary / propagation candidates for sky light and block light across loaded neighbor boundaries
+    // Push propagation candidates for sky light and block light across loaded neighbor boundaries
     for (let sy = 0; sy < 20; sy++) {
+      const data = this.storage.getRawData(cx, sy, cz);
+      if (!data) continue;
+
       for (let ly = 0; ly < 16; ly++) {
         const y = (sy << 4) | ly;
         for (let lz = 0; lz < 16; lz++) {
           const z = cz * 16 + lz;
           for (let lx = 0; lx < 16; lx++) {
             const x = cx * 16 + lx;
-            const sky = this.storage.getSkyLight(cx, sy, cz, lx, ly, lz);
-            const block = this.storage.getBlockLight(cx, sy, cz, lx, ly, lz);
+
+            const idx = (ly << 8) | (lz << 4) | lx;
+            const val = data[idx]!;
+            const sky = (val >> 4) & 0x0f;
+            const block = val & 0x0f;
+
+            if (sky <= 1 && block <= 1) continue;
+
+            const stSelf = world.getBlockStateId(x, y, z);
+            const opSelf = this.tables.opacityTable[stSelf] ?? 0;
+            const attenSelf = 1 + opSelf;
 
             for (let i = 0; i < 6; i++) {
               const nx = x + DX[i]!;
@@ -422,27 +478,23 @@ export class LightEngine {
               const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
               if (!world.hasColumn(ncx, ncz)) continue;
 
-              const nLight = this.getLight(nx, ny, nz);
-
-              // Sky light propagation candidate
               const stN = world.getBlockStateId(nx, ny, nz);
               const opN = this.tables.opacityTable[stN] ?? 0;
               const attenN = 1 + opN;
-              if (sky > 1 && nLight.sky < sky - attenN) {
+
+              const nLight = this.getLight(nx, ny, nz);
+
+              if (sky > 1 && opN < 15 && nLight.sky < sky - attenN) {
                 this.pushSkyAdd(x, y, z);
               }
-              const stSelf = world.getBlockStateId(x, y, z);
-              const opSelf = this.tables.opacityTable[stSelf] ?? 0;
-              const attenSelf = 1 + opSelf;
-              if (nLight.sky > 1 && sky < nLight.sky - attenSelf) {
+              if (nLight.sky > 1 && opSelf < 15 && sky < nLight.sky - attenSelf) {
                 this.pushSkyAdd(nx, ny, nz);
               }
 
-              // Block light propagation candidate
-              if (block > 1 && nLight.block < block - attenN) {
+              if (block > 1 && opN < 15 && nLight.block < block - attenN) {
                 this.pushBlockAdd(x, y, z);
               }
-              if (nLight.block > 1 && block < nLight.block - attenSelf) {
+              if (nLight.block > 1 && opSelf < 15 && block < nLight.block - attenSelf) {
                 this.pushBlockAdd(nx, ny, nz);
               }
             }
@@ -529,19 +581,20 @@ export class LightEngine {
       x,
       z,
       y,
+      oldOp,
       newOp,
     );
 
     if (newOp > oldOp) {
-      // Block became more opaque / roof added
+      // Block became more opaque / roof added / fluid or leaves placed
       const oldSky = this.storage.getSkyLight(cx, sy, cz, localX, ly, localZ);
       this.storage.setSkyLight(cx, sy, cz, localX, ly, localZ, 0);
       if (oldSky > 0) {
         this.pushSkyRem(x, y, z, oldSky);
       }
 
-      // If cut vertical beam below
-      if (y > oldHighestY || oldSky === 15) {
+      // Clear vertical beam below (x, y, z) down to the first full opaque block
+      if (y >= oldHighestY) {
         for (let cy = y - 1; cy >= 0; cy--) {
           const { cx: ccx, cz: ccz, localX: clx, localZ: clz } = World.worldToChunk(x, z);
           const csy = cy >> 4;
@@ -550,8 +603,8 @@ export class LightEngine {
           const cop = this.tables.opacityTable[cst] ?? 0;
           const belowSky = this.storage.getSkyLight(ccx, csy, ccz, clx, cly, clz);
 
-          this.storage.setSkyLight(ccx, csy, ccz, clx, cly, clz, 0);
           if (belowSky > 0) {
+            this.storage.setSkyLight(ccx, csy, ccz, clx, cly, clz, 0);
             this.pushSkyRem(x, cy, z, belowSky);
           }
           if (cop === 15) break;
@@ -580,18 +633,19 @@ export class LightEngine {
           this.pushSkyAdd(x, cy, z);
           if (cop > 0) break;
         }
-      } else {
-        for (let i = 0; i < 6; i++) {
-          const nx = x + DX[i]!;
-          const ny = y + DY[i]!;
-          const nz = z + DZ[i]!;
-          if (ny >= 0 && ny <= 319) {
-            const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
-            if (world.hasColumn(ncx, ncz)) {
-              const nSky = this.getLight(nx, ny, nz).sky;
-              if (nSky > 1) {
-                this.pushSkyAdd(nx, ny, nz);
-              }
+      }
+
+      // Check all 6 neighbors for incoming sky light
+      for (let i = 0; i < 6; i++) {
+        const nx = x + DX[i]!;
+        const ny = y + DY[i]!;
+        const nz = z + DZ[i]!;
+        if (ny >= 0 && ny <= 319) {
+          const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
+          if (world.hasColumn(ncx, ncz)) {
+            const nSky = this.getLight(nx, ny, nz).sky;
+            if (nSky > 1) {
+              this.pushSkyAdd(nx, ny, nz);
             }
           }
         }
@@ -604,48 +658,53 @@ export class LightEngine {
   // --- Queue push / pop / process helpers ---
 
   private pushBlockRem(x: number, y: number, z: number, val: number): void {
-    if (this.blockRemTail >= QUEUE_CAPACITY) {
-      throw new Error(`LightEngine blockRem queue capacity (${QUEUE_CAPACITY}) exceeded`);
+    if (this.blockRemTail >= this.queueCapacity) {
+      throw new Error(`LightEngine blockRem queue capacity (${this.queueCapacity}) exceeded`);
     }
-    this.blockRemX[this.blockRemTail] = x;
-    this.blockRemY[this.blockRemTail] = y;
-    this.blockRemZ[this.blockRemTail] = z;
-    this.blockRemVal[this.blockRemTail] = val;
+    this.ensureBlockRemQueue();
+    this.blockRemX![this.blockRemTail] = x;
+    this.blockRemY![this.blockRemTail] = y;
+    this.blockRemZ![this.blockRemTail] = z;
+    this.blockRemVal![this.blockRemTail] = val;
     this.blockRemTail++;
   }
 
   private pushBlockAdd(x: number, y: number, z: number): void {
-    if (this.blockAddTail >= QUEUE_CAPACITY) {
-      throw new Error(`LightEngine blockAdd queue capacity (${QUEUE_CAPACITY}) exceeded`);
+    if (this.blockAddTail >= this.queueCapacity) {
+      throw new Error(`LightEngine blockAdd queue capacity (${this.queueCapacity}) exceeded`);
     }
-    this.blockAddX[this.blockAddTail] = x;
-    this.blockAddY[this.blockAddTail] = y;
-    this.blockAddZ[this.blockAddTail] = z;
+    this.ensureBlockAddQueue();
+    this.blockAddX![this.blockAddTail] = x;
+    this.blockAddY![this.blockAddTail] = y;
+    this.blockAddZ![this.blockAddTail] = z;
     this.blockAddTail++;
   }
 
   private pushSkyRem(x: number, y: number, z: number, val: number): void {
-    if (this.skyRemTail >= QUEUE_CAPACITY) {
-      throw new Error(`LightEngine skyRem queue capacity (${QUEUE_CAPACITY}) exceeded`);
+    if (this.skyRemTail >= this.queueCapacity) {
+      throw new Error(`LightEngine skyRem queue capacity (${this.queueCapacity}) exceeded`);
     }
-    this.skyRemX[this.skyRemTail] = x;
-    this.skyRemY[this.skyRemTail] = y;
-    this.skyRemZ[this.skyRemTail] = z;
-    this.skyRemVal[this.skyRemTail] = val;
+    this.ensureSkyRemQueue();
+    this.skyRemX![this.skyRemTail] = x;
+    this.skyRemY![this.skyRemTail] = y;
+    this.skyRemZ![this.skyRemTail] = z;
+    this.skyRemVal![this.skyRemTail] = val;
     this.skyRemTail++;
   }
 
   private pushSkyAdd(x: number, y: number, z: number): void {
-    if (this.skyAddTail >= QUEUE_CAPACITY) {
-      throw new Error(`LightEngine skyAdd queue capacity (${QUEUE_CAPACITY}) exceeded`);
+    if (this.skyAddTail >= this.queueCapacity) {
+      throw new Error(`LightEngine skyAdd queue capacity (${this.queueCapacity}) exceeded`);
     }
-    this.skyAddX[this.skyAddTail] = x;
-    this.skyAddY[this.skyAddTail] = y;
-    this.skyAddZ[this.skyAddTail] = z;
+    this.ensureSkyAddQueue();
+    this.skyAddX![this.skyAddTail] = x;
+    this.skyAddY![this.skyAddTail] = y;
+    this.skyAddZ![this.skyAddTail] = z;
     this.skyAddTail++;
   }
 
   private processBlockRem(world: World): void {
+    if (!this.blockRemX || !this.blockRemY || !this.blockRemZ || !this.blockRemVal) return;
     while (this.blockRemHead < this.blockRemTail) {
       const rx = this.blockRemX[this.blockRemHead]!;
       const ry = this.blockRemY[this.blockRemHead]!;
@@ -665,8 +724,13 @@ export class LightEngine {
         const nsy = ny >> 4;
         const nly = ny & 15;
         const nBL = this.storage.getBlockLight(ncx, nsy, ncz, nlx, nly, nlz);
+        if (nBL === 0) continue;
 
-        if (nBL !== 0 && nBL < val) {
+        const st = world.getBlockStateId(nx, ny, nz);
+        const emit = this.tables.emissionTable[st] ?? 0;
+        const isEmitter = emit > 0 && emit === nBL;
+
+        if (nBL < val || (nBL === val && !isEmitter)) {
           this.storage.setBlockLight(ncx, nsy, ncz, nlx, nly, nlz, 0);
           this.pushBlockRem(nx, ny, nz, nBL);
         } else if (nBL >= val) {
@@ -677,6 +741,7 @@ export class LightEngine {
   }
 
   private processBlockAdd(world: World): void {
+    if (!this.blockAddX || !this.blockAddY || !this.blockAddZ) return;
     while (this.blockAddHead < this.blockAddTail) {
       const ax = this.blockAddX[this.blockAddHead]!;
       const ay = this.blockAddY[this.blockAddHead]!;
@@ -718,6 +783,7 @@ export class LightEngine {
   }
 
   private processSkyRem(world: World): void {
+    if (!this.skyRemX || !this.skyRemY || !this.skyRemZ || !this.skyRemVal) return;
     while (this.skyRemHead < this.skyRemTail) {
       const rx = this.skyRemX[this.skyRemHead]!;
       const ry = this.skyRemY[this.skyRemHead]!;
@@ -749,6 +815,7 @@ export class LightEngine {
   }
 
   private processSkyAdd(world: World): void {
+    if (!this.skyAddX || !this.skyAddY || !this.skyAddZ) return;
     while (this.skyAddHead < this.skyAddTail) {
       const ax = this.skyAddX[this.skyAddHead]!;
       const ay = this.skyAddY[this.skyAddHead]!;

@@ -206,6 +206,58 @@ describe('M05a — Light Engine Unit Tests', () => {
     expect(worldTest.getLight(16, 10, 5).block).toBe(0);
   });
 
+  it('correctness: light spilling over column borders (lava and cave opening) matches single-world init with 0 differing cells', () => {
+    // 1. Single-world init (reference)
+    const refWorld = new World();
+    refWorld.getColumn(0, 0, true);
+    refWorld.getColumn(1, 0, true);
+
+    // Fill both columns with stone
+    refWorld.fill(-16, 0, -16, 31, 100, 31, 'stone');
+
+    // Create cave opening across border (x in [10, 20], y in [20, 30], z in [5, 10])
+    refWorld.fill(10, 20, 5, 20, 30, 10, 'air');
+
+    // Place lava source at x=15 (edge of col 0)
+    const lavaState = registry.getDefaultStateId('lava')!;
+    refWorld.setBlockStateId(15, 22, 7, lavaState);
+
+    // Recompute single-world light
+    refWorld.lightEngine.initializeColumnLight(refWorld, 0, 0);
+    refWorld.lightEngine.initializeColumnLight(refWorld, 1, 0);
+
+    // 2. Region-worker style initialization (multi-column sequential in single LightEngine)
+    const workerWorld = new World(false);
+    workerWorld.getColumn(0, 0, true);
+    workerWorld.getColumn(1, 0, true);
+    workerWorld.fill(-16, 0, -16, 31, 100, 31, 'stone');
+    workerWorld.fill(10, 20, 5, 20, 30, 10, 'air');
+    workerWorld.setBlockStateId(15, 22, 7, lavaState);
+
+    const workerEngine = new (
+      refWorld.lightEngine.constructor as new () => typeof refWorld.lightEngine
+    )();
+    workerEngine.initializeColumnLight(workerWorld, 0, 0);
+    workerEngine.initializeColumnLight(workerWorld, 1, 0);
+
+    // 3. Compare all cells across column (1,0) (x in [16, 31])
+    let differingCells = 0;
+    for (let x = 16; x < 32; x++) {
+      for (let z = 0; z < 16; z++) {
+        for (let y = 0; y < 100; y++) {
+          const lRef = refWorld.getLight(x, y, z);
+          const lWork = workerEngine.getLight(x, y, z);
+
+          if (lRef.block !== lWork.block || lRef.sky !== lWork.sky) {
+            differingCells++;
+          }
+        }
+      }
+    }
+
+    expect(differingCells).toBe(0);
+  }, 30000);
+
   it('multi-column randomized differential test comparing incremental edits vs fresh recomputed LightEngine', () => {
     const testWorld = new World();
 

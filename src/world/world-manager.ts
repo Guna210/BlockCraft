@@ -236,50 +236,47 @@ export class WorldManager {
 
     await Promise.all(genPromises);
 
-    // Light terrain within radius using LightWorkerPool
-    const lightPromises: Promise<void>[] = [];
+    // Light terrain within radius using a single region LightWorkerPool job
+    const regionColumns: Record<string, (Uint16Array | number)[]> = {};
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
-        const columnsData: Record<string, (Uint16Array | number)[]> = {};
-        for (let dcx = -1; dcx <= 1; dcx++) {
-          for (let dcz = -1; dcz <= 1; dcz++) {
-            const ncx = cx + dcx;
-            const ncz = cz + dcz;
-            const ncol = this.world.getColumn(ncx, ncz, false);
-            if (ncol) {
-              const secArray: (Uint16Array | number)[] = [];
-              for (let sy = 0; sy < 20; sy++) {
-                const sec = ncol.getSection(sy);
-                if (!sec) {
-                  secArray.push(0);
-                } else if (sec.getBitsPerEntry() === 0) {
-                  secArray.push(sec.uniformStateId);
-                } else {
-                  const arr = new Uint16Array(4096);
-                  sec.copyBlockStatesTo(arr);
-                  secArray.push(arr);
-                }
-              }
-              columnsData[`${ncx},${ncz}`] = secArray;
+        const col = this.world.getColumn(cx, cz, false);
+        if (col) {
+          const secArray: (Uint16Array | number)[] = [];
+          for (let sy = 0; sy < 20; sy++) {
+            const sec = col.getSection(sy);
+            if (!sec) {
+              secArray.push(0);
+            } else if (sec.getBitsPerEntry() === 0) {
+              secArray.push(sec.uniformStateId);
+            } else {
+              const arr = new Uint16Array(4096);
+              sec.copyBlockStatesTo(arr);
+              secArray.push(arr);
             }
           }
+          regionColumns[`${cx},${cz}`] = secArray;
         }
-
-        const lightJob = this.lightWorkerPool.enqueueLightJob(cx, cz, columnsData).then((res) => {
-          for (const secLight of res.sections) {
-            this.world!.lightEngine.storage.setRawData(
-              res.cx,
-              secLight.sy,
-              res.cz,
-              secLight.lightData,
-            );
-          }
-        });
-        lightPromises.push(lightJob);
       }
     }
 
-    await Promise.all(lightPromises);
+    const lightStart = performance.now();
+    const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(
+      radiusChunks,
+      regionColumns,
+    );
+    const lightDuration = performance.now() - lightStart;
+    console.log(
+      `[M05a Light Timing] createWorld region lighting took ${lightDuration.toFixed(2)} ms`,
+    );
+
+    for (const secLight of lightResult.sections) {
+      const [scxStr, ssyStr, sczStr] = secLight.key.split(',');
+      const scx = parseInt(scxStr!, 10);
+      const ssy = parseInt(ssyStr!, 10);
+      const scz = parseInt(sczStr!, 10);
+      this.world.lightEngine.storage.setRawData(scx, ssy, scz, secLight.lightData);
+    }
 
     // Set camera spawn position
     if (this.camera) {

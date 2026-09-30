@@ -1,17 +1,14 @@
-import type { SectionLightTransfer, LightWorkerResponse } from './light.worker';
+import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
 
-export interface LightResult {
-  cx: number;
-  cz: number;
+export interface LightRegionResult {
   sections: SectionLightTransfer[];
 }
 
 interface LightJob {
   id: number;
-  cx: number;
-  cz: number;
-  columnsData: Record<string, (Uint16Array | number)[]>;
-  resolve: (result: LightResult) => void;
+  radiusChunks: number;
+  regionColumns: Record<string, (Uint16Array | number)[]>;
+  resolve: (result: LightRegionResult) => void;
   reject: (err: Error) => void;
 }
 
@@ -50,14 +47,14 @@ export class LightWorkerPool {
       });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { cx, cz, sections } = e.data as LightWorkerResponse;
+        const { sections } = e.data as LightRegionResponse;
 
         const job = this.activeJobs.get(worker);
         this.activeJobs.delete(worker);
         this.idleWorkers.push(worker);
 
         if (job) {
-          job.resolve({ cx, cz, sections });
+          job.resolve({ sections });
         }
 
         this.processQueue();
@@ -90,19 +87,17 @@ export class LightWorkerPool {
     return this.queue.length + this.activeJobs.size;
   }
 
-  public enqueueLightJob(
-    cx: number,
-    cz: number,
-    columnsData: Record<string, (Uint16Array | number)[]>,
-  ): Promise<LightResult> {
+  public enqueueLightRegionJob(
+    radiusChunks: number,
+    regionColumns: Record<string, (Uint16Array | number)[]>,
+  ): Promise<LightRegionResult> {
     const id = this.nextJobId++;
 
-    return new Promise<LightResult>((resolve, reject) => {
+    return new Promise<LightRegionResult>((resolve, reject) => {
       const job: LightJob = {
         id,
-        cx,
-        cz,
-        columnsData,
+        radiusChunks,
+        regionColumns,
         resolve,
         reject,
       };
@@ -120,7 +115,7 @@ export class LightWorkerPool {
       this.activeJobs.set(worker, job);
 
       const transferables: Transferable[] = [];
-      for (const sectionArray of Object.values(job.columnsData)) {
+      for (const sectionArray of Object.values(job.regionColumns)) {
         for (const item of sectionArray) {
           if (item instanceof Uint16Array) {
             transferables.push(item.buffer);
@@ -131,9 +126,8 @@ export class LightWorkerPool {
       worker.postMessage(
         {
           id: job.id,
-          cx: job.cx,
-          cz: job.cz,
-          columnsData: job.columnsData,
+          radiusChunks: job.radiusChunks,
+          regionColumns: job.regionColumns,
         },
         transferables,
       );
