@@ -317,88 +317,140 @@ export class LightEngine {
   }
 
   public initializeColumnLight(world: World, cx: number, cz: number): void {
-    if (!world.hasColumn(cx, cz)) return;
+    const col = world.getColumn(cx, cz, false);
+    if (!col) return;
 
     this.clearColumnCache(cx, cz);
 
-    // 1. Initial Sky Light
     this.skyAddHead = 0;
     this.skyAddTail = 0;
-
-    for (let lz = 0; lz < 16; lz++) {
-      for (let lx = 0; lx < 16; lx++) {
-        const x = cx * 16 + lx;
-        const z = cz * 16 + lz;
-        let sky = 15;
-        for (let y = 319; y >= 0; y--) {
-          const sy = y >> 4;
-          const ly = y & 15;
-          const st = world.getBlockStateId(x, y, z);
-          const op = this.tables.opacityTable[st] ?? 0;
-
-          if (sky === 15 && op === 0) {
-            this.storage.setSkyLight(cx, sy, cz, lx, ly, lz, 15);
-          } else {
-            if (sky === 15) {
-              sky = Math.max(0, 15 - op);
-            } else {
-              sky = Math.max(0, sky - 1 - op);
-            }
-            this.storage.setSkyLight(cx, sy, cz, lx, ly, lz, sky);
-          }
-        }
-      }
-    }
-
-    // Push sky light sources that can propagate to neighbors
-    for (let lz = 0; lz < 16; lz++) {
-      for (let lx = 0; lx < 16; lx++) {
-        const x = cx * 16 + lx;
-        const z = cz * 16 + lz;
-        for (let y = 0; y < 320; y++) {
-          const sy = y >> 4;
-          const ly = y & 15;
-          const sky = this.storage.getSkyLight(cx, sy, cz, lx, ly, lz);
-          if (sky <= 1) continue;
-
-          let canPropagate = false;
-          for (let i = 0; i < 6; i++) {
-            const nx = x + DX[i]!;
-            const ny = y + DY[i]!;
-            const nz = z + DZ[i]!;
-            if (ny < 0 || ny > 319) continue;
-            const { cx: ncx, cz: ncz, localX: nlx, localZ: nlz } = World.worldToChunk(nx, nz);
-            if (!world.hasColumn(ncx, ncz)) continue;
-            const nsy = ny >> 4;
-            const nly = ny & 15;
-            const nSky = this.storage.getSkyLight(ncx, nsy, ncz, nlx, nly, nlz);
-            if (nSky < sky - 1) {
-              canPropagate = true;
-              break;
-            }
-          }
-          if (canPropagate) {
-            this.pushSkyAdd(x, y, z);
-          }
-        }
-      }
-    }
-
-    // 2. Initial Block Light
     this.blockAddHead = 0;
     this.blockAddTail = 0;
 
-    for (let sy = 0; sy < 20; sy++) {
-      for (let ly = 0; ly < 16; ly++) {
+    // Track sky light per x-z column (16x16 = 256 values)
+    const skyCol = new Uint8Array(256);
+    skyCol.fill(15);
+
+    // Fast vertical pass section by section (from sy=19 down to 0)
+    for (let sy = 19; sy >= 0; sy--) {
+      const sec = col.getSection(sy);
+      const isNullOrAir =
+        !sec ||
+        (sec.getBitsPerEntry() === 0 && (this.tables.opacityTable[sec.uniformStateId] ?? 0) === 0);
+
+      if (isNullOrAir) {
+        // Check if all columns currently have sky = 15
+        let all15 = true;
+        for (let i = 0; i < 256; i++) {
+          if (skyCol[i]! !== 15) {
+            all15 = false;
+            break;
+          }
+        }
+
+        if (all15) {
+          // Fast path: entire section is uniform sky light 15
+          let data = this.storage.getRawData(cx, sy, cz);
+          if (!data) {
+            data = new Uint8Array(4096);
+            this.storage.setRawData(cx, sy, cz, data);
+          }
+          data.fill(0xf0);
+          continue;
+        }
+      }
+
+      // Non-uniform or non-15 sky section
+      for (let ly = 15; ly >= 0; ly--) {
         const y = (sy << 4) | ly;
         for (let lz = 0; lz < 16; lz++) {
+          const z = cz * 16 + lz;
+          const zOffset = lz << 4;
           for (let lx = 0; lx < 16; lx++) {
             const x = cx * 16 + lx;
-            const z = cz * 16 + lz;
-            const st = world.getBlockStateId(x, y, z);
+            const colIdx = zOffset | lx;
+            let currentSky = skyCol[colIdx]!;
+
+            const st = sec ? sec.getBlockStateId(lx, ly, lz) : 0;
+            const op = this.tables.opacityTable[st] ?? 0;
             const emit = this.tables.emissionTable[st] ?? 0;
+
+            if (currentSky === 15 && op === 0) {
+              // Direct vertical sky beam
+              this.storage.setSkyLight(cx, sy, cz, lx, ly, lz, 15);
+            } else {
+              if (currentSky === 15) {
+                currentSky = Math.max(0, 15 - op);
+              } else {
+                currentSky = Math.max(0, currentSky - 1 - op);
+              }
+              skyCol[colIdx] = currentSky;
+              this.storage.setSkyLight(cx, sy, cz, lx, ly, lz, currentSky);
+            }
+
             if (emit > 0) {
               this.storage.setBlockLight(cx, sy, cz, lx, ly, lz, emit);
+              this.pushBlockAdd(x, y, z);
+            } else {
+              // Also check if existing block light from neighboring column exists
+              const bl = this.storage.getBlockLight(cx, sy, cz, lx, ly, lz);
+              if (bl > 1) {
+                this.pushBlockAdd(x, y, z);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Push boundary / propagation candidates for sky light and block light (only check faces on section/column boundary)
+    for (let sy = 0; sy < 20; sy++) {
+      const data = this.storage.getRawData(cx, sy, cz);
+      if (!data) continue;
+
+      for (let ly = 0; ly < 16; ly++) {
+        const y = (sy << 4) | ly;
+        const isBorderY = ly === 0 || ly === 15;
+        for (let lz = 0; lz < 16; lz++) {
+          const z = cz * 16 + lz;
+          const isBorderZ = lz === 0 || lz === 15;
+          for (let lx = 0; lx < 16; lx++) {
+            const x = cx * 16 + lx;
+            const isBorderX = lx === 0 || lx === 15;
+
+            // Only inspect blocks on the border of section/column, or with block light > 0
+            const idx = (ly << 8) | (lz << 4) | lx;
+            const val = data[idx]!;
+            const sky = (val >> 4) & 0x0f;
+            const block = val & 0x0f;
+
+            if (sky <= 1 && block <= 1) continue;
+
+            if (isBorderX || isBorderY || isBorderZ) {
+              for (let i = 0; i < 6; i++) {
+                const nx = x + DX[i]!;
+                const ny = y + DY[i]!;
+                const nz = z + DZ[i]!;
+                if (ny < 0 || ny > 319) continue;
+                const { cx: ncx, cz: ncz } = World.worldToChunk(nx, nz);
+                if (!world.hasColumn(ncx, ncz)) continue;
+
+                const nLight = this.getLight(nx, ny, nz);
+                if (sky > 1 && nLight.sky < sky - 1) {
+                  this.pushSkyAdd(x, y, z);
+                }
+                if (nLight.sky > 1 && sky < nLight.sky - 1) {
+                  this.pushSkyAdd(nx, ny, nz);
+                }
+
+                if (block > 1 && nLight.block < block - 1) {
+                  this.pushBlockAdd(x, y, z);
+                }
+                if (nLight.block > 1 && block < nLight.block - 1) {
+                  this.pushBlockAdd(nx, ny, nz);
+                }
+              }
+            } else if (block > 1) {
               this.pushBlockAdd(x, y, z);
             }
           }
