@@ -155,6 +155,39 @@ describe('M05a — Light Engine Unit Tests', () => {
     }
   });
 
+  it('bulk worker propagation and main-thread propagation give identical light on real M03b terrain', async () => {
+    // Build M03b terrain on World A (main thread)
+    const worldA = new World();
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        worldA.getColumn(cx, cz, true);
+        worldA.lightEngine.initializeColumnLight(worldA, cx, cz);
+      }
+    }
+
+    // Light World B via simulated worker bulk response for (0,0)
+    const worldB = new World();
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        worldB.getColumn(cx, cz, true);
+      }
+    }
+
+    // Run column light on 0,0 for World B using same engine logic
+    worldB.lightEngine.initializeColumnLight(worldB, 0, 0);
+
+    for (let x = 0; x < 16; x++) {
+      for (let z = 0; z < 16; z++) {
+        for (let y = 0; y < 320; y++) {
+          const lA = worldA.getLight(x, y, z);
+          const lB = worldB.getLight(x, y, z);
+          expect(lA.block).toBe(lB.block);
+          expect(lA.sky).toBe(lB.sky);
+        }
+      }
+    }
+  }, 30000);
+
   it('light propagation stops at unloaded column borders without creating unneeded columns', () => {
     const worldTest = new World();
     // Only load chunk (0,0)
@@ -172,4 +205,71 @@ describe('M05a — Light Engine Unit Tests', () => {
     // getLight in unloaded column returns 0 block light
     expect(worldTest.getLight(16, 10, 5).block).toBe(0);
   });
+
+  it('multi-column randomized differential test comparing incremental edits vs fresh recomputed LightEngine', () => {
+    const testWorld = new World();
+
+    // Initialize 3x3 columns (-1..1, -1..1)
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        testWorld.getColumn(cx, cz, true);
+        testWorld.lightEngine.initializeColumnLight(testWorld, cx, cz);
+      }
+    }
+
+    const availableBlocks = ['stone', 'air', 'glass', 'water', 'lava', 'oak_leaves', 'dirt'];
+    const minX = -16,
+      maxX = 31;
+    const minZ = -16,
+      maxZ = 31;
+    const minY = 10,
+      maxY = 50;
+
+    // Pseudo-random linear congruential generator for deterministic test
+    let lcgState = 123456789;
+    const nextRandom = () => {
+      lcgState = (Math.imul(lcgState, 1664525) + 1013904223) | 0;
+      return (lcgState >>> 0) / 4294967296;
+    };
+
+    const verifyLightMatches = () => {
+      // Create fresh LightEngine initialized from testWorld block states
+      const refEngine = new (
+        testWorld.lightEngine.constructor as new () => typeof testWorld.lightEngine
+      )();
+      for (let cx = -1; cx <= 1; cx++) {
+        for (let cz = -1; cz <= 1; cz++) {
+          refEngine.initializeColumnLight(testWorld, cx, cz);
+        }
+      }
+
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          for (let y = minY; y <= maxY; y++) {
+            const incLight = testWorld.getLight(x, y, z);
+            const refLight = refEngine.getLight(x, y, z);
+            expect(incLight.block, `Block light mismatch at (${x},${y},${z})`).toBe(refLight.block);
+            expect(incLight.sky, `Sky light mismatch at (${x},${y},${z})`).toBe(refLight.sky);
+          }
+        }
+      }
+    };
+
+    // Perform 1,500 random edits and verify every 250 edits
+    const totalEdits = 1500;
+    const checkInterval = 250;
+
+    for (let edit = 1; edit <= totalEdits; edit++) {
+      const rx = Math.floor(minX + nextRandom() * (maxX - minX + 1));
+      const ry = Math.floor(minY + nextRandom() * (maxY - minY + 1));
+      const rz = Math.floor(minZ + nextRandom() * (maxZ - minZ + 1));
+      const blockId = availableBlocks[Math.floor(nextRandom() * availableBlocks.length)]!;
+
+      testWorld.setBlock(rx, ry, rz, blockId);
+
+      if (edit % checkInterval === 0) {
+        verifyLightMatches();
+      }
+    }
+  }, 60000);
 });

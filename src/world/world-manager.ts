@@ -3,6 +3,7 @@ import { World } from './world';
 import { setWorldInstance } from './world-instance';
 import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
+import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
 import { hashString } from '../engine/rng';
 import { ChunkRenderer } from '../render/chunk-renderer';
@@ -28,6 +29,7 @@ export class WorldManager {
   public chunkRenderer: ChunkRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
+  public lightWorkerPool: LightWorkerPool;
   public pipeline: TerrainPipeline;
   public tables: MeshLookupTables | null = null;
 
@@ -48,11 +50,13 @@ export class WorldManager {
   private constructor() {
     this.workerPool = new WorkerPool();
     this.genWorkerPool = new GenWorkerPool();
+    this.lightWorkerPool = new LightWorkerPool();
     this.pipeline = createDefaultPipeline();
   }
 
   public setWorkerPoolSize(size: number): void {
     this.genWorkerPool.setPoolSize(size);
+    this.lightWorkerPool.setPoolSize(size);
   }
 
   public resetMainThreadGenCount(): void {
@@ -232,12 +236,50 @@ export class WorldManager {
 
     await Promise.all(genPromises);
 
-    // Light terrain within radius
+    // Light terrain within radius using LightWorkerPool
+    const lightPromises: Promise<void>[] = [];
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
-        this.world.lightEngine.initializeColumnLight(this.world, cx, cz);
+        const columnsData: Record<string, (Uint16Array | number)[]> = {};
+        for (let dcx = -1; dcx <= 1; dcx++) {
+          for (let dcz = -1; dcz <= 1; dcz++) {
+            const ncx = cx + dcx;
+            const ncz = cz + dcz;
+            const ncol = this.world.getColumn(ncx, ncz, false);
+            if (ncol) {
+              const secArray: (Uint16Array | number)[] = [];
+              for (let sy = 0; sy < 20; sy++) {
+                const sec = ncol.getSection(sy);
+                if (!sec) {
+                  secArray.push(0);
+                } else if (sec.getBitsPerEntry() === 0) {
+                  secArray.push(sec.uniformStateId);
+                } else {
+                  const arr = new Uint16Array(4096);
+                  sec.copyBlockStatesTo(arr);
+                  secArray.push(arr);
+                }
+              }
+              columnsData[`${ncx},${ncz}`] = secArray;
+            }
+          }
+        }
+
+        const lightJob = this.lightWorkerPool.enqueueLightJob(cx, cz, columnsData).then((res) => {
+          for (const secLight of res.sections) {
+            this.world!.lightEngine.storage.setRawData(
+              res.cx,
+              secLight.sy,
+              res.cz,
+              secLight.lightData,
+            );
+          }
+        });
+        lightPromises.push(lightJob);
       }
     }
+
+    await Promise.all(lightPromises);
 
     // Set camera spawn position
     if (this.camera) {
