@@ -4,6 +4,8 @@ import { LightEngine, LightStorage, buildLightLookupTables } from '../../src/wor
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { performBulkLightPropagation } from '../../src/workers/light.worker';
 import { generateFlatWorld } from '../../src/gen/flat';
+import { createDefaultPipeline } from '../../src/gen/pipeline';
+import { hashString } from '../../src/engine/rng';
 
 describe('M05a — Light Engine', () => {
   let registry: BlockRegistry;
@@ -330,14 +332,7 @@ describe('M05a — Light Engine', () => {
           }
         }
 
-        const { world: worldRef, lightEngine: engineRef } = performBulkLightPropagation(
-          -1,
-          -1,
-          1,
-          1,
-          columnsData,
-          tables,
-        );
+        const { world: worldRef } = performBulkLightPropagation(-1, -1, 1, 1, columnsData, tables);
 
         let mismatches = 0;
         for (let x = -16; x < 32; x++) {
@@ -425,6 +420,50 @@ describe('M05a — Light Engine', () => {
     expect(world2.getLight(0, 64, 0).block).toBe(0);
   });
 
+  test('M03b real terrain light propagation test', () => {
+    const world = new World();
+    const pipeline = createDefaultPipeline();
+    const engine = world.getLightEngine();
+
+    // Generate a 3x3 block of columns: cx, cz in [-1, 1]
+    const seed = hashString('blockcraft-test-seed-42');
+    for (let cx = -1; cx <= 1; cx++) {
+      for (let cz = -1; cz <= 1; cz++) {
+        const col = world.getColumn(cx, cz, true)!;
+        pipeline.generateColumn(seed, cx, cz, col);
+      }
+    }
+
+    // Bulk propagate region
+    engine.bulkPropagateRegion(world, -1, -1, 1, 1);
+
+    // 1. Sky light is 15 at getHeight(x, z) + 1 for land columns
+    const surfaceY = world.getHeight(0, 0);
+    expect(world.getLight(0, surfaceY + 1, 0).sky).toBe(15);
+
+    // 2. Water columns below sea level have sky light < 15 inside water
+    let foundWater = false;
+    for (let x = -16; x <= 16; x++) {
+      for (let z = -16; z <= 16; z++) {
+        if (world.getBlock(x, 64, z).id === 'water') {
+          expect(world.getLight(x, 60, z).sky).toBeLessThan(15);
+          foundWater = true;
+          break;
+        }
+      }
+      if (foundWater) break;
+    }
+
+    // 3. Foundation stone cells at y=0 have sky 0 and block 0
+    expect(world.getLight(0, 0, 0).sky).toBe(0);
+    expect(world.getLight(0, 0, 0).block).toBe(0);
+
+    // 4. A lava cell placed in an air pocket lights its neighbours (block > 0)
+    world.setBlock(0, surfaceY + 1, 0, 'lava');
+    expect(world.getLight(1, surfaceY + 1, 0).block).toBeGreaterThan(0);
+    expect(world.getLight(0, surfaceY + 2, 0).block).toBeGreaterThan(0);
+  });
+
   test('Benchmark bulk light propagation on flat world (informational)', () => {
     const radius = 2; // 5x5 = 25 columns
     const world = generateFlatWorld(radius);
@@ -442,14 +481,7 @@ describe('M05a — Light Engine', () => {
             sections.push({ sy, states: null, uniformStateId: sec.uniformStateId });
           } else {
             const states = new Uint16Array(4096);
-            let idx = 0;
-            for (let ly = 0; ly < 16; ly++) {
-              for (let lz = 0; lz < 16; lz++) {
-                for (let lx = 0; lx < 16; lx++) {
-                  states[idx++] = sec.getBlockStateId(lx, ly, lz);
-                }
-              }
-            }
+            sec.copyBlockStatesTo(states);
             sections.push({ sy, states });
           }
         }
