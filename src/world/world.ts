@@ -7,6 +7,10 @@ export class World {
   private registry: BlockRegistry;
   public lightEngine: LightEngine;
 
+  private lastCX = 0x7fffffff;
+  private lastCZ = 0x7fffffff;
+  private lastCol: ChunkColumn | null = null;
+
   constructor(initLightEngine: boolean = true) {
     this.registry = BlockRegistry.getInstance();
     this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
@@ -34,6 +38,9 @@ export class World {
   }
 
   public hasColumn(cx: number, cz: number): boolean {
+    if (cx === this.lastCX && cz === this.lastCZ && this.lastCol !== null) {
+      return true;
+    }
     const key = World.getChunkKey(cx, cz);
     return this.columns.has(key);
   }
@@ -66,46 +73,38 @@ export class World {
 
     let h = 0x811c9dc5;
 
+    const minCX = Math.floor(minX / 16);
+    const maxCX = Math.floor(maxX / 16);
+    const minCZ = Math.floor(minZ / 16);
+    const maxCZ = Math.floor(maxZ / 16);
+
+    if (onDemandGenerateColumn) {
+      for (let cz = minCZ; cz <= maxCZ; cz++) {
+        for (let cx = minCX; cx <= maxCX; cx++) {
+          if (!this.hasColumn(cx, cz)) {
+            onDemandGenerateColumn(cx, cz);
+          }
+        }
+      }
+    }
+
     for (let z = minZ; z <= maxZ; z++) {
       for (let x = minX; x <= maxX; x++) {
         const cx = Math.floor(x / 16);
         const cz = Math.floor(z / 16);
+        const localX = ((x % 16) + 16) % 16;
+        const localZ = ((z % 16) + 16) % 16;
 
-        if (!this.hasColumn(cx, cz) && onDemandGenerateColumn) {
-          onDemandGenerateColumn(cx, cz);
-        }
+        const col = this.getColumn(cx, cz, false);
 
         for (let y = 0; y < 320; y++) {
-          const stateId = this.getBlockStateId(x, y, z);
-          const resolved = this.registry.getResolvedState(stateId);
-          const blockId = resolved ? resolved.blockId : 'air';
+          const stateId = col ? col.getBlockStateId(localX, y, localZ) : 0;
+          const bytes = this.registry.getStateHashBytes(stateId);
 
-          for (let i = 0; i < blockId.length; i++) {
-            h ^= blockId.charCodeAt(i);
+          for (let i = 0; i < bytes.length; i++) {
+            h ^= bytes[i]!;
             h = Math.imul(h, 0x01000193);
           }
-
-          if (resolved && resolved.properties) {
-            const keys = Object.keys(resolved.properties).sort();
-            for (const k of keys) {
-              const v = String(resolved.properties[k]);
-              h ^= 0x3a; // ':'
-              h = Math.imul(h, 0x01000193);
-              for (let i = 0; i < k.length; i++) {
-                h ^= k.charCodeAt(i);
-                h = Math.imul(h, 0x01000193);
-              }
-              h ^= 0x3d; // '='
-              h = Math.imul(h, 0x01000193);
-              for (let i = 0; i < v.length; i++) {
-                h ^= v.charCodeAt(i);
-                h = Math.imul(h, 0x01000193);
-              }
-            }
-          }
-
-          h ^= 0x2c; // ','
-          h = Math.imul(h, 0x01000193);
         }
       }
     }
@@ -114,13 +113,24 @@ export class World {
   }
 
   public getColumn(cx: number, cz: number, createIfMissing: boolean = true): ChunkColumn | null {
+    if (cx === this.lastCX && cz === this.lastCZ) {
+      if (this.lastCol !== null || !createIfMissing) {
+        return this.lastCol;
+      }
+    }
+
     const key = World.getChunkKey(cx, cz);
     let col = this.columns.get(key);
     if (!col && createIfMissing) {
       col = new ChunkColumn(cx, cz, 0);
       this.columns.set(key, col);
     }
-    return col || null;
+
+    this.lastCX = cx;
+    this.lastCZ = cz;
+    this.lastCol = col || null;
+
+    return this.lastCol;
   }
 
   public getBlockStateId(x: number, y: number, z: number): number {
@@ -128,7 +138,11 @@ export class World {
       return 0; // Air for y out of bounds
     }
 
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+
     const col = this.getColumn(cx, cz, false);
     if (!col) return 0; // Unloaded chunks default to air
 
@@ -147,7 +161,11 @@ export class World {
     const oldStateId = this.getBlockStateId(x, y, z);
     if (oldStateId === stateId) return;
 
-    const { cx, cz, localX, localZ } = World.worldToChunk(x, z);
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+
     const col = this.getColumn(cx, cz, true)!;
     col.setBlockStateId(localX, y, localZ, stateId);
 

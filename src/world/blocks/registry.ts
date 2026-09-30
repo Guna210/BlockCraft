@@ -7,6 +7,7 @@ export class BlockRegistry {
   private stateToIdMap: Map<string, number> = new Map();
   private idToStateMap: Map<number, ResolvedBlockState> = new Map();
   private defaultStateIdMap: Map<string, number> = new Map();
+  private stateHashBytesMap: Map<number, Uint8Array> = new Map();
 
   public static getInstance(): BlockRegistry {
     if (!BlockRegistry.instance) {
@@ -78,6 +79,22 @@ export class BlockRegistry {
         this.stateToIdMap.set(key, stateId);
         this.idToStateMap.set(stateId, resolvedState);
 
+        // Precompute worldHash bytes for this stateId
+        const hashStrParts: string[] = [def.id];
+        if (props) {
+          const sortedKeys = Object.keys(props).sort();
+          for (const k of sortedKeys) {
+            hashStrParts.push(':', k, '=', String(props[k]));
+          }
+        }
+        hashStrParts.push(',');
+        const str = hashStrParts.join('');
+        const bytes = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) {
+          bytes[i] = str.charCodeAt(i);
+        }
+        this.stateHashBytesMap.set(stateId, bytes);
+
         // Check if this is default state
         const isDefault = this.isDefaultProps(def.states, props);
         if (isDefault || defaultStateIdForBlock === null) {
@@ -89,6 +106,10 @@ export class BlockRegistry {
         this.defaultStateIdMap.set(def.id, defaultStateIdForBlock);
       }
     }
+  }
+
+  public getStateHashBytes(stateId: number): Uint8Array {
+    return this.stateHashBytesMap.get(stateId) ?? this.stateHashBytesMap.get(0)!;
   }
 
   private generateStatePermutations(
