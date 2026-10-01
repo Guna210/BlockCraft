@@ -196,7 +196,6 @@ export class WorldManager {
     mode?: 'survival' | 'creative';
     type?: 'default' | 'flat';
   }): Promise<void> {
-    const tStart = performance.now();
     const radiusChunks = 4;
 
     this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
@@ -213,7 +212,6 @@ export class WorldManager {
     setWorldInstance(this.world);
 
     // Generate terrain via GenWorkerPool
-    const tGenStart = performance.now();
     const genPromises: Promise<void>[] = [];
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
@@ -237,10 +235,8 @@ export class WorldManager {
     }
 
     await Promise.all(genPromises);
-    const tGenEnd = performance.now();
 
     // Light terrain within radius using a single region LightWorkerPool job
-    const tLightPrepStart = performance.now();
     const regionColumns: Record<string, (Uint16Array | number)[]> = {};
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
@@ -263,20 +259,15 @@ export class WorldManager {
         }
       }
     }
-    const tLightPrepEnd = performance.now();
 
-    const tLightJobStart = performance.now();
     const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(
       radiusChunks,
       regionColumns,
     );
-    const tLightJobEnd = performance.now();
 
-    const tLightWriteStart = performance.now();
     for (const secLight of lightResult.sections) {
       this.world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
     }
-    const tLightWriteEnd = performance.now();
 
     // Set camera spawn position
     if (this.camera) {
@@ -293,32 +284,66 @@ export class WorldManager {
     }
 
     // Mesh terrain within radius 4
-    const tMeshStart = performance.now();
     await this.meshRadius(radiusChunks);
-    const tMeshEnd = performance.now();
-
-    console.log(`[PROFILE createWorld]
-      Total createWorld: ${(tMeshEnd - tStart).toFixed(2)} ms
-      Gen jobs: ${(tGenEnd - tGenStart).toFixed(2)} ms (GenWorkerPool count: ${this.genWorkerPool.workerCount})
-      Light prep: ${(tLightPrepEnd - tLightPrepStart).toFixed(2)} ms
-      Light job: ${(tLightJobEnd - tLightJobStart).toFixed(2)} ms
-      Light write: ${(tLightWriteEnd - tLightWriteStart).toFixed(2)} ms
-      Mesh radius: ${(tMeshEnd - tMeshStart).toFixed(2)} ms
-    `);
   }
 
   public async waitForTerrain(radiusChunks: number): Promise<void> {
-    const t0 = performance.now();
     await this.meshRadius(radiusChunks);
-    console.log(`[PROFILE waitForTerrain] Took ${(performance.now() - t0).toFixed(2)} ms`);
+  }
+
+  private isSectionAllOpaque(sec: any): boolean {
+    if (!sec) return false;
+    if (sec.getBitsPerEntry() === 0) {
+      const st = sec.uniformStateId;
+      return this.tables?.isOpaqueCube[st] === 1;
+    }
+    const palette = sec.palette;
+    if (!palette || !this.tables) return false;
+    for (let i = 0; i < palette.length; i++) {
+      if (this.tables.isOpaqueCube[palette[i]] !== 1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private canSkipOpaqueSection(cx: number, sy: number, cz: number): boolean {
+    if (!this.world) return false;
+    // Check all 6 neighbors
+    const neighbors = [
+      { cx: cx + 1, sy, cz },
+      { cx: cx - 1, sy, cz },
+      { cx, sy, cz: cz + 1 },
+      { cx, sy, cz: cz - 1 },
+      { cx, sy: sy + 1, cz },
+      { cx, sy: sy - 1, cz },
+    ];
+
+    for (const n of neighbors) {
+      if (n.sy < 0) {
+        // Below y=0 (foundation stone floor), treated as opaque
+        continue;
+      }
+      if (n.sy > 19) {
+        // Above world height y=319 (air), not opaque!
+        return false;
+      }
+      if (!this.world.hasColumn(n.cx, n.cz)) {
+        // Missing neighbor column at edge of loaded radius
+        return false;
+      }
+      const ncol = this.world.getColumn(n.cx, n.cz, false);
+      if (!ncol) return false;
+      const nsec = ncol.getSection(n.sy);
+      if (!nsec || !this.isSectionAllOpaque(nsec)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private async meshRadius(radiusChunks: number): Promise<void> {
     if (!this.world || !this.chunkRenderer || !this.tables) return;
-
-    const tPaddedStart = performance.now();
-    let totalPaddedMs = 0;
-    let totalUploadMs = 0;
 
     const promises: Promise<void>[] = [];
 
@@ -332,18 +357,29 @@ export class WorldManager {
 
         const colPromise = (async () => {
           const sectionPromises: Promise<void>[] = [];
-          for (let sy = 0; sy < 5; sy++) {
-            const tp0 = performance.now();
+          const col = this.world!.getColumn(cx, cz, false);
+
+          for (let sy = 0; sy < 20; sy++) {
+            if (!col) continue;
+            const sec = col.getSection(sy);
+
+            // 1. Skip all-air / empty sections
+            if (!sec || (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0)) {
+              continue;
+            }
+
+            // 2. Skip section if it contains only opaque blocks and all 6 neighbor sections are loaded and contain only opaque blocks
+            if (this.isSectionAllOpaque(sec) && this.canSkipOpaqueSection(cx, sy, cz)) {
+              continue;
+            }
+
             const paddedSection = buildPaddedSection(this.world!, cx, sy, cz);
-            totalPaddedMs += performance.now() - tp0;
 
             const jobPromise = this.workerPool
               .enqueueMeshJob(cx, sy, cz, paddedSection, this.tables!)
               .then((res) => {
                 if (this.chunkRenderer) {
-                  const tu0 = performance.now();
                   this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
-                  totalUploadMs += performance.now() - tu0;
                 }
               });
             sectionPromises.push(jobPromise);
@@ -357,11 +393,6 @@ export class WorldManager {
     }
 
     await Promise.all(promises);
-    console.log(`[PROFILE meshRadius]
-      Padded extraction total: ${totalPaddedMs.toFixed(2)} ms
-      GPU upload total: ${totalUploadMs.toFixed(2)} ms
-      Total meshRadius: ${(performance.now() - tPaddedStart).toFixed(2)} ms
-    `);
   }
 
   public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {
