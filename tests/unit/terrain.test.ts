@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createDefaultPipeline } from '../../src/gen/pipeline';
 import { World } from '../../src/world/world';
 import { hashString } from '../../src/engine/rng';
+import { deriveSeed } from '../../src/engine/rng';
+import { sampleTerrainClimate, TerrainClimate } from '../../src/gen/terrain';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 
 describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
@@ -110,5 +112,147 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     // Changing state property changes hash
     world2.setBlock(0, 10, 0, 'oak_log', { axis: 'y' });
     expect(world1.worldHash(0, 0, 10, 10)).not.toBe(world2.worldHash(0, 0, 10, 10));
+  });
+
+  it('Terrain proportions meet requirements for standard and alt seed', () => {
+    function evaluateSeed(seedStr: string, isAlt: boolean) {
+      const worldSeed = hashString(seedStr);
+      const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
+      const windows = [
+        { x1: -1024, x2: 1024, z1: -1024, z2: 1024 },
+        { x1: 4096, x2: 6144, z1: 4096, z2: 6144 },
+        { x1: -6144, x2: -4096, z1: -6144, z2: -4096 },
+      ];
+
+      const out: TerrainClimate = {
+        continentalness: 0,
+        erosion: 0,
+        peaks: 0,
+        river: 0,
+        surfaceHeight: 0,
+      };
+
+      let totalColumns = 0;
+      let totalOcean = 0;
+      let totalRiver = 0;
+      const landHeights: number[] = [];
+      let above120 = 0;
+      let maxH = -1000;
+
+      const windowOceans = [0, 0, 0];
+      const windowColumns = [0, 0, 0];
+
+      for (let w = 0; w < windows.length; w++) {
+        const win = windows[w]!;
+        for (let x = win.x1; x < win.x2; x += 8) {
+          for (let z = win.z1; z < win.z2; z += 8) {
+            sampleTerrainClimate(terrainStageSeed, x, z, out);
+
+            const isRiver = out.river > 0;
+            const isOcean = out.surfaceHeight <= 64 && !isRiver;
+
+            if (isRiver) totalRiver++;
+            if (isOcean) {
+              totalOcean++;
+              windowOceans[w] = windowOceans[w]! + 1;
+            } else if (!isRiver) {
+              landHeights.push(out.surfaceHeight);
+            }
+
+            if (out.surfaceHeight >= 120) above120++;
+            if (out.surfaceHeight > maxH) maxH = out.surfaceHeight;
+
+            totalColumns++;
+            windowColumns[w] = windowColumns[w]! + 1;
+          }
+        }
+      }
+
+      landHeights.sort((a, b) => a - b);
+      const medianLand = landHeights[Math.floor(landHeights.length / 2)]!;
+
+      const oceanCombined = totalOcean / totalColumns;
+      const riverCombined = totalRiver / totalColumns;
+
+      if (!isAlt) {
+        expect(oceanCombined).toBeGreaterThanOrEqual(0.25);
+        expect(oceanCombined).toBeLessThanOrEqual(0.45);
+
+        for (let w = 0; w < windows.length; w++) {
+          const wO = windowOceans[w]! / windowColumns[w]!;
+          expect(wO).toBeGreaterThanOrEqual(0.1);
+          expect(wO).toBeLessThanOrEqual(0.7);
+        }
+
+        expect(riverCombined).toBeGreaterThanOrEqual(0.01);
+        expect(riverCombined).toBeLessThanOrEqual(0.06);
+
+        expect(medianLand).toBeGreaterThanOrEqual(66);
+        expect(medianLand).toBeLessThanOrEqual(90);
+
+        expect(above120 / totalColumns).toBeGreaterThanOrEqual(0.02);
+        expect(maxH).toBeGreaterThanOrEqual(150);
+      } else {
+        expect(oceanCombined).toBeGreaterThanOrEqual(0.15);
+        expect(oceanCombined).toBeLessThanOrEqual(0.55);
+      }
+    }
+
+    evaluateSeed('blockcraft-test-seed-42', false);
+    evaluateSeed('blockcraft-alt-seed-7', true);
+  });
+
+  it('sampler classification agrees with real column top block >= 95% of the time', () => {
+    const worldSeed = hashString('blockcraft-test-seed-42');
+    const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
+    const pipeline = createDefaultPipeline();
+    const world = new World();
+
+    let totalMatched = 0;
+    let totalChecked = 0;
+
+    const out: TerrainClimate = {
+      continentalness: 0,
+      erosion: 0,
+      peaks: 0,
+      river: 0,
+      surfaceHeight: 0,
+    };
+
+    for (let cx = 0; cx < 4; cx++) {
+      for (let cz = 0; cz < 4; cz++) {
+        const col = world.getColumn(cx, cz, true)!;
+        pipeline.generateColumn(worldSeed, cx, cz, col);
+
+        for (let x = 0; x < 16; x++) {
+          for (let z = 0; z < 16; z += 4) {
+            // don't need all 256 per chunk, 4x16 is 64
+            const wx = cx * 16 + x;
+            const wz = cz * 16 + z;
+            sampleTerrainClimate(terrainStageSeed, wx, wz, out);
+
+            let topBlock = 'air';
+            for (let y = 319; y >= 0; y--) {
+              const b = world.getBlock(wx, y, wz).id;
+              if (b !== 'air') {
+                topBlock = b;
+                break;
+              }
+            }
+
+            const isWater = topBlock === 'water';
+            const samplerIsWater = out.surfaceHeight <= 64;
+
+            if (isWater === samplerIsWater) {
+              totalMatched++;
+            }
+            totalChecked++;
+          }
+        }
+      }
+    }
+
+    expect(totalChecked).toBeGreaterThanOrEqual(200);
+    expect(totalMatched / totalChecked).toBeGreaterThanOrEqual(0.95);
   });
 });

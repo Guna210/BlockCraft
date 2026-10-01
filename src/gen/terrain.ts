@@ -31,19 +31,19 @@ function getSamplersForSeed(stageSeed: number): CachedSamplers {
   const seedFoundation = deriveSeed(stageSeed, 'foundation');
 
   const s2Cont = makeSimplex2D(seedCont);
-  const fbmCont = makeFbm2D(s2Cont, 4, 2.0, 0.5);
+  const fbmCont = makeFbm2D(s2Cont, 4, 0.5, 2.0);
 
   const s2Erosion = makeSimplex2D(seedErosion);
-  const fbmErosion = makeFbm2D(s2Erosion, 3, 2.0, 0.5);
+  const fbmErosion = makeFbm2D(s2Erosion, 3, 0.5, 2.0);
 
   const s2Peaks = makeSimplex2D(seedPeaks);
-  const ridgedPeaks = makeRidged2D(s2Peaks, 4, 2.0, 0.5);
+  const ridgedPeaks = makeRidged2D(s2Peaks, 4, 0.5, 2.0);
 
   const s2Rivers = makeSimplex2D(seedRivers);
-  const ridgedRivers = makeRidged2D(s2Rivers, 3, 2.0, 0.5);
+  const ridgedRivers = makeRidged2D(s2Rivers, 3, 0.5, 2.0);
 
   const s3Density = makeSimplex3D(seed3D);
-  const fbm3D = makeFbm3D(s3Density, 3, 2.0, 0.5);
+  const fbm3D = makeFbm3D(s3Density, 3, 0.5, 2.0);
 
   const s2Foundation = makeSimplex2D(seedFoundation);
 
@@ -59,40 +59,102 @@ function getSamplersForSeed(stageSeed: number): CachedSamplers {
   return cachedSamplers;
 }
 
-// Spline function for Continentalness -> Base Height
-function splineContinentalness(c: number): number {
-  if (c < -0.45) {
-    const t = (c + 1.0) / 0.55;
-    return 32 + t * 16;
-  } else if (c < -0.15) {
-    const t = (c + 0.45) / 0.3;
-    return 48 + t * 14;
-  } else if (c < 0.2) {
-    const t = (c + 0.15) / 0.35;
-    return 65 + t * 13;
-  } else if (c < 0.55) {
-    const t = (c - 0.2) / 0.35;
-    return 78 + t * 37;
-  } else {
-    const t = Math.min(1.0, (c - 0.55) / 0.45);
-    return 115 + t * 55;
-  }
+export interface TerrainClimate {
+  continentalness: number;
+  erosion: number;
+  peaks: number;
+  river: number;
+  surfaceHeight: number;
 }
 
-// Spline function for Erosion -> Height Variation Factor
-function splineErosion(e: number): number {
-  if (e > 0.3) {
-    return 0.3;
-  } else if (e < -0.3) {
-    return 1.8;
-  } else {
-    const t = (e + 0.3) / 0.6;
-    return 1.8 - t * 1.5;
+let _lastStageSeed = -1;
+let _lastSamplers: CachedSamplers | null = null;
+
+export function sampleTerrainClimate(
+  stageSeed: number,
+  wx: number,
+  wz: number,
+  out: TerrainClimate,
+): void {
+  if (stageSeed !== _lastStageSeed || !_lastSamplers) {
+    _lastSamplers = getSamplersForSeed(stageSeed);
+    _lastStageSeed = stageSeed;
   }
+
+  const fbmCont = _lastSamplers.fbmCont;
+  const fbmErosion = _lastSamplers.fbmErosion;
+  const ridgedPeaks = _lastSamplers.ridgedPeaks;
+  const ridgedRivers = _lastSamplers.ridgedRivers;
+
+  const cont = fbmCont(wx * 0.0012, wz * 0.0012);
+  const erosion = fbmErosion(wx * 0.002, wz * 0.002);
+  const peaksRaw = ridgedPeaks(wx * 0.003, wz * 0.003);
+  const riverNoiseRaw = ridgedRivers(wx * 0.0025, wz * 0.0025);
+
+  const peaks = (peaksRaw + 1.0) / 2.0;
+  const riverNoise = (riverNoiseRaw + 1.0) / 2.0;
+
+  let baseH: number;
+  if (cont < -0.45) {
+    const t = (cont + 1.0) / 0.55;
+    baseH = 32 + t * 16;
+  } else if (cont < -0.15) {
+    const t = (cont + 0.45) / 0.3;
+    baseH = 48 + t * 14;
+  } else if (cont < 0.2) {
+    const t = (cont + 0.15) / 0.35;
+    baseH = 62 + t * 15;
+  } else if (cont < 0.55) {
+    const t = (cont - 0.2) / 0.35;
+    baseH = 77 + t * 45;
+  } else {
+    const t = Math.min(1.0, (cont - 0.55) / 0.45);
+    baseH = 122 + t * 65;
+  }
+
+  let erosionFactor: number;
+  if (erosion > 0.3) {
+    erosionFactor = 0.3;
+  } else if (erosion < -0.3) {
+    erosionFactor = 1.8;
+  } else {
+    const t = (erosion + 0.3) / 0.6;
+    erosionFactor = 1.8 - t * 1.5;
+  }
+
+  baseH += (peaks * 45.0 - 10.0) * erosionFactor;
+
+  let riverVal = 0;
+  const RIVER_THRESH = 0.04;
+  if (cont >= -0.15 && riverNoise < RIVER_THRESH) {
+    riverVal = (1.2 - riverNoise / RIVER_THRESH) * (1.0 - Math.max(0, erosion));
+    if (riverVal > 0) {
+      riverVal = Math.min(1.0, riverVal);
+      const targetRiverH = SEA_LEVEL - 6;
+      if (baseH > targetRiverH) {
+        baseH = baseH * (1.0 - riverVal) + targetRiverH * riverVal;
+      }
+    } else {
+      riverVal = 0;
+    }
+  }
+
+  out.continentalness = cont;
+  out.erosion = erosion;
+  out.peaks = peaks;
+  out.river = riverVal;
+  out.surfaceHeight = baseH;
 }
 
 // Scratch buffers allocated once per worker/thread environment
 const HEIGHTS_SCRATCH = new Float32Array(256);
+const SCRATCH_CLIMATE: TerrainClimate = {
+  continentalness: 0,
+  erosion: 0,
+  peaks: 0,
+  river: 0,
+  surfaceHeight: 0,
+};
 
 export function generateTerrainShape(
   stageSeed: number,
@@ -106,7 +168,7 @@ export function generateTerrainShape(
   const foundationState = registry.getDefaultStateId('foundation_stone') ?? 1;
 
   const samplers = getSamplersForSeed(stageSeed);
-  const { fbmCont, fbmErosion, ridgedPeaks, ridgedRivers, fbm3D, s2Foundation } = samplers;
+  const { fbm3D, s2Foundation } = samplers;
 
   const baseWorldX = cx * 16;
   const baseWorldZ = cz * 16;
@@ -118,28 +180,8 @@ export function generateTerrainShape(
       const wx = baseWorldX + x;
       const idx = z * 16 + x;
 
-      const cont = fbmCont(wx * 0.0012, wz * 0.0012);
-      const erosion = fbmErosion(wx * 0.002, wz * 0.002);
-      const peaks = ridgedPeaks(wx * 0.003, wz * 0.003);
-      const riverNoise = ridgedRivers(wx * 0.0025, wz * 0.0025);
-
-      let baseH = splineContinentalness(cont);
-      const erosionFactor = splineErosion(erosion);
-
-      baseH += (peaks * 25.0 - 10.0) * erosionFactor;
-
-      if (cont >= -0.15 && riverNoise < 0.12) {
-        let riverVal = (1.2 - riverNoise / 0.1) * (1.0 - Math.max(0, erosion));
-        if (riverVal > 0) {
-          riverVal = Math.min(1.0, riverVal);
-          const targetRiverH = SEA_LEVEL - 6;
-          if (baseH > targetRiverH) {
-            baseH = baseH * (1.0 - riverVal) + targetRiverH * riverVal;
-          }
-        }
-      }
-
-      HEIGHTS_SCRATCH[idx] = baseH;
+      sampleTerrainClimate(stageSeed, wx, wz, SCRATCH_CLIMATE);
+      HEIGHTS_SCRATCH[idx] = SCRATCH_CLIMATE.surfaceHeight;
     }
   }
 

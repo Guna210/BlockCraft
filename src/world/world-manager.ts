@@ -332,7 +332,49 @@ export class WorldManager {
 
         const colPromise = (async () => {
           const sectionPromises: Promise<void>[] = [];
-          for (let sy = 0; sy < 5; sy++) {
+
+          const col = this.world!.getColumn(cx, cz, false);
+          if (!col) return;
+
+          const registry = BlockRegistry.getInstance();
+
+          const isOpaqueUniform = (nx: number, ny: number, nz: number) => {
+            if (ny < 0 || ny >= 20) return false;
+            const ncol = this.world!.getColumn(nx, nz, false);
+            if (!ncol) return false;
+            const nsec = ncol.getSection(ny);
+            if (!nsec) return false;
+            if (nsec.getBitsPerEntry() !== 0) return false;
+            const res = registry.getResolvedState(nsec.uniformStateId);
+            return res ? res.definition.fullOpaqueCube : false;
+          };
+
+          for (let sy = 0; sy < 20; sy++) {
+            const sec = col.getSection(sy);
+            if (!sec) continue;
+
+            // Skip all-air sections (assuming air is state 0 and not fullOpaqueCube)
+            if (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0) {
+              continue;
+            }
+
+            if (sec.getBitsPerEntry() === 0) {
+              const res = registry.getResolvedState(sec.uniformStateId);
+              if (res && res.definition.fullOpaqueCube) {
+                // Check all 6 neighbors
+                if (
+                  isOpaqueUniform(cx, sy + 1, cz) &&
+                  isOpaqueUniform(cx, sy - 1, cz) &&
+                  isOpaqueUniform(cx + 1, sy, cz) &&
+                  isOpaqueUniform(cx - 1, sy, cz) &&
+                  isOpaqueUniform(cx, sy, cz + 1) &&
+                  isOpaqueUniform(cx, sy, cz - 1)
+                ) {
+                  continue;
+                }
+              }
+            }
+
             const tp0 = performance.now();
             const paddedSection = buildPaddedSection(this.world!, cx, sy, cz);
             totalPaddedMs += performance.now() - tp0;
