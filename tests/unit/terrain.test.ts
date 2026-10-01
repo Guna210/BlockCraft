@@ -255,4 +255,183 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     expect(totalChecked).toBeGreaterThanOrEqual(200);
     expect(totalMatched / totalChecked).toBeGreaterThanOrEqual(0.95);
   });
+
+  it('River shapes are narrow, winding, and connected', () => {
+    function evaluateRiverShape(seedStr: string, isAlt: boolean) {
+      const worldSeed = hashString(seedStr);
+      const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
+      const out = { continentalness: 0, erosion: 0, peaks: 0, river: 0, surfaceHeight: 0 };
+
+      const width = 512;
+      const height = 512;
+
+      const windows = [
+        { x1: -256, z1: -256, x2: -256 + width, z2: -256 + height },
+        { x1: 1024, z1: 1024, x2: 1024 + width, z2: 1024 + height },
+        { x1: -2048, z1: -1536, x2: -2048 + width, z2: -1536 + height }
+      ];
+
+      let totalRiverCount = 0;
+      let totalLandCount = 0;
+      let totalPondRiverCount = 0;
+      let maxRiverWidth = 0;
+      const allWidths: number[] = [];
+
+      for (const win of windows) {
+        const grid = new Int32Array(width * height);
+
+        for (let x = win.x1; x < win.x2; x++) {
+          for (let z = win.z1; z < win.z2; z++) {
+            sampleTerrainClimate(terrainStageSeed, x, z, out);
+            const isRiver = out.river > 0 && out.surfaceHeight < 64; // SEA_LEVEL is 64
+            const isLand = out.surfaceHeight >= 64 || isRiver;
+
+            if (isLand) totalLandCount++;
+
+            if (isRiver) {
+              grid[(z - win.z1) * width + (x - win.x1)] = 1;
+              totalRiverCount++;
+            }
+          }
+        }
+
+        const dist = new Int32Array(width * height);
+        dist.fill(9999);
+        const qx: number[] = [];
+        const qz: number[] = [];
+
+        for (let x = 0; x < width; x++) {
+          for (let z = 0; z < height; z++) {
+            if (grid[z * width + x] === 0) {
+              dist[z * width + x] = 0;
+              qx.push(x);
+              qz.push(z);
+            } else if (x === 0 || x === width - 1 || z === 0 || z === height - 1) {
+              dist[z * width + x] = 1;
+              qx.push(x);
+              qz.push(z);
+            }
+          }
+        }
+
+        let head = 0;
+        const dx = [-1, 1, 0, 0];
+        const dz = [0, 0, -1, 1];
+        while (head < qx.length) {
+          const cx = qx[head]!;
+          const cz = qz[head]!;
+          head++;
+          const cd = dist[cz * width + cx]!;
+          for (let i = 0; i < 4; i++) {
+            const nx = cx + dx[i]!;
+            const nz = cz + dz[i]!;
+            if (nx >= 0 && nx < width && nz >= 0 && nz < height) {
+              if (dist[nz * width + nx]! > cd + 1) {
+                dist[nz * width + nx] = cd + 1;
+                qx.push(nx);
+                qz.push(nz);
+              }
+            }
+          }
+        }
+
+        const visited = new Uint8Array(width * height);
+
+        // 8-connected BFS over river cells for components
+        const cdx = [-1, 1, 0, 0, -1, 1, -1, 1];
+        const cdz = [0, 0, -1, 1, -1, -1, 1, 1];
+
+        for (let x = 0; x < width; x++) {
+          for (let z = 0; z < height; z++) {
+            if (grid[z * width + x] === 1 && visited[z * width + x] === 0) {
+              let compSize = 0;
+              let minX = x, maxX = x, minZ = z, maxZ = z;
+              let maxDist = 0;
+
+              const cqx = [x];
+              const cqz = [z];
+              visited[z * width + x] = 1;
+              let chead = 0;
+
+              while (chead < cqx.length) {
+                const cx = cqx[chead]!;
+                const cz = cqz[chead]!;
+                chead++;
+                compSize++;
+                if (cx < minX) minX = cx;
+                if (cx > maxX) maxX = cx;
+                if (cz < minZ) minZ = cz;
+                if (cz > maxZ) maxZ = cz;
+
+                const d = dist[cz * width + cx]!;
+                if (d > maxDist) maxDist = d;
+
+                for (let i = 0; i < 8; i++) {
+                  const nx = cx + cdx[i]!;
+                  const nz = cz + cdz[i]!;
+                  if (nx >= 0 && nx < width && nz >= 0 && nz < height) {
+                    if (grid[nz * width + nx] === 1 && visited[nz * width + nx] === 0) {
+                      visited[nz * width + nx] = 1;
+                      cqx.push(nx);
+                      cqz.push(nz);
+                    }
+                  }
+                }
+              }
+
+              const compW = maxX - minX + 1;
+              const compH = maxZ - minZ + 1;
+              const longSide = Math.max(compW, compH);
+              const maxWidth = 2 * maxDist;
+
+              if (maxWidth > 0) {
+                 const elongation = longSide / maxWidth;
+                 if (elongation < 4) {
+                   totalPondRiverCount += compSize;
+                 }
+              }
+            }
+          }
+        }
+
+        for (let i = 0; i < width * height; i++) {
+          if (grid[i] === 1) {
+             const cellWidth = 2 * dist[i]!;
+             allWidths.push(cellWidth);
+             if (cellWidth > maxRiverWidth) maxRiverWidth = cellWidth;
+          }
+        }
+      }
+
+      if (totalLandCount > 0) {
+        const riverRatio = totalRiverCount / totalLandCount;
+        expect(riverRatio).toBeGreaterThanOrEqual(0.015);
+        expect(riverRatio).toBeLessThanOrEqual(0.05);
+      }
+
+      if (allWidths.length > 0) {
+        allWidths.sort((a, b) => a - b);
+        const p50 = allWidths[Math.floor(allWidths.length * 0.50)]!;
+        const p90 = allWidths[Math.floor(allWidths.length * 0.90)]!;
+
+        expect(p50).toBeGreaterThanOrEqual(3);
+        expect(p50).toBeLessThanOrEqual(12);
+
+        expect(p90).toBeLessThanOrEqual(20);
+        expect(maxRiverWidth).toBeLessThanOrEqual(32);
+      }
+
+      if (totalRiverCount > 0) {
+        const pondRatio = totalPondRiverCount / totalRiverCount;
+        expect(pondRatio).toBeLessThanOrEqual(0.10);
+      }
+    }
+
+    const t0 = performance.now();
+    evaluateRiverShape('blockcraft-test-seed-42', false);
+    evaluateRiverShape('blockcraft-alt-seed-7', true);
+    const t1 = performance.now();
+    console.log(`River shape test duration: ${t1 - t0} ms`);
+  }, 20000);
+
 });

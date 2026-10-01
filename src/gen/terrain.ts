@@ -10,7 +10,8 @@ interface CachedSamplers {
   fbmCont: (x: number, y: number) => number;
   fbmErosion: (x: number, y: number) => number;
   ridgedPeaks: (x: number, y: number) => number;
-  ridgedRivers: (x: number, y: number) => number;
+  s2Rivers: (x: number, y: number) => number;
+  warpRivers: (x: number, y: number) => { wx: number; wy: number };
   fbm3D: (x: number, y: number, z: number) => number;
   s2Foundation: (x: number, y: number) => number;
 }
@@ -40,7 +41,20 @@ function getSamplersForSeed(stageSeed: number): CachedSamplers {
   const ridgedPeaks = makeRidged2D(s2Peaks, 4, 0.5, 2.0);
 
   const s2Rivers = makeSimplex2D(seedRivers);
-  const ridgedRivers = makeRidged2D(s2Rivers, 3, 0.5, 2.0);
+
+  const seedWarpX = deriveSeed(stageSeed, 'river_warp_x');
+  const seedWarpZ = deriveSeed(stageSeed, 'river_warp_z');
+  const s2WarpX = makeSimplex2D(seedWarpX);
+  const fbmWarpX = makeFbm2D(s2WarpX, 2, 0.5, 2.0);
+  const s2WarpZ = makeSimplex2D(seedWarpZ);
+  const fbmWarpZ = makeFbm2D(s2WarpZ, 2, 0.5, 2.0);
+
+  const warpRivers = (x: number, y: number) => {
+    const wx = fbmWarpX(x * 2.0, y * 2.0) * 0.35;
+    const wy = fbmWarpZ(x * 2.0, y * 2.0) * 0.35;
+    return { wx: x + wx, wy: y + wy };
+  };
+
 
   const s3Density = makeSimplex3D(seed3D);
   const fbm3D = makeFbm3D(s3Density, 3, 0.5, 2.0);
@@ -52,7 +66,8 @@ function getSamplersForSeed(stageSeed: number): CachedSamplers {
     fbmCont,
     fbmErosion,
     ridgedPeaks,
-    ridgedRivers,
+    s2Rivers,
+    warpRivers,
     fbm3D,
     s2Foundation,
   };
@@ -84,15 +99,39 @@ export function sampleTerrainClimate(
   const fbmCont = _lastSamplers.fbmCont;
   const fbmErosion = _lastSamplers.fbmErosion;
   const ridgedPeaks = _lastSamplers.ridgedPeaks;
-  const ridgedRivers = _lastSamplers.ridgedRivers;
+  const s2Rivers = _lastSamplers.s2Rivers;
+  const warpRivers = _lastSamplers.warpRivers;
 
   const cont = fbmCont(wx * 0.0012, wz * 0.0012);
   const erosion = fbmErosion(wx * 0.002, wz * 0.002);
   const peaksRaw = ridgedPeaks(wx * 0.003, wz * 0.003);
-  const riverNoiseRaw = ridgedRivers(wx * 0.0025, wz * 0.0025);
+
+  const rx = wx * 0.0012;
+  const rz = wz * 0.0012;
+
+  const cw = warpRivers(rx, rz);
+  const n = s2Rivers(cw.wx, cw.wy);
+
+  const eps = 0.0012;
+  const cwx1 = warpRivers(rx + eps, rz);
+  const nx1 = s2Rivers(cwx1.wx, cwx1.wy);
+  const cwx2 = warpRivers(rx - eps, rz);
+  const nx2 = s2Rivers(cwx2.wx, cwx2.wy);
+  const cwz1 = warpRivers(rx, rz + eps);
+  const nz1 = s2Rivers(cwz1.wx, cwz1.wy);
+  const cwz2 = warpRivers(rx, rz - eps);
+  const nz2 = s2Rivers(cwz2.wx, cwz2.wy);
+
+  const dx = (nx1 - nx2) / 2.0;
+  const dz = (nz1 - nz2) / 2.0;
+  const gradLen = Math.sqrt(dx * dx + dz * dz);
+
+  let d = 999;
+  if (gradLen > 0.00001) {
+    d = Math.abs(n) / gradLen;
+  }
 
   const peaks = (peaksRaw + 1.0) / 2.0;
-  const riverNoise = (riverNoiseRaw + 1.0) / 2.0;
 
   let baseH: number;
   if (cont < -0.45) {
@@ -124,25 +163,30 @@ export function sampleTerrainClimate(
 
   baseH += (peaks * 45.0 - 10.0) * erosionFactor;
 
-  let riverVal = 0;
-  const RIVER_THRESH = 0.04;
-  if (cont >= -0.15 && riverNoise < RIVER_THRESH) {
-    riverVal = (1.2 - riverNoise / RIVER_THRESH) * (1.0 - Math.max(0, erosion));
-    if (riverVal > 0) {
-      riverVal = Math.min(1.0, riverVal);
-      const targetRiverH = SEA_LEVEL - 6;
+  let strength = 0;
+  if (cont >= -0.15) {
+    strength = Math.max(0, 1.0 - d / 4.9);
+
+    if (baseH > 100) {
+      let fade = (120 - baseH) / 20.0;
+      fade = Math.max(0, Math.min(1.0, fade));
+      strength *= fade;
+    }
+
+    if (strength > 0) {
+      const riverVal = Math.min(1.0, strength);
+      const targetRiverH = SEA_LEVEL - 4; // y 60
       if (baseH > targetRiverH) {
-        baseH = baseH * (1.0 - riverVal) + targetRiverH * riverVal;
+        const carveStr = riverVal * riverVal * (3 - 2 * riverVal);
+        baseH = baseH * (1.0 - carveStr) + targetRiverH * carveStr;
       }
-    } else {
-      riverVal = 0;
     }
   }
 
   out.continentalness = cont;
   out.erosion = erosion;
   out.peaks = peaks;
-  out.river = riverVal;
+  out.river = strength;
   out.surfaceHeight = baseH;
 }
 
