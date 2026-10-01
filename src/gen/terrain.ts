@@ -55,7 +55,6 @@ function getSamplersForSeed(stageSeed: number): CachedSamplers {
     return { wx: x + wx, wy: y + wy };
   };
 
-
   const s3Density = makeSimplex3D(seed3D);
   const fbm3D = makeFbm3D(s3Density, 3, 0.5, 2.0);
 

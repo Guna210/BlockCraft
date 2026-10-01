@@ -257,7 +257,7 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
   });
 
   it('River shapes are narrow, winding, and connected', () => {
-    function evaluateRiverShape(seedStr: string, isAlt: boolean) {
+    function evaluateRiverShape(seedStr: string, _isAlt: boolean) {
       const worldSeed = hashString(seedStr);
       const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
       const out = { continentalness: 0, erosion: 0, peaks: 0, river: 0, surfaceHeight: 0 };
@@ -268,7 +268,7 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
       const windows = [
         { x1: -256, z1: -256, x2: -256 + width, z2: -256 + height },
         { x1: 1024, z1: 1024, x2: 1024 + width, z2: 1024 + height },
-        { x1: -2048, z1: -1536, x2: -2048 + width, z2: -1536 + height }
+        { x1: -2048, z1: -1536, x2: -2048 + width, z2: -1536 + height },
       ];
 
       let totalRiverCount = 0;
@@ -345,7 +345,10 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
           for (let z = 0; z < height; z++) {
             if (grid[z * width + x] === 1 && visited[z * width + x] === 0) {
               let compSize = 0;
-              let minX = x, maxX = x, minZ = z, maxZ = z;
+              let minX = x,
+                maxX = x,
+                minZ = z,
+                maxZ = z;
               let maxDist = 0;
 
               const cqx = [x];
@@ -385,10 +388,10 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
               const maxWidth = 2 * maxDist;
 
               if (maxWidth > 0) {
-                 const elongation = longSide / maxWidth;
-                 if (elongation < 4) {
-                   totalPondRiverCount += compSize;
-                 }
+                const elongation = longSide / maxWidth;
+                if (elongation < 4) {
+                  totalPondRiverCount += compSize;
+                }
               }
             }
           }
@@ -396,9 +399,9 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
 
         for (let i = 0; i < width * height; i++) {
           if (grid[i] === 1) {
-             const cellWidth = 2 * dist[i]!;
-             allWidths.push(cellWidth);
-             if (cellWidth > maxRiverWidth) maxRiverWidth = cellWidth;
+            const cellWidth = 2 * dist[i]!;
+            allWidths.push(cellWidth);
+            if (cellWidth > maxRiverWidth) maxRiverWidth = cellWidth;
           }
         }
       }
@@ -411,8 +414,8 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
 
       if (allWidths.length > 0) {
         allWidths.sort((a, b) => a - b);
-        const p50 = allWidths[Math.floor(allWidths.length * 0.50)]!;
-        const p90 = allWidths[Math.floor(allWidths.length * 0.90)]!;
+        const p50 = allWidths[Math.floor(allWidths.length * 0.5)]!;
+        const p90 = allWidths[Math.floor(allWidths.length * 0.9)]!;
 
         expect(p50).toBeGreaterThanOrEqual(3);
         expect(p50).toBeLessThanOrEqual(12);
@@ -423,7 +426,7 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
 
       if (totalRiverCount > 0) {
         const pondRatio = totalPondRiverCount / totalRiverCount;
-        expect(pondRatio).toBeLessThanOrEqual(0.10);
+        expect(pondRatio).toBeLessThanOrEqual(0.1);
       }
     }
 
@@ -433,5 +436,4 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     const t1 = performance.now();
     console.log(`River shape test duration: ${t1 - t0} ms`);
   }, 20000);
-
 });
