@@ -11,6 +11,76 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     BlockRegistry.getInstance();
   });
 
+  it('overhangs test on mountain columns', () => {
+    const t0 = performance.now();
+    const worldSeed = hashString('blockcraft-test-seed-42');
+    const pipeline = createDefaultPipeline();
+    const world = new World(false);
+
+    let totalColumnsSampled = 0;
+    let mountainColumnsCount = 0;
+    let overhangMountainColumnsCount = 0;
+
+    // Generate columns in a radius around origin to collect >= 250 real generated columns
+    for (let cx = -3; cx <= 3; cx++) {
+      for (let cz = -3; cz <= 3; cz++) {
+        const col = world.getColumn(cx, cz, true)!;
+        pipeline.generateColumn(worldSeed, cx, cz, col);
+
+        for (let zLocal = 0; zLocal < 16; zLocal++) {
+          const wz = cz * 16 + zLocal;
+          for (let xLocal = 0; xLocal < 16; xLocal++) {
+            const wx = cx * 16 + xLocal;
+            totalColumnsSampled++;
+
+            // Find top block Y
+            let topY = -1;
+            for (let y = 319; y >= 0; y--) {
+              if (world.getBlock(wx, y, wz).id !== 'air') {
+                topY = y;
+                break;
+              }
+            }
+
+            if (topY >= 110) {
+              mountainColumnsCount++;
+              // Check if column has an overhang above y=70 (stone above air)
+              let hasAirBelowStone = false;
+              let foundStoneAbove = false;
+              for (let y = topY; y > 70; y--) {
+                const id = world.getBlock(wx, y, wz).id;
+                if (id === 'stone') {
+                  foundStoneAbove = true;
+                } else if (foundStoneAbove && id === 'air') {
+                  hasAirBelowStone = true;
+                  break;
+                }
+              }
+
+              if (hasAirBelowStone) {
+                overhangMountainColumnsCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const overhangRate =
+      mountainColumnsCount > 0 ? overhangMountainColumnsCount / mountainColumnsCount : 0;
+
+    console.log(`[Overhangs Test]
+      Total Real Generated Columns: ${totalColumnsSampled} (target >= 250)
+      Mountain Columns (top >= y110): ${mountainColumnsCount}
+      Overhang Mountain Columns: ${overhangMountainColumnsCount} (${(overhangRate * 100).toFixed(2)}%, target >= 3%)
+      Duration: ${(performance.now() - t0).toFixed(2)} ms
+    `);
+
+    expect(totalColumnsSampled).toBeGreaterThanOrEqual(250);
+    expect(mountainColumnsCount).toBeGreaterThan(0);
+    expect(overhangRate).toBeGreaterThanOrEqual(0.03);
+  });
+
   it('proportions test over sample windows for standard and alt seeds', () => {
     const t0 = performance.now();
     const sample = { continentalness: 0, erosion: 0, peaks: 0, river: 0, surfaceHeight: 0 };
@@ -205,6 +275,19 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     const H = 512;
     const N = W * H;
 
+    const DX4 = [1, -1, 0, 0];
+    const DZ4 = [0, 0, 1, -1];
+
+    const DX8 = [1, -1, 0, 0, 1, -1, 1, -1];
+    const DZ8 = [0, 0, 1, -1, 1, -1, -1, 1];
+
+    const riverGrid = new Uint8Array(N);
+    const landGrid = new Uint8Array(N);
+    const distGrid = new Int32Array(N);
+    const queue = new Int32Array(N);
+    const visitedComp = new Uint8Array(N);
+    const compQueue = new Int32Array(N);
+
     for (const s of seeds) {
       const stageSeed = deriveSeed(hashString(s.seedStr), 'terrain_shape');
 
@@ -214,9 +297,8 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
       let combinedRiverCellsInShortComponents = 0;
 
       for (const origin of windowOrigins) {
-        // Grid arrays for this 512x512 window
-        const riverGrid = new Uint8Array(N);
-        const landGrid = new Uint8Array(N);
+        riverGrid.fill(0);
+        landGrid.fill(0);
 
         for (let lz = 0; lz < H; lz++) {
           const wz = origin.z + lz;
@@ -247,42 +329,28 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
         combinedLandCells += winLandCount;
 
         // Multi-source 4-neighbour BFS from non-river cells (distance 0)
-        const distGrid = new Int32Array(N);
         distGrid.fill(-1);
-
-        const queue = new Int32Array(N);
         let head = 0;
         let tail = 0;
 
-        for (let lz = 0; lz < H; lz++) {
-          const zOff = lz * W;
-          for (let lx = 0; lx < W; lx++) {
-            const idx = zOff + lx;
-            if (riverGrid[idx] === 0) {
-              distGrid[idx] = 0;
-              queue[tail++] = idx;
-            }
+        for (let i = 0; i < N; i++) {
+          if (riverGrid[i] === 0) {
+            distGrid[i] = 0;
+            queue[tail++] = i;
           }
         }
 
         while (head < tail) {
           const cur = queue[head++]!;
           const curDist = distGrid[cur]!;
-
           const cx = cur % W;
           const cz = Math.floor(cur / W);
 
-          // 4-neighbors
-          const neighbors = [
-            { x: cx + 1, z: cz },
-            { x: cx - 1, z: cz },
-            { x: cx, z: cz + 1 },
-            { x: cx, z: cz - 1 },
-          ];
-
-          for (const n of neighbors) {
-            if (n.x >= 0 && n.x < W && n.z >= 0 && n.z < H) {
-              const nIdx = n.z * W + n.x;
+          for (let k = 0; k < 4; k++) {
+            const nx = cx + DX4[k]!;
+            const nz = cz + DZ4[k]!;
+            if (nx >= 0 && nx < W && nz >= 0 && nz < H) {
+              const nIdx = nz * W + nx;
               if (distGrid[nIdx] === -1) {
                 distGrid[nIdx] = curDist + 1;
                 queue[tail++] = nIdx;
@@ -306,7 +374,7 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
         }
 
         // 8-connected BFS over river cells for components
-        const visitedComp = new Uint8Array(N);
+        visitedComp.fill(0);
 
         for (let i = 0; i < N; i++) {
           if (riverGrid[i] === 1 && visitedComp[i] === 0) {
@@ -318,7 +386,6 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
             let maxDistInComp = 0;
             let compCellCount = 0;
 
-            const compQueue = new Int32Array(N);
             let chead = 0;
             let ctail = 0;
 
@@ -342,18 +409,14 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
               if (d === -1 || distToBorder < d) d = distToBorder;
               if (d > maxDistInComp) maxDistInComp = d;
 
-              // 8-neighbors
-              for (let dz = -1; dz <= 1; dz++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                  if (dx === 0 && dz === 0) continue;
-                  const nx = cx + dx;
-                  const nz = cz + dz;
-                  if (nx >= 0 && nx < W && nz >= 0 && nz < H) {
-                    const nIdx = nz * W + nx;
-                    if (riverGrid[nIdx] === 1 && visitedComp[nIdx] === 0) {
-                      visitedComp[nIdx] = 1;
-                      compQueue[ctail++] = nIdx;
-                    }
+              for (let k = 0; k < 8; k++) {
+                const nx = cx + DX8[k]!;
+                const nz = cz + DZ8[k]!;
+                if (nx >= 0 && nx < W && nz >= 0 && nz < H) {
+                  const nIdx = nz * W + nx;
+                  if (riverGrid[nIdx] === 1 && visitedComp[nIdx] === 0) {
+                    visitedComp[nIdx] = 1;
+                    compQueue[ctail++] = nIdx;
                   }
                 }
               }

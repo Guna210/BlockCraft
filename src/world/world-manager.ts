@@ -1,6 +1,7 @@
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from './world';
 import { setWorldInstance } from './world-instance';
+import { ChunkSection } from './chunk';
 import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
@@ -291,16 +292,17 @@ export class WorldManager {
     await this.meshRadius(radiusChunks);
   }
 
-  private isSectionAllOpaque(sec: any): boolean {
-    if (!sec) return false;
+  private isSectionAllOpaque(sec: ChunkSection | null): boolean {
+    if (!sec || !this.tables) return false;
     if (sec.getBitsPerEntry() === 0) {
       const st = sec.uniformStateId;
-      return this.tables?.isOpaqueCube[st] === 1;
+      return this.tables.isOpaqueCube[st] === 1;
     }
     const palette = sec.palette;
-    if (!palette || !this.tables) return false;
+    if (!palette) return false;
     for (let i = 0; i < palette.length; i++) {
-      if (this.tables.isOpaqueCube[palette[i]] !== 1) {
+      const st = palette[i];
+      if (st === undefined || this.tables.isOpaqueCube[st] !== 1) {
         return false;
       }
     }

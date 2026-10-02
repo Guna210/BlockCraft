@@ -151,31 +151,35 @@ export function sampleTerrainClimate(
 
   if (cont >= -0.15) {
     const n = sampleWarpedRiverNoise(samplers, wx, wz);
-    const nX1 = sampleWarpedRiverNoise(samplers, wx + 1, wz);
-    const nX0 = sampleWarpedRiverNoise(samplers, wx - 1, wz);
-    const nZ1 = sampleWarpedRiverNoise(samplers, wx, wz + 1);
-    const nZ0 = sampleWarpedRiverNoise(samplers, wx, wz - 1);
 
-    const gradX = (nX1 - nX0) * 0.5;
-    const gradZ = (nZ1 - nZ0) * 0.5;
-    const gradMag = Math.sqrt(gradX * gradX + gradZ * gradZ);
+    // Fast check: if |n| > 0.05, distance d is > 10, well beyond hw + 6 = 10, so river strength is 0.
+    if (Math.abs(n) <= 0.05) {
+      const nX1 = sampleWarpedRiverNoise(samplers, wx + 1, wz);
+      const nX0 = sampleWarpedRiverNoise(samplers, wx - 1, wz);
+      const nZ1 = sampleWarpedRiverNoise(samplers, wx, wz + 1);
+      const nZ0 = sampleWarpedRiverNoise(samplers, wx, wz - 1);
 
-    const d = gradMag > 1e-6 ? Math.abs(n) / gradMag : 999;
+      const gradX = (nX1 - nX0) * 0.5;
+      const gradZ = (nZ1 - nZ0) * 0.5;
+      const gradMag = Math.sqrt(gradX * gradX + gradZ * gradZ);
 
-    // Shrink hw to 0 as un-carved surface goes from y 100 to y 120
-    const heightFactor = 1.0 - smoothstep(100, 120, uncarvedHeight);
-    const hw = 4.0 * heightFactor;
+      const d = gradMag > 1e-6 ? Math.abs(n) / gradMag : 999;
 
-    if (hw > 0 && d < hw + 6) {
-      if (d < hw) {
-        riverStrength = Math.max(0, Math.min(1, 1.0 - d / hw));
-        finalSurface = SEA_LEVEL - 1 - Math.round(3.0 * riverStrength);
-      } else {
-        // Banks: hw <= d < hw + 6
-        riverStrength = 0;
-        const bankT = (d - hw) / 6.0;
-        const s = smoothstep(0, 1, bankT);
-        finalSurface = SEA_LEVEL + s * (uncarvedHeight - SEA_LEVEL);
+      // Shrink hw to 0 as un-carved surface goes from y 100 to y 120
+      const heightFactor = 1.0 - smoothstep(100, 120, uncarvedHeight);
+      const hw = 4.0 * heightFactor;
+
+      if (hw > 0 && d < hw + 6) {
+        if (d < hw) {
+          riverStrength = Math.max(0, Math.min(1, 1.0 - d / hw));
+          finalSurface = SEA_LEVEL - 1 - Math.round(3.0 * riverStrength);
+        } else {
+          // Banks: hw <= d < hw + 6
+          riverStrength = 0;
+          const bankT = (d - hw) / 6.0;
+          const s = smoothstep(0, 1, bankT);
+          finalSurface = SEA_LEVEL + s * (uncarvedHeight - SEA_LEVEL);
+        }
       }
     }
   }
@@ -238,21 +242,26 @@ export function generateTerrainShape(
 
       if (cont >= -0.15) {
         const n = sampleWarpedRiverNoise(samplers, wx, wz);
-        const nX1 = sampleWarpedRiverNoise(samplers, wx + 1, wz);
-        const nX0 = sampleWarpedRiverNoise(samplers, wx - 1, wz);
-        const nZ1 = sampleWarpedRiverNoise(samplers, wx, wz + 1);
-        const nZ0 = sampleWarpedRiverNoise(samplers, wx, wz - 1);
+        if (Math.abs(n) <= 0.05) {
+          const nX1 = sampleWarpedRiverNoise(samplers, wx + 1, wz);
+          const nX0 = sampleWarpedRiverNoise(samplers, wx - 1, wz);
+          const nZ1 = sampleWarpedRiverNoise(samplers, wx, wz + 1);
+          const nZ0 = sampleWarpedRiverNoise(samplers, wx, wz - 1);
 
-        const gradX = (nX1 - nX0) * 0.5;
-        const gradZ = (nZ1 - nZ0) * 0.5;
-        const gradMag = Math.sqrt(gradX * gradX + gradZ * gradZ);
+          const gradX = (nX1 - nX0) * 0.5;
+          const gradZ = (nZ1 - nZ0) * 0.5;
+          const gradMag = Math.sqrt(gradX * gradX + gradZ * gradZ);
 
-        const d = gradMag > 1e-6 ? Math.abs(n) / gradMag : 999;
-        const heightFactor = 1.0 - smoothstep(100, 120, uncarved);
-        const hw = 4.0 * heightFactor;
+          const d = gradMag > 1e-6 ? Math.abs(n) / gradMag : 999;
+          const heightFactor = 1.0 - smoothstep(100, 120, uncarved);
+          const hw = 4.0 * heightFactor;
 
-        DIST_SCRATCH[idx] = d;
-        HW_SCRATCH[idx] = hw;
+          DIST_SCRATCH[idx] = d;
+          HW_SCRATCH[idx] = hw;
+        } else {
+          DIST_SCRATCH[idx] = 999;
+          HW_SCRATCH[idx] = 0;
+        }
       } else {
         DIST_SCRATCH[idx] = 999;
         HW_SCRATCH[idx] = 0;
@@ -272,11 +281,10 @@ export function generateTerrainShape(
       const hw = HW_SCRATCH[colIdx]!;
 
       // Determine 3D noise amplitude according to Req 4:
-      // - full 22 where uncarved surface y >= 110;
+      // - full 22 where uncarved surface y >= 85;
       // - fading smoothly to at most 3 near sea level (y <= 64);
       // - 0 inside river channels and banks (d < hw + 6).
-      // Fading to 0 at y <= 72 ensures terrain near sea level is not pushed below water level.
-      const base3DAmp = 22.0 * smoothstep(72, 110, uncarvedH);
+      const base3DAmp = 3.0 + 19.0 * smoothstep(64, 85, uncarvedH);
 
       let river3DFactor = 1.0;
       if (hw > 0 && d < hw + 6) {
@@ -327,7 +335,7 @@ export function generateTerrainShape(
           density = -100.0; // Guaranteed air / water
         } else {
           // Inside surface transition zone: sample 3D noise
-          const n3d = noiseAmp > 0 ? fbm3D(wx * 0.015, y * 0.012, wz * 0.015) * noiseAmp : 0.0;
+          const n3d = noiseAmp > 0 ? fbm3D(wx * 0.015, y * 0.025, wz * 0.015) * noiseAmp : 0.0;
           density = targetH - y + n3d;
           if (y > 220) {
             density -= (y - 220) * 2.0;
