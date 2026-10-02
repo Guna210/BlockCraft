@@ -16,6 +16,7 @@ uniform vec3 u_sectionOrigin;
 
 out vec3 v_normal;
 out vec2 v_unwrappedUV;
+out vec3 v_worldPos;
 flat out uint v_tileIndex;
 flat out uint v_tintIndex;
 
@@ -45,6 +46,7 @@ void main() {
 
   v_normal = NORMALS[normalIdx];
   v_unwrappedUV = vec2(u_local, v_local);
+  v_worldPos = worldPos;
   v_tileIndex = tileIdx;
   v_tintIndex = tintIdx;
 
@@ -57,16 +59,17 @@ precision highp float;
 
 in vec3 v_normal;
 in vec2 v_unwrappedUV;
+in vec3 v_worldPos;
 flat in uint v_tileIndex;
 flat in uint v_tintIndex;
 
 uniform sampler2D u_atlasSampler;
+uniform sampler2D u_grassTintMap;
+uniform sampler2D u_foliageTintMap;
 uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform int u_isCutout;
 uniform int u_isWireframe;
-uniform vec3 u_grassTint;
-uniform vec3 u_foliageTint;
 
 out vec4 fragColor;
 
@@ -101,18 +104,22 @@ void main() {
     discard;
   }
 
+  // Per-block smooth tint sampling from column tint map
+  vec2 localXZ = fract(v_worldPos.xz / 16.0);
+  vec3 grassTint = texture(u_grassTintMap, localXZ).rgb;
+  vec3 foliageTint = texture(u_foliageTintMap, localXZ).rgb;
+
   // Biome Tinting
   if (v_tintIndex == 1u) {
     // Grass top
-    texColor.rgb *= u_grassTint;
+    texColor.rgb *= grassTint;
   } else if (v_tintIndex == 2u) {
-    // Foliage tinting
-    texColor.rgb *= u_foliageTint;
+    // Foliage tinting (oak leaves)
+    texColor.rgb *= foliageTint;
   } else if (v_tintIndex == 3u) {
-    // Grass side: tint top fringe, dirt base stays untinted brown
-    if (fract(v_unwrappedUV.y) < 0.28) {
-      texColor.rgb *= u_grassTint;
-    }
+    // Grass side: tint fringe (texColor.a == 1.0), dirt base (texColor.a == 0.0) stays untinted
+    vec3 tintedRgb = texColor.rgb * grassTint;
+    texColor = vec4(mix(texColor.rgb, tintedRgb, texColor.a), 1.0);
   }
 
   vec3 lightDir = normalize(vec3(0.4, 0.8, 0.5));
@@ -152,8 +159,13 @@ export class ChunkRenderer {
   private locCellSize: WebGLUniformLocation;
   private locIsCutout: WebGLUniformLocation;
   private locIsWireframe: WebGLUniformLocation;
-  private locGrassTint: WebGLUniformLocation;
-  private locFoliageTint: WebGLUniformLocation;
+  private locGrassTintMap: WebGLUniformLocation;
+  private locFoliageTintMap: WebGLUniformLocation;
+
+  private grassTintTexture: WebGLTexture;
+  private foliageTintTexture: WebGLTexture;
+  private defaultGrassTintData: Uint8Array;
+  private defaultFoliageTintData: Uint8Array;
 
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
 
@@ -165,12 +177,40 @@ export class ChunkRenderer {
     this.locViewProj = gl.getUniformLocation(this.program, 'u_viewProj')!;
     this.locSectionOrigin = gl.getUniformLocation(this.program, 'u_sectionOrigin')!;
     this.locAtlasSampler = gl.getUniformLocation(this.program, 'u_atlasSampler')!;
+    this.locGrassTintMap = gl.getUniformLocation(this.program, 'u_grassTintMap')!;
+    this.locFoliageTintMap = gl.getUniformLocation(this.program, 'u_foliageTintMap')!;
     this.locAtlasSize = gl.getUniformLocation(this.program, 'u_atlasSize')!;
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
-    this.locGrassTint = gl.getUniformLocation(this.program, 'u_grassTint')!;
-    this.locFoliageTint = gl.getUniformLocation(this.program, 'u_foliageTint')!;
+
+    // Create 16x16 column tint textures
+    this.grassTintTexture = this.glWrapper.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.grassTintTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    this.foliageTintTexture = this.glWrapper.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.foliageTintTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Default Plains tint data (256 * 3 bytes)
+    this.defaultGrassTintData = new Uint8Array(256 * 3);
+    this.defaultFoliageTintData = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      this.defaultGrassTintData[i * 3] = 124;
+      this.defaultGrassTintData[i * 3 + 1] = 189;
+      this.defaultGrassTintData[i * 3 + 2] = 71;
+
+      this.defaultFoliageTintData[i * 3] = 119;
+      this.defaultFoliageTintData[i * 3 + 1] = 177;
+      this.defaultFoliageTintData[i * 3 + 2] = 58;
+    }
   }
 
   public uploadSectionMesh(
@@ -306,6 +346,15 @@ export class ChunkRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
     gl.uniform1i(this.locAtlasSampler, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.grassTintTexture);
+    gl.uniform1i(this.locGrassTintMap, 1);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.foliageTintTexture);
+    gl.uniform1i(this.locFoliageTintMap, 2);
+
     gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
     gl.uniform1f(this.locCellSize, CELL_SIZE);
     gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
@@ -315,51 +364,24 @@ export class ChunkRenderer {
 
     const meshes = Array.from(this.sectionMeshes.values());
 
-    // Default Plains tints (RGB normalized 0..1)
-    const defaultGrassTint = [124.0 / 255.0, 189.0 / 255.0, 71.0 / 255.0] as const;
-    const defaultFoliageTint = [119.0 / 255.0, 177.0 / 255.0, 58.0 / 255.0] as const;
-
-    // Helper to set column tints or default plains tint
+    // Helper to upload 16x16 per-column tint textures for column (sx, sz)
     const setColumnTints = (sx: number, sz: number) => {
-      let gR = defaultGrassTint[0],
-        gG = defaultGrassTint[1],
-        gB = defaultGrassTint[2];
-      let fR = defaultFoliageTint[0],
-        fG = defaultFoliageTint[1],
-        fB = defaultFoliageTint[2];
+      let gData = this.defaultGrassTintData;
+      let fData = this.defaultFoliageTintData;
 
       if (world && world.worldType !== 'flat') {
         const col = world.getColumn(sx, sz, false);
         if (col && col.grassTints && col.foliageTints) {
-          // Average center 4x4 sample of column tints
-          let sumGR = 0,
-            sumGG = 0,
-            sumGB = 0;
-          let sumFR = 0,
-            sumFG = 0,
-            sumFB = 0;
-          for (let z = 6; z <= 9; z++) {
-            for (let x = 6; x <= 9; x++) {
-              const i = (z * 16 + x) * 3;
-              sumGR += col.grassTints[i]!;
-              sumGG += col.grassTints[i + 1]!;
-              sumGB += col.grassTints[i + 2]!;
-              sumFR += col.foliageTints[i]!;
-              sumFG += col.foliageTints[i + 1]!;
-              sumFB += col.foliageTints[i + 2]!;
-            }
-          }
-          gR = sumGR / (16 * 255.0);
-          gG = sumGG / (16 * 255.0);
-          gB = sumGB / (16 * 255.0);
-          fR = sumFR / (16 * 255.0);
-          fG = sumFG / (16 * 255.0);
-          fB = sumFB / (16 * 255.0);
+          gData = col.grassTints;
+          fData = col.foliageTints;
         }
       }
 
-      gl.uniform3f(this.locGrassTint, gR, gG, gB);
-      gl.uniform3f(this.locFoliageTint, fR, fG, fB);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, gData);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, fData);
     };
 
     // 1. Opaque Pass

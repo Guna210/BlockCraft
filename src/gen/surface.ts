@@ -22,7 +22,10 @@ export function generateSurfaceRules(
   cz: number,
   column: ChunkColumn,
 ): void {
-  const worldSeed = column.worldSeed ?? 42;
+  const worldSeed = column.worldSeed;
+  if (worldSeed === undefined) {
+    throw new Error('generateSurfaceRules requires column.worldSeed to be set');
+  }
   const registry = BlockRegistry.getInstance();
 
   const airState = 0;

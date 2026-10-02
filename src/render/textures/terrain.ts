@@ -205,7 +205,7 @@ export function genGrassSide(seed: number = 34567): TextureData {
     for (let y = 0; y < 16; y++) {
       const i = (y * 16 + x) * 4;
       if (y < fringeDepth) {
-        // Grass fringe: grayscale RGB, Alpha = 255
+        // Grass fringe: grayscale RGB, Alpha = 255 (tint mask 1.0)
         const col =
           y === fringeDepth - 1
             ? PAL_GRASS[0]!
@@ -215,11 +215,11 @@ export function genGrassSide(seed: number = 34567): TextureData {
         data[i + 2] = col[2]!;
         data[i + 3] = 255;
       } else {
-        // Dirt base: untinted brown RGB, Alpha = 255
+        // Dirt base: untinted brown RGB, Alpha = 0 (tint mask 0.0)
         data[i] = dirt[i]!;
         data[i + 1] = dirt[i + 1]!;
         data[i + 2] = dirt[i + 2]!;
-        data[i + 3] = 255;
+        data[i + 3] = 0;
       }
     }
   }

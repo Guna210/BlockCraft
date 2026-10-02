@@ -190,7 +190,10 @@ import { RGBA } from './noise';
 export const texturePalettes: Record<string, RGBA[]> = {
   // Terrain
   grass_top: PAL_GRASS,
-  grass_side: [...PAL_GRASS, ...PAL_DIRT],
+  grass_side: [
+    ...PAL_GRASS.map((c) => [c[0], c[1], c[2], 255] as RGBA),
+    ...PAL_DIRT.map((c) => [c[0], c[1], c[2], 0] as RGBA),
+  ],
   dirt: PAL_DIRT,
   foundation_stone: PAL_FOUNDATION_STONE,
   stone: PAL_STONE,

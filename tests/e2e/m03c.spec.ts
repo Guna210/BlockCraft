@@ -230,3 +230,71 @@ test('M03c: M01c test scene grass top face green hue assertion', async ({
   const grassTopRect: Rect = { x: 500, y: 350, width: 50, height: 30 };
   assertHueInRange(png, grassTopRect, [80, 140], 0.6);
 });
+
+test('M03c: Chunk border grass tint continuity E2E', async ({ page }) => {
+  // 1. Create Default World
+  await page.evaluate(async () => {
+    await window.__blockcraft!.createWorld!({
+      name: 'm03c-border-world',
+      seed: 'blockcraft-test-seed-42',
+      mode: 'survival',
+      type: 'default',
+    });
+  });
+
+  // 2. Position camera overhead at x=16 (chunk border)
+  await page.evaluate(() => {
+    const wm = (
+      window as unknown as {
+        WorldManager: {
+          getInstance(): {
+            camera: { position: Float32Array; yaw: number; pitch: number; updateView(): void };
+            pendingTerrainPromises: Map<string, unknown>;
+          };
+        };
+      }
+    ).WorldManager.getInstance();
+
+    wm.camera.position[0] = 16.0;
+    wm.camera.position[1] = 85.0;
+    wm.camera.position[2] = 0.0;
+    wm.camera.yaw = -Math.PI / 2;
+    wm.camera.pitch = -0.8;
+    wm.camera.updateView();
+
+    // Fill flat grass plane spanning the border x=16
+    window.__blockcraft!.fill!(0, 70, -10, 32, 70, 10, 'grass_block');
+    window.__blockcraft!.fill!(0, 71, -10, 32, 90, 10, 'air');
+    wm.pendingTerrainPromises.clear();
+  });
+
+  await page.evaluate(async () => {
+    await window.__blockcraft!.waitForTerrain!(2);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+
+  const screenshotBuf = await page.screenshot();
+  const png = PNG.sync.read(screenshotBuf);
+
+  assertNoMissingTexture(png);
+
+  // Sample strips on either side of the x=16 border
+  const stripLeftRect: Rect = { x: 580, y: 350, width: 50, height: 100 };
+  const stripRightRect: Rect = { x: 650, y: 350, width: 50, height: 100 };
+
+  const meanLeft = regionMeanColor(png, stripLeftRect);
+  const meanRight = regionMeanColor(png, stripRightRect);
+
+  const diffR = Math.abs(meanLeft[0] - meanRight[0]);
+  const diffG = Math.abs(meanLeft[1] - meanRight[1]);
+  const diffB = Math.abs(meanLeft[2] - meanRight[2]);
+  const maxBorderDiff = Math.max(diffR, diffG, diffB);
+
+  console.log(`[E2E Border Tint Continuity]
+    Left Strip RGB: [${meanLeft.map((c) => c.toFixed(1)).join(', ')}]
+    Right Strip RGB: [${meanRight.map((c) => c.toFixed(1)).join(', ')}]
+    Max Border Diff: ${maxBorderDiff.toFixed(1)} (target <= 12)
+  `);
+
+  expect(maxBorderDiff).toBeLessThanOrEqual(12);
+});

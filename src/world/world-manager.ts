@@ -75,8 +75,6 @@ export class WorldManager {
     this.world = new World();
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
-    this.world.worldSeed = this.worldSeed;
-    this.world.worldType = this.worldType;
     setWorldInstance(this.world);
     this.mainThreadGenCount = 0;
   }
