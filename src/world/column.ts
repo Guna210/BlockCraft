@@ -10,12 +10,41 @@ export class ChunkColumn {
   private readonly defaultStateId: number;
 
   private sections: (ChunkSection | null)[];
+  public biomes: string[];
+  public biomeIndices: Uint8Array;
+  public grassTints: Uint8Array;
+  public foliageTints: Uint8Array;
+  public worldSeed?: number;
 
   constructor(cx: number, cz: number, defaultStateId: number = 0) {
     this.cx = cx;
     this.cz = cz;
     this.defaultStateId = defaultStateId;
     this.sections = new Array(ChunkColumn.SECTION_COUNT).fill(null);
+    this.biomes = new Array<string>(256).fill('plains');
+    this.biomeIndices = new Uint8Array(256);
+    // Plains grass tint default: [124, 189, 71]
+    this.grassTints = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      this.grassTints[i * 3] = 124;
+      this.grassTints[i * 3 + 1] = 189;
+      this.grassTints[i * 3 + 2] = 71;
+    }
+    // Plains foliage tint default: [119, 177, 58]
+    this.foliageTints = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      this.foliageTints[i * 3] = 119;
+      this.foliageTints[i * 3 + 1] = 177;
+      this.foliageTints[i * 3 + 2] = 58;
+    }
+  }
+
+  public setBiomeIndices(indices: Uint8Array, biomeList: readonly string[]): void {
+    this.biomeIndices.set(indices);
+    for (let i = 0; i < 256; i++) {
+      const idx = indices[i] ?? 0;
+      this.biomes[i] = biomeList[idx] || 'plains';
+    }
   }
 
   public getSection(sectionY: number): ChunkSection | null {

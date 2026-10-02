@@ -18,6 +18,7 @@ export interface TerrainStage {
 }
 
 import { terrainShapeStage } from './terrain';
+import { biomeSurfaceStage } from './surface';
 
 export class TerrainPipeline {
   private stages: TerrainStage[] = [];
@@ -31,6 +32,7 @@ export class TerrainPipeline {
   }
 
   public generateColumn(worldSeed: number, cx: number, cz: number, column: ChunkColumn): void {
+    column.worldSeed = worldSeed;
     for (const stage of this.stages) {
       const stageSeed = deriveSeed(worldSeed, stage.name);
       stage.generate(stageSeed, cx, cz, column);
@@ -41,5 +43,6 @@ export class TerrainPipeline {
 export function createDefaultPipeline(): TerrainPipeline {
   const pipeline = new TerrainPipeline();
   pipeline.addStage(terrainShapeStage);
+  pipeline.addStage(biomeSurfaceStage);
   return pipeline;
 }

@@ -34,8 +34,14 @@ export interface BlockCraftDebugAPI {
     z2: number,
     id: string,
   ) => void;
+  getBiome?: (x: number, z: number) => string;
   getHeight?: (x: number, z: number) => number;
   getLight?: (x: number, y: number, z: number) => { sky: number; block: number };
+  locate?: (
+    kind: 'ore' | 'structure' | 'biome',
+    id: string,
+    near: [number, number, number],
+  ) => [number, number, number] | null;
   worldHash?: (x1: number, z1: number, x2: number, z2: number) => string;
   setWorkerPoolSize?: (size: number) => void;
   getMainThreadGenCount?: () => number;

@@ -6,6 +6,7 @@ import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
+import { OVERWORLD_BIOME_IDS } from '../gen/biomes';
 import { hashString } from '../engine/rng';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { TextureAtlas, ATLAS_MAX_MIP } from '../render/atlas';
@@ -72,6 +73,8 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.worldType = type;
     this.world = new World();
+    this.world.worldSeed = this.worldSeed;
+    this.world.worldType = this.worldType;
     setWorldInstance(this.world);
     this.mainThreadGenCount = 0;
   }
@@ -210,6 +213,8 @@ export class WorldManager {
     }
 
     this.world = new World();
+    this.world.worldSeed = this.worldSeed;
+    this.world.worldType = this.worldType;
     setWorldInstance(this.world);
 
     // Generate terrain via GenWorkerPool
@@ -220,6 +225,15 @@ export class WorldManager {
           .enqueueGenJob(this.worldSeed, cx, cz, this.worldType)
           .then((res) => {
             const col = this.world!.getColumn(res.cx, res.cz, true)!;
+            if (res.biomes) {
+              col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+            }
+            if (res.grassTints) {
+              col.grassTints.set(res.grassTints);
+            }
+            if (res.foliageTints) {
+              col.foliageTints.set(res.foliageTints);
+            }
             for (const secData of res.sections) {
               const sec = col.getOrCreateSection(secData.sy);
               if (sec) {
@@ -347,10 +361,49 @@ export class WorldManager {
   private async meshRadius(radiusChunks: number): Promise<void> {
     if (!this.world || !this.chunkRenderer || !this.tables) return;
 
+    const centerCX = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
+    const centerCZ = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
+
+    // 1. Ensure all columns within radiusChunks around camera are generated
+    const genPromises: Promise<void>[] = [];
+    for (let cx = centerCX - radiusChunks; cx <= centerCX + radiusChunks; cx++) {
+      for (let cz = centerCZ - radiusChunks; cz <= centerCZ + radiusChunks; cz++) {
+        if (!this.world.hasColumn(cx, cz)) {
+          const job = this.genWorkerPool
+            .enqueueGenJob(this.worldSeed, cx, cz, this.worldType)
+            .then((res) => {
+              const col = this.world!.getColumn(res.cx, res.cz, true)!;
+              if (res.biomes) {
+                col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+              }
+              if (res.grassTints) {
+                col.grassTints.set(res.grassTints);
+              }
+              if (res.foliageTints) {
+                col.foliageTints.set(res.foliageTints);
+              }
+              for (const secData of res.sections) {
+                const sec = col.getOrCreateSection(secData.sy);
+                if (sec) {
+                  if (secData.states) {
+                    sec.loadBlockStatesFrom(secData.states);
+                  } else if (secData.uniformStateId !== null) {
+                    sec.fill(secData.uniformStateId);
+                  }
+                }
+              }
+            });
+          genPromises.push(job);
+        }
+      }
+    }
+    await Promise.all(genPromises);
+
+    // 2. Mesh all columns within radiusChunks
     const promises: Promise<void>[] = [];
 
-    for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
-      for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+    for (let cx = centerCX - radiusChunks; cx <= centerCX + radiusChunks; cx++) {
+      for (let cz = centerCZ - radiusChunks; cz <= centerCZ + radiusChunks; cz++) {
         const colKey = `${cx},${cz}`;
         if (this.pendingTerrainPromises.has(colKey)) {
           promises.push(this.pendingTerrainPromises.get(colKey)!);
@@ -409,7 +462,7 @@ export class WorldManager {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const viewProj = mat4.create();
       mat4.multiply(viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
-      this.chunkRenderer.render(viewProj, this.atlasTexture, this.atlas);
+      this.chunkRenderer.render(viewProj, this.atlasTexture, this.atlas, this.world);
     }
   }
 }

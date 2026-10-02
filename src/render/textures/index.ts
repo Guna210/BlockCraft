@@ -40,6 +40,7 @@ import {
   PAL_PINE_BARK,
   PAL_PINE_WOOD,
   PAL_LEAVES,
+  PAL_OAK_LEAVES,
   PAL_LEAVES_TRANS,
 } from './wood';
 import {
@@ -57,6 +58,32 @@ import {
   PAL_SKYSHARD,
 } from './ores';
 import { genWaterFrames, genLavaFrames, PAL_WATER, PAL_LAVA } from './fluids';
+import {
+  genRedSand,
+  genClay,
+  genSnow,
+  genMire,
+  genClayrockWhite,
+  genClayrockLightGray,
+  genClayrockYellow,
+  genClayrockOrange,
+  genClayrockTerracotta,
+  genClayrockRed,
+  genClayrockBrown,
+  genClayrockDarkBrown,
+  PAL_RED_SAND,
+  PAL_CLAY,
+  PAL_SNOW,
+  PAL_MIRE,
+  PAL_CLAYROCK_WHITE,
+  PAL_CLAYROCK_LIGHT_GRAY,
+  PAL_CLAYROCK_YELLOW,
+  PAL_CLAYROCK_ORANGE,
+  PAL_CLAYROCK_TERRACOTTA,
+  PAL_CLAYROCK_RED,
+  PAL_CLAYROCK_BROWN,
+  PAL_CLAYROCK_DARK_BROWN,
+} from './biome-surface';
 
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
@@ -71,6 +98,20 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   sand: genSand,
   gravel: genGravel,
   glass: genGlass,
+
+  // Biome surface additions
+  red_sand: genRedSand,
+  clay: genClay,
+  snow: genSnow,
+  mire: genMire,
+  clayrock_white: genClayrockWhite,
+  clayrock_light_gray: genClayrockLightGray,
+  clayrock_yellow: genClayrockYellow,
+  clayrock_orange: genClayrockOrange,
+  clayrock_terracotta: genClayrockTerracotta,
+  clayrock_red: genClayrockRed,
+  clayrock_brown: genClayrockBrown,
+  clayrock_dark_brown: genClayrockDarkBrown,
 
   // Wood
   oak_log_top: genOakLogTop,
@@ -99,7 +140,7 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   lava: genLavaFrames,
 };
 
-// Required names by M01b Scope:
+// Required names by M01b Scope + M03c additions:
 export const M01_REQUIRED_TEXTURES = [
   'grass_top',
   'grass_side',
@@ -109,6 +150,18 @@ export const M01_REQUIRED_TEXTURES = [
   'cobblestone',
   'sand',
   'gravel',
+  'red_sand',
+  'clay',
+  'snow',
+  'mire',
+  'clayrock_white',
+  'clayrock_light_gray',
+  'clayrock_yellow',
+  'clayrock_orange',
+  'clayrock_terracotta',
+  'clayrock_red',
+  'clayrock_brown',
+  'clayrock_dark_brown',
   'oak_log_top',
   'oak_log_side',
   'birch_log_top',
@@ -137,7 +190,10 @@ import { RGBA } from './noise';
 export const texturePalettes: Record<string, RGBA[]> = {
   // Terrain
   grass_top: PAL_GRASS,
-  grass_side: [...PAL_GRASS, ...PAL_DIRT],
+  grass_side: [
+    ...PAL_GRASS.map((c) => [c[0], c[1], c[2], 255] as RGBA),
+    ...PAL_DIRT.map((c) => [c[0], c[1], c[2], 0] as RGBA),
+  ],
   dirt: PAL_DIRT,
   foundation_stone: PAL_FOUNDATION_STONE,
   stone: PAL_STONE,
@@ -145,6 +201,20 @@ export const texturePalettes: Record<string, RGBA[]> = {
   sand: PAL_SAND,
   gravel: PAL_GRAVEL,
   glass: [PAL_GLASS_FRAME, PAL_GLASS_GLINT, PAL_GLASS_PANE],
+
+  // Biome surface
+  red_sand: PAL_RED_SAND,
+  clay: PAL_CLAY,
+  snow: PAL_SNOW,
+  mire: PAL_MIRE,
+  clayrock_white: PAL_CLAYROCK_WHITE,
+  clayrock_light_gray: PAL_CLAYROCK_LIGHT_GRAY,
+  clayrock_yellow: PAL_CLAYROCK_YELLOW,
+  clayrock_orange: PAL_CLAYROCK_ORANGE,
+  clayrock_terracotta: PAL_CLAYROCK_TERRACOTTA,
+  clayrock_red: PAL_CLAYROCK_RED,
+  clayrock_brown: PAL_CLAYROCK_BROWN,
+  clayrock_dark_brown: PAL_CLAYROCK_DARK_BROWN,
 
   // Wood
   oak_log_top: [...PAL_OAK_WOOD, ...PAL_OAK_BARK],
@@ -156,7 +226,7 @@ export const texturePalettes: Record<string, RGBA[]> = {
   oak_planks: PAL_OAK_WOOD,
   birch_planks: PAL_BIRCH_WOOD,
   pine_planks: PAL_PINE_WOOD,
-  oak_leaves: [...PAL_LEAVES, PAL_LEAVES_TRANS],
+  oak_leaves: [...PAL_OAK_LEAVES, PAL_LEAVES_TRANS],
   birch_leaves: [...PAL_LEAVES, PAL_LEAVES_TRANS],
   pine_leaves: [...PAL_LEAVES, PAL_LEAVES_TRANS],
 

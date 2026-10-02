@@ -1,11 +1,14 @@
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
+import { sampleBiome } from '../gen/biomes';
 
 export class World {
   private columns: Map<string, ChunkColumn> = new Map();
   private registry: BlockRegistry;
   public lightEngine: LightEngine;
+  public worldSeed: number = 42;
+  public worldType: 'default' | 'flat' = 'default';
 
   private lastCX = 0x7fffffff;
   private lastCZ = 0x7fffffff;
@@ -14,6 +17,24 @@ export class World {
   constructor(initLightEngine: boolean = true) {
     this.registry = BlockRegistry.getInstance();
     this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
+  }
+
+  public getBiome(x: number, z: number): string {
+    if (this.worldType === 'flat') {
+      return 'plains';
+    }
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+
+    const col = this.getColumn(cx, cz, false);
+    if (col && col.biomes) {
+      const idx = localZ * 16 + localX;
+      return col.biomes[idx] || 'plains';
+    }
+
+    return sampleBiome(this.worldSeed, x, z);
   }
 
   public static getChunkKey(cx: number, cz: number): string {
