@@ -16,6 +16,10 @@ Full verify (this session): typecheck ✓ · lint ✓ · placeholders ✓ · uni
 
 - `m02b-fix-grass-side.png`: An extreme close-up of a grass block side face (roughly two blocks across and one block down), displaying a green grass fringe at the top, brown dirt below, and a strip of floor at the bottom.
 
+Note on M03c screenshots regenerated post-fix:
+- `docs/screenshots/M03c/m03c-savanna-grass.png`: Re-rendered post-fix (replacing pre-fix render). Visually confirmed grass side fringes hang correctly from top edge. Average RGB in terrain center sample region `(x=500, y=350, w=200, h=100)`: `(72, 66, 28)`.
+- `docs/screenshots/M03c/m03c-rainforest-grass.png`: Re-rendered post-fix (replacing pre-fix render). Visually confirmed grass side fringes hang correctly from top edge. Average RGB in terrain center sample region `(x=500, y=350, w=200, h=100)`: `(25, 75, 26)`.
+
 ## Before/After UV Table for Quad Vertices
 
 | Face | Direction | Normal | Unrotated Vert 0 (BL) (u, v) | Unrotated Vert 1 (BR) (u, v) | Unrotated Vert 2 (TR) (u, v) | Unrotated Vert 3 (TL) (u, v) |
