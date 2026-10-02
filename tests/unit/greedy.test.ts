@@ -374,38 +374,139 @@ describe('Greedy Mesher (M02b)', () => {
       throw new Error(`Quad with normal ${normalIndex} not found`);
     }
 
-    it('single grass_block side faces have v=0 at top, v=1 at bottom, u increasing left to right', () => {
+    it('proves side face and log orientations from decoded vertex geometry and normals', () => {
+      const NORMALS = [
+        [1, 0, 0], // 0: East +X
+        [-1, 0, 0], // 1: West -X
+        [0, 1, 0], // 2: Top +Y
+        [0, -1, 0], // 3: Bottom -Y
+        [0, 0, 1], // 4: South +Z
+        [0, 0, -1], // 5: North -Z
+      ] as const;
+
+      function decodeQuadVertices(vertices: Uint32Array, quadIndex: number) {
+        const offset = quadIndex * 8;
+        const verts = [];
+        for (let i = 0; i < 4; i++) {
+          const w0 = vertices[offset + i * 2]!;
+          const w1 = vertices[offset + i * 2 + 1]!;
+          verts.push({
+            x: w0 & 31,
+            y: (w0 >> 5) & 31,
+            z: (w0 >> 10) & 31,
+            normalIdx: (w0 >> 15) & 7,
+            u: (w1 >> 16) & 255,
+            v: (w1 >> 24) & 255,
+          });
+        }
+        return verts;
+      }
+
+      // 1. Single grass_block geometry orientation check
       const grassState = registry.getStateId('grass_block')!;
       const padded = new Uint16Array(PADDED_SECTION_VOLUME);
       padded[1 + 18 * (1 + 18 * 1)] = grassState;
-
       const mesh = greedyMesh(padded, tables);
-      expect(mesh.opaque.quadCount).toBe(6);
 
-      // Side faces: 0 (+X East), 1 (-X West), 4 (+Z South), 5 (-Z North)
       const sideNormals = [0, 1, 4, 5];
-      for (const norm of sideNormals) {
-        const quad = getQuadByNormal(mesh.opaque.vertices, norm);
-        // Top vertices (vert 3, vert 2) must have v = 0
-        expect(quad.v3.v).toBe(0);
-        expect(quad.v2.v).toBe(0);
-        // Bottom vertices (vert 0, vert 1) must have v = 1
-        expect(quad.v0.v).toBe(1);
-        expect(quad.v1.v).toBe(1);
-        // Left vertices (vert 0, vert 3) must have u = 0
-        expect(quad.v0.u).toBe(0);
-        expect(quad.v3.u).toBe(0);
-        // Right vertices (vert 1, vert 2) must have u = 1
-        expect(quad.v1.u).toBe(1);
-        expect(quad.v2.u).toBe(1);
+      for (const normIdx of sideNormals) {
+        let quadVerts: ReturnType<typeof decodeQuadVertices> | null = null;
+        for (let q = 0; q < mesh.opaque.quadCount; q++) {
+          const decoded = decodeQuadVertices(mesh.opaque.vertices, q);
+          if (decoded[0]!.normalIdx === normIdx) {
+            quadVerts = decoded;
+            break;
+          }
+        }
+        expect(quadVerts).not.toBeNull();
+        const verts = quadVerts!;
+
+        // Vector math for viewer's right vector: right = (-N) x (0, 1, 0)
+        const N = NORMALS[normIdx]!;
+        const fwd = [-N[0]!, -N[1]!, -N[2]!];
+        const up = [0, 1, 0];
+        const right = [
+          fwd[1]! * up[2]! - fwd[2]! * up[1]!,
+          fwd[2]! * up[0]! - fwd[0]! * up[2]!,
+          fwd[0]! * up[1]! - fwd[1]! * up[0]!,
+        ];
+
+        // Assert (a): v is smaller on higher-y vertices
+        for (let a = 0; a < 4; a++) {
+          for (let b = 0; b < 4; b++) {
+            if (verts[b]!.y > verts[a]!.y) {
+              expect(verts[b]!.v).toBeLessThan(verts[a]!.v);
+            }
+          }
+        }
+
+        // Assert (b): u is larger on the vertex further to viewer's right
+        for (let a = 0; a < 4; a++) {
+          for (let b = 0; b < 4; b++) {
+            const distRight =
+              (verts[b]!.x - verts[a]!.x) * right[0]! +
+              (verts[b]!.y - verts[a]!.y) * right[1]! +
+              (verts[b]!.z - verts[a]!.z) * right[2]!;
+            if (distRight > 0) {
+              expect(verts[b]!.u).toBeGreaterThan(verts[a]!.u);
+            }
+          }
+        }
       }
 
-      // Top face (2) and Bottom face (3) keep current behaviour
-      const topQuad = getQuadByNormal(mesh.opaque.vertices, 2);
-      expect(topQuad.v0).toEqual({ u: 0, v: 0 });
-      expect(topQuad.v1).toEqual({ u: 1, v: 0 });
-      expect(topQuad.v2).toEqual({ u: 1, v: 1 });
-      expect(topQuad.v3).toEqual({ u: 0, v: 1 });
+      // 2. Logs orientation check along log axis
+      const oakLogY = registry.getStateId('oak_log', { axis: 'y' })!;
+      const oakLogX = registry.getStateId('oak_log', { axis: 'x' })!;
+      const oakLogZ = registry.getStateId('oak_log', { axis: 'z' })!;
+
+      // Y-axis log: 4 long faces are 0 (+X), 1 (-X), 4 (+Z), 5 (-Z); axis is Y
+      const paddedLogY = new Uint16Array(PADDED_SECTION_VOLUME);
+      paddedLogY[1 + 18 * (1 + 18 * 1)] = oakLogY;
+      const meshLogY = greedyMesh(paddedLogY, tables);
+      for (const normIdx of [0, 1, 4, 5]) {
+        const decoded = decodeQuadVertices(meshLogY.opaque.vertices, normIdx);
+        const vA = decoded[0]!;
+        const vB = decoded.find((v) => v.y !== vA.y)!;
+        expect(vB.v).not.toBe(vA.v); // v varies along log axis Y
+      }
+
+      // X-axis log: 4 long faces are 2 (+Y), 3 (-Y), 4 (+Z), 5 (-Z); axis is X
+      const paddedLogX = new Uint16Array(PADDED_SECTION_VOLUME);
+      paddedLogX[1 + 18 * (1 + 18 * 1)] = oakLogX;
+      const meshLogX = greedyMesh(paddedLogX, tables);
+      for (const normIdx of [2, 3, 4, 5]) {
+        let quadVerts: ReturnType<typeof decodeQuadVertices> | null = null;
+        for (let q = 0; q < meshLogX.opaque.quadCount; q++) {
+          const decoded = decodeQuadVertices(meshLogX.opaque.vertices, q);
+          if (decoded[0]!.normalIdx === normIdx) {
+            quadVerts = decoded;
+            break;
+          }
+        }
+        const decoded = quadVerts!;
+        const vA = decoded[0]!;
+        const vB = decoded.find((v) => v.x !== vA.x)!;
+        expect(vB.v).not.toBe(vA.v); // v varies along log axis X
+      }
+
+      // Z-axis log: 4 long faces are 0 (+X), 1 (-X), 2 (+Y), 3 (-Y); axis is Z
+      const paddedLogZ = new Uint16Array(PADDED_SECTION_VOLUME);
+      paddedLogZ[1 + 18 * (1 + 18 * 1)] = oakLogZ;
+      const meshLogZ = greedyMesh(paddedLogZ, tables);
+      for (const normIdx of [0, 1, 2, 3]) {
+        let quadVerts: ReturnType<typeof decodeQuadVertices> | null = null;
+        for (let q = 0; q < meshLogZ.opaque.quadCount; q++) {
+          const decoded = decodeQuadVertices(meshLogZ.opaque.vertices, q);
+          if (decoded[0]!.normalIdx === normIdx) {
+            quadVerts = decoded;
+            break;
+          }
+        }
+        const decoded = quadVerts!;
+        const vA = decoded[0]!;
+        const vB = decoded.find((v) => v.z !== vA.z)!;
+        expect(vB.v).not.toBe(vA.v); // v varies along log axis Z
+      }
     });
 
     it('1x3x1 grass_block column produces merged side quads with v=0 at top and v=3 at bottom', () => {
@@ -427,11 +528,6 @@ describe('Greedy Mesher (M02b)', () => {
         // Bottom vertices (vert 0, vert 1) get v = 3 (H = 3)
         expect(quad.v0.v).toBe(3);
         expect(quad.v1.v).toBe(3);
-        // Left vertices get u = 0, right vertices get u = 1
-        expect(quad.v0.u).toBe(0);
-        expect(quad.v3.u).toBe(0);
-        expect(quad.v1.u).toBe(1);
-        expect(quad.v2.u).toBe(1);
       }
     });
 

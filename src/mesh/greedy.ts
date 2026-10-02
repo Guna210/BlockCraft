@@ -255,14 +255,25 @@ function emitQuad(
     u3_val = H;
     v3_val = 0;
   } else if (isSideFace) {
-    u0_val = 0;
-    v0_val = H;
-    u1_val = W;
-    v1_val = H;
-    u2_val = W;
-    v2_val = 0;
-    u3_val = 0;
-    v3_val = 0;
+    if (f === 0 || f === 1) {
+      u0_val = W;
+      v0_val = H;
+      u1_val = 0;
+      v1_val = H;
+      u2_val = 0;
+      v2_val = 0;
+      u3_val = W;
+      v3_val = 0;
+    } else {
+      u0_val = 0;
+      v0_val = H;
+      u1_val = W;
+      v1_val = H;
+      u2_val = W;
+      v2_val = 0;
+      u3_val = 0;
+      v3_val = 0;
+    }
   } else {
     u0_val = 0;
     v0_val = 0;
