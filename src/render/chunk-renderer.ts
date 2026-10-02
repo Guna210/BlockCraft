@@ -103,14 +103,16 @@ void main() {
 
   // Biome Tinting
   if (v_tintIndex == 1u) {
-    // Grass tinting: check if grayscale fringe vs brown dirt base
-    bool isGrayscale = abs(texColor.r - texColor.g) < 0.05 && abs(texColor.g - texColor.b) < 0.05;
-    if (isGrayscale) {
-      texColor.rgb *= u_grassTint;
-    }
+    // Grass top
+    texColor.rgb *= u_grassTint;
   } else if (v_tintIndex == 2u) {
     // Foliage tinting
     texColor.rgb *= u_foliageTint;
+  } else if (v_tintIndex == 3u) {
+    // Grass side: tint top fringe, dirt base stays untinted brown
+    if (fract(v_unwrappedUV.y) < 0.28) {
+      texColor.rgb *= u_grassTint;
+    }
   }
 
   vec3 lightDir = normalize(vec3(0.4, 0.8, 0.5));

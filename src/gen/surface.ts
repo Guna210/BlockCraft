@@ -22,7 +22,7 @@ export function generateSurfaceRules(
   cz: number,
   column: ChunkColumn,
 ): void {
-  const worldSeed = column.worldSeed ?? stageSeed;
+  const worldSeed = column.worldSeed ?? 42;
   const registry = BlockRegistry.getInstance();
 
   const airState = 0;

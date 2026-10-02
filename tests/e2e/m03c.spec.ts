@@ -30,7 +30,31 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
   const [sx, sy, sz] = savannaPos!;
   const [rx, ry, rz] = rainforestPos!;
 
-  // Prepare grass platform in Savanna and position camera looking down at it
+  // Generate real biome terrain and tints in Savanna area
+  await page.evaluate(
+    ({ x, z }) => {
+      const wm = (
+        window as unknown as {
+          WorldManager: {
+            getInstance(): {
+              generateColumnMainThread(cx: number, cz: number): void;
+            };
+          };
+        }
+      ).WorldManager.getInstance();
+
+      const centerCX = Math.floor(x / 16);
+      const centerCZ = Math.floor(z / 16);
+      for (let cx = centerCX - 1; cx <= centerCX + 1; cx++) {
+        for (let cz = centerCZ - 1; cz <= centerCZ + 1; cz++) {
+          wm.generateColumnMainThread(cx, cz);
+        }
+      }
+    },
+    { x: sx, z: sz },
+  );
+
+  // Position camera looking down at Savanna grass
   await page.evaluate(
     ({ x, y, z }) => {
       const wm = (
@@ -38,6 +62,7 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
           WorldManager: {
             getInstance(): {
               camera: { position: Float32Array; yaw: number; pitch: number; updateView(): void };
+              pendingTerrainPromises: Map<string, unknown>;
             };
           };
         }
@@ -51,6 +76,8 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
 
       window.__blockcraft!.fill!(x - 10, y - 1, z - 10, x + 10, y - 1, z + 10, 'grass_block');
       window.__blockcraft!.fill!(x - 10, y, z - 10, x + 10, y + 15, z + 10, 'air');
+
+      wm.pendingTerrainPromises.clear();
     },
     { x: sx, y: sy, z: sz },
   );
@@ -75,7 +102,31 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
   });
   assertNoMissingTexture(pngSavanna);
 
-  // Prepare grass platform in Rainforest and position camera looking down at it
+  // Generate real biome terrain and tints in Rainforest area
+  await page.evaluate(
+    ({ x, z }) => {
+      const wm = (
+        window as unknown as {
+          WorldManager: {
+            getInstance(): {
+              generateColumnMainThread(cx: number, cz: number): void;
+            };
+          };
+        }
+      ).WorldManager.getInstance();
+
+      const centerCX = Math.floor(x / 16);
+      const centerCZ = Math.floor(z / 16);
+      for (let cx = centerCX - 1; cx <= centerCX + 1; cx++) {
+        for (let cz = centerCZ - 1; cz <= centerCZ + 1; cz++) {
+          wm.generateColumnMainThread(cx, cz);
+        }
+      }
+    },
+    { x: rx, z: rz },
+  );
+
+  // Position camera looking down at Rainforest grass
   await page.evaluate(
     ({ x, y, z }) => {
       const wm = (
@@ -83,6 +134,7 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
           WorldManager: {
             getInstance(): {
               camera: { position: Float32Array; yaw: number; pitch: number; updateView(): void };
+              pendingTerrainPromises: Map<string, unknown>;
             };
           };
         }
@@ -96,6 +148,8 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
 
       window.__blockcraft!.fill!(x - 10, y - 1, z - 10, x + 10, y - 1, z + 10, 'grass_block');
       window.__blockcraft!.fill!(x - 10, y, z - 10, x + 10, y + 15, z + 10, 'air');
+
+      wm.pendingTerrainPromises.clear();
     },
     { x: rx, y: ry, z: rz },
   );
@@ -118,8 +172,13 @@ test('M03c: Biome Grass Tinting E2E', async ({ page, assertAndSaveScreenshot }) 
   });
   assertNoMissingTexture(pngRainforest);
 
-  // Compare mean grass color of center region (200x200)
-  const centerRect: Rect = { x: 540, y: 260, width: 200, height: 200 };
+  // Compare mean grass color of center region (200x100) after verifying grass hue
+  const centerRect: Rect = { x: 500, y: 350, width: 200, height: 100 };
+
+  // Assert at least 60% of pixels in grass region fall within grass hue range 40-140°
+  assertHueInRange(pngSavanna, centerRect, [40, 140], 0.6);
+  assertHueInRange(pngRainforest, centerRect, [40, 140], 0.6);
+
   const savannaMean = regionMeanColor(pngSavanna, centerRect);
   const rainforestMean = regionMeanColor(pngRainforest, centerRect);
 

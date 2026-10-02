@@ -90,9 +90,15 @@ export function buildMeshLookupTables(
         tileIndices[stateId * 6 + f] = tileResolver(texName);
       }
 
-      // Assign tint category per face: 1=grass (grass_block top/sides), 2=foliage (oak_leaves)
-      if (resolved.blockId === 'grass_block' && f !== 3) {
-        tintIndices[stateId * 6 + f] = 1; // grass tint for top (2) and sides (0, 1, 4, 5)
+      // Assign tint category per face: 1=grass_top, 2=foliage (oak_leaves), 3=grass_side
+      if (resolved.blockId === 'grass_block') {
+        if (f === 2) {
+          tintIndices[stateId * 6 + f] = 1; // grass_top
+        } else if (f !== 3) {
+          tintIndices[stateId * 6 + f] = 3; // grass_side
+        } else {
+          tintIndices[stateId * 6 + f] = 0; // dirt bottom
+        }
       } else if (resolved.blockId === 'oak_leaves') {
         tintIndices[stateId * 6 + f] = 2; // foliage tint
       } else {

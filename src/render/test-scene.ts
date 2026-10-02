@@ -56,14 +56,14 @@ void main() {
   vec3 foliageTint = vec3(119.0 / 255.0, 177.0 / 255.0, 58.0 / 255.0);
 
   if (vTintIndex > 0.5 && vTintIndex < 1.5) {
-    // Grass tinting: check if grayscale fringe vs brown dirt
-    bool isGrayscale = abs(texColor.r - texColor.g) < 0.05 && abs(texColor.g - texColor.b) < 0.05;
-    if (isGrayscale) {
-      texColor.rgb *= grassTint;
-    }
-  } else if (vTintIndex > 1.5) {
+    // Grass top
+    texColor.rgb *= grassTint;
+  } else if (vTintIndex > 1.5 && vTintIndex < 2.5) {
     // Foliage tinting
     texColor.rgb *= foliageTint;
+  } else if (vTintIndex > 2.5) {
+    // Grass side
+    texColor.rgb *= grassTint;
   }
 
   // Simple directional light from top-right-front
@@ -211,10 +211,12 @@ export class TestScene {
       const v1 = (rect.y + rect.h) / this.atlas.height;
 
       let tintIndex = 0.0;
-      if (texName === 'grass_top' || texName === 'grass_side') {
+      if (texName === 'grass_top') {
         tintIndex = 1.0;
       } else if (texName === 'oak_leaves') {
         tintIndex = 2.0;
+      } else if (texName === 'grass_side') {
+        tintIndex = 3.0;
       }
 
       const pushV = (p: number[], u: number, v: number) => {
