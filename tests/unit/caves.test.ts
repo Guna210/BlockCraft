@@ -3,7 +3,6 @@ import { World } from '../../src/world/world';
 import { createDefaultPipeline } from '../../src/gen/pipeline';
 import { hashString } from '../../src/engine/rng';
 import { BlockRegistry } from '../../src/world/blocks/registry';
-import { GenWorkerPool, GenResult } from '../../src/workers/gen-worker-pool';
 
 describe('M03d — Caves & Aquifers Unit Tests', () => {
   beforeEach(() => {
@@ -232,7 +231,6 @@ describe('M03d — Caves & Aquifers Unit Tests', () => {
     const hash2 = world2.worldHash(-16, -16, 31, 31);
 
     expect(hash1).toBe(hash2);
-
   }, 20000);
 
   it('d: safety - no air directly under water, no carving y <= 4, no lava above y 12 across 100 columns per seed', () => {
