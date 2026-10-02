@@ -63,7 +63,8 @@ void main() {
     texColor.rgb *= foliageTint;
   } else if (vTintIndex > 2.5) {
     // Grass side
-    texColor.rgb *= grassTint;
+    texColor.rgb = mix(texColor.rgb, texColor.rgb * grassTint, texColor.a);
+    texColor.a = 1.0;
   }
 
   // Simple directional light from top-right-front

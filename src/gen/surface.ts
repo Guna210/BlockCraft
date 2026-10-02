@@ -7,13 +7,13 @@ import { makeSimplex2D } from './noise';
 
 const CLAYROCK_PALETTE = [
   'clayrock_white',
-  'clayrock_orange',
-  'clayrock_magenta',
-  'clayrock_light_blue',
+  'clayrock_light_gray',
   'clayrock_yellow',
-  'clayrock_lime',
-  'clayrock_pink',
-  'clayrock_gray',
+  'clayrock_orange',
+  'clayrock_terracotta',
+  'clayrock_red',
+  'clayrock_brown',
+  'clayrock_dark_brown',
 ];
 
 export function generateSurfaceRules(
