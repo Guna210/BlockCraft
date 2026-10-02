@@ -78,7 +78,7 @@ Full verify (this session): typecheck ✓ · lint ✓ · placeholders ✓ · uni
 - Channel half-width $hw = 4$, shrinking to 0 for un-carved heights from y 100 to y 120.
 
 ### Performance & Hash
-- Standard seed `worldHash(0,0,64,64)`: **`47d1e6f1`**
+- Standard seed `worldHash(0,0,64,64)`: **`cf7438c8`**
 - `m03.spec.ts` duration: **`1.3m`** (~78 s, 0.81x baseline)
 - `genMsP95` raw values across 3 runs: `0.20 ms`, `0.21 ms`, `0.19 ms` (mean `0.20 ms`)
 
