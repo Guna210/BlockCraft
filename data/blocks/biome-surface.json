@@ -1,0 +1,146 @@
+{
+  "red_sand": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "red_sand",
+      "side": "red_sand",
+      "bottom": "red_sand"
+    }
+  },
+  "clay": {
+    "hardness": 0.6,
+    "blastResistance": 0.6,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clay",
+      "side": "clay",
+      "bottom": "clay"
+    }
+  },
+  "snow": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "snow",
+      "side": "snow",
+      "bottom": "snow"
+    }
+  },
+  "mire": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "mire",
+      "side": "mire",
+      "bottom": "mire"
+    }
+  },
+  "clayrock_white": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_white",
+      "side": "clayrock_white",
+      "bottom": "clayrock_white"
+    }
+  },
+  "clayrock_light_gray": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_light_gray",
+      "side": "clayrock_light_gray",
+      "bottom": "clayrock_light_gray"
+    }
+  },
+  "clayrock_yellow": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_yellow",
+      "side": "clayrock_yellow",
+      "bottom": "clayrock_yellow"
+    }
+  },
+  "clayrock_orange": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_orange",
+      "side": "clayrock_orange",
+      "bottom": "clayrock_orange"
+    }
+  },
+  "clayrock_terracotta": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_terracotta",
+      "side": "clayrock_terracotta",
+      "bottom": "clayrock_terracotta"
+    }
+  },
+  "clayrock_red": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_red",
+      "side": "clayrock_red",
+      "bottom": "clayrock_red"
+    }
+  },
+  "clayrock_brown": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_brown",
+      "side": "clayrock_brown",
+      "bottom": "clayrock_brown"
+    }
+  },
+  "clayrock_dark_brown": {
+    "hardness": 1.25,
+    "blastResistance": 4.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "clayrock_dark_brown",
+      "side": "clayrock_dark_brown",
+      "bottom": "clayrock_dark_brown"
+    }
+  }
+}

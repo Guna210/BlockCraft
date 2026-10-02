@@ -36,6 +36,10 @@ export function fill(
   getWorldInstance().fill(x1, y1, z1, x2, y2, z2, id);
 }
 
+export function getBiome(x: number, z: number): string {
+  return getWorldInstance().getBiome(x, z);
+}
+
 export function getHeight(x: number, z: number): number {
   return getWorldInstance().getHeight(x, z);
 }

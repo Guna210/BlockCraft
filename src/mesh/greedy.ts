@@ -25,6 +25,7 @@ export interface MeshLookupTables {
   translucentGroup: Uint16Array; // numStates (unique ID per translucent type, 0 for non-translucent)
   logAxis: Uint8Array; // numStates (0=y or none, 1=x, 2=z)
   tileIndices: Uint16Array; // numStates * 6 (faces: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
+  tintIndices: Uint8Array; // numStates * 6 (0=none, 1=grass, 2=foliage)
 }
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
@@ -45,6 +46,7 @@ export function buildMeshLookupTables(
   const translucentGroup = new Uint16Array(numStates);
   const logAxis = new Uint8Array(numStates);
   const tileIndices = new Uint16Array(numStates * 6);
+  const tintIndices = new Uint8Array(numStates * 6);
 
   const translucentTypeMap = new Map<string, number>();
   let nextTranslucentGroupId = 1;
@@ -87,6 +89,15 @@ export function buildMeshLookupTables(
       if (texName) {
         tileIndices[stateId * 6 + f] = tileResolver(texName);
       }
+
+      // Assign tint category per face: 1=grass (grass_block top/sides), 2=foliage (oak_leaves)
+      if (resolved.blockId === 'grass_block' && f !== 3) {
+        tintIndices[stateId * 6 + f] = 1; // grass tint for top (2) and sides (0, 1, 4, 5)
+      } else if (resolved.blockId === 'oak_leaves') {
+        tintIndices[stateId * 6 + f] = 2; // foliage tint
+      } else {
+        tintIndices[stateId * 6 + f] = 0; // none
+      }
     }
   }
 
@@ -96,6 +107,7 @@ export function buildMeshLookupTables(
     translucentGroup,
     logAxis,
     tileIndices,
+    tintIndices,
   };
 }
 
@@ -204,6 +216,7 @@ function emitQuad(
   W: number,
   H: number,
   tileIndex: number,
+  tintIndex: number,
   logAxis: number,
   scratch: BucketScratch,
 ): void {
@@ -356,7 +369,7 @@ function emitQuad(
     DEFAULT_AO,
     DEFAULT_SKY_LIGHT,
     DEFAULT_BLOCK_LIGHT,
-    DEFAULT_TINT_INDEX,
+    tintIndex,
     tileIndex,
     u0_val,
     v0_val,
@@ -371,7 +384,7 @@ function emitQuad(
     DEFAULT_AO,
     DEFAULT_SKY_LIGHT,
     DEFAULT_BLOCK_LIGHT,
-    DEFAULT_TINT_INDEX,
+    tintIndex,
     tileIndex,
     u1_val,
     v1_val,
@@ -386,7 +399,7 @@ function emitQuad(
     DEFAULT_AO,
     DEFAULT_SKY_LIGHT,
     DEFAULT_BLOCK_LIGHT,
-    DEFAULT_TINT_INDEX,
+    tintIndex,
     tileIndex,
     u2_val,
     v2_val,
@@ -401,7 +414,7 @@ function emitQuad(
     DEFAULT_AO,
     DEFAULT_SKY_LIGHT,
     DEFAULT_BLOCK_LIGHT,
-    DEFAULT_TINT_INDEX,
+    tintIndex,
     tileIndex,
     u3_val,
     v3_val,
@@ -588,13 +601,15 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
 
           if (!shouldCullFace(selfState, neighState, tables)) {
             const tileIdx = tables.tileIndices[selfState * 6 + f]!;
+            const tintIdx = tables.tintIndices ? tables.tintIndices[selfState * 6 + f]! : 0;
             const layer = tables.renderLayer[selfState]!;
             const axis = tables.logAxis[selfState]!;
-            // Encode tileIdx, layer, axis into mask value (key)
+            // Encode tileIdx, tintIdx, layer, axis into mask value (key)
             // layer: 2 bits (1=opaque, 2=cutout, 3=translucent)
             // axis: 2 bits (0..2)
+            // tintIdx: 2 bits (0..2)
             // tileIdx: 16 bits
-            const key = (tileIdx << 4) | (axis << 2) | layer;
+            const key = (tileIdx << 6) | (tintIdx << 4) | (axis << 2) | layer;
             SCRATCH_MASK[u + v * 16] = key;
           }
         }
@@ -608,7 +623,8 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             const key = SCRATCH_MASK[idx]!;
             const layer = key & 3;
             const logAxis = (key >> 2) & 3;
-            const tileIdx = key >> 4;
+            const tintIdx = (key >> 4) & 3;
+            const tileIdx = key >> 6;
 
             // Expand along width (U)
             let W = 1;
@@ -654,7 +670,7 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             }
 
             // Emit quad
-            emitQuad(f, d, u, v, W, H, tileIdx, logAxis, bucket);
+            emitQuad(f, d, u, v, W, H, tileIdx, tintIdx, logAxis, bucket);
           }
         }
       }

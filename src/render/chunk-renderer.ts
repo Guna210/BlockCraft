@@ -17,6 +17,7 @@ uniform vec3 u_sectionOrigin;
 out vec3 v_normal;
 out vec2 v_unwrappedUV;
 flat out uint v_tileIndex;
+flat out uint v_tintIndex;
 
 const vec3 NORMALS[6] = vec3[6](
   vec3(1.0, 0.0, 0.0),   // 0: +X
@@ -40,9 +41,12 @@ void main() {
   vec3 localPos = vec3(float(x), float(y), float(z));
   vec3 worldPos = u_sectionOrigin + localPos;
 
+  uint tintIdx = (a_word0 >> 28u) & 15u;
+
   v_normal = NORMALS[normalIdx];
   v_unwrappedUV = vec2(u_local, v_local);
   v_tileIndex = tileIdx;
+  v_tintIndex = tintIdx;
 
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
@@ -54,12 +58,15 @@ precision highp float;
 in vec3 v_normal;
 in vec2 v_unwrappedUV;
 flat in uint v_tileIndex;
+flat in uint v_tintIndex;
 
 uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform int u_isCutout;
 uniform int u_isWireframe;
+uniform vec3 u_grassTint;
+uniform vec3 u_foliageTint;
 
 out vec4 fragColor;
 
@@ -92,6 +99,18 @@ void main() {
 
   if (u_isCutout == 1 && texColor.a < 0.5) {
     discard;
+  }
+
+  // Biome Tinting
+  if (v_tintIndex == 1u) {
+    // Grass tinting: check if grayscale fringe vs brown dirt base
+    bool isGrayscale = abs(texColor.r - texColor.g) < 0.05 && abs(texColor.g - texColor.b) < 0.05;
+    if (isGrayscale) {
+      texColor.rgb *= u_grassTint;
+    }
+  } else if (v_tintIndex == 2u) {
+    // Foliage tinting
+    texColor.rgb *= u_foliageTint;
   }
 
   vec3 lightDir = normalize(vec3(0.4, 0.8, 0.5));
@@ -131,6 +150,8 @@ export class ChunkRenderer {
   private locCellSize: WebGLUniformLocation;
   private locIsCutout: WebGLUniformLocation;
   private locIsWireframe: WebGLUniformLocation;
+  private locGrassTint: WebGLUniformLocation;
+  private locFoliageTint: WebGLUniformLocation;
 
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
 
@@ -146,6 +167,8 @@ export class ChunkRenderer {
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
+    this.locGrassTint = gl.getUniformLocation(this.program, 'u_grassTint')!;
+    this.locFoliageTint = gl.getUniformLocation(this.program, 'u_foliageTint')!;
   }
 
   public uploadSectionMesh(
@@ -265,7 +288,12 @@ export class ChunkRenderer {
     this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
-  public render(viewProjMatrix: mat4, atlasTexture: WebGLTexture, atlas: TextureAtlas): void {
+  public render(
+    viewProjMatrix: mat4,
+    atlasTexture: WebGLTexture,
+    atlas: TextureAtlas,
+    world?: import('../world/world').World | null,
+  ): void {
     const gl = this.glWrapper.gl;
 
     gl.enable(gl.DEPTH_TEST);
@@ -285,6 +313,53 @@ export class ChunkRenderer {
 
     const meshes = Array.from(this.sectionMeshes.values());
 
+    // Default Plains tints (RGB normalized 0..1)
+    const defaultGrassTint = [124.0 / 255.0, 189.0 / 255.0, 71.0 / 255.0] as const;
+    const defaultFoliageTint = [119.0 / 255.0, 177.0 / 255.0, 58.0 / 255.0] as const;
+
+    // Helper to set column tints or default plains tint
+    const setColumnTints = (sx: number, sz: number) => {
+      let gR = defaultGrassTint[0],
+        gG = defaultGrassTint[1],
+        gB = defaultGrassTint[2];
+      let fR = defaultFoliageTint[0],
+        fG = defaultFoliageTint[1],
+        fB = defaultFoliageTint[2];
+
+      if (world && world.worldType !== 'flat') {
+        const col = world.getColumn(sx, sz, false);
+        if (col && col.grassTints && col.foliageTints) {
+          // Average center 4x4 sample of column tints
+          let sumGR = 0,
+            sumGG = 0,
+            sumGB = 0;
+          let sumFR = 0,
+            sumFG = 0,
+            sumFB = 0;
+          for (let z = 6; z <= 9; z++) {
+            for (let x = 6; x <= 9; x++) {
+              const i = (z * 16 + x) * 3;
+              sumGR += col.grassTints[i]!;
+              sumGG += col.grassTints[i + 1]!;
+              sumGB += col.grassTints[i + 2]!;
+              sumFR += col.foliageTints[i]!;
+              sumFG += col.foliageTints[i + 1]!;
+              sumFB += col.foliageTints[i + 2]!;
+            }
+          }
+          gR = sumGR / (16 * 255.0);
+          gG = sumGG / (16 * 255.0);
+          gB = sumGB / (16 * 255.0);
+          fR = sumFR / (16 * 255.0);
+          fG = sumFG / (16 * 255.0);
+          fB = sumFB / (16 * 255.0);
+        }
+      }
+
+      gl.uniform3f(this.locGrassTint, gR, gG, gB);
+      gl.uniform3f(this.locFoliageTint, fR, fG, fB);
+    };
+
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
@@ -293,6 +368,7 @@ export class ChunkRenderer {
 
     for (const mesh of meshes) {
       if (mesh.opaque) {
+        setColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.opaque.vao);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.opaque.ebo);
@@ -306,6 +382,7 @@ export class ChunkRenderer {
     gl.uniform1i(this.locIsCutout, 1);
     for (const mesh of meshes) {
       if (mesh.cutout) {
+        setColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.cutout.vao);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.cutout.ebo);

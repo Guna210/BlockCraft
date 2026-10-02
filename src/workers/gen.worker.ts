@@ -1,12 +1,36 @@
 import { createDefaultPipeline } from '../gen/pipeline';
 import { ChunkColumn } from '../world/column';
 import { BlockRegistry } from '../world/blocks/registry';
-
 const ctx: Worker = self as unknown as Worker;
 
 // Ensure registry is loaded in worker
 BlockRegistry.getInstance();
 const pipeline = createDefaultPipeline();
+
+const OVERWORLD_BIOME_IDS = [
+  'plains',
+  'meadow',
+  'oakwood_forest',
+  'birch_grove',
+  'pine_taiga',
+  'snowy_tundra',
+  'frost_peaks',
+  'stony_heights',
+  'desert',
+  'badlands',
+  'savanna',
+  'swampland',
+  'rainforest',
+  'beach',
+  'stony_shore',
+  'river',
+  'ocean',
+  'deep_ocean',
+  'frozen_ocean',
+] as const;
+
+const biomeIndexMap = new Map<string, number>();
+OVERWORLD_BIOME_IDS.forEach((id, idx) => biomeIndexMap.set(id, idx));
 
 export interface GenWorkerRequest {
   id: number;
@@ -27,6 +51,9 @@ export interface GenWorkerResponse {
   cx: number;
   cz: number;
   sections: SectionDataTransfer[];
+  biomes: Uint8Array;
+  grassTints: Uint8Array;
+  foliageTints: Uint8Array;
   perSectionMs: number;
 }
 
@@ -70,6 +97,19 @@ ctx.onmessage = (event: MessageEvent) => {
     }
   }
 
+  // Convert biome names to Uint8Array indices (256)
+  const biomes = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    const bName = col.biomes[i] || 'plains';
+    biomes[i] = biomeIndexMap.get(bName) ?? 0;
+  }
+
+  // Transferable biome and tint buffers
+  const grassTints = new Uint8Array(col.grassTints);
+  const foliageTints = new Uint8Array(col.foliageTints);
+
+  transferables.push(biomes.buffer, grassTints.buffer, foliageTints.buffer);
+
   const count = Math.max(1, activeSectionCount);
   const perSectionMs = duration / count;
 
@@ -79,6 +119,9 @@ ctx.onmessage = (event: MessageEvent) => {
       cx,
       cz,
       sections,
+      biomes,
+      grassTints,
+      foliageTints,
       perSectionMs,
     } as GenWorkerResponse,
     transferables,

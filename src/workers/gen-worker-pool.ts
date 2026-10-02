@@ -4,6 +4,9 @@ export interface GenResult {
   cx: number;
   cz: number;
   sections: SectionDataTransfer[];
+  biomes: Uint8Array;
+  grassTints: Uint8Array;
+  foliageTints: Uint8Array;
   perSectionMs: number;
 }
 
@@ -53,7 +56,8 @@ export class GenWorkerPool {
       });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { cx, cz, sections, perSectionMs } = e.data as GenWorkerResponse;
+        const { cx, cz, sections, biomes, grassTints, foliageTints, perSectionMs } =
+          e.data as GenWorkerResponse;
 
         this.genMsTimes.push(perSectionMs);
         if (this.genMsTimes.length > 100) {
@@ -69,6 +73,9 @@ export class GenWorkerPool {
             cx,
             cz,
             sections,
+            biomes,
+            grassTints,
+            foliageTints,
             perSectionMs,
           });
         }

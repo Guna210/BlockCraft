@@ -15,6 +15,9 @@ export const PAL_PINE_WOOD = ['#472c14', '#6f4c2e', '#855d39', '#ae7b4b'].map((h
 export const PAL_LEAVES = ['#24481a', '#2f5e22', '#3f7a2c', '#55983a', '#6fb14a'].map((h) =>
   hexToRgb(h),
 );
+export const PAL_OAK_LEAVES = ['#2a2a2a', '#4a4a4a', '#6e6e6e', '#989898', '#c2c2c2'].map((h) =>
+  hexToRgb(h),
+);
 export const PAL_LEAVES_TRANS = hexToRgb('#000000', 0);
 
 function genLogSide(barkPal: RGBA[], seed: number, style: 'oak' | 'birch' | 'pine'): TextureData {
@@ -142,7 +145,7 @@ export function genPinePlanks(seed: number = 443): TextureData {
   return genPlanks(PAL_PINE_WOOD, seed);
 }
 
-function genLeaves(baseSeed: number): TextureData {
+function genLeaves(baseSeed: number, leavesPal: RGBA[] = PAL_LEAVES): TextureData {
   const data = createEmptyTexture();
   const lcg = new LCG(baseSeed);
   fillSolid(data, PAL_LEAVES_TRANS);
@@ -156,9 +159,9 @@ function genLeaves(baseSeed: number): TextureData {
       for (let dx = 0; dx < size; dx++) {
         if ((dx === 0 && dy === 0) || (dx === size - 1 && dy === size - 1)) continue;
 
-        let col = PAL_LEAVES[2]!;
-        if (dx === 1 && dy === 0) col = PAL_LEAVES[4]!;
-        else if (dx === size - 2 && dy === size - 1) col = PAL_LEAVES[0]!;
+        let col = leavesPal[2]!;
+        if (dx === 1 && dy === 0) col = leavesPal[4]!;
+        else if (dx === size - 2 && dy === size - 1) col = leavesPal[0]!;
 
         setPixel(data, (cx + dx) % 16, (cy + dy) % 16, col);
       }
@@ -168,11 +171,11 @@ function genLeaves(baseSeed: number): TextureData {
 }
 
 export function genOakLeaves(seed: number = 551): TextureData {
-  return genLeaves(seed);
+  return genLeaves(seed, PAL_OAK_LEAVES);
 }
 export function genBirchLeaves(seed: number = 552): TextureData {
-  return genLeaves(seed);
+  return genLeaves(seed, PAL_LEAVES);
 }
 export function genPineLeaves(seed: number = 553): TextureData {
-  return genLeaves(seed);
+  return genLeaves(seed, PAL_LEAVES);
 }

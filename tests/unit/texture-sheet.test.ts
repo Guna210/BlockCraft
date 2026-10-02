@@ -58,15 +58,31 @@ describe('Texture Sheet', () => {
 
                   const a = result[srcIdx + 3]! / 255.0;
                   if (a > 0) {
-                    png.data[dstIdx] = Math.round(
-                      result[srcIdx]! * a + png.data[dstIdx]! * (1 - a),
-                    );
-                    png.data[dstIdx + 1] = Math.round(
-                      result[srcIdx + 1]! * a + png.data[dstIdx + 1]! * (1 - a),
-                    );
-                    png.data[dstIdx + 2] = Math.round(
-                      result[srcIdx + 2]! * a + png.data[dstIdx + 2]! * (1 - a),
-                    );
+                    let r = result[srcIdx]!;
+                    let g = result[srcIdx + 1]!;
+                    let b = result[srcIdx + 2]!;
+
+                    // Apply Plains tinting to tinted tiles on sheet
+                    if (name === 'grass_top') {
+                      r = Math.round((r * 124) / 255);
+                      g = Math.round((g * 189) / 255);
+                      b = Math.round((b * 71) / 255);
+                    } else if (name === 'grass_side') {
+                      const isGrayscale = Math.abs(r - g) < 15 && Math.abs(g - b) < 15;
+                      if (isGrayscale) {
+                        r = Math.round((r * 124) / 255);
+                        g = Math.round((g * 189) / 255);
+                        b = Math.round((b * 71) / 255);
+                      }
+                    } else if (name === 'oak_leaves') {
+                      r = Math.round((r * 119) / 255);
+                      g = Math.round((g * 177) / 255);
+                      b = Math.round((b * 58) / 255);
+                    }
+
+                    png.data[dstIdx] = Math.round(r * a + png.data[dstIdx]! * (1 - a));
+                    png.data[dstIdx + 1] = Math.round(g * a + png.data[dstIdx + 1]! * (1 - a));
+                    png.data[dstIdx + 2] = Math.round(b * a + png.data[dstIdx + 2]! * (1 - a));
                     png.data[dstIdx + 3] = 255;
                   }
                 }

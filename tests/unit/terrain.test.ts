@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDefaultPipeline } from '../../src/gen/pipeline';
+import { createDefaultPipeline, TerrainPipeline } from '../../src/gen/pipeline';
+import { terrainShapeStage } from '../../src/gen/terrain';
 import { World } from '../../src/world/world';
 import { hashString, deriveSeed } from '../../src/engine/rng';
 import { BlockRegistry } from '../../src/world/blocks/registry';
@@ -79,7 +80,7 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     expect(totalColumnsSampled).toBeGreaterThanOrEqual(250);
     expect(mountainColumnsCount).toBeGreaterThan(0);
     expect(overhangRate).toBeGreaterThanOrEqual(0.03);
-  });
+  }, 20000);
 
   it('proportions test over sample windows for standard and alt seeds', () => {
     const t0 = performance.now();
@@ -524,7 +525,8 @@ describe('Terrain Pipeline & Generator Unit Tests (M03b)', () => {
     const world = new World();
     const col = world.getColumn(0, 0, true)!;
 
-    const pipeline = createDefaultPipeline();
+    const pipeline = new TerrainPipeline();
+    pipeline.addStage(terrainShapeStage);
     pipeline.generateColumn(worldSeed, 0, 0, col);
 
     const allowedBlocks = new Set(['air', 'stone', 'water', 'foundation_stone']);

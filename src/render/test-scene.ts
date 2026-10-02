@@ -14,6 +14,7 @@ const VS_SOURCE = `#version 300 es
 in vec3 aPosition;
 in vec3 aNormal;
 in vec2 aTexCoord;
+in float aTintIndex;
 
 uniform mat4 uProjection;
 uniform mat4 uView;
@@ -21,10 +22,12 @@ uniform mat4 uModel;
 
 out vec3 vNormal;
 out vec2 vTexCoord;
+out float vTintIndex;
 
 void main() {
   vNormal = aNormal;
   vTexCoord = aTexCoord;
+  vTintIndex = aTintIndex;
   gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
 }
 `;
@@ -34,6 +37,7 @@ precision mediump float;
 
 in vec3 vNormal;
 in vec2 vTexCoord;
+in float vTintIndex;
 
 uniform sampler2D uSampler;
 uniform int uCutout;
@@ -45,6 +49,21 @@ void main() {
 
   if (uCutout == 1 && texColor.a < 0.5) {
     discard;
+  }
+
+  // Plains grass & foliage tints
+  vec3 grassTint = vec3(124.0 / 255.0, 189.0 / 255.0, 71.0 / 255.0);
+  vec3 foliageTint = vec3(119.0 / 255.0, 177.0 / 255.0, 58.0 / 255.0);
+
+  if (vTintIndex > 0.5 && vTintIndex < 1.5) {
+    // Grass tinting: check if grayscale fringe vs brown dirt
+    bool isGrayscale = abs(texColor.r - texColor.g) < 0.05 && abs(texColor.g - texColor.b) < 0.05;
+    if (isGrayscale) {
+      texColor.rgb *= grassTint;
+    }
+  } else if (vTintIndex > 1.5) {
+    // Foliage tinting
+    texColor.rgb *= foliageTint;
   }
 
   // Simple directional light from top-right-front
@@ -183,6 +202,7 @@ export class TestScene {
       p3: number[],
       p4: number[],
       norm: number[],
+      texName: string,
       rect: { x: number; y: number; w: number; h: number },
     ) => {
       const u0 = rect.x / this.atlas.width;
@@ -190,8 +210,15 @@ export class TestScene {
       const u1 = (rect.x + rect.w) / this.atlas.width;
       const v1 = (rect.y + rect.h) / this.atlas.height;
 
+      let tintIndex = 0.0;
+      if (texName === 'grass_top' || texName === 'grass_side') {
+        tintIndex = 1.0;
+      } else if (texName === 'oak_leaves') {
+        tintIndex = 2.0;
+      }
+
       const pushV = (p: number[], u: number, v: number) => {
-        verts.push(p[0]!, p[1]!, p[2]!, norm[0]!, norm[1]!, norm[2]!, u, v);
+        verts.push(p[0]!, p[1]!, p[2]!, norm[0]!, norm[1]!, norm[2]!, u, v, tintIndex);
       };
 
       pushV(p1, u0, v0);
@@ -210,6 +237,7 @@ export class TestScene {
       [cx + s, cy - s, cz + s],
       [cx + s, cy + s, cz + s],
       [0, 0, 1],
+      mat.side,
       sideRect,
     );
 
@@ -220,6 +248,7 @@ export class TestScene {
       [cx - s, cy - s, cz - s],
       [cx - s, cy + s, cz - s],
       [0, 0, -1],
+      mat.side,
       sideRect,
     );
 
@@ -230,6 +259,7 @@ export class TestScene {
       [cx - s, cy - s, cz + s],
       [cx - s, cy + s, cz + s],
       [-1, 0, 0],
+      mat.side,
       sideRect,
     );
 
@@ -240,6 +270,7 @@ export class TestScene {
       [cx + s, cy - s, cz - s],
       [cx + s, cy + s, cz - s],
       [1, 0, 0],
+      mat.side,
       sideRect,
     );
 
@@ -250,6 +281,7 @@ export class TestScene {
       [cx + s, cy + s, cz + s],
       [cx + s, cy + s, cz - s],
       [0, 1, 0],
+      mat.top,
       topRect,
     );
 
@@ -260,6 +292,7 @@ export class TestScene {
       [cx + s, cy - s, cz - s],
       [cx + s, cy - s, cz + s],
       [0, -1, 0],
+      mat.bottom,
       bottomRect,
     );
   }
@@ -273,7 +306,7 @@ export class TestScene {
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
 
-    const stride = 8 * 4; // 8 floats per vertex
+    const stride = 9 * 4; // 9 floats per vertex
 
     // Position (3 floats)
     gl.enableVertexAttribArray(0);
@@ -287,12 +320,16 @@ export class TestScene {
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 2, gl.FLOAT, false, stride, 6 * 4);
 
+    // TintIndex (1 float)
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 8 * 4);
+
     gl.bindVertexArray(null);
 
     return {
       vao,
       vbo,
-      count: verts.length / 8,
+      count: verts.length / 9,
     };
   }
 

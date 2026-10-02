@@ -10,7 +10,7 @@ export const PAL_FOUNDATION_STONE = ['#222427', '#323538', '#424549', '#54575b',
 export const PAL_DIRT = ['#3f2a1c', '#5a3e2b', '#72513a', '#8a6448', '#a37d5d'].map((h) =>
   hexToRgb(h),
 );
-export const PAL_GRASS = ['#3f6b24', '#4f842d', '#63a038', '#7cbd47', '#9bd35e'].map((h) =>
+export const PAL_GRASS = ['#3f3f3f', '#5f5f5f', '#878787', '#b2b2b2', '#d5d5d5'].map((h) =>
   hexToRgb(h),
 );
 export const PAL_SAND = ['#b89c62', '#c9b27a', '#d8c28a', '#e6d29c', '#f1e2b4'].map((h) =>
@@ -195,24 +195,30 @@ export function genGrassTop(seed: number = 12345): TextureData {
 }
 
 export function genGrassSide(seed: number = 34567): TextureData {
-  const data = genDirt(seed);
+  const dirt = genDirt(seed);
   const grassTop = genGrassTop(seed);
   const lcg = new LCG(seed);
+  const data = createEmptyTexture();
 
   for (let x = 0; x < 16; x++) {
     const fringeDepth = lcg.nextInt(3, 6);
-    for (let y = 0; y < fringeDepth; y++) {
+    for (let y = 0; y < 16; y++) {
       const i = (y * 16 + x) * 4;
-      if (y === fringeDepth - 1) {
-        const color = PAL_GRASS[0]!;
-        data[i] = color[0]!;
-        data[i + 1] = color[1]!;
-        data[i + 2] = color[2]!;
+      if (y < fringeDepth) {
+        // Grass fringe: grayscale RGB, Alpha = 255
+        const col =
+          y === fringeDepth - 1
+            ? PAL_GRASS[0]!
+            : [grassTop[i]!, grassTop[i + 1]!, grassTop[i + 2]!];
+        data[i] = col[0]!;
+        data[i + 1] = col[1]!;
+        data[i + 2] = col[2]!;
         data[i + 3] = 255;
       } else {
-        data[i] = grassTop[i]!;
-        data[i + 1] = grassTop[i + 1]!;
-        data[i + 2] = grassTop[i + 2]!;
+        // Dirt base: untinted brown RGB, Alpha = 255
+        data[i] = dirt[i]!;
+        data[i + 1] = dirt[i + 1]!;
+        data[i + 2] = dirt[i + 2]!;
         data[i + 3] = 255;
       }
     }
