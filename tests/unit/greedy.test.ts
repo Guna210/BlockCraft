@@ -212,11 +212,15 @@ describe('Greedy Mesher (M02b)', () => {
           // 8 uint32s per quad (4 verts * 2 uint32/vert)
           const normalIndex = (verts[i]! >> 15) & 7;
 
-          // Word 1 of vert 0 (offset i+1) has u0, v0
-          // Word 1 of vert 2 (offset i+5) has u2, v2 (which is W, H for unrotated or H, W for rotated)
+          const u0 = (verts[i + 1]! >> 16) & 255;
+          const v0 = (verts[i + 1]! >> 24) & 255;
+          const u1 = (verts[i + 3]! >> 16) & 255;
+          const v1 = (verts[i + 3]! >> 24) & 255;
           const u2 = (verts[i + 5]! >> 16) & 255;
           const v2 = (verts[i + 5]! >> 24) & 255;
-          const quadArea = u2 * v2;
+          const u3 = (verts[i + 7]! >> 16) & 255;
+          const v3 = (verts[i + 7]! >> 24) & 255;
+          const quadArea = Math.max(u0, u1, u2, u3) * Math.max(v0, v1, v2, v3);
 
           const currentArea = quadAreaPerDirection[normalIndex];
           if (currentArea !== undefined) {
@@ -343,26 +347,140 @@ describe('Greedy Mesher (M02b)', () => {
     });
   });
 
-  describe('Log Orientations', () => {
-    it('sets rotated UVs for X-axis and Z-axis log side faces', () => {
+  describe('Side-face UV Orientation and Rotated Logs (M02b-fix)', () => {
+    function getQuadByNormal(vertices: Uint32Array, normalIndex: number) {
+      for (let i = 0; i < vertices.length; i += 8) {
+        const norm = (vertices[i]! >> 15) & 7;
+        if (norm === normalIndex) {
+          const v0 = {
+            u: (vertices[i + 1]! >> 16) & 255,
+            v: (vertices[i + 1]! >> 24) & 255,
+          };
+          const v1 = {
+            u: (vertices[i + 3]! >> 16) & 255,
+            v: (vertices[i + 3]! >> 24) & 255,
+          };
+          const v2 = {
+            u: (vertices[i + 5]! >> 16) & 255,
+            v: (vertices[i + 5]! >> 24) & 255,
+          };
+          const v3 = {
+            u: (vertices[i + 7]! >> 16) & 255,
+            v: (vertices[i + 7]! >> 24) & 255,
+          };
+          return { v0, v1, v2, v3 };
+        }
+      }
+      throw new Error(`Quad with normal ${normalIndex} not found`);
+    }
+
+    it('single grass_block side faces have v=0 at top, v=1 at bottom, u increasing left to right', () => {
+      const grassState = registry.getStateId('grass_block')!;
+      const padded = new Uint16Array(PADDED_SECTION_VOLUME);
+      padded[1 + 18 * (1 + 18 * 1)] = grassState;
+
+      const mesh = greedyMesh(padded, tables);
+      expect(mesh.opaque.quadCount).toBe(6);
+
+      // Side faces: 0 (+X East), 1 (-X West), 4 (+Z South), 5 (-Z North)
+      const sideNormals = [0, 1, 4, 5];
+      for (const norm of sideNormals) {
+        const quad = getQuadByNormal(mesh.opaque.vertices, norm);
+        // Top vertices (vert 3, vert 2) must have v = 0
+        expect(quad.v3.v).toBe(0);
+        expect(quad.v2.v).toBe(0);
+        // Bottom vertices (vert 0, vert 1) must have v = 1
+        expect(quad.v0.v).toBe(1);
+        expect(quad.v1.v).toBe(1);
+        // Left vertices (vert 0, vert 3) must have u = 0
+        expect(quad.v0.u).toBe(0);
+        expect(quad.v3.u).toBe(0);
+        // Right vertices (vert 1, vert 2) must have u = 1
+        expect(quad.v1.u).toBe(1);
+        expect(quad.v2.u).toBe(1);
+      }
+
+      // Top face (2) and Bottom face (3) keep current behaviour
+      const topQuad = getQuadByNormal(mesh.opaque.vertices, 2);
+      expect(topQuad.v0).toEqual({ u: 0, v: 0 });
+      expect(topQuad.v1).toEqual({ u: 1, v: 0 });
+      expect(topQuad.v2).toEqual({ u: 1, v: 1 });
+      expect(topQuad.v3).toEqual({ u: 0, v: 1 });
+    });
+
+    it('1x3x1 grass_block column produces merged side quads with v=0 at top and v=3 at bottom', () => {
+      const grassState = registry.getStateId('grass_block')!;
+      const padded = new Uint16Array(PADDED_SECTION_VOLUME);
+      padded[1 + 18 * (1 + 18 * 1)] = grassState;
+      padded[1 + 18 * (2 + 18 * 1)] = grassState;
+      padded[1 + 18 * (3 + 18 * 1)] = grassState;
+
+      const mesh = greedyMesh(padded, tables);
+      expect(mesh.opaque.quadCount).toBe(6); // 4 side quads (H=3) + 1 top (H=1) + 1 bottom (H=1)
+
+      const sideNormals = [0, 1, 4, 5];
+      for (const norm of sideNormals) {
+        const quad = getQuadByNormal(mesh.opaque.vertices, norm);
+        // Top vertices (vert 3, vert 2) get v = 0
+        expect(quad.v3.v).toBe(0);
+        expect(quad.v2.v).toBe(0);
+        // Bottom vertices (vert 0, vert 1) get v = 3 (H = 3)
+        expect(quad.v0.v).toBe(3);
+        expect(quad.v1.v).toBe(3);
+        // Left vertices get u = 0, right vertices get u = 1
+        expect(quad.v0.u).toBe(0);
+        expect(quad.v3.u).toBe(0);
+        expect(quad.v1.u).toBe(1);
+        expect(quad.v2.u).toBe(1);
+      }
+    });
+
+    it('asserts X-, Y-, and Z-axis log bark ridge orientation along axis on all four long faces', () => {
+      const oakLogY = registry.getStateId('oak_log', { axis: 'y' })!;
       const oakLogX = registry.getStateId('oak_log', { axis: 'x' })!;
       const oakLogZ = registry.getStateId('oak_log', { axis: 'z' })!;
-      expect(oakLogX).toBeDefined();
-      expect(oakLogZ).toBeDefined();
 
-      // Mesh a single X-axis log block
+      // Y-axis log
+      const paddedY = new Uint16Array(PADDED_SECTION_VOLUME);
+      paddedY[1 + 18 * (1 + 18 * 1)] = oakLogY;
+      const meshY = greedyMesh(paddedY, tables);
+      for (const norm of [0, 1, 4, 5]) {
+        const quad = getQuadByNormal(meshY.opaque.vertices, norm);
+        // Unrotated UVs: v runs along Y (vertical axis)
+        expect(quad.v3.v).toBe(0);
+        expect(quad.v0.v).toBe(1);
+      }
+
+      // X-axis log: long faces are Top (2), Bottom (3), South (4), North (5)
       const paddedX = new Uint16Array(PADDED_SECTION_VOLUME);
       paddedX[1 + 18 * (1 + 18 * 1)] = oakLogX;
-
       const meshX = greedyMesh(paddedX, tables);
-      expect(meshX.opaque.quadCount).toBe(6);
+      for (const norm of [2, 3, 4, 5]) {
+        const quad = getQuadByNormal(meshX.opaque.vertices, norm);
+        // Rotated UVs: v runs along X axis
+        expect(quad.v0.u).toBe(0);
+        expect(quad.v0.v).toBe(0);
+        expect(quad.v1.v).toBe(1);
+      }
 
-      // Mesh a single Z-axis log block
+      // Z-axis log: long faces are East (0), West (1), Top (2), Bottom (3)
       const paddedZ = new Uint16Array(PADDED_SECTION_VOLUME);
       paddedZ[1 + 18 * (1 + 18 * 1)] = oakLogZ;
-
       const meshZ = greedyMesh(paddedZ, tables);
-      expect(meshZ.opaque.quadCount).toBe(6);
+
+      // East (0) & West (1): isUVRotated = true
+      for (const norm of [0, 1]) {
+        const quad = getQuadByNormal(meshZ.opaque.vertices, norm);
+        expect(quad.v0.u).toBe(0);
+        expect(quad.v0.v).toBe(0);
+        expect(quad.v1.v).toBe(1);
+      }
+      // Top (2) & Bottom (3): isUVRotated = false, unrotated v runs along Z
+      for (const norm of [2, 3]) {
+        const quad = getQuadByNormal(meshZ.opaque.vertices, norm);
+        expect(quad.v0.v).toBe(0);
+        expect(quad.v3.v).toBe(1);
+      }
     });
   });
 

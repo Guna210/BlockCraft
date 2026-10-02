@@ -4,6 +4,7 @@ import { TextureAtlas, CELL_SIZE } from './atlas';
 import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
+import { ColumnTintCache } from './tint-cache';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -104,10 +105,12 @@ void main() {
     discard;
   }
 
-  // Per-block smooth tint sampling from column tint map
-  vec2 localXZ = fract(v_worldPos.xz / 16.0);
-  vec3 grassTint = texture(u_grassTintMap, localXZ).rgb;
-  vec3 foliageTint = texture(u_foliageTintMap, localXZ).rgb;
+  // Per-block tint lookup for the block that owns the face
+  // TS reference implementation: tintTexelForFace in src/render/tint-utils.ts
+  ivec3 blockPos = ivec3(floor(v_worldPos - 0.5 * v_normal));
+  ivec2 tintTexel = (blockPos.xz % 16 + 16) % 16;
+  vec3 grassTint = texelFetch(u_grassTintMap, tintTexel, 0).rgb;
+  vec3 foliageTint = texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
 
   // Biome Tinting
   if (v_tintIndex == 1u) {
@@ -162,16 +165,13 @@ export class ChunkRenderer {
   private locGrassTintMap: WebGLUniformLocation;
   private locFoliageTintMap: WebGLUniformLocation;
 
-  private grassTintTexture: WebGLTexture;
-  private foliageTintTexture: WebGLTexture;
-  private defaultGrassTintData: Uint8Array;
-  private defaultFoliageTintData: Uint8Array;
-
+  private tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
     this.program = this.glWrapper.createProgram(VS_CHUNK, FS_CHUNK);
+    this.tintCache = new ColumnTintCache(glWrapper);
 
     const gl = this.glWrapper.gl;
     this.locViewProj = gl.getUniformLocation(this.program, 'u_viewProj')!;
@@ -183,34 +183,6 @@ export class ChunkRenderer {
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
-
-    // Create 16x16 column tint textures
-    this.grassTintTexture = this.glWrapper.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.grassTintTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    this.foliageTintTexture = this.glWrapper.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.foliageTintTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    // Default Plains tint data (256 * 3 bytes)
-    this.defaultGrassTintData = new Uint8Array(256 * 3);
-    this.defaultFoliageTintData = new Uint8Array(256 * 3);
-    for (let i = 0; i < 256; i++) {
-      this.defaultGrassTintData[i * 3] = 124;
-      this.defaultGrassTintData[i * 3 + 1] = 189;
-      this.defaultGrassTintData[i * 3 + 2] = 71;
-
-      this.defaultFoliageTintData[i * 3] = 119;
-      this.defaultFoliageTintData[i * 3 + 1] = 177;
-      this.defaultFoliageTintData[i * 3 + 2] = 58;
-    }
   }
 
   public uploadSectionMesh(
@@ -221,6 +193,8 @@ export class ChunkRenderer {
   ): GPUSectionMesh {
     const key = `${sx},${sy},${sz}`;
     this.removeSectionMesh(key);
+
+    this.tintCache.onSectionAdded(sx, sy, sz);
 
     const opaque = this.createGPUBucketMesh(meshData.opaque);
     const cutout = this.createGPUBucketMesh(meshData.cutout);
@@ -244,6 +218,8 @@ export class ChunkRenderer {
     const existing = this.sectionMeshes.get(key);
     if (!existing) return;
 
+    this.tintCache.onSectionRemoved(existing.sx, existing.sy, existing.sz);
+
     this.freeGPUBucketMesh(existing.opaque);
     this.freeGPUBucketMesh(existing.cutout);
     this.freeGPUBucketMesh(existing.translucent);
@@ -255,6 +231,7 @@ export class ChunkRenderer {
     for (const key of Array.from(this.sectionMeshes.keys())) {
       this.removeSectionMesh(key);
     }
+    this.tintCache.clearAll();
   }
 
   private createGPUBucketMesh(bucket: MeshBucketData): GPUBucketMesh | null {
@@ -347,12 +324,7 @@ export class ChunkRenderer {
     gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
     gl.uniform1i(this.locAtlasSampler, 0);
 
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.grassTintTexture);
     gl.uniform1i(this.locGrassTintMap, 1);
-
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.foliageTintTexture);
     gl.uniform1i(this.locFoliageTintMap, 2);
 
     gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
@@ -364,24 +336,26 @@ export class ChunkRenderer {
 
     const meshes = Array.from(this.sectionMeshes.values());
 
-    // Helper to upload 16x16 per-column tint textures for column (sx, sz)
-    const setColumnTints = (sx: number, sz: number) => {
-      let gData = this.defaultGrassTintData;
-      let fData = this.defaultFoliageTintData;
+    let lastBoundColKey: string | null = null;
+    let lastBoundGrassTex: WebGLTexture | null = null;
+    let lastBoundFoliageTex: WebGLTexture | null = null;
 
-      if (world && world.worldType !== 'flat') {
-        const col = world.getColumn(sx, sz, false);
-        if (col && col.grassTints && col.foliageTints) {
-          gData = col.grassTints;
-          fData = col.foliageTints;
-        }
+    const bindColumnTints = (sx: number, sz: number) => {
+      const colKey = `${sx},${sz}`;
+      if (colKey === lastBoundColKey) return;
+      lastBoundColKey = colKey;
+
+      const pair = this.tintCache.getColumnTints(sx, sz, world);
+      if (pair.grassTexture !== lastBoundGrassTex) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, pair.grassTexture);
+        lastBoundGrassTex = pair.grassTexture;
       }
-
-      gl.activeTexture(gl.TEXTURE1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, gData);
-
-      gl.activeTexture(gl.TEXTURE2);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, fData);
+      if (pair.foliageTexture !== lastBoundFoliageTex) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, pair.foliageTexture);
+        lastBoundFoliageTex = pair.foliageTexture;
+      }
     };
 
     // 1. Opaque Pass
@@ -392,7 +366,7 @@ export class ChunkRenderer {
 
     for (const mesh of meshes) {
       if (mesh.opaque) {
-        setColumnTints(mesh.sx, mesh.sz);
+        bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.opaque.vao);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.opaque.ebo);
@@ -406,7 +380,7 @@ export class ChunkRenderer {
     gl.uniform1i(this.locIsCutout, 1);
     for (const mesh of meshes) {
       if (mesh.cutout) {
-        setColumnTints(mesh.sx, mesh.sz);
+        bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.cutout.vao);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.cutout.ebo);
@@ -424,6 +398,7 @@ export class ChunkRenderer {
 
     for (const mesh of meshes) {
       if (mesh.translucent) {
+        bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.translucent.vao);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.translucent.ebo);

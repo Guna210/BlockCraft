@@ -230,22 +230,49 @@ function emitQuad(
 
   // Determine standard vs swapped UVs for log orientation
   let isUVRotated = false;
-  if (logAxis === 1 && (f === 2 || f === 3 || f === 4 || f === 5)) {
-    // X-axis log side faces
-    isUVRotated = true;
-  } else if (logAxis === 2 && (f === 0 || f === 1 || f === 2 || f === 3)) {
-    // Z-axis log side faces
-    isUVRotated = true;
+  if (logAxis === 1) {
+    // X-axis log: long faces are Top (2), Bottom (3), South (4), North (5)
+    isUVRotated = f === 2 || f === 3 || f === 4 || f === 5;
+  } else if (logAxis === 2) {
+    // Z-axis log: long faces with Z along slice U are East (0), West (1)
+    isUVRotated = f === 0 || f === 1;
   }
 
-  const u0_val = 0;
-  const v0_val = 0;
-  const u1_val = isUVRotated ? 0 : W;
-  const v1_val = isUVRotated ? W : 0;
-  const u2_val = isUVRotated ? H : W;
-  const v2_val = isUVRotated ? W : H;
-  const u3_val = isUVRotated ? H : 0;
-  const v3_val = isUVRotated ? 0 : H;
+  let u0_val: number, v0_val: number;
+  let u1_val: number, v1_val: number;
+  let u2_val: number, v2_val: number;
+  let u3_val: number, v3_val: number;
+
+  const isSideFace = f !== 2 && f !== 3;
+
+  if (isUVRotated) {
+    u0_val = 0;
+    v0_val = 0;
+    u1_val = 0;
+    v1_val = W;
+    u2_val = H;
+    v2_val = W;
+    u3_val = H;
+    v3_val = 0;
+  } else if (isSideFace) {
+    u0_val = 0;
+    v0_val = H;
+    u1_val = W;
+    v1_val = H;
+    u2_val = W;
+    v2_val = 0;
+    u3_val = 0;
+    v3_val = 0;
+  } else {
+    u0_val = 0;
+    v0_val = 0;
+    u1_val = W;
+    v1_val = 0;
+    u2_val = W;
+    v2_val = H;
+    u3_val = 0;
+    v3_val = H;
+  }
 
   // Quad corner 3D section positions depending on face direction f
   let x0 = 0,
