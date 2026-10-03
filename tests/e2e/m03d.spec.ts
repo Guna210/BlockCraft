@@ -1,4 +1,4 @@
-import { test } from '../harness/fixture';
+import { test, expect } from '../harness/fixture';
 import { assertNotBlank, assertNoMissingTexture } from '../harness/pixels';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,22 +18,22 @@ test.describe('M03d: Caves & Aquifers Visual & E2E Verification', () => {
 
     // Find a large underground cave cavern block
     const cavePos = await page.evaluate(() => {
-      // Search in loaded columns around origin for an underground air block with air neighbors
-      for (let y = 25; y <= 45; y++) {
+      for (let y = 20; y <= 45; y++) {
         for (let x = -30; x <= 30; x++) {
           for (let z = -30; z <= 30; z++) {
             const b = window.__blockcraft!.getBlock!(x, y, z);
             if (b.id === 'air') {
               const bAbove = window.__blockcraft!.getBlock!(x, y + 1, z);
+              const bAbove2 = window.__blockcraft!.getBlock!(x, y + 2, z);
               const bBelow = window.__blockcraft!.getBlock!(x, y - 1, z);
               const bNorth = window.__blockcraft!.getBlock!(x, y, z - 1);
               const bSouth = window.__blockcraft!.getBlock!(x, y, z + 1);
 
-              // Ensure it's a cavern (air in multiple directions) and below surface
               const surfH = window.__blockcraft!.getHeight!(x, z);
               if (
                 y < surfH - 10 &&
                 bAbove.id === 'air' &&
+                bAbove2.id === 'air' &&
                 bBelow.id !== 'air' &&
                 (bNorth.id === 'air' || bSouth.id === 'air')
               ) {
@@ -43,8 +43,12 @@ test.describe('M03d: Caves & Aquifers Visual & E2E Verification', () => {
           }
         }
       }
-      return { x: 0, y: 30, z: 0 };
+      return null;
     });
+
+    if (!cavePos) {
+      throw new Error('No cave air cell found in search radius!');
+    }
 
     // Position camera inside the cave looking along it
     await page.evaluate(({ x, y, z }) => {
@@ -65,6 +69,17 @@ test.describe('M03d: Caves & Aquifers Visual & E2E Verification', () => {
       wm.camera.pitch = -0.17; // ~ -10 deg
       wm.camera.updateView();
     }, cavePos);
+
+    // Verify camera position block and head block above are air
+    const camBlockTypes = await page.evaluate(({ x, y, z }) => {
+      const camY = y + 1; // camera Y floor (y + 1.62 floor)
+      const bCam = window.__blockcraft!.getBlock!(x, camY, z);
+      const bCamAbove = window.__blockcraft!.getBlock!(x, camY + 1, z);
+      return { camBlock: bCam.id, camAboveBlock: bCamAbove.id };
+    }, cavePos);
+
+    expect(camBlockTypes.camBlock).toBe('air');
+    expect(camBlockTypes.camAboveBlock).toBe('air');
 
     // Wait 2 frames for rendering
     await page.evaluate(
