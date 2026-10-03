@@ -297,14 +297,13 @@ export function generateCaves(
       const entVal = entranceNoise(wx * 0.05, wz * 0.05);
       const isEntranceAllowed = entVal >= 0.65;
       const upperLimit = Math.min(120, maxCarveY);
+      const effectiveUpper = isEntranceAllowed ? upperLimit : Math.min(upperLimit, surfY - 8);
+
+      if (effectiveUpper < 5) continue;
 
       const yAq = Math.floor(20 + ((aquiferLevelNoise(wx * 0.01, wz * 0.01) + 1) / 2) * 36);
 
-      for (let y = 5; y <= upperLimit; y++) {
-        if (!isEntranceAllowed && y > surfY - 8) {
-          continue;
-        }
-
+      for (let y = 5; y <= effectiveUpper; y++) {
         let isCarved = false;
 
         // a) Cheese
