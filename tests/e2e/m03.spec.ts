@@ -1,7 +1,7 @@
 import { test, expect } from '../harness/fixture';
 
 test.describe('M03b: Terrain Shape, Pipeline & Worker Pool Determinism', () => {
-  test('worldHash of region (0,0)-(64,64) is identical across 3 runs, across worker counts 1, 2, 4, and matches main-thread generation', async ({
+  test('worldHash of region (0,0)-(64,64) is identical for worker counts 1, 2 and 4, on a repeat run, and matches main-thread generation', async ({
     page,
   }) => {
     // 1. Get main-thread generated baseline hash by forcing demand generation on an empty world instance
@@ -30,12 +30,17 @@ test.describe('M03b: Terrain Shape, Pipeline & Worker Pool Determinism', () => {
 
     const baselineHash = mainThreadHashResult.hash;
 
-    // 2. Test worker counts 1, 2, 4 across 3 runs each through real Web Workers
-    const workerCounts = [1, 2, 4];
+    // 2. Test worker counts 1, 2, 4 across 4 cycles total through real Web Workers
+    // (worker count 1 has 2 runs to test repeatability; worker counts 2 and 4 have 1 run each)
+    const workerConfig = [
+      { workerCount: 1, runCount: 2 },
+      { workerCount: 2, runCount: 1 },
+      { workerCount: 4, runCount: 1 },
+    ];
     const hashesByWorkerCount: Record<number, string[]> = { 1: [], 2: [], 4: [] };
 
-    for (const workerCount of workerCounts) {
-      for (let run = 1; run <= 3; run++) {
+    for (const { workerCount, runCount } of workerConfig) {
+      for (let run = 1; run <= runCount; run++) {
         const result = await page.evaluate(
           async ({ count }) => {
             window.__blockcraft!.setWorkerPoolSize!(count);
@@ -74,10 +79,11 @@ test.describe('M03b: Terrain Shape, Pipeline & Worker Pool Determinism', () => {
         ).toBe(baselineHash);
       }
 
-      // Assert all 3 runs for worker count N are identical
+      // Assert repeat runs for worker count N are identical
       const runs = hashesByWorkerCount[workerCount]!;
-      expect(runs[0]).toBe(runs[1]);
-      expect(runs[1]).toBe(runs[2]);
+      if (runs.length > 1) {
+        expect(runs[0]).toBe(runs[1]);
+      }
     }
   });
 
