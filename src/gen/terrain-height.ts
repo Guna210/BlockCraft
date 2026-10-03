@@ -1,6 +1,11 @@
 import { makeSimplex2D, makeSimplex3D, makeFbm2D, makeFbm3D } from './noise';
 import { deriveSeed } from '../engine/rng';
-import { sampleTerrainClimate, TerrainClimateSample } from './terrain';
+import {
+  getTerrainOrigin,
+  sampleTerrainClimate,
+  TerrainClimateSample,
+  TerrainOrigin,
+} from './terrain';
 
 /**
  * Height of the highest solid block that `terrainShapeStage` produces at (wx, wz), without
@@ -55,10 +60,15 @@ function splineErosion(e: number): number {
   return 1.8 - ((e + 0.3) / 0.6) * 1.5;
 }
 
+// Same world-space offset as terrain.ts (see getTerrainOrigin).
+const ORIGIN: TerrainOrigin = { x: 0, z: 0 };
+
 function warpedRiverNoise(s: HeightSamplers, wx: number, wz: number): number {
-  const warpX = s.fbmWarpX(wx * 0.0024, wz * 0.0024) * 0.35;
-  const warpZ = s.fbmWarpZ(wx * 0.0024, wz * 0.0024) * 0.35;
-  return s.s2Rivers(wx * 0.0012 + warpX, wz * 0.0012 + warpZ);
+  const sx = wx + ORIGIN.x;
+  const sz = wz + ORIGIN.z;
+  const warpX = s.fbmWarpX(sx * 0.0024, sz * 0.0024) * 0.35;
+  const warpZ = s.fbmWarpZ(sx * 0.0024, sz * 0.0024) * 0.35;
+  return s.s2Rivers(sx * 0.0012 + warpX, sz * 0.0012 + warpZ);
 }
 
 const CLIMATE: TerrainClimateSample = {
@@ -72,6 +82,7 @@ const CLIMATE: TerrainClimateSample = {
 export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: number): number {
   const s = getSamplers(terrainStageSeed);
   sampleTerrainClimate(terrainStageSeed, wx, wz, CLIMATE);
+  getTerrainOrigin(terrainStageSeed, ORIGIN);
 
   const targetH = CLIMATE.surfaceHeight;
   const cont = CLIMATE.continentalness;
@@ -98,7 +109,10 @@ export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: numb
   const noiseMaxY = Math.min(319, Math.ceil(targetH + 24));
 
   for (let y = noiseMaxY; y >= noiseMinY; y--) {
-    const n3d = noiseAmp > 0 ? s.fbm3D(wx * 0.015, y * 0.025, wz * 0.015) * noiseAmp : 0.0;
+    const n3d =
+      noiseAmp > 0
+        ? s.fbm3D((wx + ORIGIN.x) * 0.015, y * 0.025, (wz + ORIGIN.z) * 0.015) * noiseAmp
+        : 0.0;
     let density = targetH - y + n3d;
     if (y > 220) density -= (y - 220) * 2.0;
     if (density > 0) return y;
