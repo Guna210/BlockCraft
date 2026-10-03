@@ -4,6 +4,7 @@ import { sampleBiome, BIOME_DEFINITIONS, OverworldBiomeId } from './biomes';
 import { BlockRegistry } from '../world/blocks/registry';
 import { deriveSeed } from '../engine/rng';
 import { makeSimplex2D } from './noise';
+import { sampleTerrainTopY } from './terrain-height';
 
 const CLAYROCK_PALETTE = [
   'clayrock_white',
@@ -107,7 +108,37 @@ export function generateSurfaceRules(
     }
   }
 
-  // 2. Apply Surface Rules column by column
+  // 2. Top-solid heights on an 18x18 grid (-1..+16 relative to base), computed before any surface
+  // edit so results do not depend on iteration order. Interior cells scan the real column; the
+  // ring around it is evaluated with the terrain-shape density rule, so a border cell is compared
+  // with the real neighbouring column instead of wrapping to the opposite edge of its own column.
+  const hDim = 18;
+  const heights = new Int16Array(hDim * hDim);
+  const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
+  for (let hz = 0; hz < hDim; hz++) {
+    for (let hx = 0; hx < hDim; hx++) {
+      const hIdx = hz * hDim + hx;
+      if (hx >= 1 && hx <= 16 && hz >= 1 && hz <= 16) {
+        let top = -1;
+        for (let y = 319; y >= 0; y--) {
+          const state = column.getBlockStateId(hx - 1, y, hz - 1);
+          if (state !== airState && state !== waterState) {
+            top = y;
+            break;
+          }
+        }
+        heights[hIdx] = top;
+      } else {
+        heights[hIdx] = sampleTerrainTopY(
+          terrainStageSeed,
+          baseWorldX + hx - 1,
+          baseWorldZ + hz - 1,
+        );
+      }
+    }
+  }
+
+  // 3. Apply Surface Rules column by column
   for (let z = 0; z < 16; z++) {
     const wz = baseWorldZ + z;
     for (let x = 0; x < 16; x++) {
@@ -117,44 +148,21 @@ export function generateSurfaceRules(
       const biomeDef = BIOME_DEFINITIONS[biomeId];
       const rules = biomeDef.surfaceRules;
 
-      // Find highest solid stone/terrain block
-      let topY = -1;
-      for (let y = 319; y >= 0; y--) {
-        const state = column.getBlockStateId(x, y, z);
-        if (state !== airState && state !== waterState) {
-          topY = y;
-          break;
-        }
-      }
+      const hIdx = (z + 1) * hDim + (x + 1);
+      const topY = heights[hIdx]!;
 
       if (topY < 0) continue; // Pure air or water column
 
       const topState = column.getBlockStateId(x, topY, z);
       const isWaterAbove = column.getBlockStateId(x, topY + 1, z) === waterState;
 
-      // Steep slope / cliff check: count height diffs with 4 orthogonal neighbors
-      let maxSlope = 0;
-      const offsets: [number, number][] = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ];
-      for (const offset of offsets) {
-        const dx = offset[0];
-        const dz = offset[1];
-        // Sample height offset
-        let neighborTopY = topY;
-        for (let ny = Math.min(319, topY + 10); ny >= Math.max(0, topY - 10); ny--) {
-          const s = column.getBlockStateId((x + dx + 16) % 16, ny, (z + dz + 16) % 16);
-          if (s !== airState && s !== waterState) {
-            neighborTopY = ny;
-            break;
-          }
-        }
-        const slope = Math.abs(topY - neighborTopY);
-        if (slope > maxSlope) maxSlope = slope;
-      }
+      // Steep slope / cliff check: height diffs with the 4 orthogonal neighbours
+      const maxSlope = Math.max(
+        Math.abs(topY - heights[hIdx - 1]!),
+        Math.abs(topY - heights[hIdx + 1]!),
+        Math.abs(topY - heights[hIdx - hDim]!),
+        Math.abs(topY - heights[hIdx + hDim]!),
+      );
 
       const isCliff = maxSlope >= 4;
 
