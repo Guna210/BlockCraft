@@ -87,34 +87,60 @@ test.describe('M03b: Terrain Shape, Pipeline & Worker Pool Determinism', () => {
     }
   });
 
-  test('default world spawns camera surface height at (0.5, getHeight(0,0) + 1.82, 0.5)', async ({
-    page,
-  }) => {
-    await page.evaluate(async () => {
-      await window.__blockcraft!.createWorld!({
-        seed: 'blockcraft-test-seed-42',
-        type: 'default',
+  // M03b-fix3: the spawn is the nearest generated dry-land column to (0, 0), not getHeight(0, 0).
+  for (const seed of ['blockcraft-test-seed-42', 'blockcraft-alt-seed-7']) {
+    test(`default world spawns the camera on dry land above sea level (${seed})`, async ({
+      page,
+    }) => {
+      await page.evaluate(async (s) => {
+        await window.__blockcraft!.createWorld!({ seed: s, type: 'default' });
+        await window.__blockcraft!.waitForTerrain!(4);
+      }, seed);
+
+      const spawnData = await page.evaluate(() => {
+        const cam = (
+          window as unknown as {
+            WorldManager: {
+              getInstance: () => { camera: { position: [number, number, number] } };
+            };
+          }
+        ).WorldManager.getInstance().camera;
+        const camPos = [cam.position[0], cam.position[1], cam.position[2]] as [
+          number,
+          number,
+          number,
+        ];
+        const bx = Math.floor(camPos[0]);
+        const bz = Math.floor(camPos[2]);
+        const groundY = Math.round(camPos[1] - 1.82);
+        return {
+          camPos,
+          groundY,
+          surfaceY: window.__blockcraft!.getHeight!(bx, bz),
+          ground: window.__blockcraft!.getBlock!(bx, groundY, bz).id,
+          feet: window.__blockcraft!.getBlock!(bx, groundY + 1, bz).id,
+          head: window.__blockcraft!.getBlock!(bx, groundY + 2, bz).id,
+          biome: window.__blockcraft!.getBiome!(bx, bz),
+        };
       });
-      await window.__blockcraft!.waitForTerrain!(4);
+
+      test.info().annotations.push({
+        type: 'spawn',
+        description: `${seed}: ${JSON.stringify(spawnData.camPos)} ground=${spawnData.ground} biome=${spawnData.biome}`,
+      });
+
+      // Camera at (x + 0.5, top + 1.82, z + 0.5), top above sea level (y > 64)
+      expect(spawnData.camPos[1]).toBeGreaterThan(64);
+      expect(spawnData.camPos[0] % 1).toBeCloseTo(0.5, 2);
+      expect(spawnData.camPos[2] % 1).toBeCloseTo(0.5, 2);
+      expect(spawnData.groundY).toBeGreaterThan(64);
+      expect(spawnData.groundY).toBe(spawnData.surfaceY);
+      // Standing on solid ground, with no fluid at the feet or head
+      expect(['air', 'water', 'lava']).not.toContain(spawnData.ground);
+      expect(spawnData.feet).not.toBe('water');
+      expect(spawnData.feet).not.toBe('lava');
+      expect(spawnData.head).not.toBe('water');
+      expect(spawnData.head).not.toBe('lava');
     });
-
-    const spawnData = await page.evaluate(() => {
-      const surfaceY = window.__blockcraft!.getHeight!(0, 0);
-      const cam = (
-        window as unknown as {
-          WorldManager: { getInstance: () => { camera: { position: [number, number, number] } } };
-        }
-      ).WorldManager.getInstance().camera;
-
-      return {
-        surfaceY,
-        camPos: [cam.position[0], cam.position[1], cam.position[2]],
-      };
-    });
-
-    expect(spawnData.surfaceY).toBeGreaterThan(30);
-    expect(spawnData.camPos[0]).toBeCloseTo(0.5, 2);
-    expect(spawnData.camPos[1]).toBeCloseTo(spawnData.surfaceY + 1.82, 2);
-    expect(spawnData.camPos[2]).toBeCloseTo(0.5, 2);
-  });
+  }
 });

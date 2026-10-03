@@ -1,5 +1,5 @@
 import { makeSimplex2D, makeSimplex3D, makeFbm2D, makeFbm3D, makeRidged2D } from './noise';
-import { deriveSeed } from '../engine/rng';
+import { deriveSeed, hash2 } from '../engine/rng';
 import { BlockRegistry } from '../world/blocks/registry';
 import { ChunkColumn } from '../world/column';
 import { TerrainStage } from './pipeline';
@@ -23,6 +23,37 @@ interface Samplers {
   fbmWarpZ: (x: number, y: number) => number;
   fbm3D: (x: number, y: number, z: number) => number;
   s2Foundation: (x: number, y: number) => number;
+  offX: number;
+  offZ: number;
+}
+
+/**
+ * Simplex noise is exactly 0 at the lattice point (0,0) for every seed and octave, so unshifted
+ * terrain would put the same continentalness, height and river-line value at the origin of every
+ * world. Every terrain-shape noise sample is therefore taken at (wx + offX, wz + offZ). The offset
+ * is derived from the stage seed, is about +-100,000 blocks and always has a fractional part, so
+ * the origin never lands on a lattice point at any octave scale.
+ */
+const ORIGIN_OFFSET_RANGE = 200000;
+
+function deriveOriginOffset(stageSeed: number, label: string): number {
+  const whole = Math.floor(
+    (hash2(deriveSeed(stageSeed, label), 17, 91) - 0.5) * ORIGIN_OFFSET_RANGE,
+  );
+  const frac = 0.125 + 0.75 * hash2(deriveSeed(stageSeed, label), 53, 7);
+  return whole + frac;
+}
+
+export interface TerrainOrigin {
+  x: number;
+  z: number;
+}
+
+/** World-space offset added to x and z before any terrain-shape noise is sampled. */
+export function getTerrainOrigin(terrainStageSeed: number, out: TerrainOrigin): void {
+  const samplers = getSamplersForSeed(terrainStageSeed);
+  out.x = samplers.offX;
+  out.z = samplers.offZ;
 }
 
 let cachedStageSeed: number | null = null;
@@ -74,6 +105,8 @@ function getSamplersForSeed(stageSeed: number): Samplers {
     fbmWarpZ,
     fbm3D,
     s2Foundation,
+    offX: deriveOriginOffset(stageSeed, 'origin_offset_x'),
+    offZ: deriveOriginOffset(stageSeed, 'origin_offset_z'),
   };
   return cachedSamplers;
 }
@@ -121,10 +154,12 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 function sampleWarpedRiverNoise(samplers: Samplers, wx: number, wz: number): number {
-  const baseNoiseX = wx * 0.0012;
-  const baseNoiseZ = wz * 0.0012;
-  const warpX = samplers.fbmWarpX(wx * 0.0024, wz * 0.0024) * 0.35;
-  const warpZ = samplers.fbmWarpZ(wx * 0.0024, wz * 0.0024) * 0.35;
+  const sx = wx + samplers.offX;
+  const sz = wz + samplers.offZ;
+  const baseNoiseX = sx * 0.0012;
+  const baseNoiseZ = sz * 0.0012;
+  const warpX = samplers.fbmWarpX(sx * 0.0024, sz * 0.0024) * 0.35;
+  const warpZ = samplers.fbmWarpZ(sx * 0.0024, sz * 0.0024) * 0.35;
   return samplers.s2Rivers(baseNoiseX + warpX, baseNoiseZ + warpZ);
 }
 
@@ -135,9 +170,11 @@ export function sampleTerrainClimate(
   out: TerrainClimateSample,
 ): void {
   const samplers = getSamplersForSeed(terrainStageSeed);
-  const cont = samplers.fbmCont(wx * 0.0012, wz * 0.0012);
-  const erosion = samplers.fbmErosion(wx * 0.002, wz * 0.002);
-  const ridgedP = samplers.ridgedPeaks(wx * 0.003, wz * 0.003);
+  const sx = wx + samplers.offX;
+  const sz = wz + samplers.offZ;
+  const cont = samplers.fbmCont(sx * 0.0012, sz * 0.0012);
+  const erosion = samplers.fbmErosion(sx * 0.002, sz * 0.002);
+  const ridgedP = samplers.ridgedPeaks(sx * 0.003, sz * 0.003);
   const peaks = (ridgedP + 1.0) * 0.5; // remap peaks to [0, 1]
 
   const baseH = splineContinentalness(cont);
@@ -217,7 +254,7 @@ export function generateTerrainShape(
   const foundationState = registry.getDefaultStateId('foundation_stone') ?? 1;
 
   const samplers = getSamplersForSeed(stageSeed);
-  const { fbm3D, s2Foundation } = samplers;
+  const { fbm3D, s2Foundation, offX, offZ } = samplers;
 
   const baseWorldX = cx * 16;
   const baseWorldZ = cz * 16;
@@ -309,7 +346,7 @@ export function generateTerrainShape(
           if (y === 0) {
             isFoundation = true;
           } else {
-            const fn = s2Foundation(wx * 0.1, wz * 0.1);
+            const fn = s2Foundation((wx + offX) * 0.1, (wz + offZ) * 0.1);
             if (y + fn * 2.2 <= 3.5) {
               isFoundation = true;
             }
@@ -335,7 +372,10 @@ export function generateTerrainShape(
           density = -100.0; // Guaranteed air / water
         } else {
           // Inside surface transition zone: sample 3D noise
-          const n3d = noiseAmp > 0 ? fbm3D(wx * 0.015, y * 0.025, wz * 0.015) * noiseAmp : 0.0;
+          const n3d =
+            noiseAmp > 0
+              ? fbm3D((wx + offX) * 0.015, y * 0.025, (wz + offZ) * 0.015) * noiseAmp
+              : 0.0;
           density = targetH - y + n3d;
           if (y > 220) {
             density -= (y - 220) * 2.0;

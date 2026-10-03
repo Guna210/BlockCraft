@@ -16,6 +16,7 @@ import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
 import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
 import { buildPaddedSection } from './padded';
+import { findSpawnPoint } from './spawn';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
 import { renderStats } from '../debug/api/core';
@@ -41,6 +42,10 @@ export class WorldManager {
   public mainThreadGenCount: number = 0;
 
   private pendingTerrainPromises: Map<string, Promise<void>> = new Map();
+
+  // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
+  // carry the epoch they were requested in and are dropped when it no longer matches.
+  private worldEpoch = 0;
 
   public static getInstance(): WorldManager {
     if (!WorldManager.instance) {
@@ -72,6 +77,7 @@ export class WorldManager {
     this.worldSeedStr = seed;
     this.worldSeed = hashString(seed);
     this.worldType = type;
+    this.worldEpoch++;
     this.world = new World();
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
@@ -205,6 +211,8 @@ export class WorldManager {
     this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
     this.worldSeed = hashString(this.worldSeedStr);
     this.worldType = opts?.type ?? 'default';
+    const worldType = this.worldType;
+    const worldSeed = this.worldSeed;
 
     // Clear cached terrain promises and dispose old GPU section meshes
     this.pendingTerrainPromises.clear();
@@ -212,7 +220,9 @@ export class WorldManager {
       this.chunkRenderer.clearAllMeshes();
     }
 
-    this.world = new World();
+    const epoch = ++this.worldEpoch;
+    const world = new World();
+    this.world = world;
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
@@ -221,41 +231,42 @@ export class WorldManager {
     const genPromises: Promise<void>[] = [];
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
-        const job = this.genWorkerPool
-          .enqueueGenJob(this.worldSeed, cx, cz, this.worldType)
-          .then((res) => {
-            const col = this.world!.getColumn(res.cx, res.cz, true)!;
-            if (res.biomes) {
-              col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
-            }
-            if (res.grassTints) {
-              col.grassTints.set(res.grassTints);
-            }
-            if (res.foliageTints) {
-              col.foliageTints.set(res.foliageTints);
-            }
-            for (const secData of res.sections) {
-              const sec = col.getOrCreateSection(secData.sy);
-              if (sec) {
-                if (secData.states) {
-                  sec.loadBlockStatesFrom(secData.states);
-                } else if (secData.uniformStateId !== null) {
-                  sec.fill(secData.uniformStateId);
-                }
+        const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
+          if (epoch !== this.worldEpoch) return;
+          const col = world.getColumn(res.cx, res.cz, true)!;
+          if (res.biomes) {
+            col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+          }
+          if (res.grassTints) {
+            col.grassTints.set(res.grassTints);
+          }
+          if (res.foliageTints) {
+            col.foliageTints.set(res.foliageTints);
+          }
+          for (const secData of res.sections) {
+            const sec = col.getOrCreateSection(secData.sy);
+            if (sec) {
+              if (secData.states) {
+                sec.loadBlockStatesFrom(secData.states);
+              } else if (secData.uniformStateId !== null) {
+                sec.fill(secData.uniformStateId);
               }
             }
-          });
+          }
+        });
         genPromises.push(job);
       }
     }
 
     await Promise.all(genPromises);
+    // A newer createWorld (or resetWorldToEmpty) replaced this world while it was generating.
+    if (epoch !== this.worldEpoch) return;
 
     // Light terrain within radius using a single region LightWorkerPool job
     const regionColumns: Record<string, (Uint16Array | number)[]> = {};
     for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
       for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
-        const col = this.world.getColumn(cx, cz, false);
+        const col = world.getColumn(cx, cz, false);
         if (col) {
           const secArray: (Uint16Array | number)[] = [];
           for (let sy = 0; sy < 20; sy++) {
@@ -280,18 +291,28 @@ export class WorldManager {
       regionColumns,
     );
 
+    if (epoch !== this.worldEpoch) return;
+
     for (const secLight of lightResult.sections) {
-      this.world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
+      world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
     }
 
     // Set camera spawn position
     if (this.camera) {
-      if (this.worldType === 'flat') {
+      if (worldType === 'flat') {
         this.camera.position = vec3.fromValues(0.5, 80.0, 0.5);
       } else {
-        const ySurface = this.world.getHeight(0, 0);
-        // Spawn camera just above the terrain surface at documented land position (0.5, ySurface + 1.82, 0.5)
-        this.camera.position = vec3.fromValues(0.5, ySurface + 1.82, 0.5);
+        // Nearest generated land column to (0, 0): top block above sea level and not a fluid
+        const spawn = findSpawnPoint(world, radiusChunks);
+        if (spawn) {
+          this.camera.position = vec3.fromValues(
+            spawn.position[0],
+            spawn.position[1],
+            spawn.position[2],
+          );
+        } else {
+          this.camera.position = vec3.fromValues(0.5, world.getHeight(0, 0) + 1.82, 0.5);
+        }
       }
       this.camera.yaw = -Math.PI / 2;
       this.camera.pitch = -0.05;
@@ -360,6 +381,10 @@ export class WorldManager {
 
   private async meshRadius(radiusChunks: number): Promise<void> {
     if (!this.world || !this.chunkRenderer || !this.tables) return;
+    const world = this.world;
+    const epoch = this.worldEpoch;
+    const worldSeed = this.worldSeed;
+    const worldType = this.worldType;
 
     const centerCX = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const centerCZ = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
@@ -369,35 +394,35 @@ export class WorldManager {
     for (let cx = centerCX - radiusChunks; cx <= centerCX + radiusChunks; cx++) {
       for (let cz = centerCZ - radiusChunks; cz <= centerCZ + radiusChunks; cz++) {
         if (!this.world.hasColumn(cx, cz)) {
-          const job = this.genWorkerPool
-            .enqueueGenJob(this.worldSeed, cx, cz, this.worldType)
-            .then((res) => {
-              const col = this.world!.getColumn(res.cx, res.cz, true)!;
-              if (res.biomes) {
-                col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
-              }
-              if (res.grassTints) {
-                col.grassTints.set(res.grassTints);
-              }
-              if (res.foliageTints) {
-                col.foliageTints.set(res.foliageTints);
-              }
-              for (const secData of res.sections) {
-                const sec = col.getOrCreateSection(secData.sy);
-                if (sec) {
-                  if (secData.states) {
-                    sec.loadBlockStatesFrom(secData.states);
-                  } else if (secData.uniformStateId !== null) {
-                    sec.fill(secData.uniformStateId);
-                  }
+          const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
+            if (epoch !== this.worldEpoch) return;
+            const col = world.getColumn(res.cx, res.cz, true)!;
+            if (res.biomes) {
+              col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+            }
+            if (res.grassTints) {
+              col.grassTints.set(res.grassTints);
+            }
+            if (res.foliageTints) {
+              col.foliageTints.set(res.foliageTints);
+            }
+            for (const secData of res.sections) {
+              const sec = col.getOrCreateSection(secData.sy);
+              if (sec) {
+                if (secData.states) {
+                  sec.loadBlockStatesFrom(secData.states);
+                } else if (secData.uniformStateId !== null) {
+                  sec.fill(secData.uniformStateId);
                 }
               }
-            });
+            }
+          });
           genPromises.push(job);
         }
       }
     }
     await Promise.all(genPromises);
+    if (epoch !== this.worldEpoch) return;
 
     // 2. Mesh all columns within radiusChunks
     const promises: Promise<void>[] = [];
@@ -412,7 +437,7 @@ export class WorldManager {
 
         const colPromise = (async () => {
           const sectionPromises: Promise<void>[] = [];
-          const col = this.world!.getColumn(cx, cz, false);
+          const col = world.getColumn(cx, cz, false);
 
           for (let sy = 0; sy < 20; sy++) {
             if (!col) continue;
@@ -428,11 +453,12 @@ export class WorldManager {
               continue;
             }
 
-            const paddedSection = buildPaddedSection(this.world!, cx, sy, cz);
+            const paddedSection = buildPaddedSection(world, cx, sy, cz);
 
             const jobPromise = this.workerPool
               .enqueueMeshJob(cx, sy, cz, paddedSection, this.tables!)
               .then((res) => {
+                if (epoch !== this.worldEpoch) return;
                 if (this.chunkRenderer) {
                   this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
                 }
