@@ -5,6 +5,7 @@ import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
+import { mergeMeshBuckets } from '../mesh/models';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -200,7 +201,8 @@ export class ChunkRenderer {
     this.tintCache.onSectionAdded(sx, sy, sz);
 
     const opaque = this.createGPUBucketMesh(meshData.opaque);
-    const cutout = this.createGPUBucketMesh(meshData.cutout);
+    // Plants (cross models) are drawn in the cutout pass, in the same draw call as the leaves
+    const cutout = this.createGPUBucketMesh(mergeMeshBuckets(meshData.cutout, meshData.models));
     const translucent = this.createGPUBucketMesh(meshData.translucent);
 
     const gpuMesh: GPUSectionMesh = {

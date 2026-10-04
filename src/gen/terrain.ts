@@ -242,6 +242,81 @@ const UNCARVED_SCRATCH = new Float32Array(256);
 const DIST_SCRATCH = new Float32Array(256);
 const HW_SCRATCH = new Float32Array(256);
 
+// M03f: pre-rule stone flags of the column being generated, index = (z * 16 + x) * 320 + y.
+const SOLID_SCRATCH = new Uint8Array(256 * 320);
+const BAND_MIN_SCRATCH = new Int16Array(256);
+const BAND_MAX_SCRATCH = new Int16Array(256);
+
+const PROBE_CLIMATE: TerrainClimateSample = {
+  continentalness: 0,
+  erosion: 0,
+  peaks: 0,
+  river: 0,
+  surfaceHeight: 0,
+};
+
+/**
+ * Whether the density rule of `generateTerrainShape` makes the block at (wx, y, wz) solid, before
+ * the isolated-voxel rule is applied. It repeats the per-column arithmetic of the stage, including
+ * the Float32 rounding of its scratch arrays, so it agrees with the stage block for block. The
+ * isolated-voxel rule and the caves stage use it to read neighbours that lie outside the column
+ * they are generating. `tests/unit/isolated-blocks.test.ts` guards it against drift.
+ */
+export function terrainSolidAt(
+  terrainStageSeed: number,
+  wx: number,
+  y: number,
+  wz: number,
+): boolean {
+  if (y < 5) return true; // y 0..4 is foundation stone or density-100 stone everywhere
+  if (y > 319) return false;
+  const samplers = getSamplersForSeed(terrainStageSeed);
+  sampleTerrainClimate(terrainStageSeed, wx, wz, PROBE_CLIMATE);
+  const targetH = Math.fround(PROBE_CLIMATE.surfaceHeight);
+  const cont = PROBE_CLIMATE.continentalness;
+  const uncarved =
+    splineContinentalness(cont) +
+    (PROBE_CLIMATE.peaks * 25.0 - 10.0) * splineErosion(PROBE_CLIMATE.erosion);
+  const uncarvedH = Math.fround(uncarved);
+
+  let d = 999;
+  let hw = 0;
+  if (cont >= -0.15) {
+    const n = sampleWarpedRiverNoise(samplers, wx, wz);
+    if (Math.abs(n) <= 0.05) {
+      const gradX =
+        (sampleWarpedRiverNoise(samplers, wx + 1, wz) -
+          sampleWarpedRiverNoise(samplers, wx - 1, wz)) *
+        0.5;
+      const gradZ =
+        (sampleWarpedRiverNoise(samplers, wx, wz + 1) -
+          sampleWarpedRiverNoise(samplers, wx, wz - 1)) *
+        0.5;
+      const gradMag = Math.sqrt(gradX * gradX + gradZ * gradZ);
+      d = Math.fround(gradMag > 1e-6 ? Math.abs(n) / gradMag : 999);
+      hw = Math.fround(4.0 * (1.0 - smoothstep(100, 120, uncarved)));
+    }
+  }
+
+  let river3DFactor = 1.0;
+  if (hw > 0 && d < hw + 6) {
+    river3DFactor = d < hw ? 0.0 : smoothstep(hw, hw + 6, d);
+  }
+  const noiseAmp = (3.0 + 19.0 * smoothstep(64, 85, uncarvedH)) * river3DFactor;
+  const noiseMinY = Math.max(5, Math.floor(targetH - 24));
+  const noiseMaxY = Math.min(319, Math.ceil(targetH + 24));
+  if (y < noiseMinY) return true;
+  if (y > noiseMaxY) return false;
+  const n3d =
+    noiseAmp > 0
+      ? samplers.fbm3D((wx + samplers.offX) * 0.015, y * 0.025, (wz + samplers.offZ) * 0.015) *
+        noiseAmp
+      : 0.0;
+  let density = targetH - y + n3d;
+  if (y > 220) density -= (y - 220) * 2.0;
+  return density > 0;
+}
+
 export function generateTerrainShape(
   stageSeed: number,
   cx: number,
@@ -307,6 +382,7 @@ export function generateTerrainShape(
   }
 
   // 2. Voxel Fill with Density Skipping
+  SOLID_SCRATCH.fill(0);
   for (let z = 0; z < 16; z++) {
     const wz = baseWorldZ + z;
     for (let x = 0; x < 16; x++) {
@@ -338,6 +414,8 @@ export function generateTerrainShape(
       // Active 3D noise sampling bounds around target surface height
       const noiseMinY = Math.max(5, Math.floor(targetH - 24));
       const noiseMaxY = Math.min(319, Math.ceil(targetH + 24));
+      BAND_MIN_SCRATCH[colIdx] = noiseMinY;
+      BAND_MAX_SCRATCH[colIdx] = noiseMaxY;
 
       for (let y = 0; y < 320; y++) {
         // Foundation Stone floor rule (y 0..4)
@@ -383,6 +461,7 @@ export function generateTerrainShape(
         }
 
         if (density > 0) {
+          SOLID_SCRATCH[colIdx * 320 + y] = 1;
           const secY = y >> 4;
           const yLocal = y & 15;
           const sec = column.getOrCreateSection(secY);
@@ -396,6 +475,45 @@ export function generateTerrainShape(
           if (sec) {
             sec.setBlockStateId(x, yLocal, z, waterState);
           }
+        }
+      }
+    }
+  }
+
+  // 3. M03f: a solid voxel whose six neighbours are all open (air or water) becomes open too.
+  // The decision reads the pre-rule density flags of this column and, across a chunk border,
+  // `terrainSolidAt` of the neighbouring column, so both sides of a border decide identically.
+  // One pass is exact: an isolated voxel has no solid neighbour, so removing it cannot isolate
+  // another one. Only the noise band can hold such a voxel; y <= 5 sits on solid rock.
+  for (let z = 0; z < 16; z++) {
+    for (let x = 0; x < 16; x++) {
+      const colIdx = z * 16 + x;
+      const base = colIdx * 320;
+      const yLo = Math.max(6, BAND_MIN_SCRATCH[colIdx]!);
+      const yHi = BAND_MAX_SCRATCH[colIdx]!;
+      for (let y = yLo; y <= yHi; y++) {
+        if (SOLID_SCRATCH[base + y] === 0) continue;
+        if (SOLID_SCRATCH[base + y - 1] === 1) continue;
+        if (y < 319 && SOLID_SCRATCH[base + y + 1] === 1) continue;
+        if (
+          (x > 0
+            ? SOLID_SCRATCH[base - 320 + y] === 1
+            : terrainSolidAt(stageSeed, baseWorldX - 1, y, baseWorldZ + z)) ||
+          (x < 15
+            ? SOLID_SCRATCH[base + 320 + y] === 1
+            : terrainSolidAt(stageSeed, baseWorldX + 16, y, baseWorldZ + z)) ||
+          (z > 0
+            ? SOLID_SCRATCH[base - 16 * 320 + y] === 1
+            : terrainSolidAt(stageSeed, baseWorldX + x, y, baseWorldZ - 1)) ||
+          (z < 15
+            ? SOLID_SCRATCH[base + 16 * 320 + y] === 1
+            : terrainSolidAt(stageSeed, baseWorldX + x, y, baseWorldZ + 16))
+        ) {
+          continue;
+        }
+        const sec = column.getOrCreateSection(y >> 4);
+        if (sec) {
+          sec.setBlockStateId(x, y & 15, z, y <= SEA_LEVEL ? waterState : 0);
         }
       }
     }

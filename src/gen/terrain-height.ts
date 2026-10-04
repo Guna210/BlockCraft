@@ -3,6 +3,7 @@ import { deriveSeed } from '../engine/rng';
 import {
   getTerrainOrigin,
   sampleTerrainClimate,
+  terrainSolidAt,
   TerrainClimateSample,
   TerrainOrigin,
 } from './terrain';
@@ -79,6 +80,38 @@ const CLIMATE: TerrainClimateSample = {
   surfaceHeight: 0,
 };
 
+/**
+ * M03f: the shape stage opens every solid voxel whose six neighbours are all open. The voxel above
+ * the scan position is open by construction, so only the voxel below and the four horizontal
+ * neighbours are read. The usual case, solid rock below, returns after one density evaluation.
+ */
+function isIsolatedTop(
+  s: HeightSamplers,
+  terrainStageSeed: number,
+  wx: number,
+  y: number,
+  wz: number,
+  noiseMinY: number,
+  noiseAmp: number,
+  targetH: number,
+): boolean {
+  const yb = y - 1;
+  if (yb < noiseMinY) return false;
+  const n3d =
+    noiseAmp > 0
+      ? s.fbm3D((wx + ORIGIN.x) * 0.015, yb * 0.025, (wz + ORIGIN.z) * 0.015) * noiseAmp
+      : 0.0;
+  let densityBelow = targetH - yb + n3d;
+  if (yb > 220) densityBelow -= (yb - 220) * 2.0;
+  if (densityBelow > 0) return false;
+  return !(
+    terrainSolidAt(terrainStageSeed, wx - 1, y, wz) ||
+    terrainSolidAt(terrainStageSeed, wx + 1, y, wz) ||
+    terrainSolidAt(terrainStageSeed, wx, y, wz - 1) ||
+    terrainSolidAt(terrainStageSeed, wx, y, wz + 1)
+  );
+}
+
 export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: number): number {
   const s = getSamplers(terrainStageSeed);
   sampleTerrainClimate(terrainStageSeed, wx, wz, CLIMATE);
@@ -115,7 +148,8 @@ export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: numb
         : 0.0;
     let density = targetH - y + n3d;
     if (y > 220) density -= (y - 220) * 2.0;
-    if (density > 0) return y;
+    if (density > 0 && !isIsolatedTop(s, terrainStageSeed, wx, y, wz, noiseMinY, noiseAmp, targetH))
+      return y;
   }
   // Everything below noiseMinY is guaranteed solid.
   return noiseMinY - 1;
