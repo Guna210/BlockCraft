@@ -86,7 +86,7 @@ export const ORE_SPECS: readonly OreSpec[] = [
     shape: 'lumps',
     bands: [
       { minY: 0, peakY: 16, maxY: 80, perColumn: 0.53 },
-      { minY: 80, peakY: 120, maxY: 256, perColumn: 0.33, mountainOnly: true },
+      { minY: 80, peakY: 120, maxY: 256, perColumn: 1.0, mountainOnly: true },
     ],
     maxY: 256,
     freeMaxY: 80,
@@ -101,7 +101,7 @@ export const ORE_SPECS: readonly OreSpec[] = [
   {
     id: 'lumite_ore',
     shape: 'crystal',
-    bands: [{ minY: 0, peakY: 20, maxY: 40, perColumn: 0.125 }],
+    bands: [{ minY: 0, peakY: 20, maxY: 40, perColumn: 0.118 }],
     maxY: 40,
     freeMaxY: 40,
   },
