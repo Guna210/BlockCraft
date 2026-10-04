@@ -448,20 +448,14 @@ describe('M03c Biomes & Surface Rules', () => {
     }
 
     const artifactsDir = path.resolve(process.cwd(), 'artifacts/m03');
-    const screenshotsDir = path.resolve(process.cwd(), 'docs/screenshots/M03c');
 
     fs.mkdirSync(artifactsDir, { recursive: true });
-    fs.mkdirSync(screenshotsDir, { recursive: true });
 
     const biomeMapPath = path.join(artifactsDir, 'm03c-biome-map.png');
     const grassTintMapPath = path.join(artifactsDir, 'm03c-grass-tint-map.png');
 
     fs.writeFileSync(biomeMapPath, PNG.sync.write(biomePng));
     fs.writeFileSync(grassTintMapPath, PNG.sync.write(tintPng));
-
-    // Copy to docs/screenshots/M03c/
-    fs.copyFileSync(biomeMapPath, path.join(screenshotsDir, 'm03c-biome-map.png'));
-    fs.copyFileSync(grassTintMapPath, path.join(screenshotsDir, 'm03c-grass-tint-map.png'));
 
     expect(fs.existsSync(biomeMapPath)).toBe(true);
     expect(fs.existsSync(grassTintMapPath)).toBe(true);
