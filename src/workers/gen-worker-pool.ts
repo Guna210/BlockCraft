@@ -1,4 +1,8 @@
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
+import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
+
+// Number of most recent columns the percentile statistics cover
+const GEN_STATS_WINDOW = 100;
 
 export interface GenResult {
   cx: number;
@@ -7,6 +11,8 @@ export interface GenResult {
   biomes: Uint8Array;
   grassTints: Uint8Array;
   foliageTints: Uint8Array;
+  columnMs: number;
+  sectionCount: number;
   perSectionMs: number;
 }
 
@@ -25,7 +31,7 @@ export class GenWorkerPool {
   private idleWorkers: Worker[] = [];
   private queue: GenJob[] = [];
   private activeJobs: Map<Worker, GenJob> = new Map();
-  private genMsTimes: number[] = [];
+  private genSamples: GenSample[] = [];
   private nextJobId = 1;
   private currentPoolSize: number;
 
@@ -56,12 +62,21 @@ export class GenWorkerPool {
       });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { cx, cz, sections, biomes, grassTints, foliageTints, perSectionMs } =
-          e.data as GenWorkerResponse;
+        const {
+          cx,
+          cz,
+          sections,
+          biomes,
+          grassTints,
+          foliageTints,
+          columnMs,
+          sectionCount,
+          perSectionMs,
+        } = e.data as GenWorkerResponse;
 
-        this.genMsTimes.push(perSectionMs);
-        if (this.genMsTimes.length > 100) {
-          this.genMsTimes.shift();
+        this.genSamples.push({ columnMs, sections: sectionCount });
+        if (this.genSamples.length > GEN_STATS_WINDOW) {
+          this.genSamples.shift();
         }
 
         const job = this.activeJobs.get(worker);
@@ -76,6 +91,8 @@ export class GenWorkerPool {
             biomes,
             grassTints,
             foliageTints,
+            columnMs,
+            sectionCount,
             perSectionMs,
           });
         }
@@ -110,11 +127,18 @@ export class GenWorkerPool {
     return this.queue.length + this.activeJobs.size;
   }
 
+  /**
+   * p95 worker time per 16³ section over the last 100 generated columns: each column's wall time
+   * (generation plus packaging) divided by the sections it produced, with every section counted.
+   * See decisions/M03d-fix-gen-metric.md.
+   */
   public get genMsP95(): number {
-    if (this.genMsTimes.length === 0) return 0;
-    const sorted = [...this.genMsTimes].sort((a, b) => a - b);
-    const p95Idx = Math.floor(sorted.length * 0.95);
-    return sorted[p95Idx] ?? 0;
+    return sectionPercentile(this.genSamples, 0.95);
+  }
+
+  /** p95 worker time per whole column over the same window (diagnostic, not a SPEC budget). */
+  public get genColumnMsP95(): number {
+    return columnPercentile(this.genSamples, 0.95);
   }
 
   public enqueueGenJob(

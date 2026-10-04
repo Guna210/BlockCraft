@@ -54,12 +54,18 @@ export interface GenWorkerResponse {
   biomes: Uint8Array;
   grassTints: Uint8Array;
   foliageTints: Uint8Array;
+  /** Worker wall time of the whole job: generation plus packaging the result for transfer. */
+  columnMs: number;
+  /** 16³ sections shipped to the main thread (every section that exists in the column). */
+  sectionCount: number;
+  /** columnMs / sectionCount */
   perSectionMs: number;
 }
 
 ctx.onmessage = (event: MessageEvent) => {
   const { id, seed, cx, cz, type } = event.data as GenWorkerRequest;
 
+  // The clock covers everything the worker spends on this column, packaging included
   const start = performance.now();
   const col = new ChunkColumn(cx, cz);
 
@@ -68,8 +74,6 @@ ctx.onmessage = (event: MessageEvent) => {
   } else {
     pipeline.generateColumn(seed, cx, cz, col);
   }
-
-  const duration = performance.now() - start;
 
   const sections: SectionDataTransfer[] = [];
   const transferables: Transferable[] = [];
@@ -110,8 +114,8 @@ ctx.onmessage = (event: MessageEvent) => {
 
   transferables.push(biomes.buffer, grassTints.buffer, foliageTints.buffer);
 
+  const columnMs = performance.now() - start;
   const count = Math.max(1, activeSectionCount);
-  const perSectionMs = duration / count;
 
   ctx.postMessage(
     {
@@ -122,7 +126,9 @@ ctx.onmessage = (event: MessageEvent) => {
       biomes,
       grassTints,
       foliageTints,
-      perSectionMs,
+      columnMs,
+      sectionCount: count,
+      perSectionMs: columnMs / count,
     } as GenWorkerResponse,
     transferables,
   );
