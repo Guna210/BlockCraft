@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { World } from '../../src/world/world';
@@ -36,6 +36,7 @@ import {
   findFloating,
   generate,
 } from './helpers/world-samples';
+import { SharedAreas } from './helpers/shared-areas';
 
 // M03f — surface features. Criterion owned: no floating single terrain blocks (8a), plus the
 // seamlessness, support, density and water checks the task asks for.
@@ -43,9 +44,82 @@ import {
 const SEEDS = ['blockcraft-test-seed-42', 'blockcraft-alt-seed-7'];
 const STANDARD = SEEDS[0]!;
 
+// The sample areas of 8a, 8c and 8e (both seeds), generated once in a beforeAll and shared.
+const BIOMES_8C = [
+  'oakwood_forest',
+  'rainforest',
+  'pine_taiga',
+  'snowy_tundra',
+  'swampland',
+  'savanna',
+  'desert',
+  'meadow',
+  'birch_grove',
+  'plains',
+  'stony_heights',
+];
+const BIOMES_8E = [
+  'beach',
+  'river',
+  'swampland',
+  'oakwood_forest',
+  'rainforest',
+  'stony_shore',
+  'pine_taiga',
+];
+const SIZE_8A = 10;
+const SIZE_8C = 5;
+const SIZE_8E = 4;
+
+function spots8a(seed: number): Array<[string, [number, number] | null]> {
+  return [
+    ['forest', findBiomeSpot(seed, ['oakwood_forest'])],
+    ['desert', findBiomeSpot(seed, ['desert'])],
+    ['mountain', findBiomeSpot(seed, ['frost_peaks', 'stony_heights'])],
+    ['cave-heavy', findCaveSpot(seed)],
+  ];
+}
+
+function spot8e(seed: number, biome: string): [number, number] | null {
+  return findBiomeSpot(seed, [biome], 8) ?? findBiomeSpot(seed, [biome], 0);
+}
+
+const areas = new SharedAreas();
+
 describe('M03f — surface features', () => {
   let registry: BlockRegistry;
   let ids: Ids;
+
+  beforeAll(() => {
+    BlockRegistry.resetInstance();
+    BlockRegistry.getInstance();
+    for (const seedStr of SEEDS) {
+      const seed = hashString(seedStr);
+      for (const [, spot] of spots8a(seed)) {
+        if (!spot) continue;
+        const [cx0, cz0] = areaOrigin(spot, SIZE_8A);
+        areas.request('full', seed, cx0, cz0, SIZE_8A);
+      }
+      for (const biome of BIOMES_8C) {
+        const spot = findBiomeSpot(seed, [biome]);
+        if (!spot) continue;
+        const [cx0, cz0] = areaOrigin(spot, SIZE_8C);
+        areas.request('full', seed, cx0, cz0, SIZE_8C);
+      }
+      for (const biome of BIOMES_8E) {
+        const spot = spot8e(seed, biome);
+        if (!spot) continue;
+        const [cx0, cz0] = areaOrigin(spot, SIZE_8E);
+        areas.request('full', seed, cx0, cz0, SIZE_8E);
+        areas.request('noFeatures', seed, cx0, cz0, SIZE_8E);
+      }
+    }
+    const t0 = performance.now();
+    const { generated, requested } = areas.build();
+    console.log(
+      `[shared areas] ${generated} columns generated for ${requested} requested in ${Math.round(performance.now() - t0)} ms`,
+    );
+  }, 240_000);
 
   beforeEach(() => {
     BlockRegistry.resetInstance();
@@ -59,23 +133,16 @@ describe('M03f — surface features', () => {
   for (const seedStr of SEEDS) {
     it(`8a: zero floating single terrain blocks at any height in at least 300 columns (${seedStr})`, () => {
       const seed = hashString(seedStr);
-      const spots: Array<[string, [number, number] | null]> = [
-        ['forest', findBiomeSpot(seed, ['oakwood_forest'])],
-        ['desert', findBiomeSpot(seed, ['desert'])],
-        ['mountain', findBiomeSpot(seed, ['frost_peaks', 'stony_heights'])],
-        ['cave-heavy', findCaveSpot(seed)],
-      ];
-      const pipeline = createDefaultPipeline();
+      const spots = spots8a(seed);
       let columns = 0;
       let solid = 0;
       const all: string[] = [];
       for (const [, spot] of spots) {
         expect(spot).not.toBeNull();
-        const world = new World(false);
-        const [cx0, cz0] = areaOrigin(spot!, 10);
-        generate(pipeline, seed, world, cx0, cz0, 10);
+        const [cx0, cz0] = areaOrigin(spot!, SIZE_8A);
+        const world = areas.get('full', seed, cx0, cz0, SIZE_8A);
         columns += 100;
-        const r = findFloating(world, ids, cx0, cz0, 10);
+        const r = findFloating(world, ids, cx0, cz0, SIZE_8A);
         solid += r.solid;
         all.push(...r.floating);
       }
@@ -170,7 +237,6 @@ describe('M03f — surface features', () => {
   // -------------------------------------------------------------------------------------------
   it('8c: every tree stands on grass, dirt or snow-covered ground; every plant has a valid block below; cacti stand on sand; reeds have water beside them', () => {
     const seeds = SEEDS.map((s) => hashString(s));
-    const pipeline = createDefaultPipeline();
     const names = ids.name;
     const counts: Record<string, number> = {};
     const problems: string[] = [];
@@ -178,27 +244,13 @@ describe('M03f — surface features', () => {
       counts[k] = (counts[k] ?? 0) + 1;
     };
 
-    const biomeList = [
-      'oakwood_forest',
-      'rainforest',
-      'pine_taiga',
-      'snowy_tundra',
-      'swampland',
-      'savanna',
-      'desert',
-      'meadow',
-      'birch_grove',
-      'plains',
-      'stony_heights',
-    ];
     for (const seed of seeds) {
-      for (const biome of biomeList) {
+      for (const biome of BIOMES_8C) {
         const spot = findBiomeSpot(seed, [biome]);
         if (!spot) continue;
-        const world = new World(false);
-        const size = 5;
+        const size = SIZE_8C;
         const [cx0, cz0] = areaOrigin(spot, size);
-        generate(pipeline, seed, world, cx0, cz0, size);
+        const world = areas.get('full', seed, cx0, cz0, size);
         const at = (x: number, y: number, z: number): string =>
           names[world.getBlockStateId(x, y, z)]!;
         for (let x = cx0 * 16 + 1; x < (cx0 + size) * 16 - 1; x++) {
@@ -488,34 +540,19 @@ describe('M03f — surface features', () => {
   // -------------------------------------------------------------------------------------------
   it('8e: no feature block below the water surface (a cave mushroom under rock excepted), and no feature replaces terrain or water', () => {
     const seeds = SEEDS.map((s) => hashString(s));
-    const full = createDefaultPipeline();
-    const base = new TerrainPipeline();
-    base.addStage(terrainShapeStage);
-    base.addStage(biomeSurfaceStage);
-    base.addStage(caveStage);
     const problems: string[] = [];
     let featureBlocks = 0;
     let changed = 0;
     let nearWater = 0;
 
     for (const seed of seeds) {
-      for (const biome of [
-        'beach',
-        'river',
-        'swampland',
-        'oakwood_forest',
-        'rainforest',
-        'stony_shore',
-        'pine_taiga',
-      ]) {
-        const spot = findBiomeSpot(seed, [biome], 8) ?? findBiomeSpot(seed, [biome], 0);
+      for (const biome of BIOMES_8E) {
+        const spot = spot8e(seed, biome);
         if (!spot) continue;
-        const size = 4;
+        const size = SIZE_8E;
         const [cx0, cz0] = areaOrigin(spot, size);
-        const withFeatures = new World(false);
-        const without = new World(false);
-        generate(full, seed, withFeatures, cx0, cz0, size);
-        generate(base, seed, without, cx0, cz0, size);
+        const withFeatures = areas.get('full', seed, cx0, cz0, size);
+        const without = areas.get('noFeatures', seed, cx0, cz0, size);
         for (let x = cx0 * 16; x < (cx0 + size) * 16; x++) {
           for (let z = cz0 * 16; z < (cz0 + size) * 16; z++) {
             for (let y = 5; y < 300; y++) {
