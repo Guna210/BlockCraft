@@ -3,6 +3,7 @@ import { TerrainPipeline, createDefaultPipeline } from '../../../src/gen/pipelin
 import { terrainShapeStage } from '../../../src/gen/terrain';
 import { biomeSurfaceStage } from '../../../src/gen/surface';
 import { caveStage } from '../../../src/gen/caves';
+import { oreStage } from '../../../src/gen/ores';
 import { generate } from './world-samples';
 
 // Sample areas generated once per test file (in a beforeAll) and shared by the tests that read them.
@@ -52,6 +53,7 @@ export class SharedAreas {
     noFeatures.addStage(terrainShapeStage);
     noFeatures.addStage(biomeSurfaceStage);
     noFeatures.addStage(caveStage);
+    noFeatures.addStage(oreStage);
 
     let generated = 0;
     let requested = 0;
