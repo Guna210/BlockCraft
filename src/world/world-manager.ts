@@ -47,6 +47,12 @@ export class WorldManager {
   // carry the epoch they were requested in and are dropped when it no longer matches.
   private worldEpoch = 0;
 
+  // Number of createWorld calls that have not finished. While it is non-zero the frame loop draws
+  // sky-clear frames only: every frame that draws freshly uploaded terrain takes tens to hundreds of
+  // milliseconds of main-thread time under software rendering, and the rendering task outranks the
+  // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
+  private initialLoadCount = 0;
+
   public static getInstance(): WorldManager {
     if (!WorldManager.instance) {
       WorldManager.instance = new WorldManager();
@@ -206,6 +212,24 @@ export class WorldManager {
     mode?: 'survival' | 'creative';
     type?: 'default' | 'flat';
   }): Promise<void> {
+    this.initialLoadCount++;
+    try {
+      const completed = await this.loadInitialWorld(opts);
+      // The frame loop skipped terrain while loading. Draw the first frame with terrain now, in
+      // this task, so it is presented before anything that awaits createWorld can look at the canvas.
+      // A superseded call draws nothing: the newer call draws for its own world.
+      if (completed) this.drawTerrainFrame();
+    } finally {
+      this.initialLoadCount--;
+    }
+  }
+
+  private async loadInitialWorld(opts?: {
+    name?: string;
+    seed?: string;
+    mode?: 'survival' | 'creative';
+    type?: 'default' | 'flat';
+  }): Promise<boolean> {
     const radiusChunks = 4;
 
     this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
@@ -260,7 +284,7 @@ export class WorldManager {
 
     await Promise.all(genPromises);
     // A newer createWorld (or resetWorldToEmpty) replaced this world while it was generating.
-    if (epoch !== this.worldEpoch) return;
+    if (epoch !== this.worldEpoch) return false;
 
     // Light terrain within radius using a single region LightWorkerPool job
     const regionColumns: Record<string, (Uint16Array | number)[]> = {};
@@ -291,7 +315,7 @@ export class WorldManager {
       regionColumns,
     );
 
-    if (epoch !== this.worldEpoch) return;
+    if (epoch !== this.worldEpoch) return false;
 
     for (const secLight of lightResult.sections) {
       world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
@@ -321,6 +345,7 @@ export class WorldManager {
 
     // Mesh terrain within radius 4
     await this.meshRadius(radiusChunks);
+    return epoch === this.worldEpoch;
   }
 
   public async waitForTerrain(radiusChunks: number): Promise<void> {
@@ -484,7 +509,20 @@ export class WorldManager {
     };
   }
 
+  /** Per-frame terrain draw. Skipped (sky-clear frame only) while createWorld is loading. */
   public render(): void {
+    if (this.initialLoadCount > 0) return;
+    this.drawTerrain();
+  }
+
+  private drawTerrainFrame(): void {
+    if (!this.glWrapper) return;
+    const gl = this.glWrapper.gl;
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.drawTerrain();
+  }
+
+  private drawTerrain(): void {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const viewProj = mat4.create();
       mat4.multiply(viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);

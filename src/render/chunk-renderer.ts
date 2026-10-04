@@ -132,6 +132,9 @@ void main() {
 }
 `;
 
+// Texture units 0, 1 and 2 hold the atlas and the grass and foliage tint maps while drawing.
+const SCRATCH_TEXTURE_UNIT = 3;
+
 export interface GPUBucketMesh {
   vao: WebGLVertexArrayObject;
   vbo: WebGLBuffer;
@@ -345,6 +348,11 @@ export class ChunkRenderer {
       if (colKey === lastBoundColKey) return;
       lastBoundColKey = colKey;
 
+      // The cache creates (or re-uploads) a column's tint textures on the active texture unit.
+      // Select a unit this renderer does not sample from first, otherwise the first column seen in
+      // a frame replaces the atlas on unit 0 for the rest of that frame (stale first frame, see
+      // decisions/M02c-fix-load-path.md).
+      gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
       const pair = this.tintCache.getColumnTints(sx, sz, world);
       if (pair.grassTexture !== lastBoundGrassTex) {
         gl.activeTexture(gl.TEXTURE1);
