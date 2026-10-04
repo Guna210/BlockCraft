@@ -21,6 +21,8 @@ ctx.onmessage = (event: MessageEvent) => {
     meshData.cutout.indices.buffer,
     meshData.translucent.vertices.buffer,
     meshData.translucent.indices.buffer,
+    meshData.models.vertices.buffer,
+    meshData.models.indices.buffer,
   ];
 
   ctx.postMessage({ id, meshData, duration }, transferables);

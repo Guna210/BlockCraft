@@ -1,5 +1,13 @@
 import type { BlockRegistry } from '../world/blocks/registry';
 import type { BlockFaceDirection } from '../world/blocks/types';
+import {
+  MODEL_CUBE,
+  MODEL_CROSS,
+  CROSS_VERTICES_PER_BLOCK,
+  CROSS_INDICES_PER_BLOCK,
+  CROSS_QUADS_PER_BLOCK,
+  emitCrossBlock,
+} from './models';
 
 export const DEFAULT_SKY_LIGHT = 15;
 export const DEFAULT_BLOCK_LIGHT = 0;
@@ -17,6 +25,11 @@ export interface SectionMeshData {
   opaque: MeshBucketData;
   cutout: MeshBucketData;
   translucent: MeshBucketData;
+  /**
+   * Geometry of non-cube blocks (plants, see models.ts). It is a separate bucket because the
+   * greedy buckets hold merged cube faces only; the renderer draws it in the cutout pass.
+   */
+  models: MeshBucketData;
 }
 
 export interface MeshLookupTables {
@@ -26,6 +39,7 @@ export interface MeshLookupTables {
   logAxis: Uint8Array; // numStates (0=y or none, 1=x, 2=z)
   tileIndices: Uint16Array; // numStates * 6 (faces: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
   tintIndices: Uint8Array; // numStates * 6 (0=none, 1=grass, 2=foliage)
+  modelKind: Uint8Array; // numStates (MODEL_CUBE or MODEL_CROSS, see models.ts)
 }
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
@@ -47,6 +61,7 @@ export function buildMeshLookupTables(
   const logAxis = new Uint8Array(numStates);
   const tileIndices = new Uint16Array(numStates * 6);
   const tintIndices = new Uint8Array(numStates * 6);
+  const modelKind = new Uint8Array(numStates);
 
   const translucentTypeMap = new Map<string, number>();
   let nextTranslucentGroupId = 1;
@@ -59,6 +74,7 @@ export function buildMeshLookupTables(
 
     const def = resolved.definition;
     isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
+    modelKind[stateId] = def.model === 'cross' ? MODEL_CROSS : MODEL_CUBE;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -99,8 +115,17 @@ export function buildMeshLookupTables(
         } else {
           tintIndices[stateId * 6 + f] = 0; // dirt bottom
         }
-      } else if (resolved.blockId === 'oak_leaves') {
-        tintIndices[stateId * 6 + f] = 2; // foliage tint
+      } else if (
+        resolved.blockId === 'oak_leaves' ||
+        resolved.blockId === 'rainwood_leaves' ||
+        resolved.blockId === 'acacia_leaves'
+      ) {
+        // Foliage tint. Rainwood and acacia leaves are neutral tiles like oak leaves, so each
+        // biome tints them (deep green in rainforest, olive in savanna); birch and pine keep
+        // their fixed colours.
+        tintIndices[stateId * 6 + f] = 2;
+      } else if (resolved.blockId === 'tall_grass') {
+        tintIndices[stateId * 6 + f] = 1; // grass tint, like the top of a grass block
       } else {
         tintIndices[stateId * 6 + f] = 0; // none
       }
@@ -114,6 +139,7 @@ export function buildMeshLookupTables(
     logAxis,
     tileIndices,
     tintIndices,
+    modelKind,
   };
 }
 
@@ -126,6 +152,7 @@ export function shouldCullFace(
   tables: MeshLookupTables,
 ): boolean {
   if (selfState === 0) return true; // Air has no faces
+  if (tables.modelKind[selfState] !== MODEL_CUBE) return true; // Plants are drawn by the model pass
 
   // Rule 1: A face is hidden when its neighbor is a full opaque cube.
   if (tables.isOpaqueCube[neighborState] === 1) {
@@ -176,6 +203,7 @@ function createBucketScratch(): BucketScratch {
 const opaqueScratch = createBucketScratch();
 const cutoutScratch = createBucketScratch();
 const translucentScratch = createBucketScratch();
+const modelScratch = createBucketScratch();
 
 function resetBucketScratch(scratch: BucketScratch): void {
   scratch.vertOffset = 0;
@@ -183,7 +211,7 @@ function resetBucketScratch(scratch: BucketScratch): void {
   scratch.quadCount = 0;
 }
 
-function packVertex(
+export function packVertex(
   x: number,
   y: number,
   z: number,
@@ -532,6 +560,7 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
       opaque: emptyBucketData(),
       cutout: emptyBucketData(),
       translucent: emptyBucketData(),
+      models: emptyBucketData(),
     };
   }
 
@@ -562,6 +591,7 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
         opaque: emptyBucketData(),
         cutout: emptyBucketData(),
         translucent: emptyBucketData(),
+        models: emptyBucketData(),
       };
     }
   }
@@ -570,6 +600,7 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
   resetBucketScratch(opaqueScratch);
   resetBucketScratch(cutoutScratch);
   resetBucketScratch(translucentScratch);
+  resetBucketScratch(modelScratch);
 
   // Process all 6 face directions
   for (let f = 0; f < 6; f++) {
@@ -721,9 +752,41 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
     }
   }
 
+  // Model pass: blocks that are not cubes emit their own geometry
+  for (let pz = 1; pz <= 16; pz++) {
+    const zOff = pz * 18 * 18;
+    for (let py = 1; py <= 16; py++) {
+      const yzOff = py * 18 + zOff;
+      for (let px = 1; px <= 16; px++) {
+        const state = paddedSection[px + yzOff]!;
+        if (tables.modelKind[state] !== MODEL_CROSS) continue;
+        const bucket = modelScratch;
+        emitCrossBlock(
+          packVertex,
+          bucket.vertices,
+          bucket.vertOffset,
+          bucket.indices,
+          bucket.indexOffset,
+          px - 1,
+          py - 1,
+          pz - 1,
+          tables.tileIndices[state * 6 + 2]!,
+          tables.tintIndices[state * 6 + 2]!,
+          DEFAULT_AO,
+          DEFAULT_SKY_LIGHT,
+          DEFAULT_BLOCK_LIGHT,
+        );
+        bucket.vertOffset += CROSS_VERTICES_PER_BLOCK * 2;
+        bucket.indexOffset += CROSS_INDICES_PER_BLOCK;
+        bucket.quadCount += CROSS_QUADS_PER_BLOCK;
+      }
+    }
+  }
+
   return {
     opaque: finishBucketData(opaqueScratch),
     cutout: finishBucketData(cutoutScratch),
     translucent: finishBucketData(translucentScratch),
+    models: finishBucketData(modelScratch),
   };
 }

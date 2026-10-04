@@ -21,17 +21,17 @@ describe('BlockRegistry Unit Tests', () => {
 
     // Pinned known state IDs based on alphabetical sort order
     // 0: air
-    // 1: birch_leaves
-    // 2: birch_log[axis=y]
-    // 3: birch_log[axis=x]
-    // 4: birch_log[axis=z]
+    // 5: birch_leaves (shifted from 1 by acacia_leaves and acacia_log[x3] in M03f)
+    // 6: birch_log[axis=y]
+    // 7: birch_log[axis=x]
+    // 8: birch_log[axis=z]
     // ...
-    // 19: foundation_stone (shifted from 10 by new clay & clayrock blocks)
-    expect(registry.getStateId('birch_leaves')).toBe(1);
-    expect(registry.getStateId('birch_log', { axis: 'y' })).toBe(2);
-    expect(registry.getStateId('birch_log', { axis: 'x' })).toBe(3);
-    expect(registry.getStateId('birch_log', { axis: 'z' })).toBe(4);
-    expect(registry.getStateId('foundation_stone')).toBe(19);
+    // 28: foundation_stone (shifted from 19 by the 9 M03f blocks that sort before it)
+    expect(registry.getStateId('birch_leaves')).toBe(5);
+    expect(registry.getStateId('birch_log', { axis: 'y' })).toBe(6);
+    expect(registry.getStateId('birch_log', { axis: 'x' })).toBe(7);
+    expect(registry.getStateId('birch_log', { axis: 'z' })).toBe(8);
+    expect(registry.getStateId('foundation_stone')).toBe(28);
   });
 
   it('all block IDs and texture names are unique and known', () => {

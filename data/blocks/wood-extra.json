@@ -1,0 +1,68 @@
+{
+  "rainwood_log": {
+    "hardness": 2.0,
+    "blastResistance": 2.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["y", "x", "z"],
+        "default": "y"
+      }
+    },
+    "tool": "axe",
+    "textures": {
+      "top": "rainwood_log_top",
+      "side": "rainwood_log_side",
+      "bottom": "rainwood_log_top"
+    }
+  },
+  "acacia_log": {
+    "hardness": 2.0,
+    "blastResistance": 2.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["y", "x", "z"],
+        "default": "y"
+      }
+    },
+    "tool": "axe",
+    "textures": {
+      "top": "acacia_log_top",
+      "side": "acacia_log_side",
+      "bottom": "acacia_log_top"
+    }
+  },
+  "rainwood_leaves": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "tool": "shears/hoe",
+    "textures": {
+      "top": "rainwood_leaves",
+      "side": "rainwood_leaves",
+      "bottom": "rainwood_leaves"
+    }
+  },
+  "acacia_leaves": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "tool": "shears/hoe",
+    "textures": {
+      "top": "acacia_leaves",
+      "side": "acacia_leaves",
+      "bottom": "acacia_leaves"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "mossy_cobblestone": {
+    "hardness": 2.0,
+    "blastResistance": 6.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "mossy_cobblestone",
+      "side": "mossy_cobblestone",
+      "bottom": "mossy_cobblestone"
+    }
+  },
+  "packed_ice": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "none",
+    "textures": {
+      "top": "packed_ice",
+      "side": "packed_ice",
+      "bottom": "packed_ice"
+    }
+  }
+}

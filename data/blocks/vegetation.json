@@ -1,0 +1,196 @@
+{
+  "tall_grass": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "tall_grass",
+      "side": "tall_grass",
+      "bottom": "tall_grass"
+    }
+  },
+  "bluebell": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "bluebell",
+      "side": "bluebell",
+      "bottom": "bluebell"
+    }
+  },
+  "buttercup": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "buttercup",
+      "side": "buttercup",
+      "bottom": "buttercup"
+    }
+  },
+  "marigold": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "marigold",
+      "side": "marigold",
+      "bottom": "marigold"
+    }
+  },
+  "violet": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "violet",
+      "side": "violet",
+      "bottom": "violet"
+    }
+  },
+  "daisy": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "daisy",
+      "side": "daisy",
+      "bottom": "daisy"
+    }
+  },
+  "wild_rose": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "wild_rose",
+      "side": "wild_rose",
+      "bottom": "wild_rose"
+    }
+  },
+  "lupine": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "lupine",
+      "side": "lupine",
+      "bottom": "lupine"
+    }
+  },
+  "heather": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "heather",
+      "side": "heather",
+      "bottom": "heather"
+    }
+  },
+  "sugar_reeds": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "sugar_reeds",
+      "side": "sugar_reeds",
+      "bottom": "sugar_reeds"
+    }
+  },
+  "brown_mushroom": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "brown_mushroom",
+      "side": "brown_mushroom",
+      "bottom": "brown_mushroom"
+    }
+  },
+  "red_mushroom": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "red_mushroom",
+      "side": "red_mushroom",
+      "bottom": "red_mushroom"
+    }
+  },
+  "cactus": {
+    "hardness": 0.4,
+    "blastResistance": 0.4,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "none",
+    "textures": {
+      "top": "cactus_top",
+      "side": "cactus_side",
+      "bottom": "cactus_top"
+    }
+  },
+  "pumpkin": {
+    "hardness": 0.4,
+    "blastResistance": 0.4,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "none",
+    "textures": {
+      "top": "pumpkin_top",
+      "side": "pumpkin_side",
+      "bottom": "pumpkin_top"
+    }
+  }
+}

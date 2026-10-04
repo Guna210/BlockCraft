@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { tintTexelForFace } from '../../src/render/tint-utils';
 import { ColumnTintCache } from '../../src/render/tint-cache';
 import { GLWrapper } from '../../src/render/gl';
+import { BlockRegistry } from '../../src/world/blocks/registry';
+import { buildMeshLookupTables, greedyMesh } from '../../src/mesh/greedy';
+import { PADDED_SECTION_VOLUME } from '../../src/world/padded';
 
 describe('Tint Utilities & Cache (M02b-fix)', () => {
   describe('tintTexelForFace', () => {
@@ -49,6 +52,74 @@ describe('Tint Utilities & Cache (M02b-fix)', () => {
       expect(tintTexelForFace([-0.5, 0.5, 0], [0, 0, 1])).toEqual([15, 15]);
       // North (-Z) face of bz = -1: x = -0.5, y = 0.5, z = -1; normal = [0, 0, -1]
       expect(tintTexelForFace([-0.5, 0.5, -1], [0, 0, -1])).toEqual([15, 15]);
+    });
+  });
+
+  describe('tintTexelForFace on cross-model plants (M03f)', () => {
+    // The mesher's real vertices for a plant are used: every point inside either diagonal quad,
+    // with the +Y normal the model carries, must map to the plant's own block, including blocks
+    // on the edge of a column and in negative world coordinates.
+    it('maps every interior point of both diagonal quads to the plant block, at x/z 0 and 15, positive and negative columns', () => {
+      BlockRegistry.resetInstance();
+      const registry = BlockRegistry.getInstance();
+      const tables = buildMeshLookupTables(registry, () => 1);
+      const grass = registry.getStateId('tall_grass')!;
+
+      // [section x, section z, local x, local z]
+      const cases: Array<[number, number, number, number]> = [
+        [0, 0, 0, 0],
+        [0, 0, 15, 15],
+        [0, 0, 7, 3],
+        [3, 5, 0, 15],
+        [-1, -1, 0, 0],
+        [-1, -1, 15, 15],
+        [-2, 4, 15, 0],
+        [-7, -3, 9, 6],
+      ];
+      for (const [sx, sz, lx, lz] of cases) {
+        const padded = new Uint16Array(PADDED_SECTION_VOLUME);
+        padded[lx + 1 + 18 * (5 + 18 * (lz + 1))] = grass;
+        const mesh = greedyMesh(padded, tables);
+        expect(mesh.models.vertexCount).toBe(8);
+
+        const world = (i: number): [number, number, number] => {
+          const w0 = mesh.models.vertices[i * 2]!;
+          return [sx * 16 + (w0 & 31), (w0 >> 5) & 31, sz * 16 + ((w0 >> 10) & 31)];
+        };
+        const normalOf = (i: number): [number, number, number] => {
+          const n = (mesh.models.vertices[i * 2]! >> 15) & 7;
+          return [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+          ][n] as [number, number, number];
+        };
+
+        let tested = 0;
+        for (let q = 0; q < 2; q++) {
+          const bl = world(q * 4); // bottom-left corner of the quad
+          const br = world(q * 4 + 1); // bottom-right corner
+          const tl = world(q * 4 + 3); // top-left corner
+          for (const a of [1 / 8, 1 / 2, 7 / 8]) {
+            for (const b of [1 / 8, 1 / 2, 7 / 8]) {
+              const p: [number, number, number] = [
+                bl[0] + (br[0] - bl[0]) * a + (tl[0] - bl[0]) * b,
+                bl[1] + (br[1] - bl[1]) * a + (tl[1] - bl[1]) * b,
+                bl[2] + (br[2] - bl[2]) * a + (tl[2] - bl[2]) * b,
+              ];
+              expect(tintTexelForFace(p, normalOf(q * 4)), `quad ${q} (${a}, ${b})`).toEqual([
+                lx,
+                lz,
+              ]);
+              tested++;
+            }
+          }
+        }
+        expect(tested).toBe(18);
+      }
     });
   });
 
