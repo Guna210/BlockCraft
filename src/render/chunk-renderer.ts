@@ -126,8 +126,8 @@ void main() {
     texColor = vec4(mix(texColor.rgb, tintedRgb, texColor.a), 1.0);
   }
 
-  vec3 lightDir = normalize(vec3(0.4, 0.8, 0.5));
-  float diff = max(dot(v_normal, lightDir), 0.35);
+  // Fixed face shade: top 1.0, +-Z 0.8, +-X 0.6, bottom 0.5 (decisions/M03g-face-shading.md)
+  float diff = v_normal.y > 0.5 ? 1.0 : (v_normal.y < -0.5 ? 0.5 : (abs(v_normal.z) > 0.5 ? 0.8 : 0.6));
 
   fragColor = vec4(texColor.rgb * diff, texColor.a);
 }
