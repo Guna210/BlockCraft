@@ -20,6 +20,7 @@ export interface TerrainStage {
 import { terrainShapeStage } from './terrain';
 import { biomeSurfaceStage } from './surface';
 import { caveStage } from './caves';
+import { oreStage } from './ores';
 import { featureStage } from './features';
 
 export class TerrainPipeline {
@@ -47,6 +48,7 @@ export function createDefaultPipeline(): TerrainPipeline {
   pipeline.addStage(terrainShapeStage);
   pipeline.addStage(biomeSurfaceStage);
   pipeline.addStage(caveStage);
+  pipeline.addStage(oreStage);
   pipeline.addStage(featureStage);
   return pipeline;
 }

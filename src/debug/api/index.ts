@@ -4,6 +4,7 @@ import { look } from './camera';
 import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './world';
 import { locate } from './locate';
+import './ore-locate';
 import { getLight } from './light';
 import { wireframe, setWireframe } from './wireframe';
 import { setWorkerPoolSize, getMainThreadGenCount, resetMainThreadGenCount } from './workers';
