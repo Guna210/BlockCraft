@@ -16,8 +16,9 @@ function locateBiome(id: string, near: [number, number, number]): [number, numbe
   const worldSeed = getWorldInstance().worldSeed ?? 42;
   const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
 
-  const startX = Math.round(near[0]);
-  const startZ = Math.round(near[2]);
+  // The block that contains `near` (a fractional position is the block it lies in)
+  const startX = Math.floor(near[0]);
+  const startZ = Math.floor(near[2]);
 
   // Spiral search outward with step <= 16 blocks up to max radius 6000
   const step = 16;
