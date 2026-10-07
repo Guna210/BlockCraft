@@ -499,11 +499,21 @@ function emitQuad(
   // Pack 6 indices (2 triangles)
   const idx = scratch.indexOffset;
   scratch.indices[idx] = vertBase;
-  scratch.indices[idx + 1] = vertBase + 1;
-  scratch.indices[idx + 2] = vertBase + 2;
   scratch.indices[idx + 3] = vertBase;
-  scratch.indices[idx + 4] = vertBase + 2;
-  scratch.indices[idx + 5] = vertBase + 3;
+  if (f === 0 || f === 1) {
+    // The +X and -X corner lists above run clockwise seen from outside; the other four run
+    // counter-clockwise. Reversing the triangle order makes all six directions counter-clockwise
+    // without moving any vertex or UV (decisions/M03g-face-winding.md).
+    scratch.indices[idx + 1] = vertBase + 2;
+    scratch.indices[idx + 2] = vertBase + 1;
+    scratch.indices[idx + 4] = vertBase + 3;
+    scratch.indices[idx + 5] = vertBase + 2;
+  } else {
+    scratch.indices[idx + 1] = vertBase + 1;
+    scratch.indices[idx + 2] = vertBase + 2;
+    scratch.indices[idx + 4] = vertBase + 2;
+    scratch.indices[idx + 5] = vertBase + 3;
+  }
 
   scratch.indexOffset += 6;
   scratch.quadCount++;

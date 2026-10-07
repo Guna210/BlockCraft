@@ -23,6 +23,9 @@ export class World {
     if (this.worldType === 'flat') {
       return 'plains';
     }
+    // Block coordinates: a fractional position (the player's) is the block that contains it.
+    x = Math.floor(x);
+    z = Math.floor(z);
     const cx = Math.floor(x / 16);
     const cz = Math.floor(z / 16);
     const localX = ((x % 16) + 16) % 16;

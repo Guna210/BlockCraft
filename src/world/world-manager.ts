@@ -21,6 +21,12 @@ import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
 import { renderStats } from '../debug/api/core';
 
+/**
+ * Columns generated (and, in createWorld, lit) beyond the radius that is meshed. A meshed section
+ * needs all eight neighbour columns of its own column, so the ring is one column wide.
+ */
+const PERIMETER_RING = 1;
+
 export class WorldManager {
   private static instance: WorldManager | null = null;
 
@@ -231,6 +237,9 @@ export class WorldManager {
     type?: 'default' | 'flat';
   }): Promise<boolean> {
     const radiusChunks = 4;
+    // One more ring of columns is generated and lit than is meshed, so that every meshed section
+    // has real neighbour columns (decisions/M03g-mesh-perimeter.md).
+    const loadRadius = radiusChunks + PERIMETER_RING;
 
     this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
     this.worldSeed = hashString(this.worldSeedStr);
@@ -253,8 +262,8 @@ export class WorldManager {
 
     // Generate terrain via GenWorkerPool
     const genPromises: Promise<void>[] = [];
-    for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
-      for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+    for (let cx = -loadRadius; cx <= loadRadius; cx++) {
+      for (let cz = -loadRadius; cz <= loadRadius; cz++) {
         const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
           if (epoch !== this.worldEpoch) return;
           const col = world.getColumn(res.cx, res.cz, true)!;
@@ -286,10 +295,10 @@ export class WorldManager {
     // A newer createWorld (or resetWorldToEmpty) replaced this world while it was generating.
     if (epoch !== this.worldEpoch) return false;
 
-    // Light terrain within radius using a single region LightWorkerPool job
+    // Light terrain within the load radius using a single region LightWorkerPool job
     const regionColumns: Record<string, (Uint16Array | number)[]> = {};
-    for (let cx = -radiusChunks; cx <= radiusChunks; cx++) {
-      for (let cz = -radiusChunks; cz <= radiusChunks; cz++) {
+    for (let cx = -loadRadius; cx <= loadRadius; cx++) {
+      for (let cz = -loadRadius; cz <= loadRadius; cz++) {
         const col = world.getColumn(cx, cz, false);
         if (col) {
           const secArray: (Uint16Array | number)[] = [];
@@ -310,10 +319,7 @@ export class WorldManager {
       }
     }
 
-    const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(
-      radiusChunks,
-      regionColumns,
-    );
+    const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(loadRadius, regionColumns);
 
     if (epoch !== this.worldEpoch) return false;
 
@@ -414,10 +420,14 @@ export class WorldManager {
     const centerCX = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const centerCZ = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
 
-    // 1. Ensure all columns within radiusChunks around camera are generated
+    // 1. Ensure all columns within radiusChunks around camera, plus one more ring, are generated.
+    // Only radiusChunks is meshed (step 2): a section must never be meshed while one of its
+    // neighbour columns is missing, because the padded copy fills a missing column with air and
+    // the mesher then emits faces toward it.
+    const loadRadius = radiusChunks + PERIMETER_RING;
     const genPromises: Promise<void>[] = [];
-    for (let cx = centerCX - radiusChunks; cx <= centerCX + radiusChunks; cx++) {
-      for (let cz = centerCZ - radiusChunks; cz <= centerCZ + radiusChunks; cz++) {
+    for (let cx = centerCX - loadRadius; cx <= centerCX + loadRadius; cx++) {
+      for (let cz = centerCZ - loadRadius; cz <= centerCZ + loadRadius; cz++) {
         if (!this.world.hasColumn(cx, cz)) {
           const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
             if (epoch !== this.worldEpoch) return;
