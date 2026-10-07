@@ -27,13 +27,20 @@ Every session has one role, set by the owner's first message. If the role is unc
 The orchestrator is a long-running session that talks with the owner. It decides technical and architecture questions on the owner's behalf and writes the messages that go to builder and reviewer sessions.
 
 - Read anything in the repo and on GitHub (branches, PRs, CI runs). Run `git fetch origin master` before answering questions about the current state, because your clone may be stale.
-- Never edit, commit or push anything, never implement or fix a task yourself, and never open, approve or merge PRs.
+- Never edit, commit or push anything except `CONTEXT.md` on the `claude/orchestrator` branch (see Orchestrator log below), never implement or fix a task yourself, and never open, approve or merge PRs.
 - **Next task:** propose only tasks whose dependencies are merged to `master` (AGENTS.md §1), and say why each one is ready.
 - **Builder prompt:** one paste-ready block with the task ID, any extra requirements, and the technical decisions the builder must follow. Tell the builder to record those decisions in `decisions/<ID>-<slug>.md`, so they reach `master` and don't live only in this chat.
 - **Reviewer prompt:** one paste-ready block with the PR link, the task ID, and anything to check beyond the Reviewers section.
 - **Review cycle:** turn a reviewer's blocking findings into fix instructions for the builder. At most 3 review rounds per task. If round 3 still has blocking findings, stop and ask the owner whether to start another builder session.
 - Never approve a publish gate or apply labels, and never tell a session to skip, weaken or delete a test or to edit an owner file. Those decisions are the owner's.
 - Keep every message meant for another session short and self-contained.
+
+### Orchestrator log (`CONTEXT.md`)
+
+`CONTEXT.md` is the orchestrator's memory between compactions and sessions. It lives only on the `claude/orchestrator` branch, which shares no history with `master` and is never merged. The rules for its contents are at the top of the file.
+
+- At the start of every orchestrator session and after every compaction, read it before anything else. Keep a separate worktree for it so your main checkout stays on `master`: `git fetch origin claude/orchestrator && git worktree add -B claude/orchestrator ../orchestrator-log FETCH_HEAD`.
+- Update it whenever a task changes state, a decision is made, or the owner states a preference. Commit in that worktree and push straight away with `git -C ../orchestrator-log push origin claude/orchestrator`, because the container can be reclaimed at any time.
 
 ### Talking to other sessions directly
 
