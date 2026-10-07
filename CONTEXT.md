@@ -28,7 +28,8 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | prompt written, ON HOLD until the debug FPS question below is settled | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
+| M01a-fix | prompt written; waits for the owner's SPEC §3.2 edit to merge | — | — | — | — | GL error check once per frame, `&glcheck=draw` for per-draw. Prompt in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g`. |
+| M04a | ON HOLD until M01a-fix merges; prompt to be reissued | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +37,7 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- Debug-mode FPS (owner report, 2026-10-07): low FPS on a strong PC with a dedicated GPU, game hosted on Cloudflare, `?debug=1` (currently the only way to get a world: `createWorld` exists only in the debug API, menus are M18a). Likely cause: `gl.getError()` after every draw call (`GLWrapper.checkErrors`, SPEC §3.2), about 840 synchronous round trips per frame. Asked the owner to confirm with a console check (`WorldManager.getInstance().glWrapper.debug = false`, compare `getRenderStats().fps`). If confirmed, proposed: owner changes SPEC §3.2 to one error check per frame, then a small fix task (M01a-fix, GLWrapper is M01a's code) before M04a; the M04a prompt then drops the getError exclusion in decision 6.
+- Debug-mode FPS: CONFIRMED (owner, 2026-10-07): 22 FPS in debug mode on a strong PC; setting `glWrapper.debug = false` in the console made it smooth. Cause: `gl.getError()` after every draw (about 840 per frame). Plan: (1) owner edits SPEC.md lines 180, 431, 454 to "once per frame, after every draw with `&glcheck=draw`" and merges it (needs `harness-change` label); (2) M01a-fix builder; (3) reissue the M04a prompt with decision 6 rewritten: the single end-of-frame check runs after the frame CPU timer stops, no other exclusion.
 
 - M04a frame-time metric: the builder prompt defines `frameCpuMs` as frame main-thread time minus only the wait inside the debug-mode `gl.getError()` loop (SPEC §2.3 "excludes GPU"), with that wait exposed separately. Owner may veto before starting the builder.
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
@@ -47,18 +48,22 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Decisions not yet on master
 
+M01a-fix (in its builder prompt; recorded in `decisions/M01a-fix-gl-error-check.md`): `GLWrapper` constructor and per-draw behaviour unchanged (keeps `tests/unit/gl.test.ts` passing); new public drain method; `main.ts` drains once per frame after the frame timer stops, per-draw only with `&glcheck=draw`; also drains at the end of `createWorld`'s synchronous frame and inside `getRenderStats()`.
+
 M04a (in the builder prompt; the builder records them in `decisions/M04a-streaming.md`):
 
 - Chunk = 16×16 column; Chebyshev distance in columns. Generate ≤ RD+1, mesh ≤ RD, free meshes > RD+1, free block and light data > RD+2. Invariant: every meshed section has all 8 neighbour columns loaded.
 - One streamer owns column state (not `World.hasColumn`). `createWorld` keeps its radius-5/4 barrier; `waitForTerrain` goes through the streamer, works with rAF suspended.
 - Priority: ring, then in-frustum, then travel direction, then exact distance. Queued stale jobs removed, running ones dropped on arrival.
 - Upload queue drained ≤ 3 ms per frame; `uploadMsP95` made real.
-- `frameCpuMs` excludes only the debug `getError` wait (see open items).
+- Decision 6 to be rewritten after M01a-fix: the frame timer stops before the end-of-frame debug error check; nothing else excluded; `glCheckMs` still exposed.
 - New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-07: Owner confirmed the per-draw `getError` cause with the console check. M01a-fix prompt and SPEC wording given; M04a waits for M01a-fix.
 
 - 2026-10-07: Owner reported low debug-mode FPS on real hardware. M04a put on hold; console check proposed (see open items).
 
