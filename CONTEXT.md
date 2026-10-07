@@ -28,13 +28,16 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| — | | | | | | |
+| M04a | prompt written, waiting for owner to start the builder | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task. Next on the critical path: M04a → M04b → M05b → M06a and M12a.
+Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task (M13b, M10a, M17a early starts still wait on M06b, M09a, M10a). Next on the critical path: M04a → M04b → M05b → M06a and M12a.
 
 ## Open items for the owner
+
+- M04a frame-time metric: the builder prompt defines `frameCpuMs` as frame main-thread time minus only the wait inside the debug-mode `gl.getError()` loop (SPEC §2.3 "excludes GPU"), with that wait exposed separately. Owner may veto before starting the builder.
+- M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
 
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
 - The 350K compaction cap is not yet confirmed on a Sonnet session. On the first builder in `BlockCraft(350K)`, `get_session` should show `context_usage.max_tokens` 350000 instead of 1000000.
@@ -42,9 +45,20 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Decisions not yet on master
 
-None. Merged decisions are in `decisions/` on master.
+M04a (in the builder prompt; the builder records them in `decisions/M04a-streaming.md`):
+
+- Chunk = 16×16 column; Chebyshev distance in columns. Generate ≤ RD+1, mesh ≤ RD, free meshes > RD+1, free block and light data > RD+2. Invariant: every meshed section has all 8 neighbour columns loaded.
+- One streamer owns column state (not `World.hasColumn`). `createWorld` keeps its radius-5/4 barrier; `waitForTerrain` goes through the streamer, works with rAF suspended.
+- Priority: ring, then in-frustum, then travel direction, then exact distance. Queued stale jobs removed, running ones dropped on arrival.
+- Upload queue drained ≤ 3 ms per frame; `uploadMsP95` made real.
+- `frameCpuMs` excludes only the debug `getError` wait (see open items).
+- New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
+- Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
+- Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-07: Orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` started. CONTEXT.md matched master (19c3944, no open PRs). M04a builder prompt written; waiting for the owner.
 
 - 2026-10-07: CONTEXT.md created on `claude/orchestrator`.
 - 2026-10-07: `BlockCraft(350K)` environment created and checked: npm ci, Playwright install and typecheck pass.
