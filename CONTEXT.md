@@ -28,13 +28,15 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | prompt written, waiting for owner to start the builder | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
+| M04a | prompt written, ON HOLD until the debug FPS question below is settled | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
 Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task (M13b, M10a, M17a early starts still wait on M06b, M09a, M10a). Next on the critical path: M04a → M04b → M05b → M06a and M12a.
 
 ## Open items for the owner
+
+- Debug-mode FPS (owner report, 2026-10-07): low FPS on a strong PC with a dedicated GPU, game hosted on Cloudflare, `?debug=1` (currently the only way to get a world: `createWorld` exists only in the debug API, menus are M18a). Likely cause: `gl.getError()` after every draw call (`GLWrapper.checkErrors`, SPEC §3.2), about 840 synchronous round trips per frame. Asked the owner to confirm with a console check (`WorldManager.getInstance().glWrapper.debug = false`, compare `getRenderStats().fps`). If confirmed, proposed: owner changes SPEC §3.2 to one error check per frame, then a small fix task (M01a-fix, GLWrapper is M01a's code) before M04a; the M04a prompt then drops the getError exclusion in decision 6.
 
 - M04a frame-time metric: the builder prompt defines `frameCpuMs` as frame main-thread time minus only the wait inside the debug-mode `gl.getError()` loop (SPEC §2.3 "excludes GPU"), with that wait exposed separately. Owner may veto before starting the builder.
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
@@ -57,6 +59,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-07: Owner reported low debug-mode FPS on real hardware. M04a put on hold; console check proposed (see open items).
 
 - 2026-10-07: Orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` started. CONTEXT.md matched master (19c3944, no open PRs). M04a builder prompt written; waiting for the owner.
 
