@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M01a-fix | prompt written; waits for the owner's SPEC §3.2 edit to merge | — | — | — | — | GL error check once per frame, `&glcheck=draw` for per-draw. Prompt in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g`. |
+| M01a-fix | PR open, review 1 to start | `session_01Lx6wfwkj49Hq1HYp67Nw5w` | — | [#32](https://github.com/Guna210/BlockCraft/pull/32) | 1 | Reviewer prompt given 2026-10-08. CI `verify` was in progress then. |
 | M04a | ON HOLD until M01a-fix merges; prompt to be reissued | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
@@ -37,7 +37,7 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- Debug-mode FPS: CONFIRMED (owner, 2026-10-07): `getRenderStats().fps` 22 with the per-draw check, 200 after `glWrapper.debug = false` in the console. Cause: `gl.getError()` after every draw (about 840 per frame). Plan: (1) owner edits SPEC.md lines 180, 431, 454 to "once per frame, after every draw with `&glcheck=draw`" and merges it (needs `harness-change` label); (2) M01a-fix builder; (3) reissue the M04a prompt with decision 6 rewritten: the single end-of-frame check runs after the frame CPU timer stops, no other exclusion.
+- Debug-mode FPS: confirmed by the owner (22 → 200 FPS with the per-draw check off). SPEC edit merged on master as `2be70f2`. M01a-fix PR #32 open. After it merges: reissue the M04a prompt with decision 6 rewritten (the frame timer already stops before the per-frame drain; nothing else excluded).
 
 - M04a frame-time metric: the builder prompt defines `frameCpuMs` as frame main-thread time minus only the wait inside the debug-mode `gl.getError()` loop (SPEC §2.3 "excludes GPU"), with that wait exposed separately. Owner may veto before starting the builder.
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
@@ -62,6 +62,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M01a-fix opened [#32](https://github.com/Guna210/BlockCraft/pull/32). Builder measured under SwiftShader: `getError` 841 → 1 per frame, `frameCpuMsP95` 349–674 → 1.3–3.6 ms, fps unchanged at 2–4 (software rasterising limits fps in CI; matters for M04a streaming throughput). Owner asked about reusing one reviewer for all PRs: answered no, one reviewer session per task (CLAUDE.md Roles).
 
 - 2026-10-07: Owner measured 22 → 200 FPS with the per-draw check off. Full replacement text for SPEC.md lines 180, 431, 454 given to the owner.
 
