@@ -2,8 +2,9 @@ import { test, expect } from '../harness/fixture';
 import { fly, waitForStreamingIdle, type Vec3 } from './helpers/flight';
 
 // M04a: terrain streams around the camera. Flying 1000 blocks at 30 blocks/s at render distance 8
-// must keep the frame CPU time and the per-frame upload time inside the SPEC budgets, load at most
-// the ring the render distance asks for, and give every GPU resource back (decisions/M04a-streaming.md).
+// must never let a frame or a streaming task between frames take more than 50 ms, load at most the
+// ring the render distance asks for, and give every GPU resource back. frameCpuMsP95 and uploadMsP95
+// are reported, not asserted (SPEC M04, decisions/M04a-streaming.md).
 
 const SEED = 'blockcraft-test-seed-42';
 
@@ -77,10 +78,14 @@ test.describe('M04a: streaming', () => {
     await fly(page, { from: start, to: out, speed: 30 });
     const stats = await page.evaluate(() => window.__blockcraft!.getFrameStats!());
     console.log('m04 flight frame stats', JSON.stringify(stats));
+    // Measured and reported, not asserted: M22a enforces frameCpuMsP95 <= 8 and uploadMsP95 <= 3 at
+    // RD 8 (SPEC M04). They show in the report and the CI log.
+    for (const name of ['frameCpuMsP95', 'uploadMsP95', 'glCheckMsMax'] as const) {
+      test.info().annotations.push({ type: name, description: stats[name].toFixed(1) });
+      console.log(`m04 reported ${name} = ${stats[name].toFixed(1)} ms`);
+    }
 
     expect(stats.frames, 'frames rendered during the flight').toBeGreaterThan(20);
-    expect(stats.frameCpuMsP95, 'frame CPU p95').toBeLessThanOrEqual(8);
-    expect(stats.uploadMsP95, 'upload p95').toBeLessThanOrEqual(3);
     expect(stats.frameCpuMsMax, 'worst frame').toBeLessThanOrEqual(50);
     // Streaming work between frames (pump slices, worker-result handlers) stays under SPEC 2.2's 50 ms.
     expect(
