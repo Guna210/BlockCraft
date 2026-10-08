@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (culling first, then re-measure) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner chose option 1; SPEC edited on master `6411d94` (column-level frustum culling moved into M04a). Answer sent 2026-10-08: branch `claude/m04a` from `6411d94`; stop again if RD 8 standing-still `frameCpuMs` p95 > 5 ms after culling. |
+| M04a | building (time-boxed tail + throughput probe, then streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Culling committed locally `4e770d1` on `claude/m04a`. RD 8 culled: 879 draws (was 2845), `frameCpuMs` p50 2.4–2.8 / p95 6.9–9.0 / max 24.8 ms, `glCheckMs` ~1–2 s, fps ~1. Answer 2 sent: investigate tail (GL calls vs GC) and worker results/s, fix in scope, stop only if CI throughput makes the flight test infeasible or the real flight misses a budget. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -62,6 +62,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a QUESTION 2 (p95 tail after culling). Orchestrator chose a bounded investigation, then the streamer; budget decisions wait for real flight numbers (owner's).
 
 - 2026-10-08: Owner merged the SPEC change (`6411d94`, column-level frustum culling moved from M22a into M04a). Orchestrator answered the M04a builder: option 1, sync to master, branch `claude/m04a`, culling first.
 
