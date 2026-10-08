@@ -104,6 +104,30 @@ reported as `pumpMsP95` / `pumpMsMax`; the flight test asserts `pumpMsMax <= 50`
 - **Worker pool replacement** (`setWorkerPoolSize` between worlds) calls `abandonInFlight`: jobs the old pool
   dropped silently go back to the queue.
 
+## Work between frames is in steps (added after the first verify runs under load)
+
+Storing a generated column (20 sections) and copying the padded sections of a column's mesh jobs ran
+inside the handlers of worker results and took up to 277 ms when the CPU was contended. `StreamerHost`
+now returns steps (`applyGen`: the column with its biome data, then one per section) and starters
+(`requestMesh`: one per section that needs a mesh); the pump runs them alternately for about 3 ms per
+slice. A generation slot stays taken until the column is stored. A mesh slot is given back when a column
+is discarded before all its starters ran. A 0.3 ms step can still take 25-130 ms when the OS preempts
+the renderer; that is not fixable by smaller steps (see the handoff, Known limitations).
+
+## Background jobs leave one mesh worker free
+
+`WorkerPool.enqueueMeshJob(..., background)`: streaming jobs never take the last idle worker of a pool
+with more than one worker. After `createWorld` the streamer keeps meshing, which left no idle worker for
+a foreground job (the M02 WorkerPool test enqueues one right after `createWorld` and expects its buffer
+transferred at once; edits in M05+ need the same). Streaming throughput on a 3-worker pool is two
+workers; meshing is not the bottleneck on SwiftShader.
+
+## `moveTo` before a region request
+
+With `requestAnimationFrame` held no frame calls `streamer.update`, so after `waitForTerrain` at a new
+place the pump freed the new region relative to the old camera column (blank screenshots in M03 tests).
+`Streamer.moveTo(view)` is called by `waitForTerrain`.
+
 ## SwiftShader findings (what limits the p95 values here)
 
 - One section upload costs 6-10 ms. The frame always uploads at least one section, so `uploadMsP95` is one
