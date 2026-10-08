@@ -28,13 +28,16 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (10× m04 alone, then full verify) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Fixed its own verify failures: waitForTerrain now moves the streamer; gen apply and padded copies moved into ~3 ms pump steps; background jobs keep one worker free for foreground jobs. Risk: under local 2-worker verify load single steps hit 50–110 ms (pump 53.3, frame 48.1); alone (CI = 1 worker) pump max 15.8. Told: no starvation at pool size 1; no re-running until green, report instead. |
+| M04a | gate pending; blocked on owner (Playwright workers) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | CI=1 verify green (299 unit, 41 e2e, 588 s vs master 441 s); m04 alone 10/10. Plain verify (2 workers on 4 cores) fails only m04 `pumpMsMax` (53.3, 57.8; one 0.3 ms step descheduled; frame max 48.1/12.1). Recommended: owner sets `workers: 1` in playwright.config.ts (harness change). Asked the builder for retry/flaky counts (CI config has `retries: 2`). Gate message waiting in its session. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
 Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task (M13b, M10a, M17a early starts still wait on M06b, M09a, M10a). Next on the critical path: M04a → M04b → M05b → M06a and M12a.
 
 ## Open items for the owner
+
+- Playwright `workers: 1` everywhere (playwright.config.ts line 9; harness change, needs `harness-change`), so local verify matches CI. Recommended before approving the M04a gate.
+- `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so CI green does not prove a test is stable. Suggest a later decision: retries 0, after checking recent CI runs for flaky counts.
 
 
 
@@ -64,6 +67,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
 
 - 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
 
