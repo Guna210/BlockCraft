@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (non-blocking per-frame drain, then streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Probe: slow frames are single GL calls stalling on SwiftShader back-pressure, not GC. `waitForTerrain(8)` with frames running: 89.8 s (18.6 results/s) vs 3.0 s rAF held; the per-frame `getError` drain blocks ~0.5 s per frame. Answer 3 sent: make the drain non-blocking (a: start of next frame; b: fence-gated; c: b + frame pacing), keep m01a-fix tests unchanged; test-only modes and long timeouts rejected; stop if none works (a throttled drain would need a SPEC §3.2 change). |
+| M04a | building (streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Drain fix committed locally `264ccef`: fence-gated drain plus a blocking drain once 4 frames are unread. `waitForTerrain(8)` with frames running: 4.1–4.4 s (was 89.8 s). m01a-fix tests pass unchanged. Standing-still RD 8 `frameCpuMs` p50/p95/max ≈ 5.3 / 11–14 / 14–25 ms (GL calls stalling on SwiftShader). Likely outcome: flight p95 ≤ 8 ms misses at RD 8 and the owner decides the budget with real flight numbers. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -58,10 +58,12 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
 - Column-level frustum culling (owner, SPEC `6411d94`): one conservative column-AABB vs frustum test, shared by draw culling and priority; all passes; `chunksVisible` = sections drawn. Allowed: drop the redundant per-draw `bindBuffer`, sort draws by column. Stop if RD 8 standing-still p95 > 5 ms after culling.
-- Per-frame debug drain made non-blocking inside M04a (changes M01a-fix's `main.ts` design, point 2 of its decision file); variant chosen by measurement.
+- Per-frame debug drain (inside M04a, changes M01a-fix's `main.ts` design): fence-gated, plus a blocking drain once 4 frames are unread; the blocking drain counts as `glCheckMs`, outside the frame timer; the bound is unit-tested.
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a builder (status message): drain fix done (variant b plus a 4-frame bound), streaming 22× faster in CI. Orchestrator acked and asked for glCheckMs accounting and a unit test of the bound.
 
 - 2026-10-08: M04a QUESTION 3: the per-frame `getError` drain makes streaming ~29× slower in CI. Orchestrator rejected test-only workarounds and asked for a non-blocking drain within SPEC §3.2's "once per frame".
 
