@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (time-boxed tail + throughput probe, then streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Culling committed locally `4e770d1` on `claude/m04a`. RD 8 culled: 879 draws (was 2845), `frameCpuMs` p50 2.4–2.8 / p95 6.9–9.0 / max 24.8 ms, `glCheckMs` ~1–2 s, fps ~1. Answer 2 sent: investigate tail (GL calls vs GC) and worker results/s, fix in scope, stop only if CI throughput makes the flight test infeasible or the real flight misses a budget. |
+| M04a | building (non-blocking per-frame drain, then streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Probe: slow frames are single GL calls stalling on SwiftShader back-pressure, not GC. `waitForTerrain(8)` with frames running: 89.8 s (18.6 results/s) vs 3.0 s rAF held; the per-frame `getError` drain blocks ~0.5 s per frame. Answer 3 sent: make the drain non-blocking (a: start of next frame; b: fence-gated; c: b + frame pacing), keep m01a-fix tests unchanged; test-only modes and long timeouts rejected; stop if none works (a throttled drain would need a SPEC §3.2 change). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,6 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- CI watch item: in debug mode the per-frame `getError` waits for SwiftShader to finish each frame (0.5–3 s at RD 8), blocking the main thread, so streaming in CI is slow. Culling reduces it. Matters for M04b's `m04-fast-flight.png`.
 
 
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
@@ -59,9 +58,12 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
 - Column-level frustum culling (owner, SPEC `6411d94`): one conservative column-AABB vs frustum test, shared by draw culling and priority; all passes; `chunksVisible` = sections drawn. Allowed: drop the redundant per-draw `bindBuffer`, sort draws by column. Stop if RD 8 standing-still p95 > 5 ms after culling.
+- Per-frame debug drain made non-blocking inside M04a (changes M01a-fix's `main.ts` design, point 2 of its decision file); variant chosen by measurement.
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a QUESTION 3: the per-frame `getError` drain makes streaming ~29× slower in CI. Orchestrator rejected test-only workarounds and asked for a non-blocking drain within SPEC §3.2's "once per frame".
 
 - 2026-10-08: M04a QUESTION 2 (p95 tail after culling). Orchestrator chose a bounded investigation, then the streamer; budget decisions wait for real flight numbers (owner's).
 
