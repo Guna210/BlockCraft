@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | blocked on owner (section culling) + in-scope upload gating | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | All built, local `a1d2020`; 39 existing e2e pass. Flight 10 runs: p95 ≤ 8 fails 4/10 (draw submission 5–6 ms for ~740 sections), max ≤ 50 fails 2/10 (single bufferData stalls of 89 ms and 1.2 s). Builder asked: A section-level culling (needs SPEC edit, drafted for lines 561, 580, 1278, 1304), B [INCOMPLETE] PR, C thresholds (owner only). Orchestrator approved fence-gated uploads and pump-slice accounting now; 10 re-runs to follow. |
+| M04a | blocked on owner (budget policy + section culling) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Local `f28db6b`. Fence-gated uploads impossible (Chrome reports fence status ~20 frames late; uploads starved). Pump accounting added. 10 flights: p95 ≤ 8 in 6/10, frame max ≤ 50 in 8/10, pump max ≤ 50 in 1/10 (a single bufferData blocks 0.5–1.7 s on the SwiftShader backlog). Builder told to hold and to confirm that streaming uploads stay inside the frame budget during the flight (decision 2). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,7 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- M04a: section-level frustum culling into M04a too? Needs an owner SPEC edit (lines 561, 580, 1278, 1304; drafted). Recommended yes. If the flight is still flaky afterwards, the remaining choice is the owner's budget call.
+- M04a budget policy (owner): recommended section culling (SPEC lines 561, 580, 1278, 1304) plus a §2.3 clarification that CI timers also exclude time blocked in a single WebGL call longer than 2 ms (reported separately); alternatives: move flight-budget enforcement to M22a, or an [INCOMPLETE] PR. Drafts in the orchestrator session.
 
 
 
@@ -64,6 +64,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a QUESTION 5: in-scope fixes can't make the 50 ms rule hold under SwiftShader (blocked uploads of 0.5–1.7 s). Put the budget-policy decision to the owner; builder holding.
 
 - 2026-10-08: M04a QUESTION 4: flight test flaky against its budgets (numbers in the table). Sent the owner the section-culling decision; told the builder to fence-gate uploads and account for pump slices meanwhile.
 
