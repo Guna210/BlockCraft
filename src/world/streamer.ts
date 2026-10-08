@@ -24,6 +24,7 @@ import {
   makePriorityKey,
   neighboursReady,
   streamRings,
+  type StreamRings,
 } from './streaming-plan';
 
 export interface StreamerHost<G, M> {
@@ -110,8 +111,6 @@ interface Token {
 
 /** Longest a frame-less pump slice may run (the upload budget of one frame). */
 const SLICE_MS = 3;
-/** Time a frame may spend freeing GPU resources and data. */
-const FREE_BUDGET_MS = 2;
 /** A frame callback older than this means the frame loop is not keeping up (or is suspended). */
 const FRAME_STALL_MS = 100;
 /** Frames older than this are treated as "no frame loop": only pending requests are served. */
@@ -327,7 +326,7 @@ export class Streamer<G, M> {
         col.phase = 'generated';
       }
     }
-    for (const col of Array.from(this.cols.values())) this.tryQueueMesh(col);
+    for (const col of this.cols.values()) this.tryQueueMesh(col);
     this.schedulePump();
   }
 
@@ -391,8 +390,11 @@ export class Streamer<G, M> {
     ) {
       this.plan();
     }
-    this.freePass(FREE_BUDGET_MS);
-    this.dispatch();
+    // Deleting a column's GPU meshes (a few ms for one column) and starting a mesh job (it copies the
+    // column's padded sections on the main thread, up to ~10 ms under load) are not frame work: the
+    // pump task that follows the frame does them in slices of SLICE_MS (decisions/M04a-streaming.md).
+    this.dispatch(false);
+    if (this.meshQueue.length > 0 || this.freesPending) this.schedulePump();
   }
 
   /**
@@ -438,6 +440,18 @@ export class Streamer<G, M> {
     };
   }
 
+  private ringsRd = -1;
+  private ringsCache = streamRings(DEFAULT_RENDER_DISTANCE);
+
+  /** The rings of the current render distance, computed once per change (they are read per column). */
+  private currentRings(): StreamRings {
+    if (this.ringsRd !== this.renderDistance) {
+      this.ringsCache = streamRings(this.renderDistance);
+      this.ringsRd = this.renderDistance;
+    }
+    return this.ringsCache;
+  }
+
   private pinnedGen(cx: number, cz: number): boolean {
     for (const r of this.requests) {
       if (chebyshev(cx, cz, r.req.cx, r.req.cz) <= r.req.genRadius) return true;
@@ -454,7 +468,7 @@ export class Streamer<G, M> {
 
   private wantGen(cx: number, cz: number): boolean {
     if (this.backgroundEnabled && this.active) {
-      if (chebyshev(cx, cz, this.camCX, this.camCZ) <= streamRings(this.renderDistance).gen) {
+      if (chebyshev(cx, cz, this.camCX, this.camCZ) <= this.currentRings().gen) {
         return true;
       }
     }
@@ -463,7 +477,7 @@ export class Streamer<G, M> {
 
   private wantMesh(cx: number, cz: number): boolean {
     if (this.backgroundEnabled && this.active) {
-      if (chebyshev(cx, cz, this.camCX, this.camCZ) <= streamRings(this.renderDistance).mesh) {
+      if (chebyshev(cx, cz, this.camCX, this.camCZ) <= this.currentRings().mesh) {
         return true;
       }
     }
@@ -472,12 +486,12 @@ export class Streamer<G, M> {
 
   private keepMesh(cx: number, cz: number): boolean {
     const d = chebyshev(cx, cz, this.camCX, this.camCZ);
-    return d <= streamRings(this.renderDistance).keepMesh || this.pinnedMesh(cx, cz);
+    return d <= this.currentRings().keepMesh || this.pinnedMesh(cx, cz);
   }
 
   private keepData(cx: number, cz: number): boolean {
     const d = chebyshev(cx, cz, this.camCX, this.camCZ);
-    return d <= streamRings(this.renderDistance).keepData || this.pinnedGen(cx, cz);
+    return d <= this.currentRings().keepData || this.pinnedGen(cx, cz);
   }
 
   private phaseAt = (cx: number, cz: number): ColumnPhase | undefined => this.phaseOf(cx, cz);
@@ -545,7 +559,7 @@ export class Streamer<G, M> {
     this.planDirty = false;
 
     // 1. Cancel queued work that is no longer wanted.
-    for (const col of Array.from(this.cols.values())) {
+    for (const col of this.cols.values()) {
       if (col.phase === 'queuedGen' && !this.wantGen(col.cx, col.cz)) {
         this.removeFrom(this.genQueue, col);
         this.cols.delete(col.key);
@@ -558,7 +572,7 @@ export class Streamer<G, M> {
     }
 
     // 2. Queue what is wanted and not yet known.
-    const rings = streamRings(this.renderDistance);
+    const rings = this.currentRings();
     if (this.backgroundEnabled && this.active) {
       this.enqueueSquare(this.camCX, this.camCZ, rings.gen, rings.mesh);
     }
@@ -622,14 +636,14 @@ export class Streamer<G, M> {
     let freed = 0;
     const over = () => freed > 0 && this.host.now() - start >= budgetMs;
 
-    for (const col of Array.from(this.cols.values())) {
+    for (const col of this.cols.values()) {
       if ((col.hasMesh || col.phase === 'meshing') && !this.keepMesh(col.cx, col.cz)) {
         if (over()) break;
         this.freeMeshOf(col);
         freed++;
       }
     }
-    for (const col of Array.from(this.cols.values())) {
+    for (const col of this.cols.values()) {
       if (!hasData(col.phase) || this.keepData(col.cx, col.cz)) continue;
       if (!canFreeData(col.cx, col.cz, this.holdsMeshAt)) continue;
       if (over()) break;
@@ -662,7 +676,7 @@ export class Streamer<G, M> {
   // ---------------------------------------------------------------------------------------------
   // Dispatch and results
 
-  private dispatch(): void {
+  private dispatch(startMeshJobs = true): void {
     if (!this.active && this.requests.length === 0) return;
     if (!this.genSorted) {
       this.genQueue.sort((a, b) => comparePriority(a.prio, b.prio));
@@ -676,12 +690,21 @@ export class Streamer<G, M> {
       this.meshQueue.sort((a, b) => comparePriority(a.prio, b.prio));
       this.meshSorted = true;
     }
+    if (!startMeshJobs) return;
+    const sliceStart = this.host.now();
+    let started = 0;
     while (
       this.meshQueue.length > 0 &&
       this.meshTokens.size < this.limits.maxMeshColumnsInFlight &&
       this.deferred.length < this.limits.maxDeferred
     ) {
+      // One slice of preparation work per task; the rest follows in the next one.
+      if (started > 0 && this.host.now() - sliceStart >= SLICE_MS) {
+        this.schedulePump();
+        break;
+      }
       this.startMesh(this.meshQueue.shift()!);
+      started++;
     }
   }
 
@@ -839,13 +862,11 @@ export class Streamer<G, M> {
   }
 
   public pump(): void {
-    if (this.offFrameAllowed()) {
-      this.freePass(SLICE_MS);
-      this.drainUploads(SLICE_MS);
-    }
+    this.freePass(SLICE_MS);
+    if (this.offFrameAllowed()) this.drainUploads(SLICE_MS);
     this.dispatch();
     this.checkRequests();
-    if (this.deferred.length > 0 || this.freesPending) {
+    if (this.deferred.length > 0 && !this.freesPending) {
       // The next slice runs in a separate task, so worker messages and input are handled in between.
       if (this.offFrameAllowed()) {
         this.schedulePump();

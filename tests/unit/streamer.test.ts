@@ -447,6 +447,7 @@ describe('Streamer: uploads', () => {
     // After draining, work continues.
     streamer.drainUploads(Infinity);
     streamer.update(view, 100);
+    await settle(); // mesh jobs are started by the pump task that follows the frame
     expect(host.meshRequests.length).toBeGreaterThan(0);
   });
 
