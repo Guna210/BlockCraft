@@ -590,7 +590,7 @@ export class WorldManager {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
         const paddedSection = buildPaddedSection(world, cx, sy, cz);
-        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables);
+        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables, true);
       });
     }
     return starters;

@@ -17,6 +17,8 @@ interface MeshJob {
   sz: number;
   paddedSection: Uint16Array;
   tables: MeshLookupTables;
+  /** Streaming job: never takes the last idle worker (see `processQueue`). */
+  background: boolean;
   resolve: (result: MeshResult) => void;
   reject: (err: Error) => void;
 }
@@ -116,6 +118,7 @@ export class WorkerPool {
     sz: number,
     paddedSection: Uint16Array,
     tables: MeshLookupTables,
+    background = false,
   ): Promise<MeshResult> {
     const key = `${sx},${sy},${sz}`;
     const id = this.nextJobId++;
@@ -129,6 +132,7 @@ export class WorkerPool {
         sz,
         paddedSection,
         tables,
+        background,
         resolve,
         reject,
       };
@@ -138,10 +142,19 @@ export class WorkerPool {
     });
   }
 
+  /**
+   * Hands queued jobs to idle workers in order. Background (streaming) jobs leave one worker idle
+   * when the pool has more than one, so a foreground job (an edit that must be re-meshed at once)
+   * starts without waiting for a streaming job to finish.
+   */
   private processQueue(): void {
+    const reserved = this.workers.length > 1 ? 1 : 0;
     while (this.idleWorkers.length > 0 && this.queue.length > 0) {
+      const index =
+        this.idleWorkers.length > reserved ? 0 : this.queue.findIndex((j) => !j.background);
+      if (index < 0) break;
       const worker = this.idleWorkers.pop()!;
-      const job = this.queue.shift()!;
+      const job = this.queue.splice(index, 1)[0]!;
 
       this.activeJobs.set(worker, job);
 
