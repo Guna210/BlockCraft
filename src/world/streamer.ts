@@ -113,10 +113,6 @@ interface Token {
 
 /** Longest a frame-less pump slice may run (the upload budget of one frame). */
 const SLICE_MS = 3;
-/** A frame callback older than this means the frame loop is not keeping up (or is suspended). */
-const FRAME_STALL_MS = 100;
-/** Frames older than this are treated as "no frame loop": only pending requests are served. */
-const FRAME_LOST_MS = 2000;
 /** Camera rotation (radians) that triggers a re-prioritisation. */
 const VIEW_CHANGE_RAD = 0.05;
 
@@ -848,15 +844,6 @@ export class Streamer<G, M> {
   // ---------------------------------------------------------------------------------------------
   // Pump: work that happens between frames
 
-  /** True when deferred uploads and frees may be done outside the frame loop right now. */
-  private offFrameAllowed(): boolean {
-    if (this.requests.length > 0) return true;
-    if (!this.active) return false;
-    const age = this.host.now() - this.lastUpdateAt;
-    // The frame loop is running but a frame takes longer than the upload budget allows to be useful.
-    return age > FRAME_STALL_MS && age < FRAME_LOST_MS;
-  }
-
   private schedulePump(delayMs = 0): void {
     const dueAt = this.host.now() + delayMs;
     if (this.pumpScheduled) {
@@ -879,18 +866,15 @@ export class Streamer<G, M> {
 
   private pumpSlice(): void {
     this.freePass(SLICE_MS);
-    if (this.offFrameAllowed()) this.drainUploads(SLICE_MS);
+    // Uploads happen in the frame, inside its upload budget. Only a pending region request
+    // (createWorld, waitForTerrain) may have them done between frames, because it must finish
+    // although the frame loop may be suspended (decisions/M04a-streaming.md).
+    if (this.requests.length > 0) this.drainUploads(SLICE_MS);
     this.dispatch();
     this.checkRequests();
-    if (this.deferred.length > 0 && !this.freesPending) {
-      // The next slice runs in a separate task, so worker messages and input are handled in between.
-      if (this.offFrameAllowed()) {
-        this.schedulePump();
-      } else if (this.active) {
-        // Frames are running at a good rate: they do the work. Look again when they stall.
-        const age = this.host.now() - this.lastUpdateAt;
-        if (age < FRAME_STALL_MS) this.schedulePump(FRAME_STALL_MS - age + 1);
-      }
+    // The next slice runs in a separate task, so worker messages and input are handled in between.
+    if (this.requests.length > 0 && this.deferred.length > 0 && !this.freesPending) {
+      this.schedulePump();
     }
   }
 

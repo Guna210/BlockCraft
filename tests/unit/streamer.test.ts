@@ -487,7 +487,7 @@ describe('Streamer: uploads', () => {
     expect(streamer.getStats().uploadsDeferred).toBeGreaterThan(0);
   });
 
-  it('slow frames: slices upload between frames once a frame is overdue, but not right after one', async () => {
+  it('even when frames are overdue the pump does not upload without a pending request', async () => {
     const { host, streamer } = make(2);
     host.uploadCostMs = 1;
     const view = viewAt(0, 0);
@@ -497,13 +497,13 @@ describe('Streamer: uploads', () => {
       await host.finishGen();
     }
     await host.finishMesh();
-    // Right after a frame: no off-frame work.
-    streamer.update(view, host.clock);
+    host.clock += 300; // the next frame is late
     streamer.pump();
+    await vi.advanceTimersByTimeAsync(300);
     expect(host.uploads.length).toBe(0);
-    // 300 ms later with no new frame: the pump uploads a slice.
-    host.clock += 300;
-    streamer.pump();
+    // The frame's own budget uploads them.
+    streamer.update(view, host.clock);
+    streamer.drainUploads(3);
     expect(host.uploads.length).toBe(3);
   });
 });
