@@ -82,9 +82,21 @@ export const renderStats = {
   missingTextures: [] as string[],
 };
 
+// Set by main.ts in debug mode: reads pending WebGL errors into renderStats.glErrors.
+let drainGlErrors: (() => void) | null = null;
+
+export function setGlErrorDrain(fn: (() => void) | null): void {
+  drainGlErrors = fn;
+}
+
 export const api: BlockCraftDebugAPI = {
   ready: () => readyPromise,
-  getRenderStats: () => ({ ...renderStats }),
+  getRenderStats: () => {
+    // Count errors that no frame has drained yet, so a test that holds requestAnimationFrame
+    // still sees them.
+    if (drainGlErrors) drainGlErrors();
+    return { ...renderStats };
+  },
 };
 
 export function markReady() {
