@@ -3,6 +3,7 @@ import { markReady, renderStats, setGlErrorDrain } from './debug/api/core';
 import { setTestSceneInitializer } from './debug/api/test-scene';
 import { setActiveCamera } from './debug/api/camera';
 import { GLWrapper } from './render/gl';
+import { FencedErrorDrain } from './render/fenced-error-drain';
 import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
@@ -67,10 +68,12 @@ function main() {
 
   const worldManager = WorldManager.getInstance();
   worldManager.initGL(glWrapper, camera);
+  let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
-    const drain = () => glWrapper.drainErrors();
-    worldManager.drainGlErrors = drain;
-    setGlErrorDrain(drain);
+    frameDrain = new FencedErrorDrain(gl, () => glWrapper.drainErrors());
+    const drainNow = () => frameDrain!.drainNow();
+    worldManager.drainGlErrors = drainNow;
+    setGlErrorDrain(drainNow);
   }
 
   let testScene: TestScene | null = null;
@@ -109,6 +112,8 @@ function main() {
   const cpuTimes: number[] = [];
 
   function render(time: number) {
+    // Reads the errors of an earlier frame once the GPU has finished it; never waits for the GPU.
+    if (frameDrain) frameDrain.beginFrame();
     const startTime = performance.now();
     const dt = time - lastTime;
     lastTime = time;
@@ -129,8 +134,8 @@ function main() {
     const endTime = performance.now();
     cpuTimes.push(endTime - startTime);
 
-    // Not update or draw submission (SPEC §2.3), so it runs after the frame CPU timer has stopped.
-    if (debug) glWrapper.drainErrors();
+    // Not update or draw submission (SPEC §2.3), so the fence is placed after the frame CPU timer has stopped.
+    if (frameDrain) frameDrain.endFrame();
 
     frameCount++;
     fpsTimer += dt;

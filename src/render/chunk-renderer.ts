@@ -177,6 +177,16 @@ export class ChunkRenderer {
   private columnMeshes: Map<string, GPUSectionMesh[]> = new Map();
   private frustumPlanes = new Float64Array(24);
 
+  // Per-frame scratch state of render(), kept as fields so the draw loop allocates nothing.
+  private visColumns: GPUSectionMesh[][] = [];
+  private visGrass: WebGLTexture[] = [];
+  private visFoliage: WebGLTexture[] = [];
+  private boundGrass: WebGLTexture | null = null;
+  private boundFoliage: WebGLTexture | null = null;
+  private activeUnit = 0;
+  private passDraws = 0;
+  private passTriangles = 0;
+
   /** The section meshes drawn by the latest render() call: those of columns inside the frustum. */
   public lastVisible: GPUSectionMesh[] = [];
 
@@ -333,6 +343,44 @@ export class ChunkRenderer {
     this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
+  /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
+  private drawPass(pass: number): void {
+    const gl = this.glWrapper.gl;
+    const columns = this.visColumns;
+    for (let c = 0; c < columns.length; c++) {
+      const list = columns[c]!;
+      let tintsBound = false;
+      for (let i = 0; i < list.length; i++) {
+        const mesh = list[i]!;
+        const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
+        if (!bucket) continue;
+        if (!tintsBound) {
+          tintsBound = true;
+          // Only a texture that differs from the one already bound is bound again.
+          const grass = this.visGrass[c]!;
+          if (grass !== this.boundGrass) {
+            if (this.activeUnit !== 1) gl.activeTexture(gl.TEXTURE1);
+            this.activeUnit = 1;
+            gl.bindTexture(gl.TEXTURE_2D, grass);
+            this.boundGrass = grass;
+          }
+          const foliage = this.visFoliage[c]!;
+          if (foliage !== this.boundFoliage) {
+            if (this.activeUnit !== 2) gl.activeTexture(gl.TEXTURE2);
+            this.activeUnit = 2;
+            gl.bindTexture(gl.TEXTURE_2D, foliage);
+            this.boundFoliage = foliage;
+          }
+        }
+        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+        gl.bindVertexArray(bucket.vao);
+        this.glWrapper.drawElements(gl.TRIANGLES, bucket.indexCount, gl.UNSIGNED_INT, 0);
+        this.passDraws++;
+        this.passTriangles += bucket.indexCount / 3;
+      }
+    }
+  }
+
   public render(
     viewProjMatrix: mat4,
     atlasTexture: WebGLTexture,
@@ -357,93 +405,56 @@ export class ChunkRenderer {
     gl.uniform1f(this.locCellSize, CELL_SIZE);
     gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
 
-    let drawCalls = 0;
-    let triangles = 0;
-
     // Column-level frustum culling: every pass draws only the sections of columns whose box touches
-    // the frustum (decisions/M04a-streaming.md).
+    // the frustum (decisions/M04a-streaming.md). Each visible column's tint textures are fetched once
+    // per frame, on a texture unit this renderer does not sample from: the cache creates (or
+    // re-uploads) textures on the active unit, and the first column seen in a frame must not replace
+    // the atlas on unit 0 (stale first frame, see decisions/M02c-fix-load-path.md).
     const planes = extractFrustumPlanes(viewProjMatrix, this.frustumPlanes);
     const meshes = this.lastVisible;
     meshes.length = 0;
+    const columns = this.visColumns;
+    let columnCount = 0;
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     for (const list of this.columnMeshes.values()) {
       const first = list[0]!;
       if (!columnInFrustum(planes, first.sx, first.sz)) continue;
+      const pair = this.tintCache.getColumnTints(first.sx, first.sz, world);
+      columns[columnCount] = list;
+      this.visGrass[columnCount] = pair.grassTexture;
+      this.visFoliage[columnCount] = pair.foliageTexture;
+      columnCount++;
       for (const mesh of list) meshes.push(mesh);
     }
-
-    let lastBoundColKey: string | null = null;
-    let lastBoundGrassTex: WebGLTexture | null = null;
-    let lastBoundFoliageTex: WebGLTexture | null = null;
-
-    const bindColumnTints = (sx: number, sz: number) => {
-      const colKey = `${sx},${sz}`;
-      if (colKey === lastBoundColKey) return;
-      lastBoundColKey = colKey;
-
-      // The cache creates (or re-uploads) a column's tint textures on the active texture unit.
-      // Select a unit this renderer does not sample from first, otherwise the first column seen in
-      // a frame replaces the atlas on unit 0 for the rest of that frame (stale first frame, see
-      // decisions/M02c-fix-load-path.md).
-      gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
-      const pair = this.tintCache.getColumnTints(sx, sz, world);
-      if (pair.grassTexture !== lastBoundGrassTex) {
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, pair.grassTexture);
-        lastBoundGrassTex = pair.grassTexture;
-      }
-      if (pair.foliageTexture !== lastBoundFoliageTex) {
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, pair.foliageTexture);
-        lastBoundFoliageTex = pair.foliageTexture;
-      }
-    };
+    columns.length = columnCount;
+    this.visGrass.length = columnCount;
+    this.visFoliage.length = columnCount;
+    this.boundGrass = null;
+    this.boundFoliage = null;
+    this.activeUnit = SCRATCH_TEXTURE_UNIT;
+    this.passDraws = 0;
+    this.passTriangles = 0;
 
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     gl.uniform1i(this.locIsCutout, 0);
     gl.uniform1i(this.locIsWireframe, 0);
-
-    for (const mesh of meshes) {
-      if (mesh.opaque) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.opaque.vao);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.opaque.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.opaque.indexCount / 3;
-      }
-    }
+    this.drawPass(0);
 
     // 2. Cutout Pass
     gl.uniform1i(this.locIsCutout, 1);
-    for (const mesh of meshes) {
-      if (mesh.cutout) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.cutout.vao);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.cutout.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.cutout.indexCount / 3;
-      }
-    }
+    this.drawPass(1);
 
     // 3. Translucent Pass
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.uniform1i(this.locIsCutout, 0);
+    this.drawPass(2);
 
-    for (const mesh of meshes) {
-      if (mesh.translucent) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.translucent.vao);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.translucent.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.translucent.indexCount / 3;
-      }
-    }
+    let drawCalls = this.passDraws;
+    const triangles = this.passTriangles;
 
     // Restore depth write
     gl.depthMask(true);
