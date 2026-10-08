@@ -562,7 +562,7 @@ Parallel: M03a can start as early as round 3, alongside M01. After M03b: M03c �
 
 **Acceptance Criteria**
 
-- [ ] E2E: fly 1000 blocks in a straight line at 30 blocks/s: `frameCpuMsP95 ≤ 8`, `uploadMsP95 ≤ 3`, no frame's main-thread work > 50 ms.
+- [ ] E2E: fly 1000 blocks in a straight line at 30 blocks/s: no frame's main-thread work > 50 ms; `frameCpuMsP95` and `uploadMsP95` are measured and reported (their budgets, ≤ 8 and ≤ 3, are enforced at render distance 8 by M22a).
 - [ ] E2E: after flying, `chunksLoaded` ≤ (2·(rd+2)+1)² columns.
 - [ ] E2E: heap-growth test: fly 2000 blocks out and back; `performance.memory.usedJSHeapSize` growth ≤ 15% after forced GC (`--js-flags=--expose-gc`).
 - [ ] E2E: tracked GL buffer count returns to within 10% of baseline after returning to spawn.
@@ -577,7 +577,7 @@ Parallel: M03a can start as early as round 3, alongside M01. After M03b: M03c �
 
 | Task | Builds | Owns |
 | --- | --- | --- |
-| **M04a** — Streaming core | spiral load/unload (render distance 2–32, default 8, unload beyond RD + 2); priority by distance, then in-frustum, then travel direction; stale-job cancellation; ≤ 3 ms/frame upload budget with deferral; GPU buffer freeing; column-level frustum culling of draws (the same frustum test as the priority); `setRenderDistance`; a reusable scripted flight-path helper in `tests/e2e/helpers/` | E2E flight budgets; E2E `chunksLoaded` bound; E2E GL buffer count returns to baseline |
+| **M04a** — Streaming core | spiral load/unload (render distance 2–32, default 8, unload beyond RD + 2); priority by distance, then in-frustum, then travel direction; stale-job cancellation; ≤ 3 ms/frame upload budget with deferral; GPU buffer freeing; column-level frustum culling of draws (the same frustum test as the priority); `setRenderDistance`; a reusable scripted flight-path helper in `tests/e2e/helpers/` | E2E flight (no frame > 50 ms; p95 values reported); E2E `chunksLoaded` bound; E2E GL buffer count returns to baseline |
 | **M04b** — Fade-in & memory | dither-dissolve chunk fade-in; heap-growth test with forced GC | E2E heap growth ≤ 15 %; E2E RD 12 horizon; Visual Review `m04-horizon.png`, `m04-fast-flight.png` |
 
 Order: M04a → M04b.
