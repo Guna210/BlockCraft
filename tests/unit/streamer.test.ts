@@ -40,13 +40,30 @@ class FakeHost implements StreamerHost<string, string> {
     });
   }
 
-  applyGen(cx: number, cz: number): void {
-    this.applied.push(`${cx},${cz}`);
-    this.data.add(`${cx},${cz}`);
-    this.check();
+  /** Steps one generation result is stored in, and what each step costs on the fake clock. */
+  applySteps = 1;
+  applyStepCostMs = 0;
+  /** Milliseconds one mesh starter costs on the fake clock. */
+  startCostMs = 0;
+  /** Mesh starters that ran, one entry per section. */
+  startedSections: string[] = [];
+
+  applyGen(cx: number, cz: number): Array<() => void> {
+    const steps: Array<() => void> = [];
+    for (let i = 0; i < this.applySteps; i++) {
+      const last = i === this.applySteps - 1;
+      steps.push(() => {
+        this.clock += this.applyStepCostMs;
+        if (!last) return;
+        this.applied.push(`${cx},${cz}`);
+        this.data.add(`${cx},${cz}`);
+        this.check();
+      });
+    }
+    return steps;
   }
 
-  requestMesh(cx: number, cz: number): Array<Promise<string>> {
+  requestMesh(cx: number, cz: number): Array<() => Promise<string>> {
     const resolvers: Array<() => void> = [];
     const promises: Array<Promise<string>> = [];
     for (let i = 0; i < this.sectionsPerColumn; i++) {
@@ -57,7 +74,11 @@ class FakeHost implements StreamerHost<string, string> {
       );
     }
     this.meshRequests.push({ cx, cz, resolveAll: () => resolvers.forEach((r) => r()) });
-    return promises;
+    return promises.map((p, i) => () => {
+      this.clock += this.startCostMs;
+      this.startedSections.push(`${cx},${cz}#${i}`);
+      return p;
+    });
   }
 
   uploadSection(cx: number, cz: number): void {
@@ -524,6 +545,56 @@ describe('Streamer: slice accounting', () => {
     expect(host.slices.length).toBe(before + 1);
     expect(host.slices.every((ms) => ms >= 0)).toBe(true);
   });
+
+  it('stores a generated column in steps, a few milliseconds per task', async () => {
+    const { host, streamer } = make(2);
+    host.applySteps = 21;
+    host.applyStepCostMs = 1;
+    const view = viewAt(0, 0);
+    streamer.update(view, 1);
+    await host.finishGen();
+    // Nothing is stored inside the handler of the worker result; the pump does it in slices.
+    expect(host.slices.length).toBeGreaterThan(0);
+    expect(Math.max(...host.slices)).toBeLessThanOrEqual(4); // SLICE_MS 3 plus one 1 ms step
+    // A column is not usable before its last step.
+    expect(streamer.phaseOf(0, 0)).not.toBe('generated');
+    await drain(host, streamer, view);
+    expect(host.data.size).toBe(49); // RD + 1 = 3
+    expect(Math.max(...host.slices)).toBeLessThanOrEqual(4);
+    expect(host.violations).toEqual([]);
+  });
+
+  it('starts the mesh jobs of a column section by section, a few milliseconds per task', async () => {
+    const { host, streamer } = make(2);
+    host.sectionsPerColumn = 12;
+    host.startCostMs = 2;
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+    expect(host.startedSections.length).toBe(25 * 12);
+    // SLICE_MS 3 plus the one start that crosses it (2 ms) at most.
+    expect(Math.max(...host.slices)).toBeLessThanOrEqual(5);
+    expect(streamer.meshedColumns).toBe(25);
+  });
+
+  it('gives a mesh slot back when a column is discarded before all its jobs started', async () => {
+    const { host, streamer } = make(2, { maxMeshColumnsInFlight: 1 });
+    host.sectionsPerColumn = 12;
+    host.startCostMs = 2;
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+    host.startedSections.length = 0;
+    streamer.invalidate(0, 0);
+    streamer.update(view, host.clock + 1);
+    // One slice starts a few of the 12 jobs; the column is invalidated again before the rest.
+    await settle();
+    expect(host.startedSections.length).toBeGreaterThan(0);
+    expect(host.startedSections.length).toBeLessThan(12);
+    streamer.invalidate(0, 0);
+    await drain(host, streamer, view);
+    expect(streamer.getStats().meshRunning).toBe(0);
+    expect(streamer.phaseOf(0, 0)).toBe('meshed');
+    expect(streamer.meshedColumns).toBe(25);
+  });
 });
 
 describe('Streamer: region requests (waitForTerrain, createWorld)', () => {
@@ -532,20 +603,22 @@ describe('Streamer: region requests (waitForTerrain, createWorld)', () => {
     const view = viewAt(0, 0);
     await drain(host, streamer, view);
     let done = false;
+    let farPhaseWhenResolved: string | undefined;
     void streamer.requestRegion({ cx: 0, cz: 0, genRadius: 6, meshRadius: 5 }).then(() => {
       done = true;
+      farPhaseWhenResolved = streamer.phaseOf(5, 5); // before the ring rules apply again
     });
     for (let i = 0; i < 200 && !done; i++) {
       await host.finishGen();
       await host.finishMesh();
-      if (done) break; // resolved: look before the next frame applies the ring rules again
+      if (done) break;
       host.clock += 1;
       streamer.update(view, host.clock);
       streamer.drainUploads(Infinity);
       await settle();
     }
     expect(done).toBe(true);
-    expect(streamer.phaseOf(5, 5)).toBe('meshed');
+    expect(farPhaseWhenResolved).toBe('meshed');
     // Resolved: the pins are gone and the next frames free what is beyond the keep rings.
     for (let i = 0; i < 10; i++) {
       host.clock += 20;

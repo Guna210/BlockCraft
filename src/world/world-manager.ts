@@ -36,28 +36,39 @@ const PERIMETER_RING = 1;
 /** Main-thread time per frame that may be spent uploading meshes. */
 const UPLOAD_BUDGET_MS = 3;
 
-/** Stores a generation result in a world column. */
-function applyGenResult(world: World, res: GenResult): void {
-  const col = world.getColumn(res.cx, res.cz, true)!;
-  if (res.biomes) {
-    col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
-  }
-  if (res.grassTints) {
-    col.grassTints.set(res.grassTints);
-  }
-  if (res.foliageTints) {
-    col.foliageTints.set(res.foliageTints);
-  }
-  for (const secData of res.sections) {
-    const sec = col.getOrCreateSection(secData.sy);
-    if (sec) {
-      if (secData.states) {
-        sec.loadBlockStatesFrom(secData.states);
-      } else if (secData.uniformStateId !== null) {
-        sec.fill(secData.uniformStateId);
+/**
+ * The steps that store a generation result in a world column: the column with its biome data, then
+ * one step per section. The streamer runs them a few milliseconds at a time.
+ */
+function applyGenSteps(world: World, res: GenResult): Array<() => void> {
+  const steps: Array<() => void> = [
+    () => {
+      const col = world.getColumn(res.cx, res.cz, true)!;
+      if (res.biomes) {
+        col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
       }
-    }
+      if (res.grassTints) {
+        col.grassTints.set(res.grassTints);
+      }
+      if (res.foliageTints) {
+        col.foliageTints.set(res.foliageTints);
+      }
+    },
+  ];
+  for (const secData of res.sections) {
+    steps.push(() => {
+      const col = world.getColumn(res.cx, res.cz, true)!;
+      const sec = col.getOrCreateSection(secData.sy);
+      if (sec) {
+        if (secData.states) {
+          sec.loadBlockStatesFrom(secData.states);
+        } else if (secData.uniformStateId !== null) {
+          sec.fill(secData.uniformStateId);
+        }
+      }
+    });
   }
+  return steps;
 }
 
 /**
@@ -163,7 +174,8 @@ export class WorldManager {
       requestGen: (cx, cz) =>
         this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType),
       applyGen: (_cx, _cz, res) => {
-        if (this.world) applyGenResult(this.world, res);
+        const world = this.world;
+        return world ? applyGenSteps(world, res) : [];
       },
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
       uploadSection: (cx, cz, res) => {
@@ -550,15 +562,15 @@ export class WorldManager {
   }
 
   /**
-   * Builds the mesh jobs of one column and enqueues them: one promise per section that needs a mesh.
-   * The padded copies are taken now, from the block data the column holds at this moment.
+   * The mesh jobs of one column: one starter per section that needs a mesh. Running a starter takes
+   * the padded copy from the block data at that moment and enqueues the worker job.
    */
-  private requestColumnMesh(cx: number, cz: number): Array<Promise<MeshResult>> {
+  private requestColumnMesh(cx: number, cz: number): Array<() => Promise<MeshResult>> {
     const world = this.world;
     if (!world || !this.chunkRenderer || !this.tables) return [];
     const col = world.getColumn(cx, cz, false);
     if (!col) return [];
-    const jobs: Array<Promise<MeshResult>> = [];
+    const starters: Array<() => Promise<MeshResult>> = [];
 
     for (let sy = 0; sy < 20; sy++) {
       const sec = col.getSection(sy);
@@ -573,10 +585,15 @@ export class WorldManager {
         continue;
       }
 
-      const paddedSection = buildPaddedSection(world, cx, sy, cz);
-      jobs.push(this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, this.tables));
+      // 3. Copying the padded section is main-thread work: the streamer starts one job at a time.
+      starters.push(() => {
+        const tables = this.tables;
+        if (!tables) return Promise.reject(new Error('mesh tables are gone'));
+        const paddedSection = buildPaddedSection(world, cx, sy, cz);
+        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables);
+      });
     }
-    return jobs;
+    return starters;
   }
 
   public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {

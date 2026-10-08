@@ -30,13 +30,17 @@ import {
 export interface StreamerHost<G, M> {
   /** Starts generating a column on a worker. */
   requestGen(cx: number, cz: number): Promise<G>;
-  /** Stores a generation result in the world. */
-  applyGen(cx: number, cz: number, data: G): void;
   /**
-   * Builds and starts the mesh jobs of a column: one promise per section that needs a mesh. An
-   * empty array means the column needs no mesh.
+   * The steps that store a generation result in the world (the column itself, then one per section).
+   * Nothing is done until the streamer runs the steps, a few milliseconds at a time.
    */
-  requestMesh(cx: number, cz: number): Array<Promise<M>>;
+  applyGen(cx: number, cz: number, data: G): Array<() => void>;
+  /**
+   * The mesh jobs of a column: one starter per section that needs a mesh (an empty array: the column
+   * needs no mesh). A starter copies the padded section and queues the worker job, which costs a few
+   * milliseconds, so the streamer calls the starters a few at a time.
+   */
+  requestMesh(cx: number, cz: number): Array<() => Promise<M>>;
   /** Uploads one section mesh to the GPU. */
   uploadSection(cx: number, cz: number, mesh: M): void;
   /** Deletes every GPU resource of a column's meshes. */
@@ -111,6 +115,27 @@ interface Token {
   remaining: number;
 }
 
+/** A generation result whose steps are being stored in the world. */
+interface ApplyJob {
+  col: Column;
+  serial: number;
+  token: Token;
+  steps: Array<() => void>;
+  next: number;
+}
+
+/** The starters of a column's mesh jobs that have not run yet. */
+interface PrepJob<M> {
+  col: Column;
+  serial: number;
+  token: Token;
+  starters: Array<() => Promise<M>>;
+  next: number;
+  /** Called with the section result of one started job. */
+  onResult: (mesh: M) => void;
+  onError: () => void;
+}
+
 /** Longest a frame-less pump slice may run (the upload budget of one frame). */
 const SLICE_MS = 3;
 /** Camera rotation (radians) that triggers a re-prioritisation. */
@@ -132,6 +157,9 @@ export class Streamer<G, M> {
   private genTokens = new Set<Token>();
   private meshTokens = new Set<Token>();
   private deferred: Array<Pending<M>> = [];
+  private applyQueue: ApplyJob[] = [];
+  private prepQueue: Array<PrepJob<M>> = [];
+  private applyTurn = true;
   private requests: PendingRequest[] = [];
   private cancelled = 0;
 
@@ -211,6 +239,8 @@ export class Streamer<G, M> {
       this.meshQueue.length > 0 ||
       this.genTokens.size > 0 ||
       this.meshTokens.size > 0 ||
+      this.applyQueue.length > 0 ||
+      this.prepQueue.length > 0 ||
       this.deferred.length > 0 ||
       this.freesPending
     );
@@ -233,6 +263,8 @@ export class Streamer<G, M> {
     this.genQueue.length = 0;
     this.meshQueue.length = 0;
     this.deferred.length = 0;
+    this.applyQueue.length = 0;
+    this.prepQueue.length = 0;
     this.cancelled = 0;
     const requests = this.requests.splice(0);
     this.camCX = cx;
@@ -406,11 +438,11 @@ export class Streamer<G, M> {
     ) {
       this.plan();
     }
-    // Deleting a column's GPU meshes (a few ms for one column) and starting a mesh job (it copies the
-    // column's padded sections on the main thread, up to ~10 ms under load) are not frame work: the
-    // pump task that follows the frame does them in slices of SLICE_MS (decisions/M04a-streaming.md).
-    this.dispatch(false);
-    if (this.meshQueue.length > 0 || this.freesPending) this.schedulePump();
+    // Deleting a column's GPU meshes, storing generated columns and copying the padded sections of
+    // mesh jobs are not frame work: the pump task that follows the frame does them in slices of
+    // SLICE_MS (decisions/M04a-streaming.md).
+    this.dispatch();
+    if (this.hasPumpWork()) this.schedulePump();
   }
 
   /**
@@ -702,7 +734,7 @@ export class Streamer<G, M> {
   // ---------------------------------------------------------------------------------------------
   // Dispatch and results
 
-  private dispatch(startMeshJobs = true): void {
+  private dispatch(): void {
     if (!this.active && this.requests.length === 0) return;
     if (!this.genSorted) {
       this.genQueue.sort((a, b) => comparePriority(a.prio, b.prio));
@@ -716,21 +748,12 @@ export class Streamer<G, M> {
       this.meshQueue.sort((a, b) => comparePriority(a.prio, b.prio));
       this.meshSorted = true;
     }
-    if (!startMeshJobs) return;
-    const sliceStart = this.host.now();
-    let started = 0;
     while (
       this.meshQueue.length > 0 &&
       this.meshTokens.size < this.limits.maxMeshColumnsInFlight &&
       this.deferred.length < this.limits.maxDeferred
     ) {
-      // One slice of preparation work per task; the rest follows in the next one.
-      if (started > 0 && this.host.now() - sliceStart >= SLICE_MS) {
-        this.schedulePump();
-        break;
-      }
       this.startMesh(this.meshQueue.shift()!);
-      started++;
     }
   }
 
@@ -743,8 +766,7 @@ export class Streamer<G, M> {
     this.host.requestGen(col.cx, col.cz).then(
       (data) => {
         if (token.abandoned || epoch !== this.epoch) return;
-        this.genTokens.delete(token);
-        this.task(() => this.onGen(col, serial, data));
+        this.task(() => this.onGen(col, serial, token, data));
       },
       () => {
         if (token.abandoned || epoch !== this.epoch) return;
@@ -758,24 +780,61 @@ export class Streamer<G, M> {
     );
   }
 
-  private onGen(col: Column, serial: number, data: G): void {
+  /**
+   * A worker returned a column. Its generation slot stays taken until the column is stored, which
+   * the pump does a few milliseconds at a time (`runWork`).
+   */
+  private onGen(col: Column, serial: number, token: Token, data: G): void {
     if (col.serial !== serial || this.cols.get(col.key) !== col || col.phase !== 'generating') {
       // Adopted (generated on the main thread) or freed meanwhile.
+      this.genTokens.delete(token);
       this.cancelled++;
       this.dispatch();
       return;
     }
     if (!this.wantGen(col.cx, col.cz)) {
+      this.genTokens.delete(token);
       this.cols.delete(col.key);
       this.cancelled++;
       this.dispatch();
       return;
     }
-    this.host.applyGen(col.cx, col.cz, data);
-    col.phase = 'generated';
-    this.tryQueueMeshAround(col);
-    this.dispatch();
+    this.applyQueue.push({
+      col,
+      serial,
+      token,
+      steps: this.host.applyGen(col.cx, col.cz, data),
+      next: 0,
+    });
     this.schedulePump();
+  }
+
+  /** Runs one step of the oldest generation result; true when it did something. */
+  private applyStep(): boolean {
+    const job = this.applyQueue[0];
+    if (!job) return false;
+    const col = job.col;
+    if (job.token.abandoned) {
+      this.applyQueue.shift();
+      return true;
+    }
+    if (col.serial !== job.serial || this.cols.get(col.key) !== col) {
+      // Adopted or freed while it waited: the steps are dropped.
+      this.applyQueue.shift();
+      this.genTokens.delete(job.token);
+      this.cancelled++;
+      this.dispatch();
+      return true;
+    }
+    if (job.next < job.steps.length) job.steps[job.next++]!();
+    if (job.next >= job.steps.length) {
+      this.applyQueue.shift();
+      this.genTokens.delete(job.token);
+      col.phase = 'generated';
+      this.tryQueueMeshAround(col);
+      this.dispatch();
+    }
+    return true;
   }
 
   private startMesh(col: Column): void {
@@ -785,17 +844,17 @@ export class Streamer<G, M> {
       this.cancelled++;
       return;
     }
-    const promises = this.host.requestMesh(col.cx, col.cz);
-    if (promises.length === 0) {
+    const starters = this.host.requestMesh(col.cx, col.cz);
+    if (starters.length === 0) {
       col.phase = 'meshed';
       this.schedulePump();
       return;
     }
     col.phase = 'meshing';
-    col.jobsLeft = promises.length;
+    col.jobsLeft = starters.length;
     col.uploadsPending = 0;
     col.stale = false;
-    const token: Token = { abandoned: false, remaining: promises.length };
+    const token: Token = { abandoned: false, remaining: starters.length };
     const serial = col.serial;
     const epoch = this.epoch;
     this.meshTokens.add(token);
@@ -803,26 +862,59 @@ export class Streamer<G, M> {
       token.remaining--;
       if (token.remaining === 0) this.meshTokens.delete(token);
     };
-    for (const p of promises) {
-      p.then(
-        (mesh) => {
-          if (token.abandoned || epoch !== this.epoch) return;
-          finishJob();
-          this.task(() => this.onMeshSection(col, serial, mesh));
-        },
-        () => {
-          if (token.abandoned || epoch !== this.epoch) return;
-          finishJob();
-          if (col.serial === serial) {
-            col.stale = true;
-            col.failed = true;
-            col.jobsLeft--;
-            this.finishIfDone(col);
-          }
-          this.dispatch();
-        },
-      );
+    this.prepQueue.push({
+      col,
+      serial,
+      token,
+      starters,
+      next: 0,
+      onResult: (mesh) => {
+        if (token.abandoned || epoch !== this.epoch) return;
+        finishJob();
+        this.task(() => this.onMeshSection(col, serial, mesh));
+      },
+      onError: () => {
+        if (token.abandoned || epoch !== this.epoch) return;
+        finishJob();
+        if (col.serial === serial) {
+          col.stale = true;
+          col.failed = true;
+          col.jobsLeft--;
+          this.finishIfDone(col);
+        }
+        this.dispatch();
+      },
+    });
+    this.schedulePump();
+  }
+
+  /** Starts the next mesh job of the oldest column; true when it did something. */
+  private prepStep(): boolean {
+    const job = this.prepQueue[0];
+    if (!job) return false;
+    const col = job.col;
+    if (job.token.abandoned || col.serial !== job.serial || this.cols.get(col.key) !== col) {
+      // The attempt was discarded while it waited: the starters that never ran are dropped, and
+      // their share of the in-flight slot is given back.
+      this.prepQueue.shift();
+      for (let i = job.next; i < job.starters.length; i++) {
+        job.token.remaining--;
+      }
+      if (job.token.remaining <= 0) this.meshTokens.delete(job.token);
+      this.dispatch();
+      return true;
     }
+    const start = job.starters[job.next++]!;
+    if (job.next >= job.starters.length) this.prepQueue.shift();
+    let started: Promise<M>;
+    try {
+      started = start();
+    } catch {
+      job.onError();
+      return true;
+    }
+    started.then(job.onResult, job.onError);
+    return true;
   }
 
   private onMeshSection(col: Column, serial: number, mesh: M): void {
@@ -882,18 +974,50 @@ export class Streamer<G, M> {
     this.task(() => this.pumpSlice());
   }
 
+  /**
+   * One slice of between-frame work, about SLICE_MS long: frees, then (only while a region request
+   * is pending) uploads, then storing generated columns and starting mesh jobs, one step each in
+   * turn. Every part does at least one unit while time is left, so the slice overshoots by at most
+   * one unit.
+   */
   private pumpSlice(): void {
+    const end = this.host.now() + SLICE_MS;
     this.freePass(SLICE_MS);
     // Uploads happen in the frame, inside its upload budget. Only a pending region request
     // (createWorld, waitForTerrain) may have them done between frames, because it must finish
     // although the frame loop may be suspended (decisions/M04a-streaming.md).
-    if (this.requests.length > 0) this.drainUploads(SLICE_MS);
+    if (this.requests.length > 0 && this.host.now() < end) {
+      this.drainUploads(end - this.host.now());
+    }
+    this.runWork(end);
     this.dispatch();
     this.checkRequests();
     // The next slice runs in a separate task, so worker messages and input are handled in between.
-    if (this.requests.length > 0 && this.deferred.length > 0 && !this.freesPending) {
-      this.schedulePump();
+    if (this.hasPumpWork()) this.schedulePump();
+  }
+
+  /** Alternates storing generated columns and starting mesh jobs until `end` (at least one step). */
+  private runWork(end: number): void {
+    let did = false;
+    while (!did || this.host.now() < end) {
+      const first = this.applyTurn;
+      this.applyTurn = !this.applyTurn;
+      const stepped = first
+        ? this.applyStep() || this.prepStep()
+        : this.prepStep() || this.applyStep();
+      if (!stepped) return;
+      did = true;
     }
+  }
+
+  /** Whether a pump slice has something to do. */
+  private hasPumpWork(): boolean {
+    return (
+      this.applyQueue.length > 0 ||
+      this.prepQueue.length > 0 ||
+      this.freesPending ||
+      (this.requests.length > 0 && this.deferred.length > 0)
+    );
   }
 
   private checkRequests(): void {
