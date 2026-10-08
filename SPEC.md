@@ -177,7 +177,7 @@ Measured on real hardware in headed mode via `npm run bench` (informational), an
 - **Rendering passes (in order):** sky → opaque (front-to-back) → cutout (alpha-tested: leaves, plants) → entities → particles → translucent (back-to-front sorted: water, glass, ice) → block outline → first-person hand/item → post (underwater tint, damage vignette).
 - **Vertex format:** packed into two `uint32`s per vertex where possible (position within section, normal index, UV index, AO, sky light, block light, tint index). Record the bit layout in a `decisions/` record.
 - **Missing texture sentinel:** any block or item whose texture fails to resolve renders as a **magenta (#FF00FF) and black checkerboard**. The test harness detects this color; it must never appear in a correct build.
-- **Debug mode:** `?debug=1` in the URL enables the debug API (Section 4), WebGL error checking after every draw call, and the F3 overlay. Debug mode must not change gameplay behavior.
+- **Debug mode:** `?debug=1` in the URL enables the debug API (Section 4), WebGL error checking once per frame (after every draw call when the URL also has `&glcheck=draw`), and the F3 overlay. Debug mode must not change gameplay behavior.
 
 ---
 
@@ -428,7 +428,7 @@ Order: M00a → M00b.
 
 **Scope**
 
-- WebGL2 abstraction: shader compilation with readable error reporting (file + line), buffer/VAO/texture wrappers with resource tracking and disposal, debug-mode `gl.getError()` after every draw.
+- WebGL2 abstraction: shader compilation with readable error reporting (file + line), buffer/VAO/texture wrappers with resource tracking and disposal, debug-mode `gl.getError()` once per frame (after every draw with `&glcheck=draw`).
 - Perspective camera, free-fly controls (WASD + mouse with pointer lock), FOV 70 default.
 - **Procedural texture system:** one generator function per texture producing 16×16 pixel art with deterministic seeded noise, dithering, and hand-tuned palettes. Must include at least: grass top, grass side (with dirt and overhanging grass fringe), dirt, stone, cobblestone, sand, gravel, oak/birch/pine logs (top + side), leaves ×3, planks ×3, glass, water (animated, 32 frames), lava (animated), all ores in Appendix A.
 - Texture atlas packer with 4 px edge padding per tile and a **manually built mip chain** (mips generated per tile, not across tiles) to prevent bleeding.
@@ -451,7 +451,7 @@ Order: M00a → M00b.
 
 | Task | Builds | Owns |
 | --- | --- | --- |
-| **M01a** — WebGL2 core & camera | `render/gl.ts`: context and wrappers for shaders (compile errors report file + line), buffers, VAOs and textures, with resource tracking and disposal; debug-mode `gl.getError()` after every draw feeding `getRenderStats().glErrors`; perspective camera (FOV 70); free-fly WASD + mouse with pointer lock; `engine/input.ts` with named, rebindable actions | Its own unit tests (resource tracking, shader error formatting) |
+| **M01a** — WebGL2 core & camera | `render/gl.ts`: context and wrappers for shaders (compile errors report file + line), buffers, VAOs and textures, with resource tracking and disposal; debug-mode `gl.getError()` once per frame (after every draw with `&glcheck=draw`) feeding `getRenderStats().glErrors`; perspective camera (FOV 70); free-fly WASD + mouse with pointer lock; `engine/input.ts` with named, rebindable actions | Its own unit tests (resource tracking, shader error formatting) |
 | **M01b** — Procedural textures & atlas | one generator per texture listed in the M01 Scope (16×16, seeded, dithered, hand-tuned palettes; animated water with 32 frames; animated lava); atlas packer with 4 px padding; per-tile manual mip chain; atlas dump to `m01-atlas.png` | Unit: generator determinism and no duplicate tile rects; Unit: mip-level tile size and no neighbor sampling; Visual Review `m01-atlas.png` |
 | **M01c** — Texture test scene | 5×5 cube grid, one material per cube on all six faces; magenta/black missing-texture sentinel; `missingTextures` and `textureAtlasSize` in `getRenderStats()` | Unit: every texture-bearing block resolves to a texture (M02a re-points this test at the real registry); all M01 E2E criteria; Visual Review `m01-texture-grid.png` |
 
