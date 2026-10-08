@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | gate pending; blocked on owner (Playwright workers) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | CI=1 verify green (299 unit, 41 e2e, 588 s vs master 441 s); m04 alone 10/10. Plain verify (2 workers on 4 cores) fails only m04 `pumpMsMax` (53.3, 57.8; one 0.3 ms step descheduled; frame max 48.1/12.1). Recommended: owner sets `workers: 1` in playwright.config.ts (harness change). Asked the builder for retry/flaky counts (CI config has `retries: 2`). Gate message waiting in its session. |
+| M04a | gate pending; blocked on owner (Playwright workers) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | CI=1 verify green (299 unit, 41 e2e, 588 s vs master 441 s); m04 alone 10/10. Plain verify (2 workers on 4 cores) fails only m04 `pumpMsMax` (53.3, 57.8; one 0.3 ms step descheduled; frame max 48.1/12.1). Recommended: owner sets `workers: 1` in playwright.config.ts (harness change). No retries needed: CI=1 verify reported "41 passed", no flaky line; all 10 m04 runs passed first time (retries 0). Gate message waiting in its session. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -67,6 +67,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
 
 - 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
 
