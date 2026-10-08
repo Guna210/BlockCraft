@@ -55,6 +55,14 @@ export class GLWrapper {
 
   private checkErrors() {
     if (!this.debug) return;
+    this.drainErrors();
+  }
+
+  /**
+   * Reads gl.getError() until NO_ERROR and calls the error callback once per error, whether or not
+   * per-draw checking is on. Debug mode calls this once per frame (decisions/M01a-fix-gl-error-check.md).
+   */
+  drainErrors(): void {
     let error = this.gl.getError();
     while (error !== this.gl.NO_ERROR) {
       if (this.onErrorCallback) this.onErrorCallback();

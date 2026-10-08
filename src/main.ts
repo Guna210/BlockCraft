@@ -1,5 +1,5 @@
 import { initDebugApi } from './debug/api/index';
-import { markReady, renderStats } from './debug/api/core';
+import { markReady, renderStats, setGlErrorDrain } from './debug/api/core';
 import { setTestSceneInitializer } from './debug/api/test-scene';
 import { setActiveCamera } from './debug/api/camera';
 import { GLWrapper } from './render/gl';
@@ -52,7 +52,10 @@ function main() {
   const params = new URLSearchParams(window.location.search);
   const debug = params.get('debug') === '1';
 
-  const glWrapper = new GLWrapper(gl, debug, () => {
+  // Debug mode reads WebGL errors once per frame. `&glcheck=draw` also reads them after every draw
+  // call, which pins the error to its draw but costs a GPU-process round trip per draw.
+  const glCheckDraw = debug && params.get('glcheck') === 'draw';
+  const glWrapper = new GLWrapper(gl, glCheckDraw, () => {
     renderStats.glErrors++;
   });
 
@@ -64,6 +67,11 @@ function main() {
 
   const worldManager = WorldManager.getInstance();
   worldManager.initGL(glWrapper, camera);
+  if (debug) {
+    const drain = () => glWrapper.drainErrors();
+    worldManager.drainGlErrors = drain;
+    setGlErrorDrain(drain);
+  }
 
   let testScene: TestScene | null = null;
   let firstFrameResolve: (() => void) | null = null;
@@ -120,6 +128,9 @@ function main() {
 
     const endTime = performance.now();
     cpuTimes.push(endTime - startTime);
+
+    // Not update or draw submission (SPEC §2.3), so it runs after the frame CPU timer has stopped.
+    if (debug) glWrapper.drainErrors();
 
     frameCount++;
     fpsTimer += dt;

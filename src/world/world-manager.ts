@@ -59,6 +59,9 @@ export class WorldManager {
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
 
+  // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
+  public drainGlErrors: (() => void) | null = null;
+
   public static getInstance(): WorldManager {
     if (!WorldManager.instance) {
       WorldManager.instance = new WorldManager();
@@ -530,6 +533,7 @@ export class WorldManager {
     const gl = this.glWrapper.gl;
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.drawTerrain();
+    if (this.drainGlErrors) this.drainGlErrors();
   }
 
   private drawTerrain(): void {
