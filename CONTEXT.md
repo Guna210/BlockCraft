@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | blocked on owner (budget policy + section culling) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Local `f28db6b`. Fence-gated uploads impossible (Chrome reports fence status ~20 frames late; uploads starved). Pump accounting added. 10 flights: p95 ≤ 8 in 6/10, frame max ≤ 50 in 8/10, pump max ≤ 50 in 1/10 (a single bufferData blocks 0.5–1.7 s on the SwiftShader backlog). Builder told to hold and to confirm that streaming uploads stay inside the frame budget during the flight (decision 2). |
+| M04a | blocked on owner (p95 budget policy) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Local `46b140d`. Pump slices had been uploading outside the frame budget (the source of the 0.5–1.7 s stalls); fixed: streaming uploads only in the frame's 3 ms budget. 4 flights: frame max ≤ 21.5 ms and pump max ≤ 40.6 ms (≤ 50 holds 4/4); coverage, `chunksLoaded` and GL-count checks pass; p95 fails 4/4 (`frameCpuMsP95` 10.6–12.2, `uploadMsP95` 6.2–10.1: one section upload costs 6–10 ms on SwiftShader, draw submission ~5 ms). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,7 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- M04a budget policy (owner): recommended section culling (SPEC lines 561, 580, 1278, 1304) plus a §2.3 clarification that CI timers also exclude time blocked in a single WebGL call longer than 2 ms (reported separately); alternatives: move flight-budget enforcement to M22a, or an [INCOMPLETE] PR. Drafts in the orchestrator session.
+- M04a p95 policy (owner), superseding the earlier five-edit proposal: recommended A = M04a asserts the 50 ms rules plus the functional checks and reports p95; p95 enforced at RD 8 by M22a (SPEC lines 565 and 580 drafted). B = section culling plus smaller uploads, upload p95 ≤ 3 still unlikely. The §2.3 "exclude blocked GL calls" clarification is no longer recommended (it would exclude almost all upload time in CI).
 
 
 
@@ -64,6 +64,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a: background-slice uploads around the frame budget found and fixed; 50 ms rules now hold. Recommendation to the owner revised: assert the 50 ms rules in M04a, enforce p95 at RD 8 in M22a.
 
 - 2026-10-08: M04a QUESTION 5: in-scope fixes can't make the 50 ms rule hold under SwiftShader (blocked uploads of 0.5–1.7 s). Put the budget-policy decision to the owner; builder holding.
 
