@@ -261,6 +261,37 @@ export class ChunkRenderer {
     }
   }
 
+  /** Deletes every GPU resource of the section meshes of one column. */
+  public removeColumnMeshes(cx: number, cz: number): void {
+    const list = this.columnMeshes.get(`${cx},${cz}`);
+    if (!list) return;
+    for (const mesh of Array.from(list)) this.removeSectionMesh(mesh.key);
+  }
+
+  /**
+   * Creates the column's tint textures now, as part of its upload, instead of in the first frame that
+   * draws it. The textures are created on the scratch unit (see render()).
+   */
+  public prepareColumnTints(
+    cx: number,
+    cz: number,
+    world: import('../world/world').World | null,
+  ): void {
+    const gl = this.glWrapper.gl;
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+    this.tintCache.getColumnTints(cx, cz, world);
+  }
+
+  /** Number of section meshes on the GPU. */
+  public get sectionMeshCount(): number {
+    return this.sectionMeshes.size;
+  }
+
+  /** Number of columns with at least one section mesh on the GPU. */
+  public get meshedColumnCount(): number {
+    return this.columnMeshes.size;
+  }
+
   public clearAllMeshes(): void {
     for (const key of Array.from(this.sectionMeshes.keys())) {
       this.removeSectionMesh(key);
@@ -488,8 +519,8 @@ export class ChunkRenderer {
 
     renderStats.drawCalls = drawCalls;
     renderStats.triangles = triangles;
-    renderStats.chunksLoaded = this.sectionMeshes.size;
-    renderStats.chunksMeshed = this.sectionMeshes.size;
+    // chunksLoaded and chunksMeshed come from the streamer (WorldManager); only the draw knows
+    // how many section meshes were visible.
     renderStats.chunksVisible = meshes.length;
   }
 }

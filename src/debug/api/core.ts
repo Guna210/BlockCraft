@@ -46,6 +46,11 @@ export interface BlockCraftDebugAPI {
   setWorkerPoolSize?: (size: number) => void;
   getMainThreadGenCount?: () => number;
   resetMainThreadGenCount?: () => void;
+  setRenderDistance?: (n: number) => number;
+  getStreamingStats?: () => import('../../world/streamer').StreamingStats;
+  resetFrameStats?: () => void;
+  getFrameStats?: () => import('../../engine/frame-stats').FrameStatsSnapshot;
+  getGlResourceCounts?: () => import('../../render/gl').ResourceCounts;
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;
@@ -89,9 +94,17 @@ export function setGlErrorDrain(fn: (() => void) | null): void {
   drainGlErrors = fn;
 }
 
+// Set by WorldManager: refreshes the stats that depend on streaming state (chunksLoaded, chunksMeshed).
+let refreshRenderStats: (() => void) | null = null;
+
+export function setRenderStatsRefresh(fn: (() => void) | null): void {
+  refreshRenderStats = fn;
+}
+
 export const api: BlockCraftDebugAPI = {
   ready: () => readyPromise,
   getRenderStats: () => {
+    if (refreshRenderStats) refreshRenderStats();
     // Count errors that no frame has drained yet, so a test that holds requestAnimationFrame
     // still sees them.
     if (drainGlErrors) drainGlErrors();

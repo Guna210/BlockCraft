@@ -8,6 +8,13 @@ import './ore-locate';
 import { getLight } from './light';
 import { wireframe, setWireframe } from './wireframe';
 import { setWorkerPoolSize, getMainThreadGenCount, resetMainThreadGenCount } from './workers';
+import {
+  setRenderDistance,
+  getStreamingStats,
+  resetFrameStats,
+  getFrameStats,
+  getGlResourceCounts,
+} from './streaming';
 import { WorldManager } from '../../world/world-manager';
 
 declare global {
@@ -35,6 +42,11 @@ export function initDebugApi() {
     api.resetMainThreadGenCount = resetMainThreadGenCount;
     api.wireframe = wireframe;
     api.setWireframe = setWireframe;
+    api.setRenderDistance = setRenderDistance;
+    api.getStreamingStats = getStreamingStats;
+    api.resetFrameStats = resetFrameStats;
+    api.getFrameStats = getFrameStats;
+    api.getGlResourceCounts = getGlResourceCounts;
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);
     api.waitForTerrain = (r) => WorldManager.getInstance().waitForTerrain(r);
     api.getWorkerStats = () => WorldManager.getInstance().getWorkerStats();

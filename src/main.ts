@@ -8,6 +8,7 @@ import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
 import { WorldManager } from './world/world-manager';
+import { frameStats, percentile95 } from './engine/frame-stats';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -110,10 +111,17 @@ function main() {
   let frameCount = 0;
   let fpsTimer = 0;
   const cpuTimes: number[] = [];
+  const uploadTimes: number[] = [];
 
   function render(time: number) {
-    // Reads the errors of an earlier frame once the GPU has finished it; never waits for the GPU.
-    if (frameDrain) frameDrain.beginFrame();
+    // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
+    // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
+    let glCheckMs = 0;
+    if (frameDrain) {
+      const t = performance.now();
+      frameDrain.beginFrame();
+      glCheckMs = performance.now() - t;
+    }
     const startTime = performance.now();
     const dt = time - lastTime;
     lastTime = time;
@@ -132,10 +140,18 @@ function main() {
     }
 
     const endTime = performance.now();
-    cpuTimes.push(endTime - startTime);
+    const frameCpuMs = endTime - startTime;
+    cpuTimes.push(frameCpuMs);
+    const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
+    uploadTimes.push(uploadMs);
 
-    // Not update or draw submission (SPEC §2.3), so the fence is placed after the frame CPU timer has stopped.
-    if (frameDrain) frameDrain.endFrame();
+    // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
+    if (frameDrain) {
+      const t = performance.now();
+      frameDrain.endFrame();
+      glCheckMs += performance.now() - t;
+    }
+    frameStats.record(frameCpuMs, uploadMs, glCheckMs);
 
     frameCount++;
     fpsTimer += dt;
@@ -151,6 +167,9 @@ function main() {
         renderStats.frameCpuMsP95 = cpuTimes[p95Index] || 0;
         cpuTimes.length = 0;
       }
+      // Same one-second window as the frame CPU time
+      renderStats.uploadMsP95 = percentile95(uploadTimes);
+      uploadTimes.length = 0;
     }
 
     requestAnimationFrame(render);
