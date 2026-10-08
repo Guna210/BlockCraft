@@ -558,6 +558,7 @@ Parallel: M03a can start as early as round 3, alongside M01. After M03b: M03c �
 - Main-thread upload budget (≤ 3 ms/frame); remaining uploads deferred.
 - Chunks fade in (dither dissolve) rather than popping.
 - Memory bounds: GPU buffers for unloaded chunks are freed.
+- Column-level frustum culling: chunks outside the camera frustum are not drawn (the same test that ranks loading priority).
 
 **Acceptance Criteria**
 
@@ -576,7 +577,7 @@ Parallel: M03a can start as early as round 3, alongside M01. After M03b: M03c �
 
 | Task | Builds | Owns |
 | --- | --- | --- |
-| **M04a** — Streaming core | spiral load/unload (render distance 2–32, default 8, unload beyond RD + 2); priority by distance, then in-frustum, then travel direction; stale-job cancellation; ≤ 3 ms/frame upload budget with deferral; GPU buffer freeing; `setRenderDistance`; a reusable scripted flight-path helper in `tests/e2e/helpers/` | E2E flight budgets; E2E `chunksLoaded` bound; E2E GL buffer count returns to baseline |
+| **M04a** — Streaming core | spiral load/unload (render distance 2–32, default 8, unload beyond RD + 2); priority by distance, then in-frustum, then travel direction; stale-job cancellation; ≤ 3 ms/frame upload budget with deferral; GPU buffer freeing; column-level frustum culling of draws (the same frustum test as the priority); `setRenderDistance`; a reusable scripted flight-path helper in `tests/e2e/helpers/` | E2E flight budgets; E2E `chunksLoaded` bound; E2E GL buffer count returns to baseline |
 | **M04b** — Fade-in & memory | dither-dissolve chunk fade-in; heap-growth test with forced GC | E2E heap growth ≤ 15 %; E2E RD 12 horizon; Visual Review `m04-horizon.png`, `m04-fast-flight.png` |
 
 Order: M04a → M04b.
@@ -1274,7 +1275,7 @@ Order: M21a → M21b → M21c.
 **Scope**
 
 - **Cave culling:** per-section visibility graph (which faces connect through air) computed at mesh time; BFS from the camera section through connected faces to skip sections hidden behind solid terrain.
-- Frustum culling at section granularity with a hierarchical (column → section) test.
+- Frustum culling at section granularity, refining the column-level culling from M04 (hierarchical column → section test).
 - Multi-draw or merged buffers to hit the draw-call budget; indirect-style batching by pass.
 - Distant terrain LOD (render distance > 12): simplified heightmap meshes for far columns beyond full-detail range.
 - Optional post-processing (settings toggle): FXAA, subtle bloom from emissive blocks, and screen-space god rays when looking toward the sun.
@@ -1300,7 +1301,7 @@ Order: M21a → M21b → M21c.
 
 | Task | Builds | Owns |
 | --- | --- | --- |
-| **M22a** — Culling & batching | per-section visibility graph computed at mesh time; cave-culling BFS; hierarchical frustum culling; merged buffers / multi-draw batching per pass; debug toggle for culling | E2E cave culling ≤ 40 % with < 0.5 % pixel difference; E2E every "Yes" budget in §2.3 |
+| **M22a** — Culling & batching | per-section visibility graph computed at mesh time; cave-culling BFS; section-level frustum culling inside the columns that M04a's column-level culling keeps; merged buffers / multi-draw batching per pass; debug toggle for culling | E2E cave culling ≤ 40 % with < 0.5 % pixel difference; E2E every "Yes" budget in §2.3 |
 | **M22b** — LOD & loading screen | heightmap LOD beyond full-detail range for render distance > 12; initial-load screen with progress bar | E2E RD 16 horizon and draw calls; Visual Review `m22-lod-horizon.png` |
 | **M22c** — Post-processing | FXAA, emissive bloom, screen-space god rays, settings toggles | Visual Review `m22-bloom.png` |
 | **M22d** — Accessibility & resilience | directional subtitles, reduced-motion, high-contrast UI; global error boundary that saves the world and shows a recoverable screen; debug-only fault-injection flag | E2E reduced motion; E2E subtitles; E2E fault injection |
