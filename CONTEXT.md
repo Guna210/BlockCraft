@@ -22,14 +22,13 @@ Last updated: 2026-10-07
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. Fix tasks also merged: M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M01a-fix | review 1 PASS, CI green on `9f3dbda`, owner merging | `session_01Lx6wfwkj49Hq1HYp67Nw5w` | (owner-started) | [#32](https://github.com/Guna210/BlockCraft/pull/32) | 1 | Move to Done once merged. |
-| M04a | prompt reissued 2026-10-08 (paste after #32 merges) | — | — | — | — | Decision 6 rewritten: frame timer as in main.ts, per-frame drain stays after it, drain time exposed as `glCheckMs`. |
+| M04a | blocked: QUESTION, waiting for owner's scope decision | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Builder measured master 68ef7c7 at RD 8: 2845 draws, `frameCpuMs` p50 8–10 / p95 20–27 ms, `glCheckMs` 0.5–3 s, fps 1–2 (RD 4: 841 draws, p95 5.3 ms). Recommended: column-level frustum culling moved into M04a (SPEC edits drafted for lines 560, 579, 1277, 1303). Branch answer to send: `claude/m04a`. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -37,7 +36,9 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- Debug-mode FPS: confirmed by the owner (22 → 200 FPS with the per-draw check off). SPEC edit merged on master as `2be70f2`. M01a-fix PR #32 open. After it merges: reissue the M04a prompt with decision 6 rewritten (the frame timer already stops before the per-frame drain; nothing else excluded).
+- M04a scope: can column-level frustum culling move from M22a into M04a? Needs owner SPEC edits (new line after 560; lines 579, 1277, 1303). Alternative: flight budgets at a lower RD now, RD 8 in M22a. Then the orchestrator replies to the builder.
+- CI watch item: in debug mode the per-frame `getError` waits for SwiftShader to finish each frame (0.5–3 s at RD 8), blocking the main thread, so streaming in CI is slow. Culling reduces it. Matters for M04b's `m04-fast-flight.png`.
+
 
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
 
@@ -61,6 +62,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M01a-fix merged (#32). M04a builder stopped with a QUESTION: RD 8 frame budget unreachable on master (numbers in the table). Recommended pulling column-level frustum culling into M04a; SPEC edits handed to the owner.
 
 - 2026-10-08: M01a-fix review round 1 PASS; CI `verify` green on `9f3dbda`, mergeable clean. Told the owner to merge; suggested a real-GPU check on the branch preview. M04a prompt reissued with decision 6 rewritten.
 
