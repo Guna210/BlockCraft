@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (final: test asserts, 10-run reliability, verify, gate) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner chose option A; SPEC on master `d37918d`. Asserted: frame and pump max ≤ 50 ms, streaming, coverage, `chunksLoaded`, GL counts. Reported only: frameCpuMsP95, uploadMsP95 (M22a enforces them at RD 8). Next: 10 consecutive m04 passes, then full verify, then publish gate. |
+| M04a | building (10× m04 alone, then full verify) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Fixed its own verify failures: waitForTerrain now moves the streamer; gen apply and padded copies moved into ~3 ms pump steps; background jobs keep one worker free for foreground jobs. Risk: under local 2-worker verify load single steps hit 50–110 ms (pump 53.3, frame 48.1); alone (CI = 1 worker) pump max 15.8. Told: no starvation at pool size 1; no re-running until green, report instead. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -64,6 +64,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
 
 - 2026-10-08: Owner chose option A (SPEC `d37918d`). Orchestrator told the M04a builder to sync, finish the asserts, run m04 10 times in a row, then verify and go through the publish gate.
 
