@@ -28,8 +28,8 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M01a-fix | PR open, review 1 to start | `session_01Lx6wfwkj49Hq1HYp67Nw5w` | — | [#32](https://github.com/Guna210/BlockCraft/pull/32) | 1 | Reviewer prompt given 2026-10-08. CI `verify` was in progress then. |
-| M04a | ON HOLD until M01a-fix merges; prompt to be reissued | — | — | — | — | Builder prompt given in orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` (2026-10-07). |
+| M01a-fix | review 1 PASS, CI green on `9f3dbda`, owner merging | `session_01Lx6wfwkj49Hq1HYp67Nw5w` | (owner-started) | [#32](https://github.com/Guna210/BlockCraft/pull/32) | 1 | Move to Done once merged. |
+| M04a | prompt reissued 2026-10-08 (paste after #32 merges) | — | — | — | — | Decision 6 rewritten: frame timer as in main.ts, per-frame drain stays after it, drain time exposed as `glCheckMs`. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -39,7 +39,6 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 - Debug-mode FPS: confirmed by the owner (22 → 200 FPS with the per-draw check off). SPEC edit merged on master as `2be70f2`. M01a-fix PR #32 open. After it merges: reissue the M04a prompt with decision 6 rewritten (the frame timer already stops before the per-frame drain; nothing else excluded).
 
-- M04a frame-time metric: the builder prompt defines `frameCpuMs` as frame main-thread time minus only the wait inside the debug-mode `gl.getError()` loop (SPEC §2.3 "excludes GPU"), with that wait exposed separately. Owner may veto before starting the builder.
 - M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
 
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
@@ -56,12 +55,14 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - One streamer owns column state (not `World.hasColumn`). `createWorld` keeps its radius-5/4 barrier; `waitForTerrain` goes through the streamer, works with rAF suspended.
 - Priority: ring, then in-frustum, then travel direction, then exact distance. Queued stale jobs removed, running ones dropped on arrival.
 - Upload queue drained ≤ 3 ms per frame; `uploadMsP95` made real.
-- Decision 6 to be rewritten after M01a-fix: the frame timer stops before the end-of-frame debug error check; nothing else excluded; `glCheckMs` still exposed.
+- Decision 6 (reissued prompt): `frameCpuMs` as `main.ts` measures it; the M01a-fix per-frame drain stays after the timer; nothing else excluded; drain time exposed as `glCheckMs`; handoff reports max of `frameCpuMs + glCheckMs`.
 - New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M01a-fix review round 1 PASS; CI `verify` green on `9f3dbda`, mergeable clean. Told the owner to merge; suggested a real-GPU check on the branch preview. M04a prompt reissued with decision 6 rewritten.
 
 - 2026-10-08: M01a-fix opened [#32](https://github.com/Guna210/BlockCraft/pull/32). Builder measured under SwiftShader: `getError` 841 → 1 per frame, `frameCpuMsP95` 349–674 → 1.3–3.6 ms, fps unchanged at 2–4 (software rasterising limits fps in CI; matters for M04a streaming throughput). Owner asked about reusing one reviewer for all PRs: answered no, one reviewer session per task (CLAUDE.md Roles).
 
