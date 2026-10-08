@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | blocked on owner (p95 budget policy) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Local `46b140d`. Pump slices had been uploading outside the frame budget (the source of the 0.5–1.7 s stalls); fixed: streaming uploads only in the frame's 3 ms budget. 4 flights: frame max ≤ 21.5 ms and pump max ≤ 40.6 ms (≤ 50 holds 4/4); coverage, `chunksLoaded` and GL-count checks pass; p95 fails 4/4 (`frameCpuMsP95` 10.6–12.2, `uploadMsP95` 6.2–10.1: one section upload costs 6–10 ms on SwiftShader, draw submission ~5 ms). |
+| M04a | building (final: test asserts, 10-run reliability, verify, gate) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner chose option A; SPEC on master `d37918d`. Asserted: frame and pump max ≤ 50 ms, streaming, coverage, `chunksLoaded`, GL counts. Reported only: frameCpuMsP95, uploadMsP95 (M22a enforces them at RD 8). Next: 10 consecutive m04 passes, then full verify, then publish gate. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,6 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- M04a p95 policy (owner), superseding the earlier five-edit proposal: recommended A = M04a asserts the 50 ms rules plus the functional checks and reports p95; p95 enforced at RD 8 by M22a (SPEC lines 565 and 580 drafted). B = section culling plus smaller uploads, upload p95 ≤ 3 still unlikely. The §2.3 "exclude blocked GL calls" clarification is no longer recommended (it would exclude almost all upload time in CI).
 
 
 
@@ -61,9 +60,12 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
 - Column-level frustum culling (owner, SPEC `6411d94`): one conservative column-AABB vs frustum test, shared by draw culling and priority; all passes; `chunksVisible` = sections drawn. Allowed: drop the redundant per-draw `bindBuffer`, sort draws by column. Stop if RD 8 standing-still p95 > 5 ms after culling.
 - Per-frame debug drain (inside M04a, changes M01a-fix's `main.ts` design): fence-gated, plus a blocking drain once 4 frames are unread; the blocking drain counts as `glCheckMs`, outside the frame timer; the bound is unit-tested.
+- Flight budgets (owner, SPEC `d37918d`): M04a asserts no frame > 50 ms (plus pump slices ≤ 50 ms); p95 frame and upload values are reported, enforced at RD 8 by M22a. Section culling stays in M22a. Streaming uploads only inside the frame's 3 ms budget; pump slices upload only during createWorld/waitForTerrain barriers.
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: Owner chose option A (SPEC `d37918d`). Orchestrator told the M04a builder to sync, finish the asserts, run m04 10 times in a row, then verify and go through the publish gate.
 
 - 2026-10-08: M04a: background-slice uploads around the frame budget found and fixed; 50 ms rules now hold. Recommendation to the owner revised: assert the 50 ms rules in M04a, enforce p95 at RD 8 in M22a.
 
