@@ -6,6 +6,7 @@ import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
 import { mergeMeshBuckets } from '../mesh/models';
+import { columnInFrustum, extractFrustumPlanes } from './frustum';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -171,6 +172,13 @@ export class ChunkRenderer {
 
   private tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
+  // The same meshes grouped by column ("sx,sz"), so one frustum test covers a whole column and the
+  // draws of a column are adjacent (one tint texture bind per column).
+  private columnMeshes: Map<string, GPUSectionMesh[]> = new Map();
+  private frustumPlanes = new Float64Array(24);
+
+  /** The section meshes drawn by the latest render() call: those of columns inside the frustum. */
+  public lastVisible: GPUSectionMesh[] = [];
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
@@ -216,6 +224,10 @@ export class ChunkRenderer {
     };
 
     this.sectionMeshes.set(key, gpuMesh);
+    const colKey = `${sx},${sz}`;
+    const list = this.columnMeshes.get(colKey);
+    if (list) list.push(gpuMesh);
+    else this.columnMeshes.set(colKey, [gpuMesh]);
     return gpuMesh;
   }
 
@@ -230,12 +242,21 @@ export class ChunkRenderer {
     this.freeGPUBucketMesh(existing.translucent);
 
     this.sectionMeshes.delete(key);
+    const colKey = `${existing.sx},${existing.sz}`;
+    const list = this.columnMeshes.get(colKey);
+    if (list) {
+      const i = list.indexOf(existing);
+      if (i >= 0) list.splice(i, 1);
+      if (list.length === 0) this.columnMeshes.delete(colKey);
+    }
   }
 
   public clearAllMeshes(): void {
     for (const key of Array.from(this.sectionMeshes.keys())) {
       this.removeSectionMesh(key);
     }
+    this.columnMeshes.clear();
+    this.lastVisible.length = 0;
     this.tintCache.clearAll();
   }
 
@@ -339,7 +360,16 @@ export class ChunkRenderer {
     let drawCalls = 0;
     let triangles = 0;
 
-    const meshes = Array.from(this.sectionMeshes.values());
+    // Column-level frustum culling: every pass draws only the sections of columns whose box touches
+    // the frustum (decisions/M04a-streaming.md).
+    const planes = extractFrustumPlanes(viewProjMatrix, this.frustumPlanes);
+    const meshes = this.lastVisible;
+    meshes.length = 0;
+    for (const list of this.columnMeshes.values()) {
+      const first = list[0]!;
+      if (!columnInFrustum(planes, first.sx, first.sz)) continue;
+      for (const mesh of list) meshes.push(mesh);
+    }
 
     let lastBoundColKey: string | null = null;
     let lastBoundGrassTex: WebGLTexture | null = null;
@@ -379,7 +409,6 @@ export class ChunkRenderer {
         bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.opaque.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.opaque.ebo);
         this.glWrapper.drawElements(gl.TRIANGLES, mesh.opaque.indexCount, gl.UNSIGNED_INT, 0);
         drawCalls++;
         triangles += mesh.opaque.indexCount / 3;
@@ -393,7 +422,6 @@ export class ChunkRenderer {
         bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.cutout.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.cutout.ebo);
         this.glWrapper.drawElements(gl.TRIANGLES, mesh.cutout.indexCount, gl.UNSIGNED_INT, 0);
         drawCalls++;
         triangles += mesh.cutout.indexCount / 3;
@@ -411,7 +439,6 @@ export class ChunkRenderer {
         bindColumnTints(mesh.sx, mesh.sz);
         gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
         gl.bindVertexArray(mesh.translucent.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.translucent.ebo);
         this.glWrapper.drawElements(gl.TRIANGLES, mesh.translucent.indexCount, gl.UNSIGNED_INT, 0);
         drawCalls++;
         triangles += mesh.translucent.indexCount / 3;
@@ -436,6 +463,8 @@ export class ChunkRenderer {
             gl.bindVertexArray(bucket.vao);
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
             this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
+            // The VAO records its element buffer: put the triangle indices back for the next frame.
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);
             drawCalls++;
           }
         }
@@ -448,8 +477,8 @@ export class ChunkRenderer {
 
     renderStats.drawCalls = drawCalls;
     renderStats.triangles = triangles;
-    renderStats.chunksLoaded = meshes.length;
-    renderStats.chunksMeshed = meshes.length;
+    renderStats.chunksLoaded = this.sectionMeshes.size;
+    renderStats.chunksMeshed = this.sectionMeshes.size;
     renderStats.chunksVisible = meshes.length;
   }
 }
