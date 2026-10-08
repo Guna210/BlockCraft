@@ -61,6 +61,20 @@ describe('WorkerPool: one worker stays free for foreground jobs', () => {
     pool.terminate();
   });
 
+  test('a pool of one worker runs every streaming job, one after the other', async () => {
+    const pool = new WorkerPool(1);
+    const done: Promise<unknown>[] = [];
+    for (let i = 0; i < 4; i++) done.push(pool.enqueueMeshJob(i, 0, 0, padded(), tables, true));
+    const worker = HoldWorker.all[0]!;
+    for (let i = 0; i < 4; i++) {
+      expect(worker.jobs.length).toBe(1); // the next job started when the last one finished
+      worker.answer();
+    }
+    await expect(Promise.all(done)).resolves.toHaveLength(4);
+    expect(pool.queueLength).toBe(0);
+    pool.terminate();
+  });
+
   test('a pool of one worker has no reserve', () => {
     const pool = new WorkerPool(1);
     void pool.enqueueMeshJob(0, 0, 0, padded(), tables, true);
