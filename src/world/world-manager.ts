@@ -21,6 +21,7 @@ import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
+import { frameStats } from '../engine/frame-stats';
 import { Streamer, StreamerHost, StreamingStats } from './streamer';
 import { clampRenderDistance } from './streaming-plan';
 import type { GenResult } from '../workers/gen-worker-pool';
@@ -176,6 +177,7 @@ export class WorldManager {
         this.world?.removeColumn(cx, cz);
       },
       now: () => performance.now(),
+      recordSlice: (ms) => frameStats.recordPump(ms),
     };
   }
 

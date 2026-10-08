@@ -2,6 +2,7 @@
  * Per-frame timings collected since the last reset, for the debug API (getFrameStats). The frame
  * loop records one sample per frame: the frame callback's main-thread time, the part of it spent
  * uploading meshes, and the time the debug WebGL error check took (outside the callback's timer).
+ * Streaming tasks that run between frames are recorded one by one as pump samples.
  */
 
 export interface FrameStatsSnapshot {
@@ -12,6 +13,9 @@ export interface FrameStatsSnapshot {
   uploadMsMax: number;
   glCheckMsP95: number;
   glCheckMsMax: number;
+  /** Streaming tasks outside the frame callback (pump slices, worker-result handlers). */
+  pumpMsP95: number;
+  pumpMsMax: number;
 }
 
 /** Oldest samples are dropped beyond this many frames (an hour at 60 fps is 216000). */
@@ -33,8 +37,10 @@ export class FrameStats {
   private frameCpu: number[] = [];
   private upload: number[] = [];
   private glCheck: number[] = [];
+  private pump: number[] = [];
 
   reset(): void {
+    this.pump = [];
     this.frameCpu = [];
     this.upload = [];
     this.glCheck = [];
@@ -52,6 +58,12 @@ export class FrameStats {
     this.glCheck.push(glCheckMs);
   }
 
+  /** One streaming task outside the frame callback: its main-thread time. */
+  recordPump(ms: number): void {
+    if (this.pump.length >= MAX_SAMPLES) this.pump.splice(0, MAX_SAMPLES / 2);
+    this.pump.push(ms);
+  }
+
   snapshot(): FrameStatsSnapshot {
     return {
       frames: this.frameCpu.length,
@@ -61,6 +73,8 @@ export class FrameStats {
       uploadMsMax: max(this.upload),
       glCheckMsP95: percentile95(this.glCheck),
       glCheckMsMax: max(this.glCheck),
+      pumpMsP95: percentile95(this.pump),
+      pumpMsMax: max(this.pump),
     };
   }
 }

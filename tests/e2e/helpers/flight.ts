@@ -17,7 +17,7 @@ export interface FlyOptions {
 
 /**
  * Moves the camera in a straight line from `from` to `to` at `speed` blocks per second and resolves
- * when it arrives. The pose is set from wall-clock time in a page-side requestAnimationFrame loop,
+ * when it arrived and two frames have drawn there. The pose is set from wall-clock time in a page-side requestAnimationFrame loop,
  * so a slow frame makes a longer step, not a slower flight. Everything that touches the camera is in
  * this function: M06a switches it to teleporting the player instead.
  */
@@ -56,8 +56,13 @@ export async function fly(page: Page, opts: FlyOptions): Promise<void> {
         const step = () => {
           const t = duration > 0 ? Math.min(1, (performance.now() - start) / 1000 / duration) : 1;
           setPose(t);
-          if (t >= 1) resolve();
-          else requestAnimationFrame(step);
+          if (t >= 1) {
+            // The game reads the camera once per frame: let two frames see the final pose, so the
+            // streaming that follows is planned for where the flight ended.
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          } else {
+            requestAnimationFrame(step);
+          }
         };
         step();
       }),

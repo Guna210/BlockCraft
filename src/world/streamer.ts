@@ -45,6 +45,8 @@ export interface StreamerHost<G, M> {
   freeData(cx: number, cz: number): void;
   /** Milliseconds, monotonic. */
   now(): number;
+  /** Reports the main-thread time of one streaming task that ran outside the frame callback. */
+  recordSlice?(ms: number): void;
 }
 
 /** What the streamer needs to know about the camera, once per frame. */
@@ -421,6 +423,16 @@ export class Streamer<G, M> {
     return spent;
   }
 
+  /** Runs a streaming task that is not part of a frame and reports its duration. */
+  private task(fn: () => void): void {
+    const start = this.host.now();
+    try {
+      fn();
+    } finally {
+      this.host.recordSlice?.(this.host.now() - start);
+    }
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Planning
 
@@ -718,7 +730,7 @@ export class Streamer<G, M> {
       (data) => {
         if (token.abandoned || epoch !== this.epoch) return;
         this.genTokens.delete(token);
-        this.onGen(col, serial, data);
+        this.task(() => this.onGen(col, serial, data));
       },
       () => {
         if (token.abandoned || epoch !== this.epoch) return;
@@ -782,7 +794,7 @@ export class Streamer<G, M> {
         (mesh) => {
           if (token.abandoned || epoch !== this.epoch) return;
           finishJob();
-          this.onMeshSection(col, serial, mesh);
+          this.task(() => this.onMeshSection(col, serial, mesh));
         },
         () => {
           if (token.abandoned || epoch !== this.epoch) return;
@@ -862,6 +874,10 @@ export class Streamer<G, M> {
   }
 
   public pump(): void {
+    this.task(() => this.pumpSlice());
+  }
+
+  private pumpSlice(): void {
     this.freePass(SLICE_MS);
     if (this.offFrameAllowed()) this.drainUploads(SLICE_MS);
     this.dispatch();

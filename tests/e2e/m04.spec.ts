@@ -82,6 +82,11 @@ test.describe('M04a: streaming', () => {
     expect(stats.frameCpuMsP95, 'frame CPU p95').toBeLessThanOrEqual(8);
     expect(stats.uploadMsP95, 'upload p95').toBeLessThanOrEqual(3);
     expect(stats.frameCpuMsMax, 'worst frame').toBeLessThanOrEqual(50);
+    // Streaming work between frames (pump slices, worker-result handlers) stays under SPEC 2.2's 50 ms.
+    expect(
+      stats.pumpMsMax,
+      'longest streaming task outside the frame callback',
+    ).toBeLessThanOrEqual(50);
 
     await waitForStreamingIdle(page, 120_000);
     const rd = 8;

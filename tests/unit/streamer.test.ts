@@ -8,6 +8,10 @@ class FakeHost implements StreamerHost<string, string> {
   /** Milliseconds one upload costs on the fake clock. */
   uploadCostMs = 0;
   sectionsPerColumn = 2;
+  slices: number[] = [];
+  recordSlice(ms: number) {
+    this.slices.push(ms);
+  }
 
   data = new Set<string>();
   meshes = new Map<string, number>(); // column -> uploaded sections
@@ -501,6 +505,24 @@ describe('Streamer: uploads', () => {
     host.clock += 300;
     streamer.pump();
     expect(host.uploads.length).toBe(3);
+  });
+});
+
+describe('Streamer: slice accounting', () => {
+  it('reports the duration of every pump slice and worker-result task', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    for (let i = 0; i < 10; i++) {
+      host.clock += 1;
+      streamer.update(view, host.clock);
+      await host.finishGen();
+      await host.finishMesh();
+    }
+    expect(host.slices.length).toBeGreaterThan(0);
+    const before = host.slices.length;
+    streamer.pump();
+    expect(host.slices.length).toBe(before + 1);
+    expect(host.slices.every((ms) => ms >= 0)).toBe(true);
   });
 });
 
