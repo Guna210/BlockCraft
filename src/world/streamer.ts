@@ -361,6 +361,24 @@ export class Streamer<G, M> {
   // Frame hooks
 
   /**
+   * Teleports the streamer's view: the camera was placed (spawn, a test) without frames running, so
+   * the next plan, the frees and the request pins must see the new column, not the old one. Forgets
+   * the travel direction because a jump is not travel.
+   */
+  public moveTo(view: StreamerView): void {
+    this.camX = view.x;
+    this.camZ = view.z;
+    this.yaw = view.yaw;
+    this.pitch = view.pitch;
+    this.planes = view.planes;
+    this.camCX = Math.floor(view.x / 16);
+    this.camCZ = Math.floor(view.z / 16);
+    this.travel.reset();
+    this.lastUpdateAt = -Infinity;
+    this.planDirty = true;
+  }
+
+  /**
    * Called once per frame from the frame loop: tracks the travel direction, re-plans when the camera
    * changed column or turned (at most once per call) and dispatches work.
    */

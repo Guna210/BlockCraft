@@ -585,6 +585,33 @@ describe('Streamer: region requests (waitForTerrain, createWorld)', () => {
     }
   });
 
+  it('keeps a region requested after moveTo when the pins release without any frame', async () => {
+    const { host, streamer } = make(2);
+    await drain(host, streamer, viewAt(0, 0));
+    // The camera is placed far away while no frame runs (a test holding the frame loop).
+    streamer.moveTo(viewAt(30, 30));
+    let done = false;
+    void streamer.requestRegion({ cx: 30, cz: 30, genRadius: 3, meshRadius: 2 }).then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 200 && !done; i++) {
+      host.clock += 20;
+      await host.finishGen();
+      await host.finishMesh();
+      streamer.drainUploads(Infinity);
+      await settle();
+    }
+    expect(done).toBe(true);
+    // Pins are gone; the pump keeps freeing relative to the camera column it was told about.
+    for (let i = 0; i < 20; i++) await settle();
+    expect(streamer.cameraColumn).toEqual({ cx: 30, cz: 30 });
+    for (let cx = 28; cx <= 32; cx++) {
+      for (let cz = 28; cz <= 32; cz++) expect(streamer.phaseOf(cx, cz)).toBe('meshed');
+    }
+    expect(streamer.phaseOf(0, 0)).toBeUndefined();
+    expect(host.violations).toEqual([]);
+  });
+
   it('resolves pending requests when the world is replaced', async () => {
     const { streamer } = make(2);
     let done = false;

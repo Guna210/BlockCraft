@@ -22,7 +22,7 @@ import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
-import { Streamer, StreamerHost, StreamingStats } from './streamer';
+import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
 import { clampRenderDistance } from './streaming-plan';
 import type { GenResult } from '../workers/gen-worker-pool';
 import type { MeshResult } from '../mesh/worker-pool';
@@ -470,6 +470,10 @@ export class WorldManager {
    */
   public async waitForTerrain(radiusChunks: number): Promise<void> {
     if (!this.world || !this.chunkRenderer || !this.tables) return;
+    // The camera may have been placed without frames running (spawn, a test holding the frame loop):
+    // tell the streamer where it is before the region is pinned, or its frees would work from the
+    // old column once the request resolves.
+    if (this.camera) this.streamer.moveTo(this.streamerView(this.camera));
     const cx = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const cz = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
     await this.streamer.requestRegion({
@@ -478,6 +482,19 @@ export class WorldManager {
       genRadius: radiusChunks + PERIMETER_RING,
       meshRadius: radiusChunks,
     });
+  }
+
+  /** The streamer's view of `camera`: position, orientation and frustum planes of its current pose. */
+  private streamerView(camera: Camera): StreamerView {
+    mat4.multiply(this.viewProj, camera.projectionMatrix, camera.viewMatrix);
+    extractFrustumPlanes(this.viewProj, this.frustumPlanes);
+    return {
+      x: camera.position[0],
+      z: camera.position[2],
+      yaw: camera.yaw,
+      pitch: camera.pitch,
+      planes: this.frustumPlanes,
+    };
   }
 
   private isSectionAllOpaque(sec: ChunkSection | null): boolean {
@@ -579,18 +596,7 @@ export class WorldManager {
     this.lastUploadMs = 0;
     if (this.initialLoadCount > 0) return;
     if (this.world && this.camera) {
-      mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
-      extractFrustumPlanes(this.viewProj, this.frustumPlanes);
-      this.streamer.update(
-        {
-          x: this.camera.position[0],
-          z: this.camera.position[2],
-          yaw: this.camera.yaw,
-          pitch: this.camera.pitch,
-          planes: this.frustumPlanes,
-        },
-        performance.now(),
-      );
+      this.streamer.update(this.streamerView(this.camera), performance.now());
       this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
     }
     this.drawTerrain();
