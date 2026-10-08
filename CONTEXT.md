@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | blocked: QUESTION, waiting for owner's scope decision | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Builder measured master 68ef7c7 at RD 8: 2845 draws, `frameCpuMs` p50 8–10 / p95 20–27 ms, `glCheckMs` 0.5–3 s, fps 1–2 (RD 4: 841 draws, p95 5.3 ms). Recommended: column-level frustum culling moved into M04a (SPEC edits drafted for lines 560, 579, 1277, 1303). Branch answer to send: `claude/m04a`. |
+| M04a | building (culling first, then re-measure) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner chose option 1; SPEC edited on master `6411d94` (column-level frustum culling moved into M04a). Answer sent 2026-10-08: branch `claude/m04a` from `6411d94`; stop again if RD 8 standing-still `frameCpuMs` p95 > 5 ms after culling. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,6 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- M04a scope: can column-level frustum culling move from M22a into M04a? Needs owner SPEC edits (new line after 560; lines 579, 1277, 1303). Alternative: flight budgets at a lower RD now, RD 8 in M22a. Then the orchestrator replies to the builder.
 - CI watch item: in debug mode the per-frame `getError` waits for SwiftShader to finish each frame (0.5–3 s at RD 8), blocking the main thread, so streaming in CI is slow. Culling reduces it. Matters for M04b's `m04-fast-flight.png`.
 
 
@@ -59,9 +58,12 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Decision 6 (reissued prompt): `frameCpuMs` as `main.ts` measures it; the M01a-fix per-frame drain stays after the timer; nothing else excluded; drain time exposed as `glCheckMs`; handoff reports max of `frameCpuMs + glCheckMs`.
 - New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
 - Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
-- Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); draw culling, batching, LOD (M22a/b); teleport (M06a).
+- Column-level frustum culling (owner, SPEC `6411d94`): one conservative column-AABB vs frustum test, shared by draw culling and priority; all passes; `chunksVisible` = sections drawn. Allowed: drop the redundant per-draw `bindBuffer`, sort draws by column. Stop if RD 8 standing-still p95 > 5 ms after culling.
+- Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: Owner merged the SPEC change (`6411d94`, column-level frustum culling moved from M22a into M04a). Orchestrator answered the M04a builder: option 1, sync to master, branch `claude/m04a`, culling first.
 
 - 2026-10-08: M01a-fix merged (#32). M04a builder stopped with a QUESTION: RD 8 frame budget unreachable on master (numbers in the table). Recommended pulling column-level frustum culling into M04a; SPEC edits handed to the owner.
 
