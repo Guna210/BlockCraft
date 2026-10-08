@@ -28,13 +28,15 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | building (streamer) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Drain fix committed locally `264ccef`: fence-gated drain plus a blocking drain once 4 frames are unread. `waitForTerrain(8)` with frames running: 4.1–4.4 s (was 89.8 s). m01a-fix tests pass unchanged. Standing-still RD 8 `frameCpuMs` p50/p95/max ≈ 5.3 / 11–14 / 14–25 ms (GL calls stalling on SwiftShader). Likely outcome: flight p95 ≤ 8 ms misses at RD 8 and the owner decides the budget with real flight numbers. |
+| M04a | blocked on owner (section culling) + in-scope upload gating | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | All built, local `a1d2020`; 39 existing e2e pass. Flight 10 runs: p95 ≤ 8 fails 4/10 (draw submission 5–6 ms for ~740 sections), max ≤ 50 fails 2/10 (single bufferData stalls of 89 ms and 1.2 s). Builder asked: A section-level culling (needs SPEC edit, drafted for lines 561, 580, 1278, 1304), B [INCOMPLETE] PR, C thresholds (owner only). Orchestrator approved fence-gated uploads and pump-slice accounting now; 10 re-runs to follow. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
 Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task (M13b, M10a, M17a early starts still wait on M06b, M09a, M10a). Next on the critical path: M04a → M04b → M05b → M06a and M12a.
 
 ## Open items for the owner
+
+- M04a: section-level frustum culling into M04a too? Needs an owner SPEC edit (lines 561, 580, 1278, 1304; drafted). Recommended yes. If the flight is still flaky afterwards, the remaining choice is the owner's budget call.
 
 
 
@@ -62,6 +64,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-08: M04a QUESTION 4: flight test flaky against its budgets (numbers in the table). Sent the owner the section-culling decision; told the builder to fence-gate uploads and account for pump slices meanwhile.
 
 - 2026-10-08: M04a builder (status message): drain fix done (variant b plus a 4-frame bound), streaming 22× faster in CI. Orchestrator acked and asked for glCheckMs accounting and a unit test of the bound.
 
