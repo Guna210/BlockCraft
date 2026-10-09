@@ -69,6 +69,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 
 ## Log (newest first)
 
+- 2026-10-09: Orchestrator checked the M04a gate message (24 files, no deletions, no harness files, verify green, 10/10 runs). Gave the owner a paste-ready approval; the orchestrator cannot approve gates (CLAUDE.md). Reviewer to check why `src/world/lighting.ts` changed.
+
 - 2026-10-09: M04a plain verify green after the `workers: 1` change; builder at the publish gate, waiting for the owner.
 
 - 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
