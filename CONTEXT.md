@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | final verify after syncing master `60590f8`, then gate | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner merged `workers: 1` (`60590f8`). Builder told to merge master, run the plain verify (now 1 worker), refresh the gate message, and wait for the owner. Earlier: CI=1 verify green (299 unit, 41 e2e, 588 s), m04 alone 10/10, no retries needed. |
+| M04a | gate (waiting for owner) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Plain verify (1 worker) green: 514 s, unit 300 (45 files), e2e 41 passed, no flaky tests. m04: 84 frames, frameCpuMsP95 10.5 / max 15.4, uploadMsP95 9.4 / max 12.8, pumpMsMax 23.4, glCheckMsMax 1403. 16 commits, 24 files, branch `claude/m04a`. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -68,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: M04a plain verify green after the `workers: 1` change; builder at the publish gate, waiting for the owner.
 
 - 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
 
