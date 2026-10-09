@@ -15,7 +15,7 @@ Last updated: 2026-10-07
 
 - The owner starts every builder and reviewer session by hand, pasting the prompt the orchestrator writes. The owner approves every publish gate and merges every PR. `master` is protected: no direct pushes.
 - Environments: the orchestrator runs in `BlockCraft`. Builders and reviewers run in `BlockCraft(350K)`, which sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000` so long sessions compact themselves at about 350k tokens.
-- Models: orchestrator on Opus; builders and reviewers on Sonnet.
+- Models: orchestrator on Opus. Owner (2026-10-09): Haiku with ultracode for builders and reviewers, to save cost, relying on the orchestrator to check. Orchestrator advised Sonnet for core-system builds (lighting, physics, fluids, networking) and tracking fix rounds per task. Before every merge after a PASS, the orchestrator checks CI on the final head, the changed files, changed or loosened tests, harness files and the sources of handoff numbers. Reported costs so far: orchestrator ~$36, M04a builder (Sonnet) ~$22, M04a reviewer (Haiku + ultracode) ~$0.82.
 - Builder questions: the owner points the orchestrator at the session (URL, ID or title), and the orchestrator replies with `send_message`, prefixed `[Orchestrator]` (CLAUDE.md, "Talking to other sessions directly").
 - Review cycle: at most 3 rounds per task, then ask the owner (CLAUDE.md, Orchestrator).
 - CI: `Verify` runs the full suite on every PR and every push to master (job timeout 90 min). Reviewers use it as the full-verify evidence.
@@ -68,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: Owner preference: Haiku with ultracode for builders and reviewers; orchestrator checks before merges.
 
 - 2026-10-09: M04a review round 1: CHANGES NEEDED. Orchestrator checked the findings and sent the builder its fixes. Reviewer N6 (debug glCheckMs up to 1.8 s in CI) put to the owner to accept.
 
