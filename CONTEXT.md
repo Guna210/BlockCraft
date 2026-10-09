@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | PR open, review 1 to start | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 1 | Head `eaaf8e9`, 24 files (streamer.ts 1068 lines). Harness guard passed; CI `verify` was running when the reviewer prompt was given (2026-10-09). |
+| M04a | fixing 1 | `session_01GEWHvX4zk6pp3FJX84Faaa` | `session_01AVbTM1SGzHhje52FTEMgCu` (ran on Haiku) | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 1 | Round 1 CHANGES NEEDED. B1 (stale section meshes after a re-mesh) confirmed in code. B2 handoff numbers vs CI: a labelling issue, not a real mismatch. Fix list sent: B1 + labels + N3 retry of failed generation + N4 dead code + N5 lighting/M05b note + document N1, N2, N7. Next: round 2 in the same reviewer session. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -68,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: M04a review round 1: CHANGES NEEDED. Orchestrator checked the findings and sent the builder its fixes. Reviewer N6 (debug glCheckMs up to 1.8 s in CI) put to the owner to accept.
 
 - 2026-10-09: Owner approved the M04a gate; PR [#33](https://github.com/Guna210/BlockCraft/pull/33) opened. Reviewer prompt given.
 
