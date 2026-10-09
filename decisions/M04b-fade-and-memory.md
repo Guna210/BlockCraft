@@ -74,6 +74,16 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
 
 ## Choices made in this task (not owner decisions)
 
+- **Hole finder seed (top row only).** The flood fill starts from sky pixels in the top row, as the orchestrator
+  decided; the other frame edges are not seeds. Enclosed sky is sky not reached from the top row. In the
+  fast-flight frame the top row is terrain, so all of its sky is enclosed (37,510 px, largest 32,390 px). The
+  frame cannot say whether that is terrain not yet drawn or mid-fade (dithered edges, `columnsFading` 19,
+  `meshQueued` 101, `uploadsDeferred` 171), or sky beyond the RD 8 loaded edge: a separate probe at the same pose
+  measured 0.60 % sky after streaming went idle at RD 8 and 0.07 % at RD 12. The argument "a lower ray in a
+  column hits terrain no farther away than a higher one" holds only for downward rays over a height field; the
+  top row of that frame looks up at a ceiling, and caves let lower rays pass through open air. So the top-row
+  rule shows enclosed sky, not its cause.
+
 - **Clock:** the fade reads `performance.now()` once per frame in `ChunkRenderer.render()`; the upload uses the
   same clock. The stat `columnsFading` is computed from the same clock, so a test that waits for it to reach
   zero waits for the fades to finish by wall-clock time, not by a count of frames.
