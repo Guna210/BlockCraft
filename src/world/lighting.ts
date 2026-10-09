@@ -77,6 +77,15 @@ export class LightStorage {
     return this.sections.get(LightStorage.getSectionKey(cx, sy, cz));
   }
 
+  /** Deletes the light data of every section of a column. */
+  public removeColumn(cx: number, cz: number): void {
+    for (let sy = 0; sy < 32; sy++) {
+      const key = LightStorage.getSectionKey(cx, sy, cz);
+      this.sections.delete(key);
+      this.touchedSections.delete(key);
+    }
+  }
+
   public getRawDataByKey(key: number): Uint8Array | undefined {
     return this.sections.get(key);
   }
@@ -401,6 +410,12 @@ export class LightEngine {
 
   public clearColumnCache(cx: number, cz: number): void {
     this.heightmaps.delete(LightEngine.getColumnKey(cx, cz));
+  }
+
+  /** Forgets everything the engine holds for a column: its light data and its height map. */
+  public removeColumn(cx: number, cz: number): void {
+    this.storage.removeColumn(cx, cz);
+    this.clearColumnCache(cx, cz);
   }
 
   public initializeColumnLight(world: World, cx: number, cz: number): void {

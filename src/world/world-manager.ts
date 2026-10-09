@@ -19,13 +19,84 @@ import { buildPaddedSection } from './padded';
 import { findSpawnPoint } from './spawn';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
-import { renderStats } from '../debug/api/core';
+import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
+import { extractFrustumPlanes } from '../render/frustum';
+import { frameStats } from '../engine/frame-stats';
+import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
+import { clampRenderDistance } from './streaming-plan';
+import type { GenResult } from '../workers/gen-worker-pool';
+import type { MeshResult } from '../mesh/worker-pool';
 
 /**
  * Columns generated (and, in createWorld, lit) beyond the radius that is meshed. A meshed section
  * needs all eight neighbour columns of its own column, so the ring is one column wide.
  */
 const PERIMETER_RING = 1;
+
+/** Main-thread time per frame that may be spent uploading meshes. */
+const UPLOAD_BUDGET_MS = 3;
+
+/**
+ * The steps that store a generation result in a world column: the column with its biome data, then
+ * one step per section. The streamer runs them a few milliseconds at a time.
+ */
+function applyGenSteps(world: World, res: GenResult): Array<() => void> {
+  const steps: Array<() => void> = [
+    () => {
+      const col = world.getColumn(res.cx, res.cz, true)!;
+      if (res.biomes) {
+        col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+      }
+      if (res.grassTints) {
+        col.grassTints.set(res.grassTints);
+      }
+      if (res.foliageTints) {
+        col.foliageTints.set(res.foliageTints);
+      }
+    },
+  ];
+  for (const secData of res.sections) {
+    steps.push(() => {
+      const col = world.getColumn(res.cx, res.cz, true)!;
+      const sec = col.getOrCreateSection(secData.sy);
+      if (sec) {
+        if (secData.states) {
+          sec.loadBlockStatesFrom(secData.states);
+        } else if (secData.uniformStateId !== null) {
+          sec.fill(secData.uniformStateId);
+        }
+      }
+    });
+  }
+  return steps;
+}
+
+/**
+ * The handle tests use to force a re-mesh (`pendingTerrainPromises.delete('cx,cz')` or `.clear()`).
+ * The streamer owns column state now, so deleting a key marks that column's mesh stale and clearing
+ * marks every meshed column stale; the streamer meshes them again as soon as they are wanted.
+ */
+class StaleMeshHandle extends Map<string, Promise<void>> {
+  constructor(
+    private readonly markStale: (cx: number, cz: number) => void,
+    private readonly markAllStale: () => void,
+  ) {
+    super();
+  }
+
+  override delete(key: string): boolean {
+    const parts = key.split(',');
+    const cx = Number(parts[0]);
+    const cz = Number(parts[1]);
+    if (parts.length === 2 && Number.isInteger(cx) && Number.isInteger(cz)) this.markStale(cx, cz);
+    return super.delete(key);
+  }
+
+  override clear(): void {
+    this.markAllStale();
+    super.clear();
+  }
+}
 
 export class WorldManager {
   private static instance: WorldManager | null = null;
@@ -47,7 +118,23 @@ export class WorldManager {
   public worldType: 'default' | 'flat' = 'default';
   public mainThreadGenCount: number = 0;
 
-  private pendingTerrainPromises: Map<string, Promise<void>> = new Map();
+  // Re-mesh handle for tests, see StaleMeshHandle.
+  public readonly pendingTerrainPromises: Map<string, Promise<void>> = new StaleMeshHandle(
+    (cx, cz) => this.streamer.invalidate(cx, cz),
+    () => this.streamer.invalidateAll(),
+  );
+
+  // Owns the state of every column and decides what is generated, meshed, uploaded and freed.
+  public readonly streamer: Streamer<GenResult, MeshResult>;
+
+  // Per column ("cx,cz"): the section meshes ("sx,sy,sz") uploaded by its current mesh attempt.
+  private readonly meshAttempts = new Map<string, Set<string>>();
+
+  // Main-thread time the latest render() spent uploading meshes, read by the frame loop.
+  public lastUploadMs = 0;
+
+  private readonly viewProj = mat4.create();
+  private readonly frustumPlanes = new Float64Array(24);
 
   // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
   // carry the epoch they were requested in and are dropped when it no longer matches.
@@ -74,11 +161,79 @@ export class WorldManager {
     this.genWorkerPool = new GenWorkerPool();
     this.lightWorkerPool = new LightWorkerPool();
     this.pipeline = createDefaultPipeline();
+    this.streamer = new Streamer<GenResult, MeshResult>(this.makeStreamerHost());
+    // Not streaming until a world exists (createWorld) and while tests drive an empty world by hand.
+    this.streamer.active = false;
+    this.updateStreamerLimits();
+    setRenderStatsRefresh(() => {
+      renderStats.chunksLoaded = this.streamer.loadedColumns;
+      renderStats.chunksMeshed = this.streamer.meshedColumns;
+    });
+  }
+
+  /** What the streamer needs from the world, the worker pools and the GPU. */
+  private makeStreamerHost(): StreamerHost<GenResult, MeshResult> {
+    return {
+      requestGen: (cx, cz) =>
+        this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType),
+      applyGen: (_cx, _cz, res) => {
+        const world = this.world;
+        return world ? applyGenSteps(world, res) : [];
+      },
+      requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
+      uploadSection: (cx, cz, res) => {
+        if (!this.chunkRenderer) return;
+        this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
+        this.meshAttempts.get(`${cx},${cz}`)?.add(`${res.sx},${res.sy},${res.sz}`);
+        // The column's tint textures are created with its upload, not in the first frame that draws it.
+        this.chunkRenderer.prepareColumnTints(cx, cz, this.world);
+      },
+      beginMeshAttempt: (cx, cz) => {
+        this.meshAttempts.set(`${cx},${cz}`, new Set());
+      },
+      endMeshAttempt: (cx, cz) => {
+        const key = `${cx},${cz}`;
+        const uploaded = this.meshAttempts.get(key) ?? new Set<string>();
+        this.meshAttempts.delete(key);
+        return this.chunkRenderer?.removeColumnMeshesExcept(cx, cz, uploaded) ?? false;
+      },
+      freeMesh: (cx, cz) => {
+        this.meshAttempts.delete(`${cx},${cz}`);
+        this.chunkRenderer?.removeColumnMeshes(cx, cz);
+      },
+      freeData: (cx, cz) => {
+        this.world?.removeColumn(cx, cz);
+      },
+      now: () => performance.now(),
+      recordSlice: (ms) => frameStats.recordPump(ms),
+    };
+  }
+
+  /** In-flight work is bounded by the pool sizes, so queued work stays in the streamer, in priority order. */
+  private updateStreamerLimits(): void {
+    this.streamer.limits.maxGenInFlight = Math.max(4, this.genWorkerPool.workerCount * 2);
+    this.streamer.limits.maxMeshColumnsInFlight = Math.max(2, this.workerPool.workerCount);
   }
 
   public setWorkerPoolSize(size: number): void {
     this.genWorkerPool.setPoolSize(size);
     this.lightWorkerPool.setPoolSize(size);
+    // The old pool dropped its queued and running generation jobs without answering them.
+    this.streamer.abandonGenerations();
+    this.updateStreamerLimits();
+  }
+
+  public get renderDistance(): number {
+    return this.streamer.renderDistance;
+  }
+
+  /** Sets the render distance (rounded, clamped to 2..32), re-plans at once and returns the value used. */
+  public setRenderDistance(n: number): number {
+    return this.streamer.setRenderDistance(clampRenderDistance(n));
+  }
+
+  public getStreamingStats(): StreamingStats {
+    return this.streamer.getStats();
   }
 
   public resetMainThreadGenCount(): void {
@@ -93,11 +248,15 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.worldType = type;
     this.worldEpoch++;
+    this.chunkRenderer?.clearAllMeshes();
     this.world = new World();
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
     this.mainThreadGenCount = 0;
+    // Tests build this world by hand (generateColumnMainThread): nothing streams into it.
+    this.streamer.reset();
+    this.streamer.active = false;
   }
 
   public generateColumnMainThread(cx: number, cz: number): void {
@@ -135,6 +294,7 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
     }
+    this.streamer.adoptColumn(cx, cz);
   }
 
   public initGL(glWrapper: GLWrapper, camera: Camera): void {
@@ -222,6 +382,8 @@ export class WorldManager {
     type?: 'default' | 'flat';
   }): Promise<void> {
     this.initialLoadCount++;
+    // The streamer loads only what the barrier below pins until the barrier is done.
+    this.streamer.backgroundEnabled = false;
     try {
       const completed = await this.loadInitialWorld(opts);
       // The frame loop skipped terrain while loading. Draw the first frame with terrain now, in
@@ -230,6 +392,7 @@ export class WorldManager {
       if (completed) this.drawTerrainFrame();
     } finally {
       this.initialLoadCount--;
+      if (this.initialLoadCount === 0) this.streamer.backgroundEnabled = true;
     }
   }
 
@@ -248,10 +411,8 @@ export class WorldManager {
     this.worldSeed = hashString(this.worldSeedStr);
     this.worldType = opts?.type ?? 'default';
     const worldType = this.worldType;
-    const worldSeed = this.worldSeed;
 
-    // Clear cached terrain promises and dispose old GPU section meshes
-    this.pendingTerrainPromises.clear();
+    // Dispose old GPU section meshes
     if (this.chunkRenderer) {
       this.chunkRenderer.clearAllMeshes();
     }
@@ -262,39 +423,12 @@ export class WorldManager {
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
+    this.streamer.reset(0, 0);
+    this.streamer.active = true;
+    this.updateStreamerLimits();
 
-    // Generate terrain via GenWorkerPool
-    const genPromises: Promise<void>[] = [];
-    for (let cx = -loadRadius; cx <= loadRadius; cx++) {
-      for (let cz = -loadRadius; cz <= loadRadius; cz++) {
-        const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
-          if (epoch !== this.worldEpoch) return;
-          const col = world.getColumn(res.cx, res.cz, true)!;
-          if (res.biomes) {
-            col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
-          }
-          if (res.grassTints) {
-            col.grassTints.set(res.grassTints);
-          }
-          if (res.foliageTints) {
-            col.foliageTints.set(res.foliageTints);
-          }
-          for (const secData of res.sections) {
-            const sec = col.getOrCreateSection(secData.sy);
-            if (sec) {
-              if (secData.states) {
-                sec.loadBlockStatesFrom(secData.states);
-              } else if (secData.uniformStateId !== null) {
-                sec.fill(secData.uniformStateId);
-              }
-            }
-          }
-        });
-        genPromises.push(job);
-      }
-    }
-
-    await Promise.all(genPromises);
+    // Generate the columns within the load radius through the streamer, at top priority.
+    await this.streamer.requestRegion({ cx: 0, cz: 0, genRadius: loadRadius, meshRadius: -1 });
     // A newer createWorld (or resetWorldToEmpty) replaced this world while it was generating.
     if (epoch !== this.worldEpoch) return false;
 
@@ -353,12 +487,42 @@ export class WorldManager {
     }
 
     // Mesh terrain within radius 4
-    await this.meshRadius(radiusChunks);
+    await this.waitForTerrain(radiusChunks);
     return epoch === this.worldEpoch;
   }
 
+  /**
+   * Resolves when every column within `radiusChunks` of the camera is meshed and uploaded. Goes
+   * through the streamer: its columns are pinned at top priority until this resolves, and columns the
+   * streamer already holds are not generated again.
+   */
   public async waitForTerrain(radiusChunks: number): Promise<void> {
-    await this.meshRadius(radiusChunks);
+    if (!this.world || !this.chunkRenderer || !this.tables) return;
+    // The camera may have been placed without frames running (spawn, a test holding the frame loop):
+    // tell the streamer where it is before the region is pinned, or its frees would work from the
+    // old column once the request resolves.
+    if (this.camera) this.streamer.moveTo(this.streamerView(this.camera));
+    const cx = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
+    const cz = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
+    await this.streamer.requestRegion({
+      cx,
+      cz,
+      genRadius: radiusChunks + PERIMETER_RING,
+      meshRadius: radiusChunks,
+    });
+  }
+
+  /** The streamer's view of `camera`: position, orientation and frustum planes of its current pose. */
+  private streamerView(camera: Camera): StreamerView {
+    mat4.multiply(this.viewProj, camera.projectionMatrix, camera.viewMatrix);
+    extractFrustumPlanes(this.viewProj, this.frustumPlanes);
+    return {
+      x: camera.position[0],
+      z: camera.position[2],
+      yaw: camera.yaw,
+      pitch: camera.pitch,
+      planes: this.frustumPlanes,
+    };
   }
 
   private isSectionAllOpaque(sec: ChunkSection | null): boolean {
@@ -413,105 +577,39 @@ export class WorldManager {
     return true;
   }
 
-  private async meshRadius(radiusChunks: number): Promise<void> {
-    if (!this.world || !this.chunkRenderer || !this.tables) return;
+  /**
+   * The mesh jobs of one column: one starter per section that needs a mesh. Running a starter takes
+   * the padded copy from the block data at that moment and enqueues the worker job.
+   */
+  private requestColumnMesh(cx: number, cz: number): Array<() => Promise<MeshResult>> {
     const world = this.world;
-    const epoch = this.worldEpoch;
-    const worldSeed = this.worldSeed;
-    const worldType = this.worldType;
+    if (!world || !this.chunkRenderer || !this.tables) return [];
+    const col = world.getColumn(cx, cz, false);
+    if (!col) return [];
+    const starters: Array<() => Promise<MeshResult>> = [];
 
-    const centerCX = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
-    const centerCZ = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
+    for (let sy = 0; sy < 20; sy++) {
+      const sec = col.getSection(sy);
 
-    // 1. Ensure all columns within radiusChunks around camera, plus one more ring, are generated.
-    // Only radiusChunks is meshed (step 2): a section must never be meshed while one of its
-    // neighbour columns is missing, because the padded copy fills a missing column with air and
-    // the mesher then emits faces toward it.
-    const loadRadius = radiusChunks + PERIMETER_RING;
-    const genPromises: Promise<void>[] = [];
-    for (let cx = centerCX - loadRadius; cx <= centerCX + loadRadius; cx++) {
-      for (let cz = centerCZ - loadRadius; cz <= centerCZ + loadRadius; cz++) {
-        if (!this.world.hasColumn(cx, cz)) {
-          const job = this.genWorkerPool.enqueueGenJob(worldSeed, cx, cz, worldType).then((res) => {
-            if (epoch !== this.worldEpoch) return;
-            const col = world.getColumn(res.cx, res.cz, true)!;
-            if (res.biomes) {
-              col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
-            }
-            if (res.grassTints) {
-              col.grassTints.set(res.grassTints);
-            }
-            if (res.foliageTints) {
-              col.foliageTints.set(res.foliageTints);
-            }
-            for (const secData of res.sections) {
-              const sec = col.getOrCreateSection(secData.sy);
-              if (sec) {
-                if (secData.states) {
-                  sec.loadBlockStatesFrom(secData.states);
-                } else if (secData.uniformStateId !== null) {
-                  sec.fill(secData.uniformStateId);
-                }
-              }
-            }
-          });
-          genPromises.push(job);
-        }
+      // 1. Skip all-air / empty sections
+      if (!sec || (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0)) {
+        continue;
       }
-    }
-    await Promise.all(genPromises);
-    if (epoch !== this.worldEpoch) return;
 
-    // 2. Mesh all columns within radiusChunks
-    const promises: Promise<void>[] = [];
-
-    for (let cx = centerCX - radiusChunks; cx <= centerCX + radiusChunks; cx++) {
-      for (let cz = centerCZ - radiusChunks; cz <= centerCZ + radiusChunks; cz++) {
-        const colKey = `${cx},${cz}`;
-        if (this.pendingTerrainPromises.has(colKey)) {
-          promises.push(this.pendingTerrainPromises.get(colKey)!);
-          continue;
-        }
-
-        const colPromise = (async () => {
-          const sectionPromises: Promise<void>[] = [];
-          const col = world.getColumn(cx, cz, false);
-
-          for (let sy = 0; sy < 20; sy++) {
-            if (!col) continue;
-            const sec = col.getSection(sy);
-
-            // 1. Skip all-air / empty sections
-            if (!sec || (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0)) {
-              continue;
-            }
-
-            // 2. Skip section if it contains only opaque blocks and all 6 neighbor sections are loaded and contain only opaque blocks
-            if (this.isSectionAllOpaque(sec) && this.canSkipOpaqueSection(cx, sy, cz)) {
-              continue;
-            }
-
-            const paddedSection = buildPaddedSection(world, cx, sy, cz);
-
-            const jobPromise = this.workerPool
-              .enqueueMeshJob(cx, sy, cz, paddedSection, this.tables!)
-              .then((res) => {
-                if (epoch !== this.worldEpoch) return;
-                if (this.chunkRenderer) {
-                  this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
-                }
-              });
-            sectionPromises.push(jobPromise);
-          }
-          await Promise.all(sectionPromises);
-        })();
-
-        this.pendingTerrainPromises.set(colKey, colPromise);
-        promises.push(colPromise);
+      // 2. Skip section if it contains only opaque blocks and all 6 neighbor sections are loaded and contain only opaque blocks
+      if (this.isSectionAllOpaque(sec) && this.canSkipOpaqueSection(cx, sy, cz)) {
+        continue;
       }
-    }
 
-    await Promise.all(promises);
+      // 3. Copying the padded section is main-thread work: the streamer starts one job at a time.
+      starters.push(() => {
+        const tables = this.tables;
+        if (!tables) return Promise.reject(new Error('mesh tables are gone'));
+        const paddedSection = buildPaddedSection(world, cx, sy, cz);
+        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables, true);
+      });
+    }
+    return starters;
   }
 
   public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {
@@ -522,9 +620,18 @@ export class WorldManager {
     };
   }
 
-  /** Per-frame terrain draw. Skipped (sky-clear frame only) while createWorld is loading. */
+  /**
+   * Per-frame terrain update and draw. Skipped (sky-clear frame only) while createWorld is loading.
+   * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
+   * budget, then the draw; `lastUploadMs` is the upload time.
+   */
   public render(): void {
+    this.lastUploadMs = 0;
     if (this.initialLoadCount > 0) return;
+    if (this.world && this.camera) {
+      this.streamer.update(this.streamerView(this.camera), performance.now());
+      this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
+    }
     this.drawTerrain();
   }
 
@@ -538,9 +645,8 @@ export class WorldManager {
 
   private drawTerrain(): void {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
-      const viewProj = mat4.create();
-      mat4.multiply(viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
-      this.chunkRenderer.render(viewProj, this.atlasTexture, this.atlas, this.world);
+      mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
+      this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
     }
   }
 }

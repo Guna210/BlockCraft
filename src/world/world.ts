@@ -69,6 +69,21 @@ export class World {
     return this.columns.has(key);
   }
 
+  /**
+   * Deletes a column with its light data and invalidates the last-column cache, so a lookup after
+   * the removal cannot return the deleted column.
+   */
+  public removeColumn(cx: number, cz: number): boolean {
+    const removed = this.columns.delete(World.getChunkKey(cx, cz));
+    if (cx === this.lastCX && cz === this.lastCZ) {
+      this.lastCX = 0x7fffffff;
+      this.lastCZ = 0x7fffffff;
+      this.lastCol = null;
+    }
+    if (this.lightEngine) this.lightEngine.removeColumn(cx, cz);
+    return removed;
+  }
+
   public getHeight(x: number, z: number): number {
     for (let y = 319; y >= 0; y--) {
       const stateId = this.getBlockStateId(x, y, z);

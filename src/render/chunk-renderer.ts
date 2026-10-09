@@ -6,6 +6,7 @@ import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
 import { mergeMeshBuckets } from '../mesh/models';
+import { columnInFrustum, extractFrustumPlanes } from './frustum';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -171,6 +172,23 @@ export class ChunkRenderer {
 
   private tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
+  // The same meshes grouped by column ("sx,sz"), so one frustum test covers a whole column and the
+  // draws of a column are adjacent (one tint texture bind per column).
+  private columnMeshes: Map<string, GPUSectionMesh[]> = new Map();
+  private frustumPlanes = new Float64Array(24);
+
+  // Per-frame scratch state of render(), kept as fields so the draw loop allocates nothing.
+  private visColumns: GPUSectionMesh[][] = [];
+  private visGrass: WebGLTexture[] = [];
+  private visFoliage: WebGLTexture[] = [];
+  private boundGrass: WebGLTexture | null = null;
+  private boundFoliage: WebGLTexture | null = null;
+  private activeUnit = 0;
+  private passDraws = 0;
+  private passTriangles = 0;
+
+  /** The section meshes drawn by the latest render() call: those of columns inside the frustum. */
+  public lastVisible: GPUSectionMesh[] = [];
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
@@ -216,6 +234,10 @@ export class ChunkRenderer {
     };
 
     this.sectionMeshes.set(key, gpuMesh);
+    const colKey = `${sx},${sz}`;
+    const list = this.columnMeshes.get(colKey);
+    if (list) list.push(gpuMesh);
+    else this.columnMeshes.set(colKey, [gpuMesh]);
     return gpuMesh;
   }
 
@@ -230,12 +252,60 @@ export class ChunkRenderer {
     this.freeGPUBucketMesh(existing.translucent);
 
     this.sectionMeshes.delete(key);
+    const colKey = `${existing.sx},${existing.sz}`;
+    const list = this.columnMeshes.get(colKey);
+    if (list) {
+      const i = list.indexOf(existing);
+      if (i >= 0) list.splice(i, 1);
+      if (list.length === 0) this.columnMeshes.delete(colKey);
+    }
+  }
+
+  /** Deletes every GPU resource of the section meshes of one column. */
+  public removeColumnMeshes(cx: number, cz: number): void {
+    const list = this.columnMeshes.get(`${cx},${cz}`);
+    if (!list) return;
+    for (const mesh of Array.from(list)) this.removeSectionMesh(mesh.key);
+  }
+
+  /**
+   * Deletes the section meshes of one column whose keys ("sx,sy,sz") are not in `keep`. Returns whether
+   * the column still has section meshes.
+   */
+  public removeColumnMeshesExcept(cx: number, cz: number, keep: ReadonlySet<string>): boolean {
+    const list = this.columnMeshes.get(`${cx},${cz}`);
+    if (!list) return false;
+    for (const mesh of Array.from(list)) {
+      if (!keep.has(mesh.key)) this.removeSectionMesh(mesh.key);
+    }
+    return this.columnMeshes.has(`${cx},${cz}`);
+  }
+
+  /**
+   * Creates the column's tint textures now, as part of its upload, instead of in the first frame that
+   * draws it. The textures are created on the scratch unit (see render()).
+   */
+  public prepareColumnTints(
+    cx: number,
+    cz: number,
+    world: import('../world/world').World | null,
+  ): void {
+    const gl = this.glWrapper.gl;
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+    this.tintCache.getColumnTints(cx, cz, world);
+  }
+
+  /** Number of section meshes on the GPU. */
+  public get sectionMeshCount(): number {
+    return this.sectionMeshes.size;
   }
 
   public clearAllMeshes(): void {
     for (const key of Array.from(this.sectionMeshes.keys())) {
       this.removeSectionMesh(key);
     }
+    this.columnMeshes.clear();
+    this.lastVisible.length = 0;
     this.tintCache.clearAll();
   }
 
@@ -312,6 +382,44 @@ export class ChunkRenderer {
     this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
+  /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
+  private drawPass(pass: number): void {
+    const gl = this.glWrapper.gl;
+    const columns = this.visColumns;
+    for (let c = 0; c < columns.length; c++) {
+      const list = columns[c]!;
+      let tintsBound = false;
+      for (let i = 0; i < list.length; i++) {
+        const mesh = list[i]!;
+        const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
+        if (!bucket) continue;
+        if (!tintsBound) {
+          tintsBound = true;
+          // Only a texture that differs from the one already bound is bound again.
+          const grass = this.visGrass[c]!;
+          if (grass !== this.boundGrass) {
+            if (this.activeUnit !== 1) gl.activeTexture(gl.TEXTURE1);
+            this.activeUnit = 1;
+            gl.bindTexture(gl.TEXTURE_2D, grass);
+            this.boundGrass = grass;
+          }
+          const foliage = this.visFoliage[c]!;
+          if (foliage !== this.boundFoliage) {
+            if (this.activeUnit !== 2) gl.activeTexture(gl.TEXTURE2);
+            this.activeUnit = 2;
+            gl.bindTexture(gl.TEXTURE_2D, foliage);
+            this.boundFoliage = foliage;
+          }
+        }
+        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+        gl.bindVertexArray(bucket.vao);
+        this.glWrapper.drawElements(gl.TRIANGLES, bucket.indexCount, gl.UNSIGNED_INT, 0);
+        this.passDraws++;
+        this.passTriangles += bucket.indexCount / 3;
+      }
+    }
+  }
+
   public render(
     viewProjMatrix: mat4,
     atlasTexture: WebGLTexture,
@@ -336,87 +444,56 @@ export class ChunkRenderer {
     gl.uniform1f(this.locCellSize, CELL_SIZE);
     gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
 
-    let drawCalls = 0;
-    let triangles = 0;
-
-    const meshes = Array.from(this.sectionMeshes.values());
-
-    let lastBoundColKey: string | null = null;
-    let lastBoundGrassTex: WebGLTexture | null = null;
-    let lastBoundFoliageTex: WebGLTexture | null = null;
-
-    const bindColumnTints = (sx: number, sz: number) => {
-      const colKey = `${sx},${sz}`;
-      if (colKey === lastBoundColKey) return;
-      lastBoundColKey = colKey;
-
-      // The cache creates (or re-uploads) a column's tint textures on the active texture unit.
-      // Select a unit this renderer does not sample from first, otherwise the first column seen in
-      // a frame replaces the atlas on unit 0 for the rest of that frame (stale first frame, see
-      // decisions/M02c-fix-load-path.md).
-      gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
-      const pair = this.tintCache.getColumnTints(sx, sz, world);
-      if (pair.grassTexture !== lastBoundGrassTex) {
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, pair.grassTexture);
-        lastBoundGrassTex = pair.grassTexture;
-      }
-      if (pair.foliageTexture !== lastBoundFoliageTex) {
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, pair.foliageTexture);
-        lastBoundFoliageTex = pair.foliageTexture;
-      }
-    };
+    // Column-level frustum culling: every pass draws only the sections of columns whose box touches
+    // the frustum (decisions/M04a-streaming.md). Each visible column's tint textures are fetched once
+    // per frame, on a texture unit this renderer does not sample from: the cache creates (or
+    // re-uploads) textures on the active unit, and the first column seen in a frame must not replace
+    // the atlas on unit 0 (stale first frame, see decisions/M02c-fix-load-path.md).
+    const planes = extractFrustumPlanes(viewProjMatrix, this.frustumPlanes);
+    const meshes = this.lastVisible;
+    meshes.length = 0;
+    const columns = this.visColumns;
+    let columnCount = 0;
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+    for (const list of this.columnMeshes.values()) {
+      const first = list[0]!;
+      if (!columnInFrustum(planes, first.sx, first.sz)) continue;
+      const pair = this.tintCache.getColumnTints(first.sx, first.sz, world);
+      columns[columnCount] = list;
+      this.visGrass[columnCount] = pair.grassTexture;
+      this.visFoliage[columnCount] = pair.foliageTexture;
+      columnCount++;
+      for (const mesh of list) meshes.push(mesh);
+    }
+    columns.length = columnCount;
+    this.visGrass.length = columnCount;
+    this.visFoliage.length = columnCount;
+    this.boundGrass = null;
+    this.boundFoliage = null;
+    this.activeUnit = SCRATCH_TEXTURE_UNIT;
+    this.passDraws = 0;
+    this.passTriangles = 0;
 
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     gl.uniform1i(this.locIsCutout, 0);
     gl.uniform1i(this.locIsWireframe, 0);
-
-    for (const mesh of meshes) {
-      if (mesh.opaque) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.opaque.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.opaque.ebo);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.opaque.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.opaque.indexCount / 3;
-      }
-    }
+    this.drawPass(0);
 
     // 2. Cutout Pass
     gl.uniform1i(this.locIsCutout, 1);
-    for (const mesh of meshes) {
-      if (mesh.cutout) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.cutout.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.cutout.ebo);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.cutout.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.cutout.indexCount / 3;
-      }
-    }
+    this.drawPass(1);
 
     // 3. Translucent Pass
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.uniform1i(this.locIsCutout, 0);
+    this.drawPass(2);
 
-    for (const mesh of meshes) {
-      if (mesh.translucent) {
-        bindColumnTints(mesh.sx, mesh.sz);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-        gl.bindVertexArray(mesh.translucent.vao);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.translucent.ebo);
-        this.glWrapper.drawElements(gl.TRIANGLES, mesh.translucent.indexCount, gl.UNSIGNED_INT, 0);
-        drawCalls++;
-        triangles += mesh.translucent.indexCount / 3;
-      }
-    }
+    let drawCalls = this.passDraws;
+    const triangles = this.passTriangles;
 
     // Restore depth write
     gl.depthMask(true);
@@ -436,6 +513,8 @@ export class ChunkRenderer {
             gl.bindVertexArray(bucket.vao);
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
             this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
+            // The VAO records its element buffer: put the triangle indices back for the next frame.
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);
             drawCalls++;
           }
         }
@@ -448,8 +527,8 @@ export class ChunkRenderer {
 
     renderStats.drawCalls = drawCalls;
     renderStats.triangles = triangles;
-    renderStats.chunksLoaded = meshes.length;
-    renderStats.chunksMeshed = meshes.length;
+    // chunksLoaded and chunksMeshed come from the streamer (WorldManager); only the draw knows
+    // how many section meshes were visible.
     renderStats.chunksVisible = meshes.length;
   }
 }
