@@ -47,7 +47,7 @@ export interface BlockCraftDebugAPI {
   getMainThreadGenCount?: () => number;
   resetMainThreadGenCount?: () => void;
   setRenderDistance?: (n: number) => number;
-  getStreamingStats?: () => import('../../world/streamer').StreamingStats;
+  getStreamingStats?: () => import('../../world/world-manager').WorldStreamingStats;
   resetFrameStats?: () => void;
   getFrameStats?: () => import('../../engine/frame-stats').FrameStatsSnapshot;
   getGlResourceCounts?: () => import('../../render/gl').ResourceCounts;

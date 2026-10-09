@@ -23,6 +23,7 @@ import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
+import { MeshAttempts } from './mesh-attempts';
 import { clampRenderDistance } from './streaming-plan';
 import type { GenResult } from '../workers/gen-worker-pool';
 import type { MeshResult } from '../mesh/worker-pool';
@@ -98,6 +99,9 @@ class StaleMeshHandle extends Map<string, Promise<void>> {
   }
 }
 
+/** The streamer's counts plus the columns still fading in (the renderer owns the fades). */
+export type WorldStreamingStats = StreamingStats & { columnsFading: number };
+
 export class WorldManager {
   private static instance: WorldManager | null = null;
 
@@ -127,8 +131,8 @@ export class WorldManager {
   // Owns the state of every column and decides what is generated, meshed, uploaded and freed.
   public readonly streamer: Streamer<GenResult, MeshResult>;
 
-  // Per column ("cx,cz"): the section meshes ("sx,sy,sz") uploaded by its current mesh attempt.
-  private readonly meshAttempts = new Map<string, Set<string>>();
+  // Per column ("cx,cz"): the section meshes ("sx,sy,sz") uploaded by its open mesh attempt.
+  private readonly meshAttempts = new MeshAttempts();
 
   // Main-thread time the latest render() spent uploading meshes, read by the frame loop.
   public lastUploadMs = 0;
@@ -183,25 +187,30 @@ export class WorldManager {
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
       uploadSection: (cx, cz, res) => {
         if (!this.chunkRenderer) return;
-        this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
-        this.meshAttempts.get(`${cx},${cz}`)?.add(`${res.sx},${res.sy},${res.sz}`);
+        // Nothing is shown until a createWorld or waitForTerrain request is done, so the sections it
+        // uploads appear at full opacity; any other column fades in (decisions/M04b-fade-and-memory.md).
+        const fadeFromMs = this.loadPending ? null : performance.now();
+        this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData, fadeFromMs);
+        this.meshAttempts.uploaded(`${cx},${cz}`, `${res.sx},${res.sy},${res.sz}`);
         // The column's tint textures are created with its upload, not in the first frame that draws it.
         this.chunkRenderer.prepareColumnTints(cx, cz, this.world);
       },
       beginMeshAttempt: (cx, cz) => {
-        this.meshAttempts.set(`${cx},${cz}`, new Set());
+        this.meshAttempts.begin(`${cx},${cz}`);
       },
       endMeshAttempt: (cx, cz) => {
-        const key = `${cx},${cz}`;
-        const uploaded = this.meshAttempts.get(key) ?? new Set<string>();
-        this.meshAttempts.delete(key);
+        const uploaded = this.meshAttempts.end(`${cx},${cz}`);
         return this.chunkRenderer?.removeColumnMeshesExcept(cx, cz, uploaded) ?? false;
       },
+      abandonMeshAttempt: (cx, cz) => {
+        this.meshAttempts.abandon(`${cx},${cz}`);
+      },
       freeMesh: (cx, cz) => {
-        this.meshAttempts.delete(`${cx},${cz}`);
+        this.meshAttempts.abandon(`${cx},${cz}`);
         this.chunkRenderer?.removeColumnMeshes(cx, cz);
       },
       freeData: (cx, cz) => {
+        this.meshAttempts.abandon(`${cx},${cz}`);
         this.world?.removeColumn(cx, cz);
       },
       now: () => performance.now(),
@@ -232,8 +241,16 @@ export class WorldManager {
     return this.streamer.setRenderDistance(clampRenderDistance(n));
   }
 
-  public getStreamingStats(): StreamingStats {
-    return this.streamer.getStats();
+  /** A createWorld or a region request (waitForTerrain) is waiting: its columns are not shown yet. */
+  private get loadPending(): boolean {
+    return this.initialLoadCount > 0 || this.streamer.requestPending;
+  }
+
+  public getStreamingStats(): WorldStreamingStats {
+    return {
+      ...this.streamer.getStats(),
+      columnsFading: this.chunkRenderer?.fadingColumns(performance.now()) ?? 0,
+    };
   }
 
   public resetMainThreadGenCount(): void {
@@ -249,6 +266,7 @@ export class WorldManager {
     this.worldType = type;
     this.worldEpoch++;
     this.chunkRenderer?.clearAllMeshes();
+    this.meshAttempts.clear();
     this.world = new World();
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
@@ -416,6 +434,7 @@ export class WorldManager {
     if (this.chunkRenderer) {
       this.chunkRenderer.clearAllMeshes();
     }
+    this.meshAttempts.clear();
 
     const epoch = ++this.worldEpoch;
     const world = new World();

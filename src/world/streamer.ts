@@ -53,6 +53,12 @@ export interface StreamerHost<G, M> {
    * upload. Returns whether the column still has section meshes on the GPU.
    */
   endMeshAttempt(cx: number, cz: number): boolean;
+  /**
+   * A mesh attempt of a column was discarded before it completed (its results are dropped). Forgets
+   * what the attempt uploaded; the section meshes already on the GPU stay until a later attempt
+   * completes or the column is freed.
+   */
+  abandonMeshAttempt(cx: number, cz: number): void;
   /** Deletes every GPU resource of a column's meshes. */
   freeMesh(cx: number, cz: number): void;
   /** Deletes a column's block and light data from the world. */
@@ -228,6 +234,11 @@ export class Streamer<G, M> {
     let n = 0;
     for (const col of this.cols.values()) if (col.phase === 'meshed') n++;
     return n;
+  }
+
+  /** A createWorld or waitForTerrain request (or any region request) is waiting for its columns. */
+  public get requestPending(): boolean {
+    return this.requests.length > 0;
   }
 
   public get cameraColumn(): { cx: number; cz: number } {
@@ -731,6 +742,8 @@ export class Streamer<G, M> {
 
   /** Invalidates the mesh jobs and deferred uploads of the current attempt. */
   private discardAttempt(col: Column): void {
+    // Only a column that is meshing has an open attempt (startMesh begins it, finishing ends it).
+    if (col.phase === 'meshing') this.host.abandonMeshAttempt(col.cx, col.cz);
     col.serial++;
     col.jobsLeft = 0;
     col.uploadsPending = 0;

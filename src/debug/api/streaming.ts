@@ -1,6 +1,5 @@
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager, type WorldStreamingStats } from '../../world/world-manager';
 import { frameStats, type FrameStatsSnapshot } from '../../engine/frame-stats';
-import type { StreamingStats } from '../../world/streamer';
 import type { ResourceCounts } from '../../render/gl';
 
 /** Sets the render distance in columns (rounded, clamped to 2..32), re-plans at once, returns the value used. */
@@ -8,7 +7,7 @@ export function setRenderDistance(n: number): number {
   return WorldManager.getInstance().setRenderDistance(n);
 }
 
-export function getStreamingStats(): StreamingStats {
+export function getStreamingStats(): WorldStreamingStats {
   return WorldManager.getInstance().getStreamingStats();
 }
 
