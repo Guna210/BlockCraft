@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | gate pending; blocked on owner (Playwright workers) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | CI=1 verify green (299 unit, 41 e2e, 588 s vs master 441 s); m04 alone 10/10. Plain verify (2 workers on 4 cores) fails only m04 `pumpMsMax` (53.3, 57.8; one 0.3 ms step descheduled; frame max 48.1/12.1). Recommended: owner sets `workers: 1` in playwright.config.ts (harness change). No retries needed: CI=1 verify reported "41 passed", no flaky line; all 10 m04 runs passed first time (retries 0). Gate message waiting in its session. |
+| M04a | final verify after syncing master `60590f8`, then gate | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Owner merged `workers: 1` (`60590f8`). Builder told to merge master, run the plain verify (now 1 worker), refresh the gate message, and wait for the owner. Earlier: CI=1 verify green (299 unit, 41 e2e, 588 s), m04 alone 10/10, no retries needed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -36,7 +36,8 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Open items for the owner
 
-- Playwright `workers: 1` everywhere (playwright.config.ts line 9; harness change, needs `harness-change`), so local verify matches CI. Recommended before approving the M04a gate.
+- Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
+
 - `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so CI green does not prove a test is stable. Suggest a later decision: retries 0, after checking recent CI runs for flaky counts.
 
 
@@ -67,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
 
 - 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
 
