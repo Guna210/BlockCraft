@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | review 2 | `session_01GEWHvX4zk6pp3FJX84Faaa` | `session_01AVbTM1SGzHhje52FTEMgCu` (Haiku) | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 2 | Round-1 fixes in `bbc9a1e`: B1 fixed with 2 regression tests, number labels, N3 retry ×3 then console.error, N4 dead code removed, N5/N1/N2/N7 documented. Local verify green (unit 303, e2e 41, 681 s). Known limitation: a failed mesh job is not retried. Round-2 request sent to the reviewer directly; CI run 37918890181 was in progress. |
+| M04a | review 2 PASS, CI green on `bbc9a1e`; owner to merge | `session_01GEWHvX4zk6pp3FJX84Faaa` | `session_01AVbTM1SGzHhje52FTEMgCu` (Haiku) | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 2 | CI run 37918890181: unit 303, e2e 41, m04 frameCpuMsP95 8.3 / max 11.5, pumpMax 10. Non-blocking items left for M04b: (1) world-manager `meshAttempts` keeps an empty Set after a stale or discarded attempt (small leak; fits M04b's memory scope); (2) a column whose generation failed blocks its neighbours and region requests (worker failure only); doc nits 3–5 skipped. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -68,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
 
 - 2026-10-09: M04a round-1 fixes pushed (`bbc9a1e`). Orchestrator sent the round-2 request to the reviewer session.
 
