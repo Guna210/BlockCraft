@@ -3,6 +3,7 @@ import type { PNG } from 'pngjs';
 import { test, expect } from '../harness/fixture';
 import { assertNoMissingTexture, assertNotBlank } from '../harness/pixels';
 import { fly, waitForStreamingIdle, type Vec3 } from './helpers/flight';
+import { MAX_HOLE_PIXELS, findSkyHoles, isSkyPixel } from './helpers/sky-holes';
 
 // M04a: terrain streams around the camera. Flying 1000 blocks at 30 blocks/s at render distance 8
 // must never let a frame or a streaming task between frames take more than 50 ms, load at most the
@@ -163,9 +164,14 @@ test.describe('M04a: streaming', () => {
 // M04b: fade-in of new columns, memory after a long flight, the render distance 12 horizon and a
 // screenshot in the middle of a flight (SPEC M04, decisions/M04b-fade-and-memory.md).
 
-/** The sky: the clear colour of main.ts, hsl(200, 100 %, 70 %). Fog does not exist until M12a. */
-const SKY_RGB = [102, 204, 255] as const;
-const SKY_TOLERANCE = 16;
+const MB = 1048576;
+
+/** JS heap in use, without forcing a collection. */
+async function heapUsed(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (performance as unknown as { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize,
+  );
+}
 
 /** Forced garbage collection, twice, then the JS heap in use in bytes (needs --js-flags=--expose-gc). */
 async function heapUsedAfterGc(page: Page): Promise<number> {
@@ -205,11 +211,7 @@ function skyShare(png: PNG, left: number, right: number, top: number, bottom: nu
   let sky = 0;
   for (let y = top; y < bottom; y++) {
     for (let x = left; x < right; x++) {
-      const i = (y * png.width + x) * 4;
-      const dr = png.data[i]! - SKY_RGB[0];
-      const dg = png.data[i + 1]! - SKY_RGB[1];
-      const db = png.data[i + 2]! - SKY_RGB[2];
-      if (dr * dr + dg * dg + db * db <= SKY_TOLERANCE * SKY_TOLERANCE) sky++;
+      if (isSkyPixel(png, x, y)) sky++;
     }
   }
   return sky / ((right - left) * (bottom - top));
@@ -223,6 +225,29 @@ test.describe('M04b: fade-in and memory', () => {
     await waitForStreamingIdle(page, 60_000);
     const start = await cameraPosition(page);
     const baseline = await heapUsedAfterGc(page);
+    const mb = (bytes: number) => (bytes / MB).toFixed(2);
+
+    // Probe: the reading must respond to a known allocation, or the growth check below proves nothing.
+    // Chromium reports performance.memory in coarse buckets (decisions/M04b-fade-and-memory.md), so a
+    // plain array of 8 million numbers, about 64 MB on the JS heap, must show as at least 32 MB more.
+    await page.evaluate(() => {
+      (window as unknown as { __heapProbe?: number[] }).__heapProbe = Array.from(
+        { length: 8_000_000 },
+        (_, i) => i + 0.5,
+      );
+    });
+    await page.waitForTimeout(100);
+    const probed = await heapUsed(page);
+    const probeReport = `heap probe: +${mb(probed - baseline)} MB after a 64 MB array (${baseline} B -> ${probed} B)`;
+    test.info().annotations.push({ type: 'heap probe', description: probeReport });
+    console.log(`m04 ${probeReport}`);
+    expect(probed - baseline, probeReport).toBeGreaterThanOrEqual(32 * MB);
+
+    // Release the probe before the flight: the heap must return to the baseline by itself.
+    await page.evaluate(() => {
+      delete (window as unknown as { __heapProbe?: number[] }).__heapProbe;
+    });
+    await heapUsedAfterGc(page);
 
     const out: Vec3 = { x: start.x + 2000, y: start.y, z: start.z };
     await fly(page, { from: start, to: out, speed: 60 });
@@ -231,7 +256,6 @@ test.describe('M04b: fade-in and memory', () => {
     const end = await heapUsedAfterGc(page);
 
     const growth = (end - baseline) / baseline;
-    const mb = (bytes: number) => (bytes / 1048576).toFixed(2);
     const report =
       `heap baseline ${mb(baseline)} MB (${baseline} B), end ${mb(end)} MB (${end} B), ` +
       `growth ${(growth * 100).toFixed(2)} %`;
@@ -276,35 +300,41 @@ test.describe('M04b: fade-in and memory', () => {
     );
     await frames(page, 3);
 
+    // Before the shot: every column within RD 12 is meshed, and no column is still fading in.
+    const loaded = await coverage(page, 12);
+    expect(loaded.notMeshed, 'columns within RD 12 that are not meshed').toEqual([]);
+    const fading = await page.evaluate(
+      () => window.__blockcraft!.getStreamingStats!().columnsFading,
+    );
+    expect(fading, 'columns still fading in before the shot').toBe(0);
+
     const png = await assertAndSaveScreenshot({ name: 'm04-horizon', milestone: 'M04b' });
     assertNotBlank(png);
     assertNoMissingTexture(png);
 
-    // Centre half of the lower third: ground inside the loaded square, so no sky may show there. The
-    // outer quarters on each side look at the far corners of the frame (the frame is 16:9), where the
-    // edge of RD 12 is in view and sky is correct; they are reported, not asserted. A missing 16x16
-    // column in the centre covers far more than 0.1 % of that area (about 150 pixels).
-    const top3 = Math.round((png.height * 2) / 3);
-    const centre = skyShare(
+    // Holes: sky that the flood fill from the top row cannot reach is enclosed by terrain. The largest
+    // enclosed area must stay within MAX_HOLE_PIXELS. Sky reached from the top row is open, including the
+    // view past the RD 12 edge in the corners: there is no fog until M12a, so that edge is a hard line.
+    const holes = findSkyHoles(png);
+    const upper = skyShare(png, 0, png.width, 0, Math.round(png.height / 10));
+    const corners = skyShare(
       png,
+      0,
       Math.round(png.width / 4),
-      Math.round((png.width * 3) / 4),
-      top3,
+      Math.round((png.height * 2) / 3),
       png.height,
     );
-    const sides = skyShare(png, 0, Math.round(png.width / 4), top3, png.height);
-    // Top tenth of the frame: above the far edge, so mostly sky. Shows the edge is in the frame.
-    const upper = skyShare(png, 0, png.width, 0, Math.round(png.height / 10));
     const report =
-      `m04 horizon: sky share lower-centre ${(centre * 100).toFixed(3)} %, ` +
-      `lower-left quarter ${(sides * 100).toFixed(2)} % (edge, not asserted), ` +
+      `m04 horizon: enclosed sky ${holes.enclosedPixels} px, largest hole ${holes.largestEnclosed} px ` +
+      `(limit ${MAX_HOLE_PIXELS}), open sky ${holes.openSky} px, ` +
+      `lower-left corner ${(corners * 100).toFixed(2)} % (edge, not asserted), ` +
       `top tenth ${(upper * 100).toFixed(1)} %, top ${top}`;
     test.info().annotations.push({ type: 'horizon', description: report });
     console.log(report);
     expect(
-      centre,
-      'sky pixels in the centre of the lower third (ground within RD 12)',
-    ).toBeLessThanOrEqual(0.001);
+      holes.largestEnclosed,
+      `largest enclosed sky, px (limit ${MAX_HOLE_PIXELS})`,
+    ).toBeLessThanOrEqual(MAX_HOLE_PIXELS);
     expect(upper, 'sky pixels in the top tenth (above the far edge)').toBeGreaterThan(0.5);
   });
 
@@ -324,7 +354,15 @@ test.describe('M04b: fade-in and memory', () => {
     }
     const png = await assertAndSaveScreenshot({ name: 'm04-fast-flight', milestone: 'M04b' });
     const stats = await page.evaluate(() => window.__blockcraft!.getStreamingStats!());
-    console.log(`m04 fast flight at x ${start.x + 500}: ${JSON.stringify(stats)}`);
+    // Reported, not asserted: under SwiftShader this frame does not fully meet its checklist
+    // (decisions/M04b-fade-and-memory.md, progress/M04b.md).
+    const holes = findSkyHoles(png);
+    const report =
+      `m04 fast flight at x ${start.x + 500}: columnsFading ${stats.columnsFading}, ` +
+      `enclosed sky ${holes.enclosedPixels} px (largest ${holes.largestEnclosed} px), ` +
+      `open sky ${holes.openSky} px, stats ${JSON.stringify(stats)}`;
+    test.info().annotations.push({ type: 'fast flight', description: report });
+    console.log(report);
     assertNotBlank(png);
     assertNoMissingTexture(png);
     await flight;

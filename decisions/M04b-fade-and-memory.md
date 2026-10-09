@@ -24,9 +24,15 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    the time of the call (`WorldStreamingStats` in `src/world/world-manager.ts`). Nothing else in the debug
    API changed.
 5. **Heap test** (`tests/e2e/m04.spec.ts`, "heap growth after flying 2000 blocks out and back…"): at RD 8,
-   idle at spawn, two forced GCs, baseline; fly 2000 blocks out and 2000 back at 60 blocks/s with `fly()`;
-   idle; two forced GCs; growth must be at most 15 %. The baseline, end value and growth go to the
-   annotations and the log.
+   idle at spawn, two forced GCs, baseline. Then a **probe**: a plain array of 8,000,000 numbers (about 64 MB
+   on the JS heap; not a typed array, whose buffer is outside the JS heap) must raise `usedJSHeapSize` by at
+   least 32 MB, or the reading cannot show growth and the test fails. The probe is released and two GCs run
+   before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two GCs, and growth must be
+   at most 15 %. The baseline, end value and growth go to the annotations and the log.
+   The probe exists because Chromium coarsens `performance.memory` unless launched with
+   `--enable-precise-memory-info`, so a reading that does not move would pass the 15 % check for any heap.
+   `playwright.config.ts` is not changed here (a harness file); the launch-flag question is for the owner on
+   master. What the probe measured under the current config is in `progress/M04b.md`.
 6. **Memory fix from the M04a review.** `world-manager.ts` kept a `Map<column, Set>` of section keys per
    open mesh attempt. An attempt discarded before its first upload left an empty Set behind, and `freeData`
    did not clear it. Now:
@@ -40,23 +46,31 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    `tests/unit/streamer.test.ts` (the host is told on each discard path and not on a completed attempt).
    The known limitation from M04a (a column whose generation failed three times blocks its neighbours) is
    left as it was: no test hit it.
-7. **RD 12 horizon** (`m04-horizon.png`): render distance 12, streaming idle and no column fading, then a
-   camera 40 blocks above the highest ground sampled within 144 blocks of the spawn column, pitched 20
-   degrees down, looking along +x. The centre half of the lower third (columns 320 to 960 of 1280, rows
-   480 to 720) must show no sky: at most 0.1 % of its pixels may be sky-coloured. A 16x16 column in that
-   area covers about 150 pixels or more, so one missing column fails the test. The top tenth of the frame
-   must be mostly sky (more than 50 %), which shows that the far edge is in the frame.
-   **Why not the whole lower third:** the frame is 16:9 with a 70 degree vertical FOV, so its outer lower
-   corners look at the far corners of the loaded square. The first run measured sky there (6.4 % of the
-   whole lower third, all of it in the outer quarters on each side, about 11 % of the left quarter): the
-   square's edge is in view and sky beyond it is correct. The test reports those quarters and does not
-   assert on them. The geometry in the first draft of this decision was wrong about that.
-   **There is no fog until M12a.** At RD 12 the terrain stops at the edge of the loaded square with the sky
-   behind it, so the far edge is a hard line, not a fade.
+7. **RD 12 horizon** (`m04-horizon.png`): render distance 12, streaming idle and no column fading, and before
+   the shot the debug API confirms that every column within RD 12 is meshed and `columnsFading` is 0. The
+   camera is 40 blocks above the highest ground sampled within 144 blocks of the spawn column, pitched 20
+   degrees down, looking along +x.
+   **Holes:** sky that a 4-connected flood fill from the sky pixels of the top row cannot reach is enclosed by
+   terrain. The largest connected enclosed area must be at most `MAX_HOLE_PIXELS` = 64 px. The total enclosed
+   and the largest component are logged. A missing chunk at about 190 blocks is roughly 10x60 px (600), so one
+   missing chunk fails the test; gaps between leaves are smaller. The hole finder is
+   `tests/e2e/helpers/sky-holes.ts`, unit-tested on synthetic frames in `tests/unit/sky-holes.test.ts`: an
+   enclosed 10x60 patch fails, an open notch from the top row passes.
+   **Open sky:** sky reached from the top row, including the view past the RD 12 edge in the far corners. That
+   is correct: there is no fog until M12a, so the edge is a hard line. The corners are reported, not asserted.
+   **Top tenth:** more than half sky, which shows the far edge is in the frame.
+   **Earlier version, replaced:** the first check looked at the centre half of the lower third. It cannot see the
+   far chunks around the middle of the frame, which are the ones most likely to be missing at RD 12 (review
+   from the orchestrator). The first run had also measured sky in the outer lower corners (6.4 % of the whole
+   lower third, about 11 % of the left quarter); that sky is the RD 12 edge in view and is reported only.
 8. **Mid-flight screenshot** (`m04-fast-flight.png`): RD 8, `fly()` at 30 blocks/s over 1000 blocks, the
    screenshot taken when the camera is 500 blocks along. Asserted only with `assertNotBlank` and
-   `assertNoMissingTexture`. The spawn area is not waited for, so the chunks still loading are visible on
-   purpose.
+   `assertNoMissingTexture`. The hole finder numbers and `columnsFading` at the moment of capture are reported,
+   not asserted. The frame is the real mid-flight frame: streaming is not waited for, so the chunks still
+   loading are in it on purpose. Under SwiftShader the frame does not fully meet its checklist ("at most a few
+   chunks still loading at the far edge, near terrain fully present"): the reasons are in `progress/M04b.md`.
+   The orchestrator decided to keep the frame as a known limitation for this PR, with a retake in M22a; the
+   owner confirms that at the publish gate.
 
 ## Choices made in this task (not owner decisions)
 
@@ -69,11 +83,12 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
   streaming, which shows fades run; no e2e test checks a pixel mid-fade. On a GPU at 60 fps the fade is a
   visible dissolve.
 - **Horizon camera:** the height rule (40 above the highest sampled ground) and the pitch were chosen for this
-  seed. The centre-half check is the part that does not depend on the seed's terrain being lower or higher.
+  seed. They decide how much of the frame the far edge takes; the hole check does not depend on them.
 
 ## Options considered
 
-- **Asserting the whole lower third** of the horizon frame: rejected after the first run (see decision 7).
+- **Asserting only the centre of the lower third** (the first version): rejected after review; it cannot see the
+  far chunks around the middle of the frame (see decision 7). The whole-frame enclosed-sky check replaces it.
 - **Fade keyed to the first draw** instead of the first upload: needs a per-column draw test in the renderer
   and gives the same result, since a column is drawn in the frame after its upload. Rejected for simplicity.
 - **A fade on every upload** (per section): would make a re-mesh flicker, which decision 2 rules out.
