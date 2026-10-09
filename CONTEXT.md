@@ -9,14 +9,16 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-10-07
+Last updated: 2026-10-09
 
 ## Setup
 
 - The owner starts every builder and reviewer session by hand, pasting the prompt the orchestrator writes. The owner approves every publish gate and merges every PR. `master` is protected: no direct pushes.
 - Environments: the orchestrator runs in `BlockCraft`. Builders and reviewers run in `BlockCraft(350K)`, which sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000` so long sessions compact themselves at about 350k tokens.
 - Models: orchestrator on Opus. Owner (2026-10-09): Haiku with ultracode for builders and reviewers, to save cost, relying on the orchestrator to check. Orchestrator advised Sonnet for core-system builds (lighting, physics, fluids, networking) and tracking fix rounds per task. No automatic pre-merge check by the orchestrator: the owner asks explicitly when wanted (owner, 2026-10-09). Reported costs so far: orchestrator ~$36, M04a builder (Sonnet) ~$22, M04a reviewer (Haiku + ultracode) ~$0.82.
-- Builder questions: the owner points the orchestrator at the session (URL, ID or title), and the orchestrator replies with `send_message`, prefixed `[Orchestrator]` (CLAUDE.md, "Talking to other sessions directly").
+- Builder questions: the owner points the orchestrator at the session (URL, ID or title), and the orchestrator replies with `send_message`, prefixed `[Orchestrator]` (CLAUDE.md, "Talking to other sessions directly"). Builders and reviewers also message the orchestrator directly; their messages arrive as queued notifications (read with ReadNotifications). Find a session by title with `list_sessions`.
+- Branches: builders push to `claude/<task-id>` as CLAUDE.md says (worked for #32 `claude/m01a-fix` and #33 `claude/m04a`). Gate approval comes only from the owner in the builder's session; the orchestrator gives the owner a paste-ready approval line.
+- The owner edits owner files and harness files directly on master: SPEC `2be70f2` (§3.2 GL errors once per frame, `&glcheck=draw`), `6411d94` (column-level frustum culling moved into M04a), `d37918d` (M04 flight p95 reported, enforced at RD 8 by M22a), and playwright.config.ts `60590f8` (`workers: 1`).
 - Review cycle: at most 3 rounds per task, then ask the owner (CLAUDE.md, Orchestrator).
 - CI: `Verify` runs the full suite on every PR and every push to master (job timeout 90 min). Reviewers use it as the full-verify evidence.
 
@@ -37,17 +39,8 @@ Ready to start: **M04b** Fade-in & memory (depends on M04a, merged b80294e). Onl
 ## Open items for the owner
 
 - Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
-
-- `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so CI green does not prove a test is stable. Suggest a later decision: retries 0, after checking recent CI runs for flaky counts.
-
-
-
-
-- M04a risk: RD 8 means about 3,000 draw calls per frame (81 columns gave 841 in `progress/M03g.md`), and `decisions/M02c-fix-load-path.md` measured 70–576 ms frames at about 750 draws in debug mode. The flight budgets (p95 ≤ 8 ms, max ≤ 50 ms) may be unreachable without M22a's culling and batching. The builder measures first and stops with a QUESTION if so.
-
+- `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
-- The 350K compaction cap is not yet confirmed on a Sonnet session. On the first builder in `BlockCraft(350K)`, `get_session` should show `context_usage.max_tokens` 350000 instead of 1000000.
-- CLAUDE.md says branches are named `claude/<task-id>` and PRs are opened with `gh pr create`. Cloud sessions actually get an assigned branch name, and `gh` may be unavailable. The owner knows and left both as they are.
 
 ## Decisions not yet on master
 
@@ -63,60 +56,23 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-09: CONTEXT.md tidied before an owner compaction (open items, log trimmed to 20, setup facts added).
 - 2026-10-09: Owner merged M04a (#33, `b80294e`); master green. M04b builder prompt written.
-
 - 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
-
 - 2026-10-09: M04a round-1 fixes pushed (`bbc9a1e`). Orchestrator sent the round-2 request to the reviewer session.
-
 - 2026-10-09: Owner preference: Haiku with ultracode for builders and reviewers. No automatic pre-merge checks by the orchestrator; only when the owner asks.
-
 - 2026-10-09: M04a review round 1: CHANGES NEEDED. Orchestrator checked the findings and sent the builder its fixes. Reviewer N6 (debug glCheckMs up to 1.8 s in CI) put to the owner to accept.
-
 - 2026-10-09: Owner approved the M04a gate; PR [#33](https://github.com/Guna210/BlockCraft/pull/33) opened. Reviewer prompt given.
-
 - 2026-10-09: Orchestrator checked the M04a gate message (24 files, no deletions, no harness files, verify green, 10/10 runs). Gave the owner a paste-ready approval; the orchestrator cannot approve gates (CLAUDE.md). Reviewer to check why `src/world/lighting.ts` changed.
-
 - 2026-10-09: M04a plain verify green after the `workers: 1` change; builder at the publish gate, waiting for the owner.
-
 - 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
-
 - 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
-
 - 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
-
 - 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
-
 - 2026-10-08: Owner chose option A (SPEC `d37918d`). Orchestrator told the M04a builder to sync, finish the asserts, run m04 10 times in a row, then verify and go through the publish gate.
-
 - 2026-10-08: M04a: background-slice uploads around the frame budget found and fixed; 50 ms rules now hold. Recommendation to the owner revised: assert the 50 ms rules in M04a, enforce p95 at RD 8 in M22a.
-
 - 2026-10-08: M04a QUESTION 5: in-scope fixes can't make the 50 ms rule hold under SwiftShader (blocked uploads of 0.5–1.7 s). Put the budget-policy decision to the owner; builder holding.
-
 - 2026-10-08: M04a QUESTION 4: flight test flaky against its budgets (numbers in the table). Sent the owner the section-culling decision; told the builder to fence-gate uploads and account for pump slices meanwhile.
-
 - 2026-10-08: M04a builder (status message): drain fix done (variant b plus a 4-frame bound), streaming 22× faster in CI. Orchestrator acked and asked for glCheckMs accounting and a unit test of the bound.
-
 - 2026-10-08: M04a QUESTION 3: the per-frame `getError` drain makes streaming ~29× slower in CI. Orchestrator rejected test-only workarounds and asked for a non-blocking drain within SPEC §3.2's "once per frame".
-
 - 2026-10-08: M04a QUESTION 2 (p95 tail after culling). Orchestrator chose a bounded investigation, then the streamer; budget decisions wait for real flight numbers (owner's).
-
-- 2026-10-08: Owner merged the SPEC change (`6411d94`, column-level frustum culling moved from M22a into M04a). Orchestrator answered the M04a builder: option 1, sync to master, branch `claude/m04a`, culling first.
-
-- 2026-10-08: M01a-fix merged (#32). M04a builder stopped with a QUESTION: RD 8 frame budget unreachable on master (numbers in the table). Recommended pulling column-level frustum culling into M04a; SPEC edits handed to the owner.
-
-- 2026-10-08: M01a-fix review round 1 PASS; CI `verify` green on `9f3dbda`, mergeable clean. Told the owner to merge; suggested a real-GPU check on the branch preview. M04a prompt reissued with decision 6 rewritten.
-
-- 2026-10-08: M01a-fix opened [#32](https://github.com/Guna210/BlockCraft/pull/32). Builder measured under SwiftShader: `getError` 841 → 1 per frame, `frameCpuMsP95` 349–674 → 1.3–3.6 ms, fps unchanged at 2–4 (software rasterising limits fps in CI; matters for M04a streaming throughput). Owner asked about reusing one reviewer for all PRs: answered no, one reviewer session per task (CLAUDE.md Roles).
-
-- 2026-10-07: Owner measured 22 → 200 FPS with the per-draw check off. Full replacement text for SPEC.md lines 180, 431, 454 given to the owner.
-
-- 2026-10-07: Owner confirmed the per-draw `getError` cause with the console check. M01a-fix prompt and SPEC wording given; M04a waits for M01a-fix.
-
-- 2026-10-07: Owner reported low debug-mode FPS on real hardware. M04a put on hold; console check proposed (see open items).
-
-- 2026-10-07: Orchestrator session `session_01Nz4dZnD2fqqWa3facEZZ6g` started. CONTEXT.md matched master (19c3944, no open PRs). M04a builder prompt written; waiting for the owner.
-
-- 2026-10-07: CONTEXT.md created on `claude/orchestrator`.
-- 2026-10-07: `BlockCraft(350K)` environment created and checked: npm ci, Playwright install and typecheck pass.
-- 2026-10-07: CLAUDE.md roles (orchestrator, builder, reviewer) merged in [Guna210/BlockCraft#30](https://github.com/Guna210/BlockCraft/pull/30).
