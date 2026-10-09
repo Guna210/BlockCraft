@@ -28,7 +28,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | gate (waiting for owner) | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | — | — | Plain verify (1 worker) green: 514 s, unit 300 (45 files), e2e 41 passed, no flaky tests. m04: 84 frames, frameCpuMsP95 10.5 / max 15.4, uploadMsP95 9.4 / max 12.8, pumpMsMax 23.4, glCheckMsMax 1403. 16 commits, 24 files, branch `claude/m04a`. |
+| M04a | PR open, review 1 to start | `session_01GEWHvX4zk6pp3FJX84Faaa` | — | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 1 | Head `eaaf8e9`, 24 files (streamer.ts 1068 lines). Harness guard passed; CI `verify` was running when the reviewer prompt was given (2026-10-09). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -68,6 +68,8 @@ M04a (in the builder prompt; the builder records them in `decisions/M04a-streami
 - Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
 
 ## Log (newest first)
+
+- 2026-10-09: Owner approved the M04a gate; PR [#33](https://github.com/Guna210/BlockCraft/pull/33) opened. Reviewer prompt given.
 
 - 2026-10-09: Orchestrator checked the M04a gate message (24 files, no deletions, no harness files, verify green, 10/10 runs). Gave the owner a paste-ready approval; the orchestrator cannot approve gates (CLAUDE.md). Reviewer to check why `src/world/lighting.ts` changed.
 
