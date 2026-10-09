@@ -22,17 +22,17 @@ Last updated: 2026-10-07
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04a | review 2 PASS, CI green on `bbc9a1e`; owner to merge | `session_01GEWHvX4zk6pp3FJX84Faaa` | `session_01AVbTM1SGzHhje52FTEMgCu` (Haiku) | [#33](https://github.com/Guna210/BlockCraft/pull/33) | 2 | CI run 37918890181: unit 303, e2e 41, m04 frameCpuMsP95 8.3 / max 11.5, pumpMax 10. Non-blocking items left for M04b: (1) world-manager `meshAttempts` keeps an empty Set after a stale or discarded attempt (small leak; fits M04b's memory scope); (2) a column whose generation failed blocks its neighbours and region requests (worker failure only); doc nits 3–5 skipped. |
+| M04b | prompt written, waiting for owner to start the builder | — | — | — | — | Prompt given 2026-10-09. Includes M04a review leftover 1 (empty `meshAttempts` Set). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the only ready task (M13b, M10a, M17a early starts still wait on M06b, M09a, M10a). Next on the critical path: M04a → M04b → M05b → M06a and M12a.
+Ready to start: **M04b** Fade-in & memory (depends on M04a, merged b80294e). Only ready task. Next: M05b (needs M04b + M05a), then M06a and M12a in parallel.
 
 ## Open items for the owner
 
@@ -51,23 +51,19 @@ Ready to start: **M04a** Streaming core (depends on M03g, merged). It is the onl
 
 ## Decisions not yet on master
 
-M01a-fix (in its builder prompt; recorded in `decisions/M01a-fix-gl-error-check.md`): `GLWrapper` constructor and per-draw behaviour unchanged (keeps `tests/unit/gl.test.ts` passing); new public drain method; `main.ts` drains once per frame after the frame timer stops, per-draw only with `&glcheck=draw`; also drains at the end of `createWorld`'s synchronous frame and inside `getRenderStats()`.
+M04a and M01a-fix decisions are on master (`decisions/M04a-streaming.md`, `decisions/M01a-fix-gl-error-check.md`).
 
-M04a (in the builder prompt; the builder records them in `decisions/M04a-streaming.md`):
+M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.md`):
 
-- Chunk = 16×16 column; Chebyshev distance in columns. Generate ≤ RD+1, mesh ≤ RD, free meshes > RD+1, free block and light data > RD+2. Invariant: every meshed section has all 8 neighbour columns loaded.
-- One streamer owns column state (not `World.hasColumn`). `createWorld` keeps its radius-5/4 barrier; `waitForTerrain` goes through the streamer, works with rAF suspended.
-- Priority: ring, then in-frustum, then travel direction, then exact distance. Queued stale jobs removed, running ones dropped on arrival.
-- Upload queue drained ≤ 3 ms per frame; `uploadMsP95` made real.
-- Decision 6 (reissued prompt): `frameCpuMs` as `main.ts` measures it; the M01a-fix per-frame drain stays after the timer; nothing else excluded; drain time exposed as `glCheckMs`; handoff reports max of `frameCpuMs + glCheckMs`.
-- New debug module `src/debug/api/streaming.ts`: `setRenderDistance` (clamp 2–32), `getStreamingStats`, `resetFrameStats`/`getFrameStats`, `getGlResourceCounts`. `chunksLoaded` = columns with block data, `chunksMeshed` = fully meshed columns, `chunksVisible` unchanged.
-- Flight helper `tests/e2e/helpers/flight.ts` (page-side rAF loop, wall-clock speed, camera via `window.WorldManager` + `look`), plus `waitForStreamingIdle`.
-- Column-level frustum culling (owner, SPEC `6411d94`): one conservative column-AABB vs frustum test, shared by draw culling and priority; all passes; `chunksVisible` = sections drawn. Allowed: drop the redundant per-draw `bindBuffer`, sort draws by column. Stop if RD 8 standing-still p95 > 5 ms after culling.
-- Per-frame debug drain (inside M04a, changes M01a-fix's `main.ts` design): fence-gated, plus a blocking drain once 4 frames are unread; the blocking drain counts as `glCheckMs`, outside the frame timer; the bound is unit-tested.
-- Flight budgets (owner, SPEC `d37918d`): M04a asserts no frame > 50 ms (plus pump slices ≤ 50 ms); p95 frame and upload values are reported, enforced at RD 8 by M22a. Section culling stays in M22a. Streaming uploads only inside the frame's 3 ms budget; pump slices upload only during createWorld/waitForTerrain barriers.
-- Not M04a: fade-in, heap test, RD 12 horizon, screenshots (M04b); streamed lighting (M05b); section-level or cave culling, batching, culling toggle, LOD (M22a/b); teleport (M06a).
+- Per-column dither fade (4×4 Bayer on gl_FragCoord, all passes, one uniform per column, fixed 300–500 ms wall clock). It starts at the column's first section upload; a re-mesh doesn't fade again; a column streamed back in fades again.
+- Sections uploaded while a createWorld/waitForTerrain request is pending show at full opacity (existing screenshot tests unchanged).
+- Heap test: RD 8, out and back 2000 blocks each at 60 blocks/s, gc twice before each read, growth ≤ 15 %, inside the 180 s timeout.
+- RD 12 horizon test with a hole check; no fog until M12a. Fast-flight shot mid-flight at 30 blocks/s.
+- Fix M04a review leftover 1 (empty Set in `meshAttempts`); leftover 2 (a failed-generation column blocks its neighbours) is left as a known limitation.
 
 ## Log (newest first)
+
+- 2026-10-09: Owner merged M04a (#33, `b80294e`); master green. M04b builder prompt written.
 
 - 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
 
