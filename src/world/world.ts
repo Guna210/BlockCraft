@@ -69,11 +69,6 @@ export class World {
     return this.columns.has(key);
   }
 
-  /** Number of columns that hold block data. */
-  public get columnCount(): number {
-    return this.columns.size;
-  }
-
   /**
    * Deletes a column with its light data and invalidates the last-column cache, so a lookup after
    * the removal cannot return the deleted column.

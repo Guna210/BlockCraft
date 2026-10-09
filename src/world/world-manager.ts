@@ -127,6 +127,9 @@ export class WorldManager {
   // Owns the state of every column and decides what is generated, meshed, uploaded and freed.
   public readonly streamer: Streamer<GenResult, MeshResult>;
 
+  // Per column ("cx,cz"): the section meshes ("sx,sy,sz") uploaded by its current mesh attempt.
+  private readonly meshAttempts = new Map<string, Set<string>>();
+
   // Main-thread time the latest render() spent uploading meshes, read by the frame loop.
   public lastUploadMs = 0;
 
@@ -181,10 +184,23 @@ export class WorldManager {
       uploadSection: (cx, cz, res) => {
         if (!this.chunkRenderer) return;
         this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData);
+        this.meshAttempts.get(`${cx},${cz}`)?.add(`${res.sx},${res.sy},${res.sz}`);
         // The column's tint textures are created with its upload, not in the first frame that draws it.
         this.chunkRenderer.prepareColumnTints(cx, cz, this.world);
       },
-      freeMesh: (cx, cz) => this.chunkRenderer?.removeColumnMeshes(cx, cz),
+      beginMeshAttempt: (cx, cz) => {
+        this.meshAttempts.set(`${cx},${cz}`, new Set());
+      },
+      endMeshAttempt: (cx, cz) => {
+        const key = `${cx},${cz}`;
+        const uploaded = this.meshAttempts.get(key) ?? new Set<string>();
+        this.meshAttempts.delete(key);
+        return this.chunkRenderer?.removeColumnMeshesExcept(cx, cz, uploaded) ?? false;
+      },
+      freeMesh: (cx, cz) => {
+        this.meshAttempts.delete(`${cx},${cz}`);
+        this.chunkRenderer?.removeColumnMeshes(cx, cz);
+      },
       freeData: (cx, cz) => {
         this.world?.removeColumn(cx, cz);
       },
@@ -203,7 +219,7 @@ export class WorldManager {
     this.genWorkerPool.setPoolSize(size);
     this.lightWorkerPool.setPoolSize(size);
     // The old pool dropped its queued and running generation jobs without answering them.
-    this.streamer.abandonInFlight({ gen: true, mesh: false });
+    this.streamer.abandonGenerations();
     this.updateStreamerLimits();
   }
 

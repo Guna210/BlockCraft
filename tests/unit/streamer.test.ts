@@ -14,7 +14,13 @@ class FakeHost implements StreamerHost<string, string> {
   }
 
   data = new Set<string>();
-  meshes = new Map<string, number>(); // column -> uploaded sections
+  /** Section meshes held on the GPU, by column: "cx,cz#i" is section i of a column. */
+  meshes = new Map<string, Set<string>>();
+  /** Section meshes the current mesh attempt of each column has uploaded so far. */
+  attempts = new Map<string, Set<string>>();
+  /** Sections whose mesh job produces nothing (a section that became empty). */
+  noStarter = new Set<string>();
+  freedSections: string[] = [];
   genRequests: Array<{ cx: number; cz: number; resolve: () => void; reject: () => void }> = [];
   genStarted: string[] = [];
   meshRequests: Array<{ cx: number; cz: number; resolveAll: () => void }> = [];
@@ -65,33 +71,63 @@ class FakeHost implements StreamerHost<string, string> {
 
   requestMesh(cx: number, cz: number): Array<() => Promise<string>> {
     const resolvers: Array<() => void> = [];
-    const promises: Array<Promise<string>> = [];
+    const starters: Array<() => Promise<string>> = [];
     for (let i = 0; i < this.sectionsPerColumn; i++) {
-      promises.push(
-        new Promise<string>((resolve) => {
-          resolvers.push(() => resolve(`${cx},${cz}#${i}`));
-        }),
-      );
+      const section = `${cx},${cz}#${i}`;
+      if (this.noStarter.has(section)) continue;
+      const promise = new Promise<string>((resolve) => {
+        resolvers.push(() => resolve(section));
+      });
+      starters.push(() => {
+        this.clock += this.startCostMs;
+        this.startedSections.push(section);
+        return promise;
+      });
     }
     this.meshRequests.push({ cx, cz, resolveAll: () => resolvers.forEach((r) => r()) });
-    return promises.map((p, i) => () => {
-      this.clock += this.startCostMs;
-      this.startedSections.push(`${cx},${cz}#${i}`);
-      return p;
-    });
+    return starters;
   }
 
-  uploadSection(cx: number, cz: number): void {
+  uploadSection(cx: number, cz: number, section: string): void {
     const key = `${cx},${cz}`;
     this.uploads.push(key);
-    this.meshes.set(key, (this.meshes.get(key) ?? 0) + 1);
+    this.attempts.get(key)?.add(section);
+    let held = this.meshes.get(key);
+    if (!held) {
+      held = new Set();
+      this.meshes.set(key, held);
+    }
+    held.add(section);
     this.clock += this.uploadCostMs;
     this.check();
+  }
+
+  beginMeshAttempt(cx: number, cz: number): void {
+    this.attempts.set(`${cx},${cz}`, new Set());
+  }
+
+  /** Frees the held sections that the attempt did not upload, like the world manager's host does. */
+  endMeshAttempt(cx: number, cz: number): boolean {
+    const key = `${cx},${cz}`;
+    const uploaded = this.attempts.get(key) ?? new Set<string>();
+    this.attempts.delete(key);
+    const held = this.meshes.get(key);
+    if (held) {
+      for (const section of held) {
+        if (uploaded.has(section)) continue;
+        held.delete(section);
+        this.freedSections.push(section);
+      }
+      if (held.size === 0) this.meshes.delete(key);
+    }
+    this.check();
+    return this.meshes.has(key);
   }
 
   freeMesh(cx: number, cz: number): void {
     this.freedMeshes.push(`${cx},${cz}`);
     this.meshes.delete(`${cx},${cz}`);
+    this.attempts.delete(`${cx},${cz}`);
     this.check();
   }
 
@@ -398,18 +434,38 @@ describe('Streamer: stale jobs', () => {
     expect(host.violations).toEqual([]);
   });
 
-  it('a failed job does not retry forever', async () => {
+  it('a generation that fails once is queued again and stored when the retry succeeds', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { host, streamer } = make(2, { maxGenInFlight: 1 });
     streamer.update(viewAt(0, 0), 10);
     host.genRequests[0]!.reject();
     await settle();
-    const started = host.genStarted.length;
-    for (let i = 0; i < 5; i++) {
-      streamer.update(viewAt(0, 0), 20 + i);
+    expect(host.genStarted.filter((k) => k === '0,0').length).toBe(2);
+    host.genRequests.splice(0).forEach((r) => r.resolve());
+    await settle();
+    expect(host.applied).toContain('0,0');
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it('a generation that keeps failing is tried a bounded number of times, then reported and not retried', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { host, streamer } = make(2, { maxGenInFlight: 1 });
+    streamer.update(viewAt(0, 0), 10);
+    for (let i = 0; i < 10; i++) {
+      for (const r of host.genRequests.splice(0)) {
+        if (r.cx === 0 && r.cz === 0) r.reject();
+        else r.resolve();
+      }
       await settle();
+      streamer.update(viewAt(0, 0), 20 + i);
     }
-    expect(host.genStarted.filter((k) => k === host.genStarted[0]).length).toBe(1);
-    expect(host.genStarted.length).toBeGreaterThanOrEqual(started);
+    expect(host.genStarted.filter((k) => k === '0,0').length).toBe(3);
+    expect(host.genRequests.some((r) => r.cx === 0 && r.cz === 0)).toBe(false);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]![0])).toContain('0,0');
+    expect(host.violations).toEqual([]);
+    error.mockRestore();
   });
 });
 
@@ -746,12 +802,44 @@ describe('Streamer: main-thread columns and stale meshes', () => {
     expect(host.violations).toEqual([]);
   });
 
-  it('abandonInFlight puts running generation back in the queue', async () => {
+  it('a re-mesh frees the section meshes its new attempt did not produce', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+    expect([...host.meshes.get('0,0')!].sort()).toEqual(['0,0#0', '0,0#1']);
+
+    host.noStarter.add('0,0#1'); // section 1 became empty: the new attempt has no mesh job for it
+    streamer.invalidate(0, 0);
+    await drain(host, streamer, view);
+
+    expect([...host.meshes.get('0,0')!]).toEqual(['0,0#0']);
+    expect(host.freedSections).toEqual(['0,0#1']);
+    expect(streamer.phaseOf(0, 0)).toBe('meshed');
+    expect(host.violations).toEqual([]);
+  });
+
+  it('a re-mesh that produces no section mesh frees all the meshes of the column', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+
+    host.noStarter.add('0,0#0');
+    host.noStarter.add('0,0#1');
+    streamer.invalidate(0, 0);
+    await drain(host, streamer, view);
+
+    expect(host.meshes.has('0,0')).toBe(false);
+    expect(host.freedSections.sort()).toEqual(['0,0#0', '0,0#1']);
+    expect(streamer.phaseOf(0, 0)).toBe('meshed');
+    expect(host.violations).toEqual([]);
+  });
+
+  it('abandonGenerations puts running generation back in the queue', async () => {
     const { host, streamer } = make(2, { maxGenInFlight: 2 });
     streamer.update(viewAt(0, 0), 1);
     const first = host.genStarted.slice();
     expect(first.length).toBe(2);
-    streamer.abandonInFlight({ gen: true, mesh: false });
+    streamer.abandonGenerations();
     // The two columns are requested again; the old promises never matter.
     expect(host.genStarted.length).toBe(4);
     for (const key of host.genStarted.slice(2)) {

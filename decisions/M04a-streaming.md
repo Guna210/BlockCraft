@@ -101,8 +101,16 @@ reported as `pumpMsP95` / `pumpMsMax`; the flight test asserts `pumpMsMax <= 50`
 - **Tint textures** of a column are created while its first section is uploaded (`prepareColumnTints`), not
   in the first frame that draws it, and the per-draw `bindBuffer` of the element buffer was removed (VAOs
   record it). The wireframe pass restores the triangle EBO after each draw.
-- **Worker pool replacement** (`setWorkerPoolSize` between worlds) calls `abandonInFlight`: jobs the old pool
-  dropped silently go back to the queue.
+- **Worker pool replacement** (`setWorkerPoolSize` between worlds) calls `abandonGenerations`: generation jobs
+  the old pool dropped silently go back to the queue.
+- **A re-mesh replaces the column's section meshes.** A mesh attempt begins with `beginMeshAttempt` and, when
+  it completes, `endMeshAttempt` frees the section meshes of earlier attempts that it did not upload. This also
+  covers an attempt that produces no section at all, which frees every mesh of the column. Before this, a column
+  that became smaller on re-mesh kept its old sections on the GPU (found in review of PR #33).
+- **Generation retries are bounded.** A failed generation is queued again until it has had three tries; after
+  that the column is marked failed (so no region request waits on it) and `console.error` reports it. Mesh
+  jobs are not retried yet: a failed mesh job still leaves its column unmeshed without a report (Known
+  limitations).
 
 ## Work between frames is in steps (added after the first verify runs under load)
 

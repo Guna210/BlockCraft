@@ -269,6 +269,19 @@ export class ChunkRenderer {
   }
 
   /**
+   * Deletes the section meshes of one column whose keys ("sx,sy,sz") are not in `keep`. Returns whether
+   * the column still has section meshes.
+   */
+  public removeColumnMeshesExcept(cx: number, cz: number, keep: ReadonlySet<string>): boolean {
+    const list = this.columnMeshes.get(`${cx},${cz}`);
+    if (!list) return false;
+    for (const mesh of Array.from(list)) {
+      if (!keep.has(mesh.key)) this.removeSectionMesh(mesh.key);
+    }
+    return this.columnMeshes.has(`${cx},${cz}`);
+  }
+
+  /**
    * Creates the column's tint textures now, as part of its upload, instead of in the first frame that
    * draws it. The textures are created on the scratch unit (see render()).
    */
@@ -285,11 +298,6 @@ export class ChunkRenderer {
   /** Number of section meshes on the GPU. */
   public get sectionMeshCount(): number {
     return this.sectionMeshes.size;
-  }
-
-  /** Number of columns with at least one section mesh on the GPU. */
-  public get meshedColumnCount(): number {
-    return this.columnMeshes.size;
   }
 
   public clearAllMeshes(): void {

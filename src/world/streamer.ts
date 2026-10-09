@@ -43,6 +43,16 @@ export interface StreamerHost<G, M> {
   requestMesh(cx: number, cz: number): Array<() => Promise<M>>;
   /** Uploads one section mesh to the GPU. */
   uploadSection(cx: number, cz: number, mesh: M): void;
+  /**
+   * A mesh attempt of a column starts, before its mesh jobs are requested. The section meshes already
+   * on the GPU belong to an earlier attempt until this attempt uploads them.
+   */
+  beginMeshAttempt(cx: number, cz: number): void;
+  /**
+   * A mesh attempt of a column completed: frees the section meshes of earlier attempts that it did not
+   * upload. Returns whether the column still has section meshes on the GPU.
+   */
+  endMeshAttempt(cx: number, cz: number): boolean;
   /** Deletes every GPU resource of a column's meshes. */
   freeMesh(cx: number, cz: number): void;
   /** Deletes a column's block and light data from the world. */
@@ -96,6 +106,8 @@ interface Column {
   uploadsPending: number;
   stale: boolean;
   failed: boolean;
+  /** Generation tries so far. */
+  genAttempts: number;
   prio: PriorityKey;
 }
 
@@ -138,6 +150,8 @@ interface PrepJob<M> {
 
 /** Longest a frame-less pump slice may run (the upload budget of one frame). */
 const SLICE_MS = 3;
+/** Generation tries per column before it is reported as failed. */
+const MAX_GEN_ATTEMPTS = 3;
 /** Camera rotation (radians) that triggers a re-prioritisation. */
 const VIEW_CHANGE_RAD = 0.05;
 
@@ -361,26 +375,17 @@ export class Streamer<G, M> {
   }
 
   /**
-   * A worker pool was replaced and its queued and running jobs are gone for good: put the affected
-   * columns back to the state before their jobs were dispatched.
+   * The generation worker pool was replaced and its queued and running jobs are gone for good: puts
+   * the columns being generated back to the state before their jobs were dispatched.
    */
-  public abandonInFlight(which: { gen: boolean; mesh: boolean }): void {
-    if (which.gen) {
-      for (const t of this.genTokens) t.abandoned = true;
-      this.genTokens.clear();
-    }
-    if (which.mesh) {
-      for (const t of this.meshTokens) t.abandoned = true;
-      this.meshTokens.clear();
-    }
+  public abandonGenerations(): void {
+    for (const t of this.genTokens) t.abandoned = true;
+    this.genTokens.clear();
     for (const col of this.cols.values()) {
-      if (which.gen && col.phase === 'generating') {
+      if (col.phase === 'generating') {
         col.serial++;
         col.phase = 'queuedGen';
         this.genQueue.push(col);
-      } else if (which.mesh && col.phase === 'meshing') {
-        this.discardAttempt(col);
-        col.phase = 'generated';
       }
     }
     this.planDirty = true;
@@ -494,6 +499,7 @@ export class Streamer<G, M> {
       uploadsPending: 0,
       stale: false,
       failed: false,
+      genAttempts: 0,
       prio: makePriorityKey(),
     };
   }
@@ -759,6 +765,7 @@ export class Streamer<G, M> {
 
   private startGen(col: Column): void {
     col.phase = 'generating';
+    col.genAttempts++;
     const token: Token = { abandoned: false, remaining: 1 };
     const serial = col.serial;
     const epoch = this.epoch;
@@ -771,12 +778,31 @@ export class Streamer<G, M> {
       () => {
         if (token.abandoned || epoch !== this.epoch) return;
         this.genTokens.delete(token);
-        if (col.serial === serial && this.cols.get(col.key) === col) {
-          col.failed = true;
-          col.phase = 'queuedGen';
-        }
+        if (col.serial === serial && this.cols.get(col.key) === col) this.genFailed(col);
         this.dispatch();
       },
+    );
+  }
+
+  /**
+   * A generation failed on its worker. The column is queued again until it has had MAX_GEN_ATTEMPTS
+   * tries; then it is marked failed and reported, so a region request does not wait on it silently.
+   */
+  private genFailed(col: Column): void {
+    col.phase = 'queuedGen';
+    if (!this.wantGen(col.cx, col.cz)) {
+      this.cols.delete(col.key);
+      this.cancelled++;
+      return;
+    }
+    if (col.genAttempts < MAX_GEN_ATTEMPTS) {
+      this.genQueue.push(col);
+      this.genSorted = false;
+      return;
+    }
+    col.failed = true;
+    console.error(
+      `Streaming: column ${col.cx},${col.cz} failed to generate in ${col.genAttempts} tries`,
     );
   }
 
@@ -844,8 +870,11 @@ export class Streamer<G, M> {
       this.cancelled++;
       return;
     }
+    this.host.beginMeshAttempt(col.cx, col.cz);
     const starters = this.host.requestMesh(col.cx, col.cz);
     if (starters.length === 0) {
+      // Nothing to mesh: the section meshes of an earlier attempt, if any, are freed now.
+      col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
       col.phase = 'meshed';
       this.schedulePump();
       return;
@@ -948,7 +977,11 @@ export class Streamer<G, M> {
       if (!col.failed) this.tryQueueMesh(col);
       return;
     }
-    if (col.uploadsPending === 0) col.phase = 'meshed';
+    if (col.uploadsPending === 0) {
+      // The section meshes of an earlier attempt that this one did not produce are freed now.
+      col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
+      col.phase = 'meshed';
+    }
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1052,13 +1085,6 @@ export class Streamer<G, M> {
       }
     }
     return true;
-  }
-
-  /** Cancels the pump timer (tests). */
-  public dispose(): void {
-    if (this.pumpTimer !== null) clearTimeout(this.pumpTimer);
-    this.pumpTimer = null;
-    this.pumpScheduled = false;
   }
 }
 
