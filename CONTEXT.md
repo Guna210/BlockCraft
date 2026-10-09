@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | building: gate posted, sent back for fixes (orchestrator, 2026-10-09) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | — | — | — | Local commit `8b4d00f`: horizon fix done (largest enclosed 14 px); heap probe fails as expected (64 MB array, 0 growth). Push to `claude/m04b`. Waiting for: owner choice on the heap fix (A/B). |
+| M04b | building: gate posted, sent back for fixes (orchestrator, 2026-10-09) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | — | — | — | Local commit `dacd4e4` (docs; `8b4d00f` before): horizon fix done (largest enclosed 14 px); heap probe fails as expected (64 MB array, 0 growth). Push to `claude/m04b`. Waiting for: owner choice on the heap fix (A/B). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -58,6 +58,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
 - 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
 - 2026-10-09: M04b gate (`5d3de39`, verify green, 334 unit / 44 e2e). Orchestrator answered: branch `claude/m04b`; horizon check replaced by an enclosed-sky check; heap test found vacuous (bucketed `performance.memory`), fix put to the owner; fast-flight shot accepted as a known limitation. New gate to follow.
 - 2026-10-09: CONTEXT.md tidied before an owner compaction (open items, log trimmed to 20, setup facts added).
@@ -77,4 +78,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-08: M04a: background-slice uploads around the frame budget found and fixed; 50 ms rules now hold. Recommendation to the owner revised: assert the 50 ms rules in M04a, enforce p95 at RD 8 in M22a.
 - 2026-10-08: M04a QUESTION 5: in-scope fixes can't make the 50 ms rule hold under SwiftShader (blocked uploads of 0.5–1.7 s). Put the budget-policy decision to the owner; builder holding.
 - 2026-10-08: M04a QUESTION 4: flight test flaky against its budgets (numbers in the table). Sent the owner the section-culling decision; told the builder to fence-gate uploads and account for pump slices meanwhile.
-- 2026-10-08: M04a builder (status message): drain fix done (variant b plus a 4-frame bound), streaming 22× faster in CI. Orchestrator acked and asked for glCheckMs accounting and a unit test of the bound.
