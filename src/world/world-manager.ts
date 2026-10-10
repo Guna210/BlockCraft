@@ -24,6 +24,7 @@ import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
 import { MeshAttempts } from './mesh-attempts';
+import { fadeStartFor } from '../render/column-fade';
 import { clampRenderDistance } from './streaming-plan';
 import type { GenResult } from '../workers/gen-worker-pool';
 import type { MeshResult } from '../mesh/worker-pool';
@@ -189,7 +190,7 @@ export class WorldManager {
         if (!this.chunkRenderer) return;
         // Nothing is shown until a createWorld or waitForTerrain request is done, so the sections it
         // uploads appear at full opacity; any other column fades in (decisions/M04b-fade-and-memory.md).
-        const fadeFromMs = this.loadPending ? null : performance.now();
+        const fadeFromMs = fadeStartFor(this.loadPending, performance.now());
         this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData, fadeFromMs);
         this.meshAttempts.uploaded(`${cx},${cz}`, `${res.sx},${res.sy},${res.sz}`);
         // The column's tint textures are created with its upload, not in the first frame that draws it.

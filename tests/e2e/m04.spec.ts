@@ -224,12 +224,20 @@ test.describe('M04b: fade-in and memory', () => {
     await createWorld(page, 'm04-heap');
     await waitForStreamingIdle(page, 60_000);
     const start = await cameraPosition(page);
+
+    // Warm-up: 400 blocks out and back takes the spawn columns out of the keep ring. createWorld lights
+    // the spawn region, and that light (about 8.2 MB at spawn) is freed when the columns leave the ring;
+    // streamed-back columns are not lit until M05b, so every later return to spawn reaches the same
+    // state. The baseline is taken after the warm-up (decisions/M04b-fade-and-memory.md).
+    const near: Vec3 = { x: start.x + 400, y: start.y, z: start.z };
+    await fly(page, { from: start, to: near, speed: 60 });
+    await fly(page, { from: near, to: start, speed: 60 });
+    await waitForStreamingIdle(page, 60_000);
     const baseline = await heapUsedAfterGc(page);
     const mb = (bytes: number) => (bytes / MB).toFixed(2);
 
     // Probe: the reading must respond to a known allocation, or the growth check below proves nothing.
-    // Chromium reports performance.memory in coarse buckets (decisions/M04b-fade-and-memory.md), so a
-    // plain array of 8 million numbers, about 64 MB on the JS heap, must show as at least 32 MB more.
+    // A plain array of 8 million numbers, about 64 MB on the JS heap, must show as at least 32 MB more.
     await page.evaluate(() => {
       (window as unknown as { __heapProbe?: number[] }).__heapProbe = Array.from(
         { length: 8_000_000 },
@@ -255,6 +263,7 @@ test.describe('M04b: fade-in and memory', () => {
     await waitForStreamingIdle(page, 60_000);
     const end = await heapUsedAfterGc(page);
 
+    // One-sided: a growth of more than 15 % fails. A drop is not checked here (the owner's call).
     const growth = (end - baseline) / baseline;
     const report =
       `heap baseline ${mb(baseline)} MB (${baseline} B), end ${mb(end)} MB (${end} B), ` +

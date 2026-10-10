@@ -8,7 +8,7 @@ import { ColumnTintCache } from './tint-cache';
 import { mergeMeshBuckets } from '../mesh/models';
 import { columnInFrustum, extractFrustumPlanes } from './frustum';
 import { bayerGlsl } from './dither';
-import { ColumnFades } from './column-fade';
+import { ColumnFades, UniformValueCache } from './column-fade';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -184,6 +184,8 @@ export class ChunkRenderer {
   private locGrassTintMap: WebGLUniformLocation;
   private locFoliageTintMap: WebGLUniformLocation;
   private locFade: WebGLUniformLocation;
+  // The fade value last written to u_fade: a column whose fade is unchanged (finished) is not written again.
+  private fadeUniform: UniformValueCache;
 
   private tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
@@ -224,6 +226,7 @@ export class ChunkRenderer {
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
     this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
+    this.fadeUniform = new UniformValueCache((value) => gl.uniform1f(this.locFade, value));
   }
 
   /**
@@ -432,7 +435,7 @@ export class ChunkRenderer {
         if (!tintsBound) {
           tintsBound = true;
           // One fade value per column, set before the column's first draw of this pass.
-          gl.uniform1f(this.locFade, this.visFade[c]!);
+          this.fadeUniform.set(this.visFade[c]!);
           // Only a texture that differs from the one already bound is bound again.
           const grass = this.visGrass[c]!;
           if (grass !== this.boundGrass) {
@@ -492,6 +495,7 @@ export class ChunkRenderer {
     meshes.length = 0;
     const columns = this.visColumns;
     const nowMs = performance.now();
+    this.fadeUniform.forget();
     let columnCount = 0;
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     for (const list of this.columnMeshes.values()) {
@@ -548,7 +552,7 @@ export class ChunkRenderer {
 
       // The overlay follows the column fades like the solid passes.
       for (let c = 0; c < columns.length; c++) {
-        gl.uniform1f(this.locFade, this.visFade[c]!);
+        this.fadeUniform.set(this.visFade[c]!);
         for (const mesh of columns[c]!) {
           const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
           for (const bucket of buckets) {

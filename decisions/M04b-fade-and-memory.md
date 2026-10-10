@@ -24,16 +24,40 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    the time of the call (`WorldStreamingStats` in `src/world/world-manager.ts`). Nothing else in the debug
    API changed.
 5. **Heap test** (`tests/e2e/m04.spec.ts`, "heap growth after flying 2000 blocks out and back…"): at RD 8,
-   idle at spawn, two forced GCs, baseline. Then a **probe**: a plain array of 8,000,000 numbers (about 64 MB
-   on the JS heap; not a typed array, whose buffer is outside the JS heap) must raise `usedJSHeapSize` by at
-   least 32 MB, or the reading cannot show growth and the test fails. The probe is released and two GCs run
-   before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two GCs, and growth must be
-   at most 15 %. The baseline, end value and growth go to the annotations and the log.
+   idle at spawn, then a **warm-up**: 400 blocks out and back, which takes the spawn columns out of the keep
+   ring. Then idle, two forced GCs, and the baseline. Then a **probe**: a plain array of 8,000,000 numbers
+   (about 64 MB on the JS heap; not a typed array, whose buffer is outside the JS heap) must raise
+   `usedJSHeapSize` by at least 32 MB, or the reading cannot show growth and the test fails. The probe is
+   released and two GCs run before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two
+   GCs, and growth must be at most 15 %. The bound is one-sided: a drop is not checked (the owner's call). The
+   baseline, end value and growth go to the annotations and the log.
    The probe exists because without `--enable-precise-memory-info` `performance.memory` returned the same value
    before and after a 64 MB array (19,300,000 B), so a reading that does not move would pass the 15 % check for
    any heap. The owner chose to add the flag on master (`90c809b`); with it the probe moves by +61 to +89 MB.
-   The 15 % check is an upper bound: the runs ended 40–41 % below the baseline, which passes it. Numbers are in
-   `progress/M04b.md`.
+
+   **Why the warm-up (review round 1, B1).** Without the warm-up the baseline at spawn was 18.9 MB and the
+   post-flight reading 11.2 MB, a drop of 40 % that the 15 % bound cannot see. A heap snapshot at spawn and one
+   after the flight (both after two GCs; probe run, not part of the test) gave:
+   - `system / JSArrayBufferData` count 5,665 → 3,816, size 13.45 → 5.39 MB. All of the drop is in 4,096-byte
+     buffers: 2,016 → 2. The other sizes match the state the page reports (indices and biome arrays), and
+     their counts do not fall.
+   - The page reports `LightStorage` at spawn: **2,014 light sections, 8,249,344 bytes**; after the flight: **0**.
+     Each light section is one `Uint8Array(4096)` (`src/world/lighting.ts`), held in `LightStorage.sections`.
+   - Root: the light `createWorld` computes for the spawn region (the barrier columns, radius 5, about 121
+     columns). The light is kept while those columns are loaded and is what their meshes were lit with.
+     The streamer frees a column's data when it leaves the keep ring (`World.removeColumn` →
+     `LightEngine.removeColumn`), and a column streamed back in gets no light until M05b lights streamed
+     columns. So the spawn state has about 8.2 MB of light that no later state has.
+   - Not a leak and not an unneeded buffer: the light is needed while the spawn columns are loaded (re-mesh and
+     edits read it). Freeing it at spawn would change what a re-mesh reads, so it is not freed here. The baseline
+     is taken after the warm-up instead, in the state every later return to spawn reaches.
+   - After the warm-up the baseline is 10.34 MB (single run of the test on this tree).
+
+   **Second out-and-back (report only, probe run on this tree, not in the test).** Baseline after the warm-up
+   10,820,821 B; after round 1 11,314,949 B (+4.57 %); after round 2 11,865,217 B (+9.65 % against the
+   baseline). Round 2 is +4.86 % above round 1, so it does not return within 1 % of the first post-GC reading.
+   The growth is about 0.5 MB per round. I have not identified what it is. The test (one round) is within the
+   bound; a second round is within the bound too, but a steady per-round rise would reach it eventually.
 6. **Memory fix from the M04a review.** `world-manager.ts` kept a `Map<column, Set>` of section keys per
    open mesh attempt. An attempt discarded before its first upload left an empty Set behind, and `freeData`
    did not clear it. Now:
@@ -54,7 +78,9 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    **Holes:** sky that a 4-connected flood fill from the sky pixels of the top row cannot reach is enclosed by
    terrain. The largest connected enclosed area must be at most `MAX_HOLE_PIXELS` = 64 px. The total enclosed
    and the largest component are logged. A missing chunk at about 190 blocks is roughly 10x60 px (600), so one
-   missing chunk fails the test; gaps between leaves are smaller. The hole finder is
+   missing chunk fails the test; gaps between leaves are smaller. **What the check does not catch:** a column at
+   the RD 12 edge. Its sky is open (it reaches the top row, or the frame edge past it), so it is reported as
+   open sky, not as a hole. The check catches missing interior chunks, not the loaded edge. The hole finder is
    `tests/e2e/helpers/sky-holes.ts`, unit-tested on synthetic frames in `tests/unit/sky-holes.test.ts`: an
    enclosed 10x60 patch fails, an open notch from the top row passes.
    **Open sky:** sky reached from the top row, including the view past the RD 12 edge in the far corners. That
@@ -93,6 +119,12 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
   clock, the threshold table and the upload rule. The e2e flight reports `columnsFading` above zero during
   streaming, which shows fades run; no e2e test checks a pixel mid-fade. On a GPU at 60 fps the fade is a
   visible dissolve.
+- **Fade start (review round 1).** The start rule is a pure function, `fadeStartFor(loadPending, nowMs)`, so
+  the full-opacity rule while `createWorld` or a region request is pending is unit-tested
+  (`tests/unit/column-fade.test.ts`). `WorldManager.uploadSection` uses it.
+- **Fade uniform (review round 1).** The last value written to `u_fade` is cached (`UniformValueCache`); a
+  finished column (fade 1) is not written again in each pass. `render()` forgets the cache each frame, so the
+  first write of a frame always goes through.
 - **Horizon camera:** the height rule (40 above the highest sampled ground) and the pitch were chosen for this
   seed. They decide how much of the frame the far edge takes; the hole check does not depend on them.
 

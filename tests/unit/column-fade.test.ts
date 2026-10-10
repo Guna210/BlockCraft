@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { ColumnFades, FADE_IN_MS, fadeAmount } from '../../src/render/column-fade';
+import {
+  ColumnFades,
+  FADE_IN_MS,
+  UniformValueCache,
+  fadeAmount,
+  fadeStartFor,
+} from '../../src/render/column-fade';
 
 describe('column fade: the clock', () => {
   it('lasts a named constant between 300 and 500 ms of wall-clock time', () => {
@@ -108,5 +114,52 @@ describe('column fade: the count of columns still fading', () => {
     fades.clear();
     expect(fades.size).toBe(0);
     expect(fades.fadingColumns(0)).toBe(0);
+  });
+});
+
+describe('column fade: full opacity while a load is pending', () => {
+  it('a section uploaded while createWorld or a region request is pending starts no fade', () => {
+    expect(fadeStartFor(true, 1234)).toBeNull();
+    const fades = new ColumnFades();
+    fades.onUpload(0, 0, false, fadeStartFor(true, 1234));
+    expect(fades.amount(0, 0, 1234)).toBe(1);
+    expect(fades.size).toBe(0);
+  });
+
+  it('a section uploaded with no load pending starts its fade at the upload time', () => {
+    expect(fadeStartFor(false, 1234)).toBe(1234);
+    const fades = new ColumnFades();
+    fades.onUpload(0, 0, false, fadeStartFor(false, 1234));
+    expect(fades.amount(0, 0, 1234)).toBe(0);
+    expect(fades.amount(0, 0, 1234 + FADE_IN_MS)).toBe(1);
+  });
+});
+
+describe('column fade: the uniform is written only when its value changes', () => {
+  it('writes the first value, skips repeats and writes each change', () => {
+    const written: number[] = [];
+    const cache = new UniformValueCache((v) => written.push(v));
+    for (const v of [1, 1, 1, 0.5, 0.5, 1, 1]) cache.set(v);
+    expect(written).toEqual([1, 0.5, 1]);
+  });
+
+  it('writes a value again after forget, even when it is the same', () => {
+    const written: number[] = [];
+    const cache = new UniformValueCache((v) => written.push(v));
+    cache.set(1);
+    cache.set(1);
+    cache.forget();
+    cache.set(1);
+    expect(written).toEqual([1, 1]);
+  });
+
+  it('writes nothing for a finished column in each of several passes', () => {
+    // Three passes over the same visible columns, all finished: one write in all.
+    const written: number[] = [];
+    const cache = new UniformValueCache((v) => written.push(v));
+    for (let pass = 0; pass < 3; pass++) {
+      for (const amount of [1, 1, 1]) cache.set(amount);
+    }
+    expect(written).toEqual([1]);
   });
 });

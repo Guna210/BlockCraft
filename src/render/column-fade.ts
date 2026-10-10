@@ -16,6 +16,32 @@ export function fadeAmount(elapsedMs: number): number {
   return elapsedMs / FADE_IN_MS;
 }
 
+/**
+ * When a section uploaded now starts its column's fade. While a createWorld or a region request is
+ * pending nothing is shown yet, so its sections appear at full opacity (null).
+ */
+export function fadeStartFor(loadPending: boolean, nowMs: number): number | null {
+  return loadPending ? null : nowMs;
+}
+
+/** Remembers the last value written to a uniform, so an unchanged value is not written again. */
+export class UniformValueCache {
+  private last = Number.NaN;
+
+  constructor(private readonly write: (value: number) => void) {}
+
+  set(value: number): void {
+    if (value === this.last) return;
+    this.write(value);
+    this.last = value;
+  }
+
+  /** The next set() writes, whatever the value: the uniform may have been changed elsewhere. */
+  forget(): void {
+    this.last = Number.NaN;
+  }
+}
+
 /** Fade state of the columns that have section meshes on the GPU. Keys are the streamer's column keys. */
 export class ColumnFades {
   private readonly starts = new Map<number, number>();
