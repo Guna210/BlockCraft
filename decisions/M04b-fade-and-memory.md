@@ -26,23 +26,23 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
 5. **Heap test** (`tests/e2e/m04.spec.ts`, "heap growth after flying 2000 blocks out and back…"): at RD 8,
    idle at spawn, then a **warm-up**: 400 blocks out and back, which takes the spawn columns out of the keep
    ring. Then idle, two forced GCs, and the baseline. Then a **probe**: a plain array of 8,000,000 numbers
-   (8,000,000 numbers, 64,000,000 B, about 61 MiB on the JS heap; not a typed array, whose buffer is outside
+   (not a typed array, whose buffer is outside
    the JS heap) must raise `usedJSHeapSize` by at least 32 MiB, or the reading cannot show growth and the test fails. The probe is
    released and two GCs run before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two
    GCs, and growth must be at most 15 %. The bound is one-sided: a drop is not checked (the owner's call). The
    baseline, end value and growth go to the annotations and the log.
    The probe exists because without `--enable-precise-memory-info` `performance.memory` returned the same value
-   before and after a 64,000,000 B array (19,300,000 B reported before and after), so a reading that does not move would pass the 15 % check for
-   any heap. The owner chose to add the flag on master (`90c809b`); with it the probe moves by +61 to +89 MiB.
+   before and after a 64 MB array. The heap test's log line from the run before the launch flag was on master reads `m04 heap baseline 18.41 MB (19300000 B), end 18.41 MB (19300000 B), growth 0.00 %` (19,300,000 B = 18.41 MiB), so a reading that does not move would pass the 15 % check for
+   any heap. The owner chose to add the flag on master (`90c809b`); the self-checks with it are listed in `progress/M04b.md`.
 
    **Why the warm-up (review round 1, B1).** Without the warm-up, the final verify run on `53d5a5f` (the merged tree
    before this change) had a baseline at spawn of 18,863,296 B (17.99 MiB) and an end of 11,286,819 B (10.76 MiB),
    a drop of 40.17 % that the 15 % bound cannot see. A heap snapshot at spawn and one
    after the flight (both after two GCs; probe run, not part of the test) gave:
-   - `system / JSArrayBufferData` count 5,665 → 3,816, size 13.45 → 5.39 MB as the analysis script printed it (decimal MB, so about 12.8 → 5.1 MiB; exact bytes not logged). All of the drop is in 4,096-byte
+   - `system / JSArrayBufferData` count 5,665 → 3,816 (heap-snapshot probe run). All of the drop is in 4,096-byte
      buffers: 2,016 → 2. The other sizes match the state the page reports (indices and biome arrays), and
      their counts do not fall.
-   - The page reports `LightStorage` at spawn: **2,014 light sections, 8,249,344 bytes**; after the flight: **0**.
+   - The page reports `LightStorage` at spawn (same probe run): **2,014 light sections, 8,249,344 bytes (7.87 MiB)**; after the flight: **0**.
      Each light section is one `Uint8Array(4096)` (`src/world/lighting.ts`), held in `LightStorage.sections`.
    - Root: the light `createWorld` computes for the spawn region (the barrier columns, radius 5, about 121
      columns). The light is kept while those columns are loaded and is what their meshes were lit with.
@@ -56,7 +56,7 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
      numbers of every run are in `progress/M04b.md`, "Numbers: one run" and "Heap baseline".
 
    **Second out-and-back (report only, probe run on this tree, not in the test).** Baseline after the warm-up
-   10,820,821 B; after round 1 11,314,949 B (+4.57 %); after round 2 11,865,217 B (+9.65 % against the
+   10,820,821 B (10.32 MiB); after round 1 11,314,949 B (10.79 MiB, +4.57 %); after round 2 11,865,217 B (11.32 MiB, +9.65 % against the
    baseline). Round 2 is +4.86 % above round 1, so it does not return within 1 % of the first post-GC reading.
    The reviewer's probe measured +2.18 % for round 2, not +4.86 %. The likely cause is the frame-stats sample arrays
    (`src/engine/frame-stats.ts`, `MAX_SAMPLES` 100,000), which fill during the test because the heap test never calls
@@ -82,8 +82,8 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    degrees down, looking along +x.
    **Holes:** sky that a 4-connected flood fill from the sky pixels of the top row cannot reach is enclosed by
    terrain. The largest connected enclosed area must be at most `MAX_HOLE_PIXELS` = 64 px. The total enclosed
-   and the largest component are logged. A missing interior chunk is about 10x60 px in this frame (an estimate,
-   not measured), so one such chunk fails the test; gaps between leaves are smaller. **What the check does not catch:** a column at
+   and the largest component are logged. A missing interior column adds a 251 px enclosed component (the reviewer's
+   measurement), which is over the 64 px limit, so one such column fails the test. **What the check does not catch:** a column at
    the RD 12 edge. Its sky is open (it reaches the top row, or the frame edge past it), so it is reported as
    open sky, not as a hole. The check catches missing interior chunks, not the loaded edge. The hole finder is
    `tests/e2e/helpers/sky-holes.ts`, unit-tested on synthetic frames in `tests/unit/sky-holes.test.ts`: an
