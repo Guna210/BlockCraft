@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | prompt written, waiting for owner to start the builder | — | — | — | — | Prompt given 2026-10-10. Recommended Sonnet (core lighting system). |
+| M05b | building: QUESTION answered, owner decision pending on the cave tests | `session_01RsegcCFUbMz3XUzDKjxLBs` (BlockCraft(750K), Haiku) | — | — | — | Local `2c93ffc`, 4 e2e failing. Told the builder: torch tint applied after the brightness curve (channel = level − offset); batched light jobs + ≤ 2 ms main thread per job; build `setDebugLight`. Owner to decide: may M05b call setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC line 523 says "with debug light")? |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -61,6 +61,7 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 
 ## Log (newest first)
 
+- 2026-10-10: M05b QUESTION (4 e2e failing: M03d/M03g caves dark, M04b mid-flight 100 % sky, torch rise 25.5). Orchestrator rejected changing tests or criteria; gave fixes (tint after the curve, batched light jobs, cheaper main thread, debug light). Asked the owner about the cave tests.
 - 2026-10-10: Owner merged M04b (#34, `427660a`); master green. M05b builder prompt written (only ready task).
 - 2026-10-10: M04b review round 4: PASS, CI green on `2c89919`. Waiting for the owner to merge #34.
 - 2026-10-10: M04b docs fix pushed (`2c89919`, two doc files only). Orchestrator sent the round-4 request.
@@ -80,4 +81,3 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 - 2026-10-09: Owner merged M04a (#33, `b80294e`); master green. M04b builder prompt written.
 - 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
 - 2026-10-09: M04a round-1 fixes pushed (`bbc9a1e`). Orchestrator sent the round-2 request to the reviewer session.
-- 2026-10-09: Owner preference: Haiku with ultracode for builders and reviewers. No automatic pre-merge checks by the orchestrator; only when the owner asks.
