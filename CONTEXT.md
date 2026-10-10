@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | fixing 3 (docs only); owner authorised a 4th review round | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`) | 2 | Round 2 CHANGES NEEDED: B1 resolved (keeping the light data is legitimate); B2 = unlabelled, mixed-unit heap figures in progress line 41 and decision lines 38–39. Also: decision 7 sentence, frameStats growth note, thin heap-test time margin. Round 3 is the last. CI green on `aa08b33`. Docs fix pushed `7079849`. |
+| M04b | review 4 (owner-authorised, docs `2c89919`) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`) | 2 | Round 2 CHANGES NEEDED: B1 resolved (keeping the light data is legitimate); B2 = unlabelled, mixed-unit heap figures in progress line 41 and decision lines 38–39. Also: decision 7 sentence, frameStats growth note, thin heap-test time margin. Round 3 is the last. CI green on `aa08b33`. Docs fix pushed `7079849`. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -57,6 +57,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-10: M04b docs fix pushed (`2c89919`, two doc files only). Orchestrator sent the round-4 request.
 - 2026-10-10: Owner chose option 3 for M04b: docs-only fix, then a 4th review round. Orchestrator sent the builder the 7 provenance items plus the decision 7 measurement.
 - 2026-10-10: M04b review round 3: CHANGES NEEDED, docs provenance only (7 unsourced or unlabelled historical heap figures). CI green on `7079849`; code accepted. 3-round limit hit: asked the owner. Recommended one more docs-only commit dropping the unsourced figures, then merge without a 4th review.
 - 2026-10-10: M04b docs fix pushed (`7079849`, two doc files only). Orchestrator sent the round-3 request.
@@ -76,4 +77,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-09: Owner preference: Haiku with ultracode for builders and reviewers. No automatic pre-merge checks by the orchestrator; only when the owner asks.
 - 2026-10-09: M04a review round 1: CHANGES NEEDED. Orchestrator checked the findings and sent the builder its fixes. Reviewer N6 (debug glCheckMs up to 1.8 s in CI) put to the owner to accept.
 - 2026-10-09: Owner approved the M04a gate; PR [#33](https://github.com/Guna210/BlockCraft/pull/33) opened. Reviewer prompt given.
-- 2026-10-09: Orchestrator checked the M04a gate message (24 files, no deletions, no harness files, verify green, 10/10 runs). Gave the owner a paste-ready approval; the orchestrator cannot approve gates (CLAUDE.md). Reviewer to check why `src/world/lighting.ts` changed.
