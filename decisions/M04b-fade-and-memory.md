@@ -26,19 +26,20 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
 5. **Heap test** (`tests/e2e/m04.spec.ts`, "heap growth after flying 2000 blocks out and back…"): at RD 8,
    idle at spawn, then a **warm-up**: 400 blocks out and back, which takes the spawn columns out of the keep
    ring. Then idle, two forced GCs, and the baseline. Then a **probe**: a plain array of 8,000,000 numbers
-   (about 64 MB on the JS heap; not a typed array, whose buffer is outside the JS heap) must raise
-   `usedJSHeapSize` by at least 32 MB, or the reading cannot show growth and the test fails. The probe is
+   (8,000,000 numbers, 64,000,000 B, about 61 MiB on the JS heap; not a typed array, whose buffer is outside
+   the JS heap) must raise `usedJSHeapSize` by at least 32 MiB, or the reading cannot show growth and the test fails. The probe is
    released and two GCs run before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two
    GCs, and growth must be at most 15 %. The bound is one-sided: a drop is not checked (the owner's call). The
    baseline, end value and growth go to the annotations and the log.
    The probe exists because without `--enable-precise-memory-info` `performance.memory` returned the same value
-   before and after a 64 MB array (19,300,000 B), so a reading that does not move would pass the 15 % check for
-   any heap. The owner chose to add the flag on master (`90c809b`); with it the probe moves by +61 to +89 MB.
+   before and after a 64,000,000 B array (19,300,000 B reported before and after), so a reading that does not move would pass the 15 % check for
+   any heap. The owner chose to add the flag on master (`90c809b`); with it the probe moves by +61 to +89 MiB.
 
-   **Why the warm-up (review round 1, B1).** Without the warm-up the baseline at spawn was 18.9 MB and the
-   post-flight reading 11.2 MB, a drop of 40 % that the 15 % bound cannot see. A heap snapshot at spawn and one
+   **Why the warm-up (review round 1, B1).** Without the warm-up, the final verify run on `53d5a5f` (the merged tree
+   before this change) had a baseline at spawn of 18,863,296 B (17.99 MiB) and an end of 11,286,819 B (10.76 MiB),
+   a drop of 40.17 % that the 15 % bound cannot see. A heap snapshot at spawn and one
    after the flight (both after two GCs; probe run, not part of the test) gave:
-   - `system / JSArrayBufferData` count 5,665 → 3,816, size 13.45 → 5.39 MB. All of the drop is in 4,096-byte
+   - `system / JSArrayBufferData` count 5,665 → 3,816, size 13.45 → 5.39 MB as the analysis script printed it (decimal MB, so about 12.8 → 5.1 MiB; exact bytes not logged). All of the drop is in 4,096-byte
      buffers: 2,016 → 2. The other sizes match the state the page reports (indices and biome arrays), and
      their counts do not fall.
    - The page reports `LightStorage` at spawn: **2,014 light sections, 8,249,344 bytes**; after the flight: **0**.
@@ -47,18 +48,21 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
      columns). The light is kept while those columns are loaded and is what their meshes were lit with.
      The streamer frees a column's data when it leaves the keep ring (`World.removeColumn` →
      `LightEngine.removeColumn`), and a column streamed back in gets no light until M05b lights streamed
-     columns. So the spawn state has about 8.2 MB of light that no later state has.
+     columns. So the spawn state has about 7.87 MiB of light (8,249,344 B) that no later state has.
    - Not a leak and not an unneeded buffer: the light is needed while the spawn columns are loaded (re-mesh and
      edits read it). Freeing it at spawn would change what a re-mesh reads, so it is not freed here. The baseline
      is taken after the warm-up instead, in the state every later return to spawn reaches.
-   - After the warm-up the baseline is 10.34 MB (10,845,137 B in the final full verify on `c1e1934`; the
-     numbers of every run are in `progress/M04b.md`, "Numbers: one run" and "Heap baseline").
+   - After the warm-up the baseline is 10,845,137 B (10.34 MiB) in the final full verify on `c1e1934`; the
+     numbers of every run are in `progress/M04b.md`, "Numbers: one run" and "Heap baseline".
 
    **Second out-and-back (report only, probe run on this tree, not in the test).** Baseline after the warm-up
    10,820,821 B; after round 1 11,314,949 B (+4.57 %); after round 2 11,865,217 B (+9.65 % against the
    baseline). Round 2 is +4.86 % above round 1, so it does not return within 1 % of the first post-GC reading.
-   The growth is about 0.5 MB per round. I have not identified what it is. The test (one round) is within the
-   bound; a second round is within the bound too, but a steady per-round rise would reach it eventually.
+   The reviewer's probe measured +2.18 % for round 2, not +4.86 %. The likely cause is the frame-stats sample arrays
+   (`src/engine/frame-stats.ts`, `MAX_SAMPLES` 100,000), which fill during the test because the heap test never calls
+   `resetFrameStats`. That is unconfirmed. The growth is capped, so it plateaus rather than leaking. The test (one
+   round) is within the bound. The test takes 2.0–2.1 min alone; the reviewer measured 3.9 min for the warm-up plus
+   two rounds with snapshots, against the 180 s per-test timeout, which is not changed here.
 6. **Memory fix from the M04a review.** `world-manager.ts` kept a `Map<column, Set>` of section keys per
    open mesh attempt. An attempt discarded before its first upload left an empty Set behind, and `freeData`
    did not clear it. Now:
@@ -78,8 +82,8 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    degrees down, looking along +x.
    **Holes:** sky that a 4-connected flood fill from the sky pixels of the top row cannot reach is enclosed by
    terrain. The largest connected enclosed area must be at most `MAX_HOLE_PIXELS` = 64 px. The total enclosed
-   and the largest component are logged. A missing chunk at about 190 blocks is roughly 10x60 px (600), so one
-   missing chunk fails the test; gaps between leaves are smaller. **What the check does not catch:** a column at
+   and the largest component are logged. A missing interior chunk is about 10x60 px in this frame (an estimate,
+   not measured), so one such chunk fails the test; gaps between leaves are smaller. **What the check does not catch:** a column at
    the RD 12 edge. Its sky is open (it reaches the top row, or the frame edge past it), so it is reported as
    open sky, not as a hole. The check catches missing interior chunks, not the loaded edge. The hole finder is
    `tests/e2e/helpers/sky-holes.ts`, unit-tested on synthetic frames in `tests/unit/sky-holes.test.ts`: an
