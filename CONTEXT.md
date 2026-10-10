@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | PR open, review 1 pending | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | — | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`, `ca25171`) | 1 | 19 files, no harness files, no deletions. Reviewer to check: heap baseline timing (−41 %), hole-finder, fade, meshAttempts fix, fast-flight accepted as known limitation. |
+| M04b | fixing 1 | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`) | 1 | Round 1 CHANGES NEEDED (CI green on `ca25171`). B1: spawn heap holds ~7.9 MB of ArrayBuffers that the flight frees, so the baseline is inflated; find the retainer and fix it, warm-up baseline only if it is legitimate. B2: handoff numbers mix runs. Small extras: decision 7 wording, cache the fade uniform, test for the pending-load full-opacity rule. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -57,6 +57,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-10: M04b review round 1: CHANGES NEEDED (heap baseline inflated by ~7.9 MB of retained ArrayBuffers; handoff numbers inconsistent). Orchestrator sent the fix list to the builder.
 - 2026-10-10: Owner approved M04b gate; PR [#34](https://github.com/Guna210/BlockCraft/pull/34) opened from `claude/m04b` (`ca25171`). Reviewer prompt given.
 - 2026-10-10: M04b new gate on `f428c46`: verify green (629 s), heap self-check +61 MB, three m04 runs at −41 % growth, horizon largest hole 14 px. Waiting for owner approval.
 - 2026-10-10: Owner added `--enable-precise-memory-info` on master (`90c809b`, SPEC `67381df`). M04b builder told to merge master, run m04 ×3 and full verify, then post a new gate.
@@ -76,4 +77,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
 - 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
 - 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
-- 2026-10-08: Owner chose option A (SPEC `d37918d`). Orchestrator told the M04a builder to sync, finish the asserts, run m04 10 times in a row, then verify and go through the publish gate.
