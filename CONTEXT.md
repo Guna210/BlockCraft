@@ -61,6 +61,7 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 
 ## Log (newest first)
 
+- 2026-10-10: M05b round-3 report (`49679d2` local): torch rise 34.2; M03d cave passes with the debug light, M03g cave stdDev 11.7; triangles +76 % (fps 1.52→1.18) but visible sections at x500 down from 152 to 0–7, horizon test times out. Orchestrator: keep the merge rule; paler warm tint (hue 20–40°); fix the debug light to match master's look; find the pipeline bug (neighbour re-mesh, cancels, gating, priority, gen starvation). Suggested the owner switch this builder to Sonnet.
 - 2026-10-10: Owner approved setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC M03 "with debug light"). Relayed to the M05b builder.
 - 2026-10-10: M05b round-2 report: torch rise 31.7 (hue 25°), setDebugLight built, mid-flight still 100 % sky (now mesh-bound), M04b heap test 2.8 min (times out in the suite). Orchestrator: tune the curve exponent and room; diagnose the per-stage streaming throughput against master and fix the regression in M05b's code. Owner's cave decision still pending.
 - 2026-10-10: M05b QUESTION (4 e2e failing: M03d/M03g caves dark, M04b mid-flight 100 % sky, torch rise 25.5). Orchestrator rejected changing tests or criteria; gave fixes (tint after the curve, batched light jobs, cheaper main thread, debug light). Asked the owner about the cave tests.
@@ -80,4 +81,3 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 - 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
 - 2026-10-09: M04b gate (`5d3de39`, verify green, 334 unit / 44 e2e). Orchestrator answered: branch `claude/m04b`; horizon check replaced by an enclosed-sky check; heap test found vacuous (bucketed `performance.memory`), fix put to the owner; fast-flight shot accepted as a known limitation. New gate to follow.
 - 2026-10-09: CONTEXT.md tidied before an owner compaction (open items, log trimmed to 20, setup facts added).
-- 2026-10-09: Owner merged M04a (#33, `b80294e`); master green. M04b builder prompt written.
