@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building: QUESTION answered, owner decision pending on the cave tests | `session_01RsegcCFUbMz3XUzDKjxLBs` (BlockCraft(750K), Haiku) | — | — | — | Local `2c93ffc`, 4 e2e failing. Told the builder: torch tint applied after the brightness curve (channel = level − offset); batched light jobs + ≤ 2 ms main thread per job; build `setDebugLight`. Owner to decide: may M05b call setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC line 523 says "with debug light")? |
+| M05b | building: QUESTION answered, owner decision pending on the cave tests | `session_01RsegcCFUbMz3XUzDKjxLBs` (BlockCraft(750K), Haiku) | — | — | — | Local `2c93ffc`, 4 e2e failing. Told the builder: torch tint applied after the brightness curve (channel = level − offset); batched light jobs + ≤ 2 ms main thread per job; build `setDebugLight`. Owner approved (2026-10-10): M05b calls setDebugLight in the M03g cave viewpoint and m03d cave tests only (SPEC line 523). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -61,6 +61,7 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 
 ## Log (newest first)
 
+- 2026-10-10: Owner approved setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC M03 "with debug light"). Relayed to the M05b builder.
 - 2026-10-10: M05b round-2 report: torch rise 31.7 (hue 25°), setDebugLight built, mid-flight still 100 % sky (now mesh-bound), M04b heap test 2.8 min (times out in the suite). Orchestrator: tune the curve exponent and room; diagnose the per-stage streaming throughput against master and fix the regression in M05b's code. Owner's cave decision still pending.
 - 2026-10-10: M05b QUESTION (4 e2e failing: M03d/M03g caves dark, M04b mid-flight 100 % sky, torch rise 25.5). Orchestrator rejected changing tests or criteria; gave fixes (tint after the curve, batched light jobs, cheaper main thread, debug light). Asked the owner about the cave tests.
 - 2026-10-10: Owner merged M04b (#34, `427660a`); master green. M05b builder prompt written (only ready task).
@@ -80,4 +81,3 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 - 2026-10-09: M04b gate (`5d3de39`, verify green, 334 unit / 44 e2e). Orchestrator answered: branch `claude/m04b`; horizon check replaced by an enclosed-sky check; heap test found vacuous (bucketed `performance.memory`), fix put to the owner; fast-flight shot accepted as a known limitation. New gate to follow.
 - 2026-10-09: CONTEXT.md tidied before an owner compaction (open items, log trimmed to 20, setup facts added).
 - 2026-10-09: Owner merged M04a (#33, `b80294e`); master green. M04b builder prompt written.
-- 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
