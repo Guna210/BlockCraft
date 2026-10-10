@@ -19,6 +19,7 @@ export default defineConfig({
         '--enable-unsafe-swiftshader',
         '--ignore-gpu-blocklist',
         '--js-flags=--expose-gc',
+        '--enable-precise-memory-info',
       ],
     },
   },

@@ -319,7 +319,7 @@ interface BlockCraftDebugAPI {
 
 - Use Playwright's **bundled** Chromium only (installed with `npx playwright install chromium`), per `AGENTS.md` §9. No system Chrome/Edge, no remote debugging connections, no persistent profiles.
 - Chromium must run with WebGL2 available in headless mode. Use launch args:
-  `--use-gl=angle`, `--use-angle=swiftshader`, `--enable-unsafe-swiftshader`, `--ignore-gpu-blocklist`, plus `--js-flags=--expose-gc` (used by the M04b heap test).
+  `--use-gl=angle`, `--use-angle=swiftshader`, `--enable-unsafe-swiftshader`, `--ignore-gpu-blocklist`, plus `--js-flags=--expose-gc` and `--enable-precise-memory-info` (both used by the M04b heap test; without the second, `performance.memory` returns coarse, cached values).
 - Viewport 1280×720, `deviceScaleFactor: 1`.
 - Timeouts sized for SwiftShader (it is slow): per-test timeout 180 s.
 - Tests run against the **production build**, not the dev server. Playwright's `webServer` builds and serves `dist/` with `vite preview` and shuts it down afterwards.
