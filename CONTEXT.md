@@ -24,17 +24,17 @@ Last updated: 2026-10-10
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | review 4 PASS: waiting for owner merge | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`, `2c89919`) | 4 | PASS, CI green on `2c89919`. Leftovers for later tasks: fast-flight retake (M22a); possible frameStats sample growth in the heap test (unconfirmed, capped); heap test about 2 min alone, thin margin to 180 s; streamed columns unlit until M05b. |
+| M05b | prompt written, waiting for owner to start the builder | — | — | — | — | Prompt given 2026-10-10. Recommended Sonnet (core lighting system). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready to start: none (M04b is in flight). Next: M05b (needs M04b + M05a), then M06a and M12a in parallel.
+Ready to start: **M05b** Smooth lighting & AO (depends on M04b #34 and M05a, both merged). Only ready task. Next: M06a and M12a in parallel (both need only M05b). Next: M05b (needs M04b + M05a), then M06a and M12a in parallel.
 
 ## Open items for the owner
 
@@ -46,17 +46,22 @@ Ready to start: none (M04b is in flight). Next: M05b (needs M04b + M05a), then M
 
 M04a and M01a-fix decisions are on master (`decisions/M04a-streaming.md`, `decisions/M01a-fix-gl-error-check.md`).
 
-M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.md`):
+M04b decisions are on master (`decisions/M04b-fade-and-memory.md`).
 
-- Per-column dither fade (4×4 Bayer on gl_FragCoord, all passes, one uniform per column, fixed 300–500 ms wall clock). It starts at the column's first section upload; a re-mesh doesn't fade again; a column streamed back in fades again.
-- Sections uploaded while a createWorld/waitForTerrain request is pending show at full opacity (existing screenshot tests unchanged).
-- Heap test: RD 8, out and back 2000 blocks each at 60 blocks/s, gc twice before each read, growth ≤ 15 %, inside the 180 s timeout.
-- RD 12 horizon test with a hole check; no fog until M12a. Fast-flight shot mid-flight at 30 blocks/s.
-- Fix M04a review leftover 1 (empty Set in `meshAttempts`); leftover 2 (a failed-generation column blocks its neighbours) is left as a known limitation.
-- Gate round (2026-10-09): branch `claude/m04b`, not the session default. The horizon hole check is an enclosed-sky flood fill over the whole frame (largest enclosed component ≤ 64 px), plus a debug-API check that every column within RD 12 is meshed and none is fading; it replaces the builder's centre-only check. The heap test gets a self-check: a 64 MB JS array must show ≥ 32 MB growth. `m04-fast-flight.png` is accepted as a known SwiftShader limitation (the honest mid-flight frame, hole-finder numbers reported, M22a to retake it); the owner can overrule.
+M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.md`):
+
+- Streamed columns are lit by a per-column light job: block data of the column plus its 8 neighbours, computed from scratch, committing only the centre column. This is exact, because a light path is ≤ 15 blocks and the neighbours cover 16. It also returns a 1-block skirt, used for padded light where a neighbour isn't lit yet. Streamer phases: generated → lit → meshed; light ring = mesh ring (≤ RD). createWorld keeps the region job; a unit test checks the two methods agree cell for cell on interior columns.
+- Block light becomes R, G, B channels (each a BFS, combined by max). `getLight().block` = max(R,G,B), which equals the old single channel exactly, so M05a's tests stay unchanged. Emitters: level + tint, channel = round(level × tint component) with the tint's max component = 1. Torch 14 warm orange, lumite 12 cool cyan, lava 15. Lamp and glowcap values go to their own tasks.
+- Uniform sky-15 / no-block-light sections share one sentinel (no allocation).
+- Vertex: word0 block field = R; word1 repacked to tile 12 bits, u 5, v 5, G 4, B 4 (assert < 4096 tiles). A greedy merge requires identical corner tuples.
+- Smooth light: average of the transparent cells among the 4 samples, dropping the corner when both sides are opaque. AO: classic 0–3; quad flip on the diagonal comparison; plants and models take their own cell's light and no AO.
+- Shader: light interpolated per fragment, then a named brightness curve (brightness(0) ≤ 0.05, brightness(15) = 1), then max per channel of sky (white × u_skyBrightness, 1.0) and block RGB, × AO factor × the existing face shading.
+- Torch: a standing non-cube model, its texture per ART.md, in a new data/blocks file. No item or icon.
+- Existing tests whose assertions change legitimately under lighting: stop and ask, don't edit them. Re-check the heap test (M04b note).
 
 ## Log (newest first)
 
+- 2026-10-10: Owner merged M04b (#34, `427660a`); master green. M05b builder prompt written (only ready task).
 - 2026-10-10: M04b review round 4: PASS, CI green on `2c89919`. Waiting for the owner to merge #34.
 - 2026-10-10: M04b docs fix pushed (`2c89919`, two doc files only). Orchestrator sent the round-4 request.
 - 2026-10-10: Owner chose option 3 for M04b: docs-only fix, then a 4th review round. Orchestrator sent the builder the 7 provenance items plus the decision 7 measurement.
@@ -76,4 +81,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-09: M04a review round 2: PASS, CI green on `bbc9a1e`. Recommended merging as is; non-blocking items 1–2 to go into the M04b prompt.
 - 2026-10-09: M04a round-1 fixes pushed (`bbc9a1e`). Orchestrator sent the round-2 request to the reviewer session.
 - 2026-10-09: Owner preference: Haiku with ultracode for builders and reviewers. No automatic pre-merge checks by the orchestrator; only when the owner asks.
-- 2026-10-09: M04a review round 1: CHANGES NEEDED. Orchestrator checked the findings and sent the builder its fixes. Reviewer N6 (debug glCheckMs up to 1.8 s in CI) put to the owner to accept.
