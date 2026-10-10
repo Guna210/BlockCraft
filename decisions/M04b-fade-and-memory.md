@@ -51,7 +51,8 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    - Not a leak and not an unneeded buffer: the light is needed while the spawn columns are loaded (re-mesh and
      edits read it). Freeing it at spawn would change what a re-mesh reads, so it is not freed here. The baseline
      is taken after the warm-up instead, in the state every later return to spawn reaches.
-   - After the warm-up the baseline is 10.34 MB (single run of the test on this tree).
+   - After the warm-up the baseline is 10.34 MB (10,845,137 B in the final full verify on `c1e1934`; the
+     numbers of every run are in `progress/M04b.md`, "Numbers: one run" and "Heap baseline").
 
    **Second out-and-back (report only, probe run on this tree, not in the test).** Baseline after the warm-up
    10,820,821 B; after round 1 11,314,949 B (+4.57 %); after round 2 11,865,217 B (+9.65 % against the
@@ -103,9 +104,9 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
 
 - **Hole finder seed (top row only).** The flood fill starts from sky pixels in the top row, as the orchestrator
   decided; the other frame edges are not seeds. Enclosed sky is sky not reached from the top row. In the
-  fast-flight frame the top row is terrain, so all of its sky is enclosed (37,510 px, largest 32,390 px). The
-  frame cannot say whether that is terrain not yet drawn or mid-fade (dithered edges, `columnsFading` 19,
-  `meshQueued` 101, `uploadsDeferred` 171), or sky beyond the RD 8 loaded edge: a separate probe at the same pose
+  fast-flight frame the top row is terrain, so all of its sky is enclosed (39,515 px, largest 36,916 px, final full
+  verify). The frame cannot say whether that is terrain not yet drawn or mid-fade (dithered edges, `columnsFading`
+  41, `meshQueued` 116, `uploadsDeferred` 47), or sky beyond the RD 8 loaded edge: a separate probe at the same pose
   measured 0.60 % sky after streaming went idle at RD 8 and 0.07 % at RD 12. The argument "a lower ray in a
   column hits terrain no farther away than a higher one" holds only for downward rays over a height field; the
   top row of that frame looks up at a ceiling, and caves let lower rays pass through open air. So the top-row
