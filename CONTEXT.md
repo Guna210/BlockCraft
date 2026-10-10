@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | fixing 1 | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`) | 1 | Round 1 CHANGES NEEDED (CI green on `ca25171`). B1: spawn heap holds ~7.9 MB of ArrayBuffers that the flight frees, so the baseline is inflated; find the retainer and fix it, warm-up baseline only if it is legitimate. B2: handoff numbers mix runs. Small extras: decision 7 wording, cache the fade uniform, test for the pending-load full-opacity rule. |
+| M04b | review 2 | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`, `aa08b33`) | 2 | Round-1 fixes: the 7.9 MB is LightStorage barrier-region light kept from createWorld; baseline now taken after a 400-block warm-up; growth +4.1–4.7 %. A second round adds +4.9 % (unexplained, known limitation). Handoff numbers now from one run. Verify 651 s. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -57,6 +57,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-10: M04b round-1 fixes pushed (`aa08b33`). Orchestrator sent the round-2 request (check that keeping the light data is legitimate; look at the +4.9 % second round).
 - 2026-10-10: M04b review round 1: CHANGES NEEDED (heap baseline inflated by ~7.9 MB of retained ArrayBuffers; handoff numbers inconsistent). Orchestrator sent the fix list to the builder.
 - 2026-10-10: Owner approved M04b gate; PR [#34](https://github.com/Guna210/BlockCraft/pull/34) opened from `claude/m04b` (`ca25171`). Reviewer prompt given.
 - 2026-10-10: M04b new gate on `f428c46`: verify green (629 s), heap self-check +61 MB, three m04 runs at −41 % growth, horizon largest hole 14 px. Waiting for owner approval.
@@ -76,4 +77,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
 - 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
 - 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
-- 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
