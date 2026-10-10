@@ -29,10 +29,11 @@ Task: M04b (changes code owned by M04a: `src/world/streamer.ts`, `src/world/worl
    least 32 MB, or the reading cannot show growth and the test fails. The probe is released and two GCs run
    before the flight. Then fly 2000 blocks out and 2000 back at 60 blocks/s, idle, two GCs, and growth must be
    at most 15 %. The baseline, end value and growth go to the annotations and the log.
-   The probe exists because Chromium coarsens `performance.memory` unless launched with
-   `--enable-precise-memory-info`, so a reading that does not move would pass the 15 % check for any heap.
-   `playwright.config.ts` is not changed here (a harness file); the launch-flag question is for the owner on
-   master. What the probe measured under the current config is in `progress/M04b.md`.
+   The probe exists because without `--enable-precise-memory-info` `performance.memory` returned the same value
+   before and after a 64 MB array (19,300,000 B), so a reading that does not move would pass the 15 % check for
+   any heap. The owner chose to add the flag on master (`90c809b`); with it the probe moves by +61 to +89 MB.
+   The 15 % check is an upper bound: the runs ended 40–41 % below the baseline, which passes it. Numbers are in
+   `progress/M04b.md`.
 6. **Memory fix from the M04a review.** `world-manager.ts` kept a `Map<column, Set>` of section keys per
    open mesh attempt. An attempt discarded before its first upload left an empty Set behind, and `freeData`
    did not clear it. Now:
