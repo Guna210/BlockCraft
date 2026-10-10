@@ -27,6 +27,8 @@ class FakeHost implements StreamerHost<string, string> {
   applied: string[] = [];
   uploads: string[] = [];
   freedMeshes: string[] = [];
+  /** Columns whose open mesh attempt was discarded (abandonMeshAttempt). */
+  abandoned: string[] = [];
   freedData: string[] = [];
   violations: string[] = [];
 
@@ -122,6 +124,11 @@ class FakeHost implements StreamerHost<string, string> {
     }
     this.check();
     return this.meshes.has(key);
+  }
+
+  abandonMeshAttempt(cx: number, cz: number): void {
+    this.abandoned.push(`${cx},${cz}`);
+    this.attempts.delete(`${cx},${cz}`);
   }
 
   freeMesh(cx: number, cz: number): void {
@@ -906,5 +913,69 @@ describe('Streamer: the perimeter invariant holds after every step', () => {
     }
     expect(host.data.size).toBeLessThanOrEqual((2 * rings.keepData + 1) ** 2);
     expect(streamer.meshedColumns).toBeGreaterThanOrEqual((2 * rings.mesh + 1) ** 2);
+  });
+});
+
+describe('Streamer: attempts that are discarded (M04b memory)', () => {
+  it('a mesh attempt discarded before its first upload is abandoned, so the host keeps no record of it', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+    expect(host.attempts.size).toBe(0);
+    expect(host.abandoned).toEqual([]);
+
+    streamer.invalidate(0, 0);
+    streamer.update(view, host.clock + 1); // the attempt begins: its jobs are requested
+    expect(host.attempts.has('0,0')).toBe(true);
+
+    streamer.invalidate(0, 0); // discarded before any of its sections was uploaded
+    expect(host.attempts.has('0,0')).toBe(false);
+    expect(host.abandoned).toEqual(['0,0']);
+
+    await drain(host, streamer, view);
+    expect(host.attempts.size).toBe(0);
+    expect(streamer.phaseOf(0, 0)).toBe('meshed');
+    expect(host.violations).toEqual([]);
+  });
+
+  it('an attempt whose column is freed while it is meshing is abandoned with the column', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+
+    streamer.invalidate(0, 0);
+    streamer.update(view, host.clock + 1);
+    expect(host.attempts.has('0,0')).toBe(true);
+
+    // The camera leaves the area: the column is no longer wanted and its meshes are freed.
+    const far = viewAt(40, 40);
+    streamer.update(far, host.clock + 2);
+    streamer.freePass(Infinity);
+    expect(host.attempts.has('0,0')).toBe(false);
+    expect(host.abandoned).toContain('0,0');
+    expect(host.attempts.size).toBe(0);
+  });
+
+  it('freeing a meshed column does not abandon anything: no attempt is open', async () => {
+    const { host, streamer } = make(2);
+    const view = viewAt(0, 0);
+    await drain(host, streamer, view);
+
+    streamer.update(viewAt(40, 40), host.clock + 1);
+    streamer.freePass(Infinity);
+    expect(host.freedMeshes).toContain('0,0');
+    expect(host.abandoned).toEqual([]);
+    expect(host.attempts.size).toBe(0);
+    expect(host.violations).toEqual([]);
+  });
+
+  it('a request is pending from its call until it resolves', async () => {
+    const { host, streamer } = make(2);
+    expect(streamer.requestPending).toBe(false);
+    const done = streamer.requestRegion({ cx: 0, cz: 0, genRadius: 1, meshRadius: 1 });
+    expect(streamer.requestPending).toBe(true);
+    await drain(host, streamer, viewAt(0, 0));
+    await done;
+    expect(streamer.requestPending).toBe(false);
   });
 });

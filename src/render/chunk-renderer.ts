@@ -7,6 +7,8 @@ import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
 import { mergeMeshBuckets } from '../mesh/models';
 import { columnInFrustum, extractFrustumPlanes } from './frustum';
+import { bayerGlsl } from './dither';
+import { ColumnFades, UniformValueCache } from './column-fade';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -73,10 +75,22 @@ uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform int u_isCutout;
 uniform int u_isWireframe;
+// Fade-in of the column, 0 (nothing drawn) to 1 (all of it), dithered with the Bayer table below.
+uniform float u_fade;
+
+const float BAYER_4X4[16] = ${bayerGlsl()};
 
 out vec4 fragColor;
 
 void main() {
+  if (u_fade < 1.0) {
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    float threshold = BAYER_4X4[(pixel.y & 3) * 4 + (pixel.x & 3)];
+    if (threshold >= u_fade) {
+      discard;
+    }
+  }
+
   if (u_isWireframe == 1) {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
@@ -169,18 +183,24 @@ export class ChunkRenderer {
   private locIsWireframe: WebGLUniformLocation;
   private locGrassTintMap: WebGLUniformLocation;
   private locFoliageTintMap: WebGLUniformLocation;
+  private locFade: WebGLUniformLocation;
+  // The fade value last written to u_fade: a column whose fade is unchanged (finished) is not written again.
+  private fadeUniform: UniformValueCache;
 
   private tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
   // The same meshes grouped by column ("sx,sz"), so one frustum test covers a whole column and the
   // draws of a column are adjacent (one tint texture bind per column).
   private columnMeshes: Map<string, GPUSectionMesh[]> = new Map();
+  // Fade-in of each column that has section meshes (decisions/M04b-fade-and-memory.md).
+  private fades = new ColumnFades();
   private frustumPlanes = new Float64Array(24);
 
   // Per-frame scratch state of render(), kept as fields so the draw loop allocates nothing.
   private visColumns: GPUSectionMesh[][] = [];
   private visGrass: WebGLTexture[] = [];
   private visFoliage: WebGLTexture[] = [];
+  private visFade: number[] = [];
   private boundGrass: WebGLTexture | null = null;
   private boundFoliage: WebGLTexture | null = null;
   private activeUnit = 0;
@@ -205,15 +225,25 @@ export class ChunkRenderer {
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
+    this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
+    this.fadeUniform = new UniformValueCache((value) => gl.uniform1f(this.locFade, value));
   }
 
+  /**
+   * Uploads one section mesh. `fadeFromMs` is the time the column's fade-in starts when this upload
+   * makes the column visible (its first section mesh), or null to show it at once. A column that
+   * already has section meshes is not faded again by a re-mesh.
+   */
   public uploadSectionMesh(
     sx: number,
     sy: number,
     sz: number,
     meshData: SectionMeshData,
+    fadeFromMs: number | null = null,
   ): GPUSectionMesh {
     const key = `${sx},${sy},${sz}`;
+    const colKey = `${sx},${sz}`;
+    const hadSections = (this.columnMeshes.get(colKey)?.length ?? 0) > 0;
     this.removeSectionMesh(key);
 
     this.tintCache.onSectionAdded(sx, sy, sz);
@@ -234,10 +264,10 @@ export class ChunkRenderer {
     };
 
     this.sectionMeshes.set(key, gpuMesh);
-    const colKey = `${sx},${sz}`;
     const list = this.columnMeshes.get(colKey);
     if (list) list.push(gpuMesh);
     else this.columnMeshes.set(colKey, [gpuMesh]);
+    this.fades.onUpload(sx, sz, hadSections, fadeFromMs);
     return gpuMesh;
   }
 
@@ -266,6 +296,7 @@ export class ChunkRenderer {
     const list = this.columnMeshes.get(`${cx},${cz}`);
     if (!list) return;
     for (const mesh of Array.from(list)) this.removeSectionMesh(mesh.key);
+    this.fades.onEmptied(cx, cz);
   }
 
   /**
@@ -278,7 +309,14 @@ export class ChunkRenderer {
     for (const mesh of Array.from(list)) {
       if (!keep.has(mesh.key)) this.removeSectionMesh(mesh.key);
     }
-    return this.columnMeshes.has(`${cx},${cz}`);
+    const remains = this.columnMeshes.has(`${cx},${cz}`);
+    if (!remains) this.fades.onEmptied(cx, cz);
+    return remains;
+  }
+
+  /** Columns whose fade-in has not finished at `nowMs` (see column-fade.ts). */
+  public fadingColumns(nowMs: number): number {
+    return this.fades.fadingColumns(nowMs);
   }
 
   /**
@@ -305,6 +343,7 @@ export class ChunkRenderer {
       this.removeSectionMesh(key);
     }
     this.columnMeshes.clear();
+    this.fades.clear();
     this.lastVisible.length = 0;
     this.tintCache.clearAll();
   }
@@ -395,6 +434,8 @@ export class ChunkRenderer {
         if (!bucket) continue;
         if (!tintsBound) {
           tintsBound = true;
+          // One fade value per column, set before the column's first draw of this pass.
+          this.fadeUniform.set(this.visFade[c]!);
           // Only a texture that differs from the one already bound is bound again.
           const grass = this.visGrass[c]!;
           if (grass !== this.boundGrass) {
@@ -453,6 +494,8 @@ export class ChunkRenderer {
     const meshes = this.lastVisible;
     meshes.length = 0;
     const columns = this.visColumns;
+    const nowMs = performance.now();
+    this.fadeUniform.forget();
     let columnCount = 0;
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     for (const list of this.columnMeshes.values()) {
@@ -462,12 +505,14 @@ export class ChunkRenderer {
       columns[columnCount] = list;
       this.visGrass[columnCount] = pair.grassTexture;
       this.visFoliage[columnCount] = pair.foliageTexture;
+      this.visFade[columnCount] = this.fades.amount(first.sx, first.sz, nowMs);
       columnCount++;
       for (const mesh of list) meshes.push(mesh);
     }
     columns.length = columnCount;
     this.visGrass.length = columnCount;
     this.visFoliage.length = columnCount;
+    this.visFade.length = columnCount;
     this.boundGrass = null;
     this.boundFoliage = null;
     this.activeUnit = SCRATCH_TEXTURE_UNIT;
@@ -505,17 +550,21 @@ export class ChunkRenderer {
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(-1.0, -1.0);
 
-      for (const mesh of meshes) {
-        const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
-        for (const bucket of buckets) {
-          if (bucket) {
-            gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-            gl.bindVertexArray(bucket.vao);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
-            this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
-            // The VAO records its element buffer: put the triangle indices back for the next frame.
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);
-            drawCalls++;
+      // The overlay follows the column fades like the solid passes.
+      for (let c = 0; c < columns.length; c++) {
+        this.fadeUniform.set(this.visFade[c]!);
+        for (const mesh of columns[c]!) {
+          const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
+          for (const bucket of buckets) {
+            if (bucket) {
+              gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+              gl.bindVertexArray(bucket.vao);
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
+              this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
+              // The VAO records its element buffer: put the triangle indices back for the next frame.
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);
+              drawCalls++;
+            }
           }
         }
       }
