@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building: QUESTION answered, owner decision pending on the cave tests | `session_01RsegcCFUbMz3XUzDKjxLBs` (BlockCraft(750K), Haiku) | — | — | — | Local `2c93ffc`, 4 e2e failing. Told the builder: torch tint applied after the brightness curve (channel = level − offset); batched light jobs + ≤ 2 ms main thread per job; build `setDebugLight`. Owner approved (2026-10-10): M05b calls setDebugLight in the M03g cave viewpoint and m03d cave tests only (SPEC line 523). |
+| M05b | paused by the owner (2026-10-10); restart on Sonnet in a few days | `session_01RsegcCFUbMz3XUzDKjxLBs` (stopped, Haiku) | — | — | — | Work only in local commits `2c93ffc`, `93506b3`, `49679d2` on `claude/m05b`, never pushed, so likely lost with the container. A new session starts from master with the prompt below plus "Lessons from the first attempt". |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -59,8 +59,18 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 - Torch: a standing non-cube model, its texture per ART.md, in a new data/blocks file. No item or icon.
 - Existing tests whose assertions change legitimately under lighting: stop and ask, don't edit them. Re-check the heap test (M04b note).
 
+Lessons from the first M05b attempt (put them in the restart prompt):
+- Owner approved: M05b adds `setDebugLight(on)` (debug API, fullbright override, off by default) and calls it in the M03g underground cave viewpoint test and the m03d cave test only (SPEC line 523), on before and off after the screenshot. The debug light must reproduce master's unlit look (brightness 1.0, face shading and AO kept); the first attempt's version left M03g's stdDev at 11.7 < 20.
+- Torch rise > 40: apply the tint after the brightness curve (channel level = level − offset from the curve's inverse, not round(level × tint)). Use a linear curve (exponent 1.0). Use a paler warm tint (e.g. 1, 0.8, 0.55 → hue about 33°) to reach +40 with hue 20–40°. A small honest stone room is fine. round(level × tint) gave +25.5, and tint-after-curve with (1, 0.6, 0.2) gave +34.2.
+- Light jobs may be batched (any rectangle of ready columns plus a 1-column border, interior committed). The main thread copies only typed arrays (3–5 ms per batch was accepted).
+- Keep the merge rule (identical corner tuples). Triangles rise about 76 % at spawn (fps 1.52 → 1.18 under SwiftShader); record it for M22a.
+- First attempt's unsolved bug: at x500 mid-flight, visible sections fell from 152 (master) to 0–7, cancels rose 351 → 700–800, and the M04b horizon test timed out at 180 s. Suspects: neighbour re-mesh when a column gets lit, whole-batch cancels, mesh gated on neighbour light instead of the skirt, priority no longer distance-first, generation starved. Build in per-stage counters (columns/s and cancels per stage) from the start, and compare with master before the gate.
+- The padded light builder must handle sections below y = 0; a column lit before a region request must still be meshed. The flight helper must count light work as busy.
+- Torch is a cross-model sprite (vertex corners are integers, so a thin stick isn't possible).
+
 ## Log (newest first)
 
+- 2026-10-10: Owner stopped the M05b builder and paused the project for a few days to save usage. M05b will restart on Sonnet from master; the first attempt's lessons are recorded under Decisions.
 - 2026-10-10: M05b round-3 report (`49679d2` local): torch rise 34.2; M03d cave passes with the debug light, M03g cave stdDev 11.7; triangles +76 % (fps 1.52→1.18) but visible sections at x500 down from 152 to 0–7, horizon test times out. Orchestrator: keep the merge rule; paler warm tint (hue 20–40°); fix the debug light to match master's look; find the pipeline bug (neighbour re-mesh, cancels, gating, priority, gen starvation). Suggested the owner switch this builder to Sonnet.
 - 2026-10-10: Owner approved setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC M03 "with debug light"). Relayed to the M05b builder.
 - 2026-10-10: M05b round-2 report: torch rise 31.7 (hue 25°), setDebugLight built, mid-flight still 100 % sky (now mesh-bound), M04b heap test 2.8 min (times out in the suite). Orchestrator: tune the curve exponent and room; diagnose the per-stage streaming throughput against master and fix the regression in M05b's code. Owner's cave decision still pending.
@@ -80,4 +90,3 @@ M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.m
 - 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
 - 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
 - 2026-10-09: M04b gate (`5d3de39`, verify green, 334 unit / 44 e2e). Orchestrator answered: branch `claude/m04b`; horizon check replaced by an enclosed-sky check; heap test found vacuous (bucketed `performance.memory`), fix put to the owner; fast-flight shot accepted as a known limitation. New gate to follow.
-- 2026-10-09: CONTEXT.md tidied before an owner compaction (open items, log trimmed to 20, setup facts added).
