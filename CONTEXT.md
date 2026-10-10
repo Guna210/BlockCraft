@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | building: gate posted, sent back for fixes (orchestrator, 2026-10-09) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | — | — | — | Local commit `dacd4e4` (docs; `8b4d00f` before): horizon fix done (largest enclosed 14 px); heap probe fails as expected (64 MB array, 0 growth). Push to `claude/m04b`. Owner chose A (flag on master). Builder told to merge master, run m04 ×3 and full verify, then post a new gate. |
+| M04b | building: gate posted, sent back for fixes (orchestrator, 2026-10-09) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | — | — | — | Local commit `dacd4e4` (docs; `8b4d00f` before): horizon fix done (largest enclosed 14 px); heap probe fails as expected (64 MB array, 0 growth). Push to `claude/m04b`. Gate re-posted on `f428c46` (verify green, 629 s; heap self-check +61 MB; growth −41 % ×3; horizon largest hole 14 px). Waiting for owner approval. Reviewer to check why heap ends 41 % below baseline (baseline taken before streaming idle?). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -57,6 +57,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-10: M04b new gate on `f428c46`: verify green (629 s), heap self-check +61 MB, three m04 runs at −41 % growth, horizon largest hole 14 px. Waiting for owner approval.
 - 2026-10-10: Owner added `--enable-precise-memory-info` on master (`90c809b`, SPEC `67381df`). M04b builder told to merge master, run m04 ×3 and full verify, then post a new gate.
 - 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
 - 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
@@ -76,4 +77,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-08: M04a status: own verify failures fixed; open risk of the 50 ms checks missing under local 2-worker load. Orchestrator asked for a pool-size-1 check and a report instead of re-runs.
 - 2026-10-08: Owner chose option A (SPEC `d37918d`). Orchestrator told the M04a builder to sync, finish the asserts, run m04 10 times in a row, then verify and go through the publish gate.
 - 2026-10-08: M04a: background-slice uploads around the frame budget found and fixed; 50 ms rules now hold. Recommendation to the owner revised: assert the 50 ms rules in M04a, enforce p95 at RD 8 in M22a.
-- 2026-10-08: M04a QUESTION 5: in-scope fixes can't make the 50 ms rule hold under SwiftShader (blocked uploads of 0.5–1.7 s). Put the budget-policy decision to the owner; builder holding.
