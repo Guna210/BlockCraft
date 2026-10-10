@@ -30,7 +30,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M04b | review 2 | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`, `aa08b33`) | 2 | Round-1 fixes: the 7.9 MB is LightStorage barrier-region light kept from createWorld; baseline now taken after a 400-block warm-up; growth +4.1–4.7 %. A second round adds +4.9 % (unexplained, known limitation). Handoff numbers now from one run. Verify 651 s. |
+| M04b | fixing 2 (docs only) | `session_01CfDHzBTv5kNyqS718jaK4u` (BlockCraft(750K), Haiku) | `session_01FjLKf1YKQ6MQ1NWbXtzkx2` | [#34](https://github.com/Guna210/BlockCraft/pull/34) (`claude/m04b`) | 2 | Round 2 CHANGES NEEDED: B1 resolved (keeping the light data is legitimate); B2 = unlabelled, mixed-unit heap figures in progress line 41 and decision lines 38–39. Also: decision 7 sentence, frameStats growth note, thin heap-test time margin. Round 3 is the last. CI green on `aa08b33`. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -57,6 +57,7 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 
 ## Log (newest first)
 
+- 2026-10-10: M04b review round 2: CHANGES NEEDED, docs only (B2 heap figures). B1 resolved. Builder sent a docs-only fix for round 3 (the last).
 - 2026-10-10: M04b round-1 fixes pushed (`aa08b33`). Orchestrator sent the round-2 request (check that keeping the light data is legitimate; look at the +4.9 % second round).
 - 2026-10-10: M04b review round 1: CHANGES NEEDED (heap baseline inflated by ~7.9 MB of retained ArrayBuffers; handoff numbers inconsistent). Orchestrator sent the fix list to the builder.
 - 2026-10-10: Owner approved M04b gate; PR [#34](https://github.com/Guna210/BlockCraft/pull/34) opened from `claude/m04b` (`ca25171`). Reviewer prompt given.
@@ -76,4 +77,3 @@ M04b (in the builder prompt; to be recorded in `decisions/M04b-fade-and-memory.m
 - 2026-10-09: M04a plain verify green after the `workers: 1` change; builder at the publish gate, waiting for the owner.
 - 2026-10-09: Owner merged Playwright `workers: 1` (`60590f8`). M04a builder told to sync and re-run the plain verify for the gate. Owner asked whether the thresholds are too strict: answered that they suit real hardware, and suggested two-tier budgets before M22a.
 - 2026-10-08: M04a builder confirmed no test needed a retry (CI=1 verify and the 10 m04 runs).
-- 2026-10-08: M04a: CI=1 verify green, plain 2-worker verify flakes on pump max (CPU contention). Recommended `workers: 1` to the owner; asked the builder for retry counts.
