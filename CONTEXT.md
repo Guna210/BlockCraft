@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); gate: 2 M04 fails; draft PR for CI proposed; fixing 52 ms task + near-first scheduling | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); draft PR open, CI red (M02 worker count from orchestrator error; mid-flight flaky); fixing | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-11: M05b draft PR CI (hc 4): M04a passes (frame max 22.8, pump 18.6), so the 52 ms was container-only; M04b mid-flight flaky (first try all sky, retry passed); M02 workerCount 2 ≠ 3 fails. The M02 failure was caused by the orchestrator's shared-worker-budget instruction, which conflicts with SPEC §3.2 max(2, hc−1). Withdrawn; Codex told to restore pool sizes (master/SPEC), keep priority ordering, fix mid-flight to pass first try, re-verify and push to the same draft PR.
 - 2026-10-11: M05b gate (`36951bd` local): verify exit 1. M04a streaming task 52 ms > 50; M04b mid-flight 100 % sky (visible 22 vs master 334). GL audit: no extra churn on the branch, no code change. Orchestrator recommended: owner approves push + DRAFT [INCOMPLETE] PR for GitHub CI evidence (Verify runs only on PRs; Codex has a 2-core quota), and fixes continue on the same branch: slice the 52 ms task under ~30 ms; nearest-first dependency-chain scheduling (gen border → light → mesh), minimal near light batches, report enter-RD-to-drawn time. Waiting on the owner.
 - 2026-10-11: Owner asked whether the M04 targets are unachievable. Answer: the draws/s, visible, col/s and cancels parity targets were the orchestrator's own guardrail, not SPEC. SPEC M04 requires: frame or slice ≤ 50 ms, frames > 10, all meshed after flight, loaded bound, buffers to baseline, heap ≤ 15 %, RD 12 horizon, mid-flight not blank plus Visual Review; p95 ≤ 8/3 ms is enforced in M22a. Codex told: parity numbers are report-only; pass/fail = GL churn fix + full verify exit 0 + fast-flight VR line + same-env master check if mid-flight not-blank fails (CI is the judge). No SPEC change needed.
 - 2026-10-11: M05b main-thread trace (`e9b2688` local): JS phases about equal to master; time lost in GL sync (14–18 s vs 8.9 s) and Chromium shared-image destruction (5.79 s vs 0.0004 s). Best replay: draws/s 0.94 vs 1.87, visible 25 vs 474. Orchestrator: one last focused round. Count GL object create/delete and syncs per frame, master vs branch; remove per-frame texture/buffer churn and the diagnostic timer queries from the shipped path. If still failing, owner decision: (a) push [INCOMPLETE] for GitHub CI evidence (Codex has a 2-core quota), (b) fresh Sonnet builder, (c) SPEC change to M04 targets or smooth AO.
