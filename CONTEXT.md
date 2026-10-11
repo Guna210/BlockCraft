@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | Codex builder prompt given (2026-10-11), waiting for the owner to start it in Codex | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b) | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-11: M05b Codex QUESTION: the vertex repack breaks the bit decoders in tests/unit/greedy.test.ts and models.test.ts. Orchestrator authorised updating only the decoding (ideally importing the shared decoder from src), with no assertion or threshold changes; stop if any assertion then fails.
 - 2026-10-11: Owner set up Codex cloud for BlockCraft. M05b restart prompt written for Codex (decisions plus first-attempt lessons). The orchestrator stays the coordinator; the owner relays Codex messages.
 - 2026-10-10: Owner stopped the M05b builder and paused the project for a few days to save usage. M05b will restart on Sonnet from master; the first attempt's lessons are recorded under Decisions.
 - 2026-10-10: M05b round-3 report (`49679d2` local): torch rise 34.2; M03d cave passes with the debug light, M03g cave stdDev 11.7; triangles +76 % (fps 1.52→1.18) but visible sections at x500 down from 152 to 0–7, horizon test times out. Orchestrator: keep the merge rule; paler warm tint (hue 20–40°); fix the debug light to match master's look; find the pipeline bug (neighbour re-mesh, cancels, gating, priority, gen starvation). Suggested the owner switch this builder to Sonnet.
@@ -90,4 +91,3 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 - 2026-10-10: M04b new gate on `f428c46`: verify green (629 s), heap self-check +61 MB, three m04 runs at −41 % growth, horizon largest hole 14 px. Waiting for owner approval.
 - 2026-10-10: Owner added `--enable-precise-memory-info` on master (`90c809b`, SPEC `67381df`). M04b builder told to merge master, run m04 ×3 and full verify, then post a new gate.
 - 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
-- 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
