@@ -1,5 +1,6 @@
 import { createDefaultPipeline } from '../gen/pipeline';
 import { ChunkColumn } from '../world/column';
+import type { PackedChunkStorage } from '../world/chunk';
 import { BlockRegistry } from '../world/blocks/registry';
 const ctx: Worker = self as unknown as Worker;
 
@@ -44,6 +45,7 @@ export interface SectionDataTransfer {
   sy: number;
   uniformStateId: number | null;
   states?: Uint16Array;
+  packed?: PackedChunkStorage;
 }
 
 export interface GenWorkerResponse {
@@ -90,14 +92,15 @@ export function processGenMessage(event: MessageEvent): void {
         uniformStateId: sec.uniformStateId,
       });
     } else {
-      const states = new Uint16Array(4096);
-      sec.copyBlockStatesTo(states);
-      sections.push({
-        sy,
-        uniformStateId: null,
-        states,
-      });
-      transferables.push(states.buffer);
+      const packed: PackedChunkStorage = {
+        uniformStateId: sec.uniformStateId,
+        bits: sec.getBitsPerEntry(),
+        palette: sec.palette!,
+        refCounts: sec.refCounts!,
+        indices: sec.indices!,
+      };
+      sections.push({ sy, uniformStateId: null, packed });
+      transferables.push(packed.palette.buffer, packed.refCounts.buffer, packed.indices.buffer);
     }
   }
 

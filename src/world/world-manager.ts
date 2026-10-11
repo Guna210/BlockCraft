@@ -1,7 +1,7 @@
 import { SharedWorkerBudget } from '../workers/shared-worker-budget';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
-import type { ColumnLight, LightColumns, LightRect } from './batch-light';
+import type { ColumnLight, LightRect } from './batch-light';
 import { columnKey } from './streaming-plan';
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from './world';
@@ -67,7 +67,9 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
       const col = world.getColumn(res.cx, res.cz, true)!;
       const sec = col.getOrCreateSection(secData.sy);
       if (sec) {
-        if (secData.states) {
+        if (secData.packed) {
+          sec.adoptPackedStorage(secData.packed);
+        } else if (secData.states) {
           sec.loadBlockStatesFrom(secData.states);
         } else if (secData.uniformStateId !== null) {
           sec.fill(secData.uniformStateId);
@@ -150,7 +152,6 @@ export class WorldManager {
   // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
   // carry the epoch they were requested in and are dropped when it no longer matches.
   private worldEpoch = 0;
-  private lightColumns: LightColumns = {};
   public lightBatchTimes: Array<{
     columns: number;
     workerMs: number;
@@ -181,7 +182,7 @@ export class WorldManager {
     this.sharedWorkerBudget = new SharedWorkerBudget();
     this.sharedWorkerBudget.enableDeferredDelivery();
     // Logical ports keep each pool's bounded posting and edit reserve; only this budget owns threads.
-    this.workerPool = new WorkerPool(2, this.sharedWorkerBudget);
+    this.workerPool = new WorkerPool(undefined, this.sharedWorkerBudget);
     this.genWorkerPool = new GenWorkerPool(2, this.sharedWorkerBudget);
     this.lightWorkerPool = new LightWorkerPool(1, this.sharedWorkerBudget);
     this.pipeline = createDefaultPipeline();
@@ -203,10 +204,6 @@ export class WorldManager {
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
-        const sections: (Uint16Array | number)[] = new Array(20).fill(0);
-        for (const section of res.sections)
-          sections[section.sy] = section.states ?? section.uniformStateId ?? 0;
-        this.lightColumns[`${res.cx},${res.cz}`] = sections;
         return applyGenSteps(world, res);
       },
       requestLight: (columns) => this.requestColumnLight(columns),
@@ -235,28 +232,26 @@ export class WorldManager {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.chunkRenderer?.removeColumnMeshes(cx, cz);
       },
+      freeMeshStep: (cx, cz) => {
+        this.meshAttempts.abandon(`${cx},${cz}`);
+        return this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
+      },
       freeData: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.world?.removeColumn(cx, cz);
-        delete this.lightColumns[`${cx},${cz}`];
       },
       now: () => performance.now(),
       recordSlice: (ms) => frameStats.recordPump(ms),
+      setWorkPriorities: (priorities) => this.sharedWorkerBudget.setWorkPriorities(priorities),
+      uploadPriority: (mesh) => Math.abs(mesh.sy * 16 + 8 - (this.camera?.position[1] ?? 0)),
     };
   }
 
   private configureLighting(world: World): void {
     world.lightEngine.onlyLitColumns = true;
-    world.onBlockEdited = (x, y, z, state) => {
+    world.onBlockEdited = (x, y, z) => {
       const cx = Math.floor(x / 16);
       const cz = Math.floor(z / 16);
-      const sections = this.lightColumns[`${cx},${cz}`];
-      if (sections) {
-        const sy = y >> 4;
-        let data = sections[sy];
-        if (typeof data === 'number') data = sections[sy] = new Uint16Array(4096).fill(data);
-        if (data) data[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)] = state;
-      }
       // A worker snapshot also depends on the unlit block border, where incremental BFS does not
       // write. Refresh the nearby columns whose snapshot or skirt can depend on this edit.
       const affected = new Set<number>();
@@ -286,13 +281,15 @@ export class WorldManager {
         if (!column) throw new Error(`Light block data missing for ${cx},${cz}`);
         const sections: BlockColumnsSnapshot[string] = [];
         blocks[`${cx},${cz}`] = sections;
-        for (let sy = 0; sy < 20; sy++) sections.push(snapshotBlocks(column.getSection(sy)));
-        const elapsed = performance.now() - sliceStart;
-        if (elapsed >= 1) {
-          workMs += elapsed;
-          maxSliceMs = Math.max(maxSliceMs, elapsed);
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          sliceStart = performance.now();
+        for (let sy = 0; sy < 20; sy++) {
+          sections.push(snapshotBlocks(column.getSection(sy)));
+          const elapsed = performance.now() - sliceStart;
+          if (elapsed >= 1) {
+            workMs += elapsed;
+            maxSliceMs = Math.max(maxSliceMs, elapsed);
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            sliceStart = performance.now();
+          }
         }
       }
     const elapsed = performance.now() - sliceStart;
@@ -413,7 +410,6 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.worldType = type;
     this.worldEpoch++;
-    this.lightColumns = {};
     this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
@@ -463,18 +459,7 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
     }
-    const sections: (Uint16Array | number)[] = new Array(20).fill(0);
-    for (let sy = 0; sy < 20; sy++) {
-      const section = col.getSection(sy);
-      if (!section) continue;
-      if (section.getBitsPerEntry() === 0) sections[sy] = section.uniformStateId;
-      else {
-        const states = new Uint16Array(4096);
-        section.copyBlockStatesTo(states);
-        sections[sy] = states;
-      }
-    }
-    this.lightColumns[`${cx},${cz}`] = sections;
+
     this.streamer.adoptColumn(cx, cz);
   }
 
@@ -603,7 +588,6 @@ export class WorldManager {
     const epoch = ++this.worldEpoch;
     const world = new World();
     this.world = world;
-    this.lightColumns = {};
     this.lightBatchTimes = [];
     this.configureLighting(world);
     this.world.worldSeed = this.worldSeed;
@@ -764,8 +748,11 @@ export class WorldManager {
     const col = world.getColumn(cx, cz, false);
     if (!col) return [];
     const starters: Array<() => Promise<MeshResult>> = [];
+    const sectionOrder = Array.from({ length: 20 }, (_, sy) => sy);
+    const cameraY = this.camera?.position[1] ?? 0;
+    sectionOrder.sort((a, b) => Math.abs(a * 16 + 8 - cameraY) - Math.abs(b * 16 + 8 - cameraY));
 
-    for (let sy = 0; sy < 20; sy++) {
+    for (const sy of sectionOrder) {
       const sec = col.getSection(sy);
 
       // 1. Skip all-air / empty sections

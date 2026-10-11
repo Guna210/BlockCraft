@@ -1,3 +1,4 @@
+import type { ColumnWorkPriority } from '../world/streamer';
 export type WorkerKind = 'mesh' | 'light' | 'gen';
 
 interface WorkerPort {
@@ -10,6 +11,8 @@ interface Posted {
   port: WorkerPort;
   worker: Worker;
   kind: WorkerKind;
+  cx: number;
+  cz: number;
 }
 
 /** Logical pool ports share actual threads; priority is applied in the worker between jobs. */
@@ -18,6 +21,7 @@ export class SharedWorkerBudget {
   private loads = new Map<Worker, number>();
   private posted = new Map<number, Posted>();
   private nextId = 1;
+  private priorities = new Map<string, ColumnWorkPriority>();
   private deferredDelivery = false;
   private deliveryScheduled = false;
   private inbox: Array<{ job: Posted; payload: unknown; receivedAt: number }> = [];
@@ -82,7 +86,12 @@ export class SharedWorkerBudget {
   public flushDeliveries(budgetMs: number): void {
     const end = performance.now() + budgetMs;
     const priorities = { mesh: 0, light: 1, gen: 2 };
-    this.inbox.sort((a, b) => priorities[a.job.kind] - priorities[b.job.kind]);
+    this.inbox.sort(
+      (a, b) =>
+        (this.priorities.get(`${a.job.cx},${a.job.cz}`)?.[a.job.kind] ?? 1e9) -
+          (this.priorities.get(`${b.job.cx},${b.job.cz}`)?.[b.job.kind] ?? 1e9) ||
+        priorities[a.job.kind] - priorities[b.job.kind],
+    );
     let did = false;
     while (this.inbox.length && (!did || performance.now() < end)) {
       const item = this.inbox.shift()!;
@@ -108,6 +117,13 @@ export class SharedWorkerBudget {
     }, 0);
   }
 
+  public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
+    this.priorities = new Map(
+      priorities.map((priority) => [`${priority.cx},${priority.cz}`, priority]),
+    );
+    for (const worker of this.workers) worker.postMessage({ priorities });
+  }
+
   public setView(x: number, z: number, yaw: number): void {
     for (const worker of this.workers) worker.postMessage({ view: { x, z, yaw } });
   }
@@ -123,7 +139,6 @@ export class SharedWorkerBudget {
           this.loads.get(candidate)! < this.loads.get(best)! ? candidate : best,
         );
         const requestId = this.nextId++;
-        this.posted.set(requestId, { port, worker, kind });
         this.loads.set(worker, this.loads.get(worker)! + 1);
         const data = payload as {
           cx?: number;
@@ -133,6 +148,7 @@ export class SharedWorkerBudget {
         };
         const cx = data.cx ?? (data.interior ? (data.interior.minCX + data.interior.maxCX) / 2 : 0);
         const cz = data.cz ?? (data.interior ? (data.interior.minCZ + data.interior.maxCZ) / 2 : 0);
+        this.posted.set(requestId, { port, worker, kind, cx, cz });
         worker.postMessage(
           {
             requestId,

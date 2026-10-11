@@ -1,3 +1,4 @@
+import type { ColumnWorkPriority } from '../world/streamer';
 import { processGenMessage } from './gen.worker';
 import { processLightMessage } from './light.worker';
 import { processMeshMessage } from './mesh.worker';
@@ -19,6 +20,7 @@ ctx.postMessage = ((payload: unknown, transfer: Transferable[]) =>
 const handlers = { mesh: processMeshMessage, light: processLightMessage, gen: processGenMessage };
 const priorities = { mesh: 1, light: 2, gen: 3 };
 let view = { x: 0, z: 0, yaw: 0 };
+let chains = new Map<string, ColumnWorkPriority>();
 const channel = new MessageChannel();
 channel.port1.onmessage = runNext;
 const queue: SharedRequest[] = [];
@@ -37,9 +39,13 @@ function runNext(): void {
       Math.floor(Math.max(Math.abs(dxA), Math.abs(dzA)) / 32) -
       Math.floor(Math.max(Math.abs(dxB), Math.abs(dzB)) / 32);
     const foreground = Number(b.foreground) - Number(a.foreground);
+    const chain =
+      (chains.get(`${a.cx},${a.cz}`)?.[a.kind] ?? 1e9) -
+      (chains.get(`${b.cx},${b.cz}`)?.[b.kind] ?? 1e9);
     const kind = priorities[a.kind] - priorities[b.kind];
     return (
       foreground ||
+      chain ||
       near ||
       kind ||
       distance ||
@@ -57,7 +63,15 @@ function schedule(): void {
   scheduled = true;
   channel.port2.postMessage(0);
 }
-ctx.onmessage = (event: MessageEvent<SharedRequest | { view: typeof view }>) => {
+ctx.onmessage = (
+  event: MessageEvent<SharedRequest | { view: typeof view } | { priorities: ColumnWorkPriority[] }>,
+) => {
+  if ('priorities' in event.data) {
+    chains = new Map(
+      event.data.priorities.map((priority) => [`${priority.cx},${priority.cz}`, priority]),
+    );
+    return;
+  }
   if ('view' in event.data) {
     view = event.data.view;
     return;

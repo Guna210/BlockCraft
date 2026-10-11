@@ -296,6 +296,16 @@ export class ChunkRenderer {
     }
   }
 
+  /** One GPU section per streaming free step; retain the column until the final step. */
+  public removeColumnMeshStep(cx: number, cz: number): boolean {
+    const key = `${cx},${cz}`;
+    const first = this.columnMeshes.get(key)?.[0];
+    if (first) this.removeSectionMesh(first.key);
+    const done = !this.columnMeshes.has(key);
+    if (done) this.fades.onEmptied(cx, cz);
+    return done;
+  }
+
   /** Deletes every GPU resource of the section meshes of one column. */
   public removeColumnMeshes(cx: number, cz: number): void {
     const list = this.columnMeshes.get(`${cx},${cz}`);

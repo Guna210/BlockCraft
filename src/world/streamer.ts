@@ -27,6 +27,15 @@ import {
   type StreamRings,
 } from './streaming-plan';
 
+/** Stage-specific ranks inherited from the visible columns whose dependency chains they serve. */
+export interface ColumnWorkPriority {
+  cx: number;
+  cz: number;
+  gen: number;
+  light: number;
+  mesh: number;
+}
+
 export interface StreamerHost<G, M> {
   /** Starts generating a column on a worker. */
   requestGen(cx: number, cz: number): Promise<G>;
@@ -65,12 +74,16 @@ export interface StreamerHost<G, M> {
   abandonMeshAttempt(cx: number, cz: number): void;
   /** Deletes every GPU resource of a column's meshes. */
   freeMesh(cx: number, cz: number): void;
+  /** Frees one section of an unloaded column; true once all its GPU meshes are gone. */
+  freeMeshStep?(cx: number, cz: number): boolean;
   /** Deletes a column's block and light data from the world. */
   freeData(cx: number, cz: number): void;
   /** Milliseconds, monotonic. */
   now(): number;
   /** Reports the main-thread time of one streaming task that ran outside the frame callback. */
   recordSlice?(ms: number): void;
+  setWorkPriorities?(priorities: ColumnWorkPriority[]): void;
+  uploadPriority?(mesh: M): number;
 }
 
 /** What the streamer needs to know about the camera, once per frame. */
@@ -191,6 +204,8 @@ export class Streamer<G, M> {
   private prepQueue: Array<PrepJob<M>> = [];
   private lightApplyQueue: Array<() => void> = [];
   private workTurn = 0;
+  private chainPriorities = new Map<number, ColumnWorkPriority>();
+  private chainDirty = true;
   private requests: PendingRequest[] = [];
   private cancelled = 0;
   private completed = { generated: 0, lit: 0, meshed: 0, uploaded: 0 };
@@ -283,6 +298,7 @@ export class Streamer<G, M> {
       this.meshQueue.length > 0 ||
       this.genTokens.size > 0 ||
       this.meshTokens.size > 0 ||
+      this.hasDispatchWork() ||
       this.lightApplyQueue.length > 0 ||
       this.applyQueue.length > 0 ||
       this.prepQueue.length > 0 ||
@@ -315,6 +331,9 @@ export class Streamer<G, M> {
     this.applyQueue.length = 0;
     this.prepQueue.length = 0;
     this.cancelled = 0;
+    this.chainPriorities.clear();
+    this.chainDirty = true;
+    this.host.setWorkPriorities?.([]);
     this.completed = { generated: 0, lit: 0, meshed: 0, uploaded: 0 };
     this.cancels = { generation: 0, light: 0, mesh: 0, upload: 0 };
     const requests = this.requests.splice(0);
@@ -528,7 +547,12 @@ export class Streamer<G, M> {
   public drainUploads(budgetMs: number): number {
     const start = this.host.now();
     if (!this.uploadSorted) {
-      this.deferred.sort((a, b) => comparePriority(a.col.prio, b.col.prio));
+      this.deferred.sort(
+        (a, b) =>
+          Number(!this.inChain(a.col, 'mesh')) - Number(!this.inChain(b.col, 'mesh')) ||
+          this.compareColumns(a.col, b.col, 'mesh') ||
+          (this.host.uploadPriority?.(a.mesh) ?? 0) - (this.host.uploadPriority?.(b.mesh) ?? 0),
+      );
       this.uploadSorted = true;
     }
     let spent = 0;
@@ -713,6 +737,7 @@ export class Streamer<G, M> {
       this.planDirty = false;
       return;
     }
+    this.chainDirty = true;
     this.refreshView();
     this.lastPlanCX = this.camCX;
     this.lastPlanCZ = this.camCZ;
@@ -813,7 +838,7 @@ export class Streamer<G, M> {
     for (const col of this.cols.values()) {
       if ((col.hasMesh || col.phase === 'meshing') && !this.keepMesh(col.cx, col.cz)) {
         if (over()) break;
-        this.freeMeshOf(col);
+        this.freeMeshOf(col, true);
         freed++;
       }
     }
@@ -832,8 +857,10 @@ export class Streamer<G, M> {
   }
 
   /** Deletes a column's GPU meshes and invalidates all of its mesh jobs. */
-  private freeMeshOf(col: Column): void {
-    if (col.hasMesh) this.host.freeMesh(col.cx, col.cz);
+  private freeMeshOf(col: Column, incremental = false): void {
+    if (col.hasMesh && incremental && this.host.freeMeshStep) {
+      if (!this.host.freeMeshStep(col.cx, col.cz)) return;
+    } else if (col.hasMesh) this.host.freeMesh(col.cx, col.cz);
     col.hasMesh = false;
     if (col.phase === 'queuedMesh') this.removeFrom(this.meshQueue, col);
     this.discardAttempt(col);
@@ -860,36 +887,63 @@ export class Streamer<G, M> {
   // ---------------------------------------------------------------------------------------------
   // Dispatch and results
 
-  private dispatch(): void {
+  private dispatch(end = this.host.now() + SLICE_MS): void {
     if (!this.active && this.requests.length === 0) return;
 
+    if (this.host.now() >= end) {
+      if (this.hasDispatchWork()) this.schedulePump();
+      return;
+    }
+    this.refreshChains();
     this.refreshView();
     if (!this.lightSorted) {
       for (const col of this.lightQueue)
         computePriority(col.prio, this.view, col.cx, col.cz, this.pinnedMesh(col.cx, col.cz));
-      this.lightQueue.sort((a, b) => comparePriority(a.prio, b.prio));
+      this.lightQueue.sort((a, b) => this.compareColumns(a, b, 'light'));
       this.lightSorted = true;
     }
-    while (this.lightTokens.size < 4 && this.lightQueue.length > 0) this.startLight();
+    while (
+      this.lightTokens.size < 4 &&
+      this.lightQueue.length > 0 &&
+      this.inChain(this.lightQueue[0]!, 'light') &&
+      this.host.now() < end
+    )
+      this.startLight();
 
+    if (this.host.now() >= end) {
+      if (this.hasDispatchWork()) this.schedulePump();
+      return;
+    }
     if (!this.meshSorted) {
-      this.meshQueue.sort((a, b) => comparePriority(a.prio, b.prio));
+      this.meshQueue.sort((a, b) => this.compareColumns(a, b, 'mesh'));
       this.meshSorted = true;
     }
     while (
+      this.host.now() < end &&
       this.meshQueue.length > 0 &&
+      this.inChain(this.meshQueue[0]!, 'mesh') &&
       this.meshTokens.size < this.limits.maxMeshColumnsInFlight &&
       this.deferred.length < this.limits.maxDeferred
     ) {
       this.startMesh(this.meshQueue.shift()!);
     }
+    if (this.host.now() >= end) {
+      if (this.hasDispatchWork()) this.schedulePump();
+      return;
+    }
     if (!this.genSorted) {
-      this.genQueue.sort((a, b) => comparePriority(a.prio, b.prio));
+      this.genQueue.sort((a, b) => this.compareColumns(a, b, 'gen'));
       this.genSorted = true;
     }
-    while (this.genQueue.length > 0 && this.genTokens.size < this.limits.maxGenInFlight) {
+    while (
+      this.genQueue.length > 0 &&
+      this.inChain(this.genQueue[0]!, 'gen') &&
+      this.genTokens.size < this.limits.maxGenInFlight &&
+      this.host.now() < end
+    ) {
       this.startGen(this.genQueue.shift()!);
     }
+    if (this.hasDispatchWork()) this.schedulePump();
   }
 
   /** Adopts region light computed before a mesh request, without invalidating its neighbours. */
@@ -907,23 +961,31 @@ export class Streamer<G, M> {
   private startLight(): void {
     const first = this.lightQueue.shift()!;
     const batch = [first];
+    // Batch already-ready members of the nearby chains; a single ready column starts immediately.
+    const maxBatch = 8;
     // Pick the longer ready strip in either horizontal axis, so east/west and north/south travel
     // both amortise the border. Never wait for a further column to generate.
     const readyStrip = (dx: number, dz: number) => {
       let count = 1;
       while (
-        count < 8 &&
+        count < maxBatch &&
         this.lightQueue.some(
-          (c) => c.cx === first.cx + dx * count && c.cz === first.cz + dz * count,
+          (c) =>
+            this.inChain(c, 'light') &&
+            c.cx === first.cx + dx * count &&
+            c.cz === first.cz + dz * count,
         )
       )
         count++;
       return count;
     };
     const alongX = readyStrip(1, 0) >= readyStrip(0, 1);
-    for (let step = 1; batch.length < 8; step++) {
+    for (let step = 1; batch.length < maxBatch; step++) {
       const index = this.lightQueue.findIndex(
-        (c) => c.cx === first.cx + (alongX ? step : 0) && c.cz === first.cz + (alongX ? 0 : step),
+        (c) =>
+          this.inChain(c, 'light') &&
+          c.cx === first.cx + (alongX ? step : 0) &&
+          c.cz === first.cz + (alongX ? 0 : step),
       );
       if (index < 0) break;
       batch.push(this.lightQueue.splice(index, 1)[0]!);
@@ -1056,7 +1118,7 @@ export class Streamer<G, M> {
 
   /** Runs one step of the oldest generation result; true when it did something. */
   private applyStep(): boolean {
-    this.applyQueue.sort((a, b) => comparePriority(a.col.prio, b.col.prio));
+    this.applyQueue.sort((a, b) => this.compareColumns(a.col, b.col, 'gen'));
     const job = this.applyQueue[0];
     if (!job) return false;
     const col = job.col;
@@ -1104,6 +1166,7 @@ export class Streamer<G, M> {
       // Nothing to mesh: the section meshes of an earlier attempt, if any, are freed now.
       col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
       col.phase = 'meshed';
+      this.chainDirty = true;
       this.completed.meshed++;
       this.completed.uploaded++;
       this.schedulePump();
@@ -1149,7 +1212,7 @@ export class Streamer<G, M> {
 
   /** Starts the next mesh job of the oldest column; true when it did something. */
   private prepStep(): boolean {
-    this.prepQueue.sort((a, b) => comparePriority(a.col.prio, b.col.prio));
+    this.prepQueue.sort((a, b) => this.compareColumns(a.col, b.col, 'mesh'));
     const job = this.prepQueue[0];
     if (!job) return false;
     const col = job.col;
@@ -1216,6 +1279,7 @@ export class Streamer<G, M> {
       // The section meshes of an earlier attempt that this one did not produce are freed now.
       col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
       col.phase = 'meshed';
+      this.chainDirty = true;
       this.completed.uploaded++;
     }
   }
@@ -1258,24 +1322,22 @@ export class Streamer<G, M> {
     if (this.requests.length > 0 && this.host.now() < end) {
       this.drainUploads(end - this.host.now());
     }
-    this.runWork(end);
-    this.dispatch();
+    if (this.host.now() < end) this.runWork(end);
+    this.dispatch(end);
     this.checkRequests();
     // The next slice runs in a separate task, so worker messages and input are handled in between.
     if (this.hasPumpWork()) this.schedulePump();
   }
 
-  /** Alternates storing generated columns and starting mesh jobs until `end` (at least one step). */
+  /** Alternates storing generated columns and starting mesh jobs while time remains before `end`. */
   private runWork(end: number): void {
-    let did = false;
-    while (!did || this.host.now() < end) {
+    while (this.host.now() < end) {
       const first = this.workTurn++ % 3;
       const steps = [() => this.applyStep(), () => this.prepStep(), () => this.lightApplyStep()];
       let stepped = false;
       for (let offset = 0; offset < 3 && !stepped; offset++)
         stepped = steps[(first + offset) % 3]!();
       if (!stepped) return;
-      did = true;
     }
   }
 
@@ -1286,9 +1348,79 @@ export class Streamer<G, M> {
     return true;
   }
 
+  private inChain(col: Column, kind: 'gen' | 'light' | 'mesh'): boolean {
+    return (
+      this.chainPriorities.size === 0 ||
+      (this.chainPriorities.get(col.key)?.[kind] ?? Infinity) < 1e9
+    );
+  }
+
+  private compareColumns(a: Column, b: Column, kind: 'gen' | 'light' | 'mesh'): number {
+    return (
+      a.prio.pinned - b.prio.pinned ||
+      (this.chainPriorities.get(a.key)?.[kind] ?? 1e9) -
+        (this.chainPriorities.get(b.key)?.[kind] ?? 1e9) ||
+      comparePriority(a.prio, b.prio)
+    );
+  }
+
+  private refreshChains(): void {
+    if (!this.chainDirty) return;
+    this.chainDirty = false;
+    this.chainPriorities.clear();
+    if (
+      this.host.requestLight &&
+      this.active &&
+      this.backgroundEnabled &&
+      this.requests.length === 0
+    ) {
+      const targets: Column[] = [];
+      for (const col of this.cols.values()) {
+        if (!this.wantMesh(col.cx, col.cz) || col.phase === 'meshed' || col.failed) continue;
+        computePriority(col.prio, this.view, col.cx, col.cz, false);
+        targets.push(col);
+      }
+      targets.sort((a, b) => a.prio.outside - b.prio.outside || comparePriority(a.prio, b.prio));
+      const rank = (cx: number, cz: number) => {
+        const key = columnKey(cx, cz);
+        let priority = this.chainPriorities.get(key);
+        if (!priority) {
+          priority = { cx, cz, gen: 1e9, light: 1e9, mesh: 1e9 };
+          this.chainPriorities.set(key, priority);
+        }
+        return priority;
+      };
+      for (const [index, col] of targets.slice(0, 16).entries()) {
+        const target = rank(col.cx, col.cz);
+        target.light = Math.min(target.light, index);
+        target.mesh = Math.min(target.mesh, index);
+        for (let dz = -1; dz <= 1; dz++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const border = rank(col.cx + dx, col.cz + dz);
+            border.gen = Math.min(border.gen, index);
+          }
+      }
+    }
+    this.host.setWorkPriorities?.([...this.chainPriorities.values()]);
+    this.lightSorted = this.genSorted = this.meshSorted = this.uploadSorted = false;
+  }
+
+  private hasDispatchWork(): boolean {
+    return (
+      (this.active || this.requests.length > 0) &&
+      ((this.lightQueue.some((col) => this.inChain(col, 'light')) && this.lightTokens.size < 4) ||
+        (this.meshQueue.some((col) => this.inChain(col, 'mesh')) &&
+          this.meshTokens.size < this.limits.maxMeshColumnsInFlight &&
+          this.deferred.length < this.limits.maxDeferred) ||
+        (this.genQueue.some((col) => this.inChain(col, 'gen')) &&
+          this.genTokens.size < this.limits.maxGenInFlight))
+    );
+  }
+
   /** Whether a pump slice has something to do. */
   private hasPumpWork(): boolean {
     return (
+      this.hasDispatchWork() ||
       this.lightApplyQueue.length > 0 ||
       this.applyQueue.length > 0 ||
       this.prepQueue.length > 0 ||
