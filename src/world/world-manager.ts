@@ -1,4 +1,3 @@
-import { TerrainFrameGate } from '../render/terrain-frame-gate';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
 import type { ColumnLight, LightColumns, LightRect } from './batch-light';
@@ -164,9 +163,7 @@ export class WorldManager {
   // milliseconds of main-thread time under software rendering, and the rendering task outranks the
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
-  private terrainFrameGate: TerrainFrameGate | null = null;
-  private lastTerrainYaw = Number.NaN;
-  private lastTerrainPitch = Number.NaN;
+  public terrainFrames = 0;
 
   // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
   public drainGlErrors: (() => void) | null = null;
@@ -818,58 +815,34 @@ export class WorldManager {
   }
 
   /**
-   * Per-frame terrain update and draw. Skipped (sky-clear frame only) while createWorld is loading.
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public terrainFrameReady(): boolean {
-    if (!this.glWrapper || this.initialLoadCount > 0) return true;
-    this.terrainFrameGate ??= new TerrainFrameGate(this.glWrapper.gl);
-    // A substantial turn exposes different terrain. Present it promptly even on a slow GPU;
-    // steady travel still waits for the preceding draw rather than accumulating GPU frames.
-    if (
-      this.camera &&
-      (Math.cos(this.camera.yaw - this.lastTerrainYaw) < Math.cos(Math.PI / 12) ||
-        Math.abs(this.camera.pitch - this.lastTerrainPitch) > Math.PI / 12)
-    ) {
-      this.terrainFrameGate.reset();
-      return true;
-    }
-    return this.terrainFrameGate.ready();
-  }
-
-  /**
-   * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
-   * budget, then the draw; `lastUploadMs` is the upload time.
-   */
-  public render(draw = true): void {
+  public render(): boolean {
     this.lastUploadMs = 0;
-    if (this.initialLoadCount > 0) return;
+    if (this.initialLoadCount > 0) return false;
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());
       this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
     }
-    if (draw) {
-      this.drawTerrain();
-      this.terrainFrameGate?.submitted();
-    }
+    return this.drawTerrain();
   }
 
   private drawTerrainFrame(): void {
     if (!this.glWrapper) return;
-    this.terrainFrameGate?.reset();
     const gl = this.glWrapper.gl;
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.drawTerrain();
     if (this.drainGlErrors) this.drainGlErrors();
   }
 
-  private drawTerrain(): void {
+  private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
-      this.lastTerrainYaw = this.camera.yaw;
-      this.lastTerrainPitch = this.camera.pitch;
+      this.terrainFrames++;
+      return true;
     }
+    return false;
   }
 }

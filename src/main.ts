@@ -116,10 +116,7 @@ function main() {
   function render(time: number) {
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
-    const gateStart = performance.now();
-    const draw =
-      glCheckDraw || testScene !== null || !worldManager.world || worldManager.terrainFrameReady();
-    let glCheckMs = performance.now() - gateStart;
+    let glCheckMs = 0;
     if (frameDrain) {
       const t = performance.now();
       frameDrain.beginFrame();
@@ -129,24 +126,26 @@ function main() {
     const dt = time - lastTime;
     lastTime = time;
 
-    if (draw) glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    let rendered = false;
 
     if (testScene) {
       testScene.render(dt / 1000, input);
+      rendered = true;
       if (firstFrameResolve) {
         firstFrameResolve();
         firstFrameResolve = null;
       }
     } else if (worldManager.world) {
       camera.update(dt / 1000, input);
-      worldManager.render(draw);
+      rendered = worldManager.render();
     }
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
-    cpuTimes.push(frameCpuMs);
+    if (rendered) cpuTimes.push(frameCpuMs);
     const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
-    uploadTimes.push(uploadMs);
+    if (rendered) uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
     if (frameDrain) {
@@ -154,9 +153,10 @@ function main() {
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
-    frameStats.record(frameCpuMs, uploadMs, glCheckMs);
-
-    if (draw) frameCount++;
+    if (rendered) {
+      frameStats.record(frameCpuMs, uploadMs, glCheckMs);
+      frameCount++;
+    }
     fpsTimer += dt;
     if (fpsTimer >= 1000) {
       renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);

@@ -37,7 +37,7 @@ test('M05 streamed-light stage throughput on a flight', async ({ page }) => {
                 completedJobs: number;
               };
               lightWorkerPool: { workerCount: number };
-              terrainFrameGate: { submittedFrames: number } | null;
+              terrainFrames: number;
               lightBatchTimes: Array<{ workerMs: number }>;
               streamer: { cols: Map<number, { phase: string }> };
             };
@@ -48,7 +48,7 @@ test('M05 streamed-light stage throughput on a flight', async ({ page }) => {
       for (const col of wm.streamer.cols.values()) phases[col.phase] = (phases[col.phase] ?? 0) + 1;
       return {
         hardwareConcurrency: navigator.hardwareConcurrency,
-        terrainFrames: wm.terrainFrameGate?.submittedFrames ?? 0,
+        terrainFrames: wm.terrainFrames,
         meshWorkers: wm.workerPool.workerCount,
         generationWorkers: wm.genWorkerPool.workerCount,
         lightWorkers: wm.lightWorkerPool.workerCount,
