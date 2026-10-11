@@ -174,10 +174,13 @@ export class WorkerPool {
       const job = this.queue[index < 0 ? 0 : index]!;
       let worker: Worker | undefined;
       if (job.background) {
-        worker = [...this.activeJobs].find(
-          ([, jobs]) => jobs.length < 32 && jobs.every((posted) => posted.background),
-        )?.[0];
-        if (!worker && this.idleWorkers.length > reserved) worker = this.idleWorkers.shift();
+        if (this.idleWorkers.length > reserved) worker = this.idleWorkers.shift();
+        else {
+          const credit = this.workers.length === 1 ? 1 : 32;
+          worker = [...this.activeJobs]
+            .filter(([, jobs]) => jobs.length < credit && jobs.every((posted) => posted.background))
+            .sort((a, b) => a[1].length - b[1].length)[0]?.[0];
+        }
       } else {
         worker = this.idleWorkers.shift();
       }

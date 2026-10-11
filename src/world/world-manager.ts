@@ -155,6 +155,8 @@ export class WorldManager {
     workerMs: number;
     mainMs: number;
     maxSliceMs: number;
+    copySliceMaxMs: number;
+    commitSliceMaxMs: number;
   }> = [];
 
   // Number of createWorld calls that have not finished. While it is non-zero the frame loop draws
@@ -163,6 +165,8 @@ export class WorldManager {
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
   private terrainFrameGate: TerrainFrameGate | null = null;
+  private lastTerrainYaw = Number.NaN;
+  private lastTerrainPitch = Number.NaN;
 
   // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
   public drainGlErrors: (() => void) | null = null;
@@ -269,6 +273,7 @@ export class WorldManager {
   }
 
   private async copyLightColumns(bounds: LightRect) {
+    const captureStart = performance.now();
     const result: LightColumns = {};
     const sources: Array<[string, LightColumns[string]]> = [];
     for (let cz = bounds.minCZ; cz <= bounds.maxCZ; cz++)
@@ -278,19 +283,20 @@ export class WorldManager {
         if (!sections) throw new Error(`Light block data missing for ${cx},${cz}`);
         sources.push([key, sections.slice()]);
       }
+    const captureMs = performance.now() - captureStart;
     // Copy outside dispatch/frame work, with a section as the atomic unit. Edits invalidate the
     // streamer's captured serials, including snapshots depending on an edited border column.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     let sliceStart = performance.now();
-    let workMs = 0;
-    let maxSliceMs = 0;
+    let workMs = captureMs;
+    let maxSliceMs = captureMs;
     for (const [key, sections] of sources) {
       const copied: LightColumns[string] = [];
       result[key] = copied;
       for (const section of sections) {
         copied.push(typeof section === 'number' ? section : section.slice());
         const elapsed = performance.now() - sliceStart;
-        if (elapsed >= 2) {
+        if (elapsed >= 1) {
           workMs += elapsed;
           maxSliceMs = Math.max(maxSliceMs, elapsed);
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -343,6 +349,8 @@ export class WorldManager {
       workerMs: result.duration ?? 0,
       mainMs: copiedMs,
       maxSliceMs,
+      copySliceMaxMs: maxSliceMs,
+      commitSliceMaxMs: 0,
     };
     this.lightBatchTimes.push(timing);
     if (this.lightBatchTimes.length > 100) this.lightBatchTimes.shift();
@@ -355,6 +363,7 @@ export class WorldManager {
         const elapsed = performance.now() - commitStart;
         timing.mainMs += elapsed;
         timing.maxSliceMs = Math.max(timing.maxSliceMs, elapsed);
+        timing.commitSliceMaxMs = Math.max(timing.commitSliceMaxMs, elapsed);
       },
     }));
   }
@@ -816,6 +825,16 @@ export class WorldManager {
   public terrainFrameReady(): boolean {
     if (!this.glWrapper || this.initialLoadCount > 0) return true;
     this.terrainFrameGate ??= new TerrainFrameGate(this.glWrapper.gl);
+    // A substantial turn exposes different terrain. Present it promptly even on a slow GPU;
+    // steady travel still waits for the preceding draw rather than accumulating GPU frames.
+    if (
+      this.camera &&
+      (Math.cos(this.camera.yaw - this.lastTerrainYaw) < Math.cos(Math.PI / 12) ||
+        Math.abs(this.camera.pitch - this.lastTerrainPitch) > Math.PI / 12)
+    ) {
+      this.terrainFrameGate.reset();
+      return true;
+    }
     return this.terrainFrameGate.ready();
   }
 
@@ -849,6 +868,8 @@ export class WorldManager {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
+      this.lastTerrainYaw = this.camera.yaw;
+      this.lastTerrainPitch = this.camera.pitch;
     }
   }
 }

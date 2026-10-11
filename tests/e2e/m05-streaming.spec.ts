@@ -15,6 +15,9 @@ test('M05 streamed-light stage throughput on a flight', async ({ page }) => {
     const p = wm.camera.position;
     return { x: p[0]!, y: p[1]!, z: p[2]! };
   });
+  // Present the fully settled RD-8 view before the geometry baseline: uploads can finish while
+  // an older draw is still in flight. The flight-end sample keeps the normal rendering cadence.
+  await page.evaluate(async () => window.__blockcraft!.waitForTerrain!(8));
   const cpuSnapshot = () =>
     page.evaluate(() => {
       const wm = (

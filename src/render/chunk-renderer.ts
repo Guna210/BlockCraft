@@ -17,6 +17,8 @@ import { columnInFrustum, extractFrustumPlanes } from './frustum';
 import { bayerGlsl } from './dither';
 import { ColumnFades, UniformValueCache } from './column-fade';
 
+const MATERIAL_TINT_SHIFT = Math.log2(VERTEX_LAYOUT.tileMask + 1);
+
 const VS_CHUNK = `#version 300 es
 precision highp float;
 
@@ -27,16 +29,17 @@ uniform mat4 u_viewProj;
 uniform vec3 u_sectionOrigin;
 
 #ifdef SKY_ONLY
-out float v_skyLight;
+out vec2 v_skyAO;
 #else
 out vec4 v_light;
 #endif
+#ifndef SKY_ONLY
 out float v_ao;
-flat out vec3 v_normal;
+#endif
+flat out float v_faceShade;
 out vec2 v_unwrappedUV;
-out vec3 v_worldPos;
-flat out uint v_tileIndex;
-flat out uint v_tintIndex;
+out vec2 v_tintPos;
+flat out uint v_material;
 
 const vec3 NORMALS[6] = vec3[6](
   vec3(1.0, 0.0, 0.0),   // 0: +X
@@ -57,22 +60,24 @@ void main() {
   float u_local = float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u);
   float v_local = float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u);
 #ifdef SKY_ONLY
-  v_skyLight = float((a_word0 >> 20u) & 15u);
+  v_skyAO = vec2(float((a_word0 >> 20u) & 15u), float((a_word0 >> 18u) & 3u));
 #else
   v_light = vec4(float((a_word0 >> 20u) & 15u), float((a_word0 >> 24u) & 15u), float((a_word1 >> ${VERTEX_LAYOUT.greenShift}u) & 15u), float((a_word1 >> ${VERTEX_LAYOUT.blueShift}u) & 15u));
 #endif
+#ifndef SKY_ONLY
   v_ao = float((a_word0 >> 18u) & 3u);
+#endif
 
   vec3 localPos = vec3(float(x), float(y), float(z));
   vec3 worldPos = u_sectionOrigin + localPos;
 
   uint tintIdx = (a_word0 >> 28u) & 15u;
 
-  v_normal = NORMALS[normalIdx];
+  vec3 normal = NORMALS[normalIdx];
+  v_faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
   v_unwrappedUV = vec2(u_local, v_local);
-  v_worldPos = worldPos;
-  v_tileIndex = tileIdx;
-  v_tintIndex = tintIdx;
+  v_tintPos = worldPos.xz - 0.5 * normal.xz;
+  v_material = tileIdx | (tintIdx << ${MATERIAL_TINT_SHIFT}u);
 
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
@@ -82,16 +87,17 @@ const FS_CHUNK = `#version 300 es
 precision highp float;
 
 #ifdef SKY_ONLY
-in float v_skyLight;
+in vec2 v_skyAO;
 #else
 in vec4 v_light;
 #endif
+#ifndef SKY_ONLY
 in float v_ao;
-flat in vec3 v_normal;
+#endif
+flat in float v_faceShade;
 in vec2 v_unwrappedUV;
-in vec3 v_worldPos;
-flat in uint v_tileIndex;
-flat in uint v_tintIndex;
+in vec2 v_tintPos;
+flat in uint v_material;
 
 uniform sampler2D u_atlasSampler;
 uniform sampler2D u_grassTintMap;
@@ -128,6 +134,8 @@ void main() {
   }
 
   // Grid math derivation of atlas tile rect
+  uint v_tileIndex = v_material & ${VERTEX_LAYOUT.tileMask}u;
+  uint v_tintIndex = v_material >> ${MATERIAL_TINT_SHIFT}u;
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   uint col = v_tileIndex % cellsPerRow;
   uint row = v_tileIndex / cellsPerRow;
@@ -155,8 +163,7 @@ void main() {
   // Flat tint IDs make this branch uniform within a face. Untinted stone and other faces need
   // no biome texture lookup; tinted faces fetch only their own tint map.
   if (v_tintIndex != 0u) {
-    ivec3 blockPos = ivec3(floor(v_worldPos - 0.5 * v_normal));
-    ivec2 tintTexel = (blockPos.xz % 16 + 16) % 16;
+    ivec2 tintTexel = (ivec2(floor(v_tintPos)) % 16 + 16) % 16;
     if (v_tintIndex == 1u) {
       texColor.rgb *= texelFetch(u_grassTintMap, tintTexel, 0).rgb;
     } else if (v_tintIndex == 2u) {
@@ -168,16 +175,20 @@ void main() {
   }
 
   // Fixed face shade: top 1.0, +-Z 0.8, +-X 0.6, bottom 0.5 (decisions/M03g-face-shading.md)
-  float diff = v_normal.y > 0.5 ? 1.0 : (v_normal.y < -0.5 ? 0.5 : (abs(v_normal.z) > 0.5 ? 0.8 : 0.6));
+  float diff = v_faceShade;
 
 #ifdef SKY_ONLY
-  float brightness = LIGHT_MIN_BRIGHTNESS + LIGHT_BRIGHTNESS_RANGE * v_skyLight / 15.0;
+  float brightness = LIGHT_MIN_BRIGHTNESS + LIGHT_BRIGHTNESS_RANGE * v_skyAO.x / 15.0;
   vec3 light = u_debugLight ? vec3(1.0) : vec3(max(brightness * u_skyBrightness, LIGHT_MIN_BRIGHTNESS));
 #else
   vec4 brightness = LIGHT_MIN_BRIGHTNESS + LIGHT_BRIGHTNESS_RANGE * v_light / 15.0;
   vec3 light = u_debugLight ? vec3(1.0) : max(vec3(brightness.x * u_skyBrightness), brightness.yzw);
 #endif
+#ifdef SKY_ONLY
+  float ao = AO_UNOCCLUDED - AO_STEP * v_skyAO.y;
+#else
   float ao = AO_UNOCCLUDED - AO_STEP * v_ao;
+#endif
   fragColor = vec4(texColor.rgb * light * ao * diff, texColor.a);
 }
 `;

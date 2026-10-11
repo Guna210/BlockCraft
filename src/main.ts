@@ -117,7 +117,8 @@ function main() {
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
     const gateStart = performance.now();
-    const draw = testScene !== null || !worldManager.world || worldManager.terrainFrameReady();
+    const draw =
+      glCheckDraw || testScene !== null || !worldManager.world || worldManager.terrainFrameReady();
     let glCheckMs = performance.now() - gateStart;
     if (frameDrain) {
       const t = performance.now();
@@ -148,7 +149,7 @@ function main() {
     uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
-    if (frameDrain && (draw || uploadMs > 0)) {
+    if (frameDrain) {
       const t = performance.now();
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;

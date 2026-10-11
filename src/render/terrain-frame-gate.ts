@@ -9,15 +9,17 @@ export class TerrainFrameGate {
   ready(): boolean {
     if (!this.fence) return performance.now() >= this.resumeAt;
     const status = this.gl.getSyncParameter(this.fence, this.gl.SYNC_STATUS);
+    if (status === this.gl.UNSIGNALED) return false;
     if (status !== this.gl.SIGNALED) {
-      // Some browsers expose fence status late. Bound visual latency without queuing another draw:
-      // finish only this outstanding frame; updates and uploads ran throughout the preceding wait.
+      // An invalid/stale sync object must not freeze drawing. Normal UNSIGNALED fences wait
+      // without blocking, so streaming and input remain responsive during GPU work.
       if (performance.now() - this.submittedAt < 250) return false;
       this.gl.finish();
       this.reset();
       // Let queued worker replies and pump slices run after the blocking fallback, before
       // submitting another expensive terrain draw on this CPU/GPU-contended browser.
-      this.resumeAt = performance.now() + 250;
+      const completedAt = performance.now();
+      this.resumeAt = completedAt + Math.min(1000, completedAt - this.submittedAt);
       return false;
     }
     this.reset();
