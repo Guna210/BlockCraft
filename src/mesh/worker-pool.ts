@@ -1,5 +1,6 @@
 import { blockSnapshotTransfers, type BlockPaddingInput } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from '../workers/shared-worker-budget';
+import type { ColumnWorkPriority } from '../world/streamer';
 import type { LightPaddingInput } from '../world/light-padding';
 import type { SectionMeshData, MeshLookupTables } from './greedy';
 
@@ -28,6 +29,11 @@ interface MeshJob {
 }
 
 export class WorkerPool {
+  private priorities = new Map<string, number>();
+
+  public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
+    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.mesh]));
+  }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: MeshJob[] = [];
@@ -175,6 +181,11 @@ export class WorkerPool {
    * starts without waiting for a streaming job to finish.
    */
   private processQueue(): void {
+    this.queue.sort(
+      (a, b) =>
+        (this.priorities.get(`${a.sx},${a.sz}`) ?? 1e9) -
+        (this.priorities.get(`${b.sx},${b.sz}`) ?? 1e9),
+    );
     const reserved = this.workers.length > 1 ? 1 : 0;
     while (this.queue.length > 0) {
       const index = this.queue.findIndex((job) => !job.background);

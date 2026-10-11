@@ -1,4 +1,5 @@
 import type { SharedWorkerBudget } from './shared-worker-budget';
+import type { ColumnWorkPriority } from '../world/streamer';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 
@@ -28,6 +29,11 @@ interface GenJob {
 }
 
 export class GenWorkerPool {
+  private priorities = new Map<string, number>();
+
+  public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
+    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.gen]));
+  }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: GenJob[] = [];
@@ -183,6 +189,11 @@ export class GenWorkerPool {
   }
 
   private processQueue(): void {
+    this.queue.sort(
+      (a, b) =>
+        (this.priorities.get(`${a.cx},${a.cz}`) ?? 1e9) -
+        (this.priorities.get(`${b.cx},${b.cz}`) ?? 1e9),
+    );
     while (this.queue.length > 0) {
       const worker =
         this.idleWorkers.shift() ?? [...this.activeJobs].find(([, jobs]) => jobs.length < 8)?.[0];

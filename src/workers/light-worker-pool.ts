@@ -1,5 +1,6 @@
 import { blockSnapshotTransfers, type BlockColumnsSnapshot } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from './shared-worker-budget';
+import type { ColumnWorkPriority } from '../world/streamer';
 import type { LightRect, ColumnLight } from '../world/batch-light';
 import type { LightBatchResponse } from './light.worker';
 import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
@@ -21,6 +22,20 @@ interface LightJob {
 }
 
 export class LightWorkerPool {
+  private priorities = new Map<string, number>();
+
+  public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
+    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.light]));
+  }
+
+  private jobPriority(job: LightJob): number {
+    if (!job.interior) return -1;
+    let rank = 1e9;
+    for (let z = job.interior.minCZ; z <= job.interior.maxCZ; z++)
+      for (let x = job.interior.minCX; x <= job.interior.maxCX; x++)
+        rank = Math.min(rank, this.priorities.get(`${x},${z}`) ?? 1e9);
+    return rank;
+  }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: LightJob[] = [];
@@ -151,17 +166,27 @@ export class LightWorkerPool {
   }
 
   private processQueue(): void {
+    this.queue.sort((a, b) => this.jobPriority(a) - this.jobPriority(b));
     while (this.queue.length > 0) {
-      // Batches stay serial on one worker, but ready work is posted before the main thread can
-      // block on a GPU frame. No extra light worker competes with generation or meshing.
-      const active = [...this.activeJobs][0];
-      const worker = active
-        ? active[1].length < 4
-          ? active[0]
-          : undefined
-        : this.idleWorkers.pop();
+      const index = this.queue.findIndex((job) =>
+        [...this.activeJobs.values()].every((jobs) =>
+          jobs.every((active) => {
+            const a = job.interior;
+            const b = active.interior;
+            // Legacy region work conservatively holds the whole lighting lane.
+            if (!a || !b) return false;
+            return a.maxCX < b.minCX || b.maxCX < a.minCX || a.maxCZ < b.minCZ || b.maxCZ < a.minCZ;
+          }),
+        ),
+      );
+      if (index < 0) break;
+      const worker =
+        this.idleWorkers.shift() ??
+        [...this.activeJobs]
+          .filter(([, jobs]) => jobs.length < 4)
+          .sort((a, b) => a[1].length - b[1].length)[0]?.[0];
       if (!worker) break;
-      const job = this.queue.shift()!;
+      const job = this.queue.splice(index, 1)[0]!;
       const posted = this.activeJobs.get(worker) ?? [];
       posted.push(job);
       this.activeJobs.set(worker, posted);

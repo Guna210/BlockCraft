@@ -123,8 +123,6 @@ function main() {
       glCheckMs += performance.now() - t;
     }
     const startTime = performance.now();
-    // Deliver queued worker messages within this animation callback before submitting the draw.
-    worldManager.deliverTerrainResults();
     const dt = time - lastTime;
     lastTime = time;
 
