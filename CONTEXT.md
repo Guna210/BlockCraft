@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); throughput regression open | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); gate held: frame-gate questions | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-11: M05b Codex gate report (`11743e4` local on claude/m05b, not pushed): verify exit 0, unit 380, e2e 47; mid-flight passes; meshed 31.5 vs master 14.3 col/s, visible 509 vs 186, cancels 0; triangles still +97 %; titled [INCOMPLETE] with blockers/M05b.md. Orchestrator advised the owner to hold the gate: new terrain-frame-gate.ts (16 terrain frames in 33 s, GL p95 2380→2.2 ms) may throttle draws and so weaken the M04a timings; asked Codex for draws/s, the blocker content, dark mid-flight terrain, and a triangle breakdown.
 - 2026-10-11: M05b Codex report (uncommitted, not pushed): unit 370/370; e2e 46 pass, 1 fail (M04b mid-flight 100 % sky, which master also fails in Codex's env). Torch +46.4, hue 35.8°, AO 0.657, M03 caves pass. Same-env vs master: meshed 8.3 vs 14.3 col/s, uploaded 7.7 vs 14.2, visible sections at flight end 30 vs 186, cancels 617 vs 422, triangles +97 %, light-batch main-thread max 38 ms. Orchestrator: don't spend on a new baseline. The same-env comparison is valid and the regression is real. Fix throughput to within ~10 % of master in the same env (target meshed/uploaded ≥ 13 col/s, visible ≥ ~165); find why flat sunlit faces stop merging; cap main-thread commit ≤ 8 ms. Check nproc and that workers: 1 is on master. CI Verify on GitHub is the absolute judge for the mid-flight test.
 - 2026-10-11: M05b Codex QUESTION: the vertex repack breaks the bit decoders in tests/unit/greedy.test.ts and models.test.ts. Orchestrator authorised updating only the decoding (ideally importing the shared decoder from src), with no assertion or threshold changes; stop if any assertion then fails.
 - 2026-10-11: Owner set up Codex cloud for BlockCraft. M05b restart prompt written for Codex (decisions plus first-attempt lessons). The orchestrator stays the coordinator; the owner relays Codex messages.
