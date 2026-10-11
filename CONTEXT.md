@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-10-10
+Last updated: 2026-10-11
 
 ## Setup
 
@@ -19,6 +19,7 @@ Last updated: 2026-10-10
 - Builder questions: the owner points the orchestrator at the session (URL, ID or title), and the orchestrator replies with `send_message`, prefixed `[Orchestrator]` (CLAUDE.md, "Talking to other sessions directly"). Builders and reviewers also message the orchestrator directly; their messages arrive as queued notifications (read with ReadNotifications). Find a session by title with `list_sessions`.
 - Branches: builders push to `claude/<task-id>` as CLAUDE.md says (worked for #32 `claude/m01a-fix` and #33 `claude/m04a`). Gate approval comes only from the owner in the builder's session; the orchestrator gives the owner a paste-ready approval line.
 - The owner edits owner files and harness files directly on master: SPEC `2be70f2` (§3.2 GL errors once per frame, `&glcheck=draw`), `6411d94` (column-level frustum culling moved into M04a), `d37918d` (M04 flight p95 reported, enforced at RD 8 by M22a), playwright.config.ts `60590f8` (`workers: 1`), and `90c809b` + SPEC `67381df` (`--enable-precise-memory-info` for the M04b heap test).
+- Codex (owner, 2026-10-11): the owner set up Codex cloud with the repo and will build and review some tasks there. The orchestrator writes Codex prompts. Codex reads AGENTS.md but not CLAUDE.md, so each prompt carries the needed CLAUDE.md rules. The owner relays Codex questions and results by hand (the orchestrator can't reach Codex). Codex picks its own branch names; the owner's "Create PR" click is the publish gate. CI `Verify` is still the evidence.
 - Review cycle: at most 3 rounds per task, then ask the owner (CLAUDE.md, Orchestrator).
 - CI: `Verify` runs the full suite on every PR and every push to master (job timeout 90 min). Reviewers use it as the full-verify evidence.
 
@@ -30,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | paused by the owner (2026-10-10); restart on Sonnet in a few days | `session_01RsegcCFUbMz3XUzDKjxLBs` (stopped, Haiku) | — | — | — | Work only in local commits `2c93ffc`, `93506b3`, `49679d2` on `claude/m05b`, never pushed, so likely lost with the container. A new session starts from master with the prompt below plus "Lessons from the first attempt". |
+| M05b | Codex builder prompt given (2026-10-11), waiting for the owner to start it in Codex | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -70,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-11: Owner set up Codex cloud for BlockCraft. M05b restart prompt written for Codex (decisions plus first-attempt lessons). The orchestrator stays the coordinator; the owner relays Codex messages.
 - 2026-10-10: Owner stopped the M05b builder and paused the project for a few days to save usage. M05b will restart on Sonnet from master; the first attempt's lessons are recorded under Decisions.
 - 2026-10-10: M05b round-3 report (`49679d2` local): torch rise 34.2; M03d cave passes with the debug light, M03g cave stdDev 11.7; triangles +76 % (fps 1.52→1.18) but visible sections at x500 down from 152 to 0–7, horizon test times out. Orchestrator: keep the merge rule; paler warm tint (hue 20–40°); fix the debug light to match master's look; find the pipeline bug (neighbour re-mesh, cancels, gating, priority, gen starvation). Suggested the owner switch this builder to Sonnet.
 - 2026-10-10: Owner approved setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC M03 "with debug light"). Relayed to the M05b builder.
@@ -89,4 +91,3 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 - 2026-10-10: Owner added `--enable-precise-memory-info` on master (`90c809b`, SPEC `67381df`). M04b builder told to merge master, run m04 ×3 and full verify, then post a new gate.
 - 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
 - 2026-10-09: M04b builder report (`8b4d00f`): horizon enclosed-sky check passes; heap probe shows 0 growth after a 64 MB allocation, so the problem is confirmed; fast-flight frame has 37,510 px enclosed (no sky in top row). Orchestrator: keep top-row seed (enclosed = not yet drawn); heap waits for owner.
-- 2026-10-09: M04b gate (`5d3de39`, verify green, 334 unit / 44 e2e). Orchestrator answered: branch `claude/m04b`; horizon check replaced by an enclosed-sky check; heap test found vacuous (bucketed `performance.memory`), fix put to the owner; fast-flight shot accepted as a known limitation. New gate to follow.
