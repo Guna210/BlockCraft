@@ -1,3 +1,4 @@
+import type { SharedWorkerBudget } from '../workers/shared-worker-budget';
 import type { LightPaddingInput } from '../world/light-padding';
 import type { SectionMeshData, MeshLookupTables } from './greedy';
 
@@ -36,7 +37,10 @@ export class WorkerPool {
   public completedJobs = 0;
   public deliveryMs: number[] = [];
 
-  constructor(poolSize?: number) {
+  constructor(
+    poolSize?: number,
+    private readonly sharedBudget?: SharedWorkerBudget,
+  ) {
     if (typeof Worker === 'undefined') {
       throw new Error('Web Workers are not supported in this environment');
     }
@@ -49,9 +53,11 @@ export class WorkerPool {
     const size = poolSize || defaultSize;
 
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(new URL('../workers/mesh.worker.ts', import.meta.url), {
-        type: 'module',
-      });
+      const worker =
+        this.sharedBudget?.createPort('mesh') ??
+        new Worker(new URL('../workers/mesh.worker.ts', import.meta.url), {
+          type: 'module',
+        });
 
       worker.onmessage = (e: MessageEvent) => {
         const { id, meshData, duration, finishedAt } = e.data as {
@@ -204,6 +210,9 @@ export class WorkerPool {
       worker.postMessage(
         {
           id: job.id,
+          cx: job.sx,
+          cz: job.sz,
+          background: job.background,
           paddedSection: job.paddedSection,
           tables: job.tables,
           light: job.light,

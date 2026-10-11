@@ -1,3 +1,4 @@
+import type { SharedWorkerBudget } from './shared-worker-budget';
 import type { LightRect, LightColumns, ColumnLight } from '../world/batch-light';
 import type { LightBatchResponse } from './light.worker';
 import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
@@ -26,7 +27,10 @@ export class LightWorkerPool {
   private nextJobId = 1;
   private currentPoolSize: number;
 
-  constructor(poolSize?: number) {
+  constructor(
+    poolSize?: number,
+    private readonly sharedBudget?: SharedWorkerBudget,
+  ) {
     if (typeof Worker === 'undefined') {
       throw new Error('Web Workers are not supported in this environment');
     }
@@ -48,9 +52,11 @@ export class LightWorkerPool {
 
   private createWorkers(size: number): void {
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(new URL('./light.worker.ts', import.meta.url), {
-        type: 'module',
-      });
+      const worker =
+        this.sharedBudget?.createPort('light') ??
+        new Worker(new URL('./light.worker.ts', import.meta.url), {
+          type: 'module',
+        });
 
       worker.onmessage = (e: MessageEvent) => {
         const response = e.data as LightRegionResponse & LightBatchResponse;

@@ -5,7 +5,7 @@ import { vertexHasBlockLight } from '../mesh/vertex';
 
 const ctx: Worker = self as unknown as Worker;
 
-ctx.onmessage = (event: MessageEvent) => {
+export function processMeshMessage(event: MessageEvent): void {
   const { id, paddedSection, tables, light } = event.data as {
     id: number;
     paddedSection: Uint16Array;
@@ -42,4 +42,6 @@ ctx.onmessage = (event: MessageEvent) => {
     { id, meshData, duration, finishedAt: performance.timeOrigin + performance.now() },
     transferables,
   );
-};
+}
+
+ctx.onmessage = processMeshMessage;

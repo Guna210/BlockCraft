@@ -62,7 +62,7 @@ export interface GenWorkerResponse {
   perSectionMs: number;
 }
 
-ctx.onmessage = (event: MessageEvent) => {
+export function processGenMessage(event: MessageEvent): void {
   const { id, seed, cx, cz, type } = event.data as GenWorkerRequest;
 
   // The clock covers everything the worker spends on this column, packaging included
@@ -132,7 +132,9 @@ ctx.onmessage = (event: MessageEvent) => {
     } as GenWorkerResponse,
     transferables,
   );
-};
+}
+
+ctx.onmessage = processGenMessage;
 
 function generateFlatColumn(col: ChunkColumn): void {
   const registry = BlockRegistry.getInstance();

@@ -1,3 +1,4 @@
+import type { SharedWorkerBudget } from './shared-worker-budget';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 
@@ -37,7 +38,10 @@ export class GenWorkerPool {
   public completedJobs = 0;
   private currentPoolSize: number;
 
-  constructor(poolSize?: number) {
+  constructor(
+    poolSize?: number,
+    private readonly sharedBudget?: SharedWorkerBudget,
+  ) {
     if (typeof Worker === 'undefined') {
       throw new Error('Web Workers are not supported in this environment');
     }
@@ -59,9 +63,11 @@ export class GenWorkerPool {
 
   private createWorkers(size: number): void {
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(new URL('./gen.worker.ts', import.meta.url), {
-        type: 'module',
-      });
+      const worker =
+        this.sharedBudget?.createPort('gen') ??
+        new Worker(new URL('./gen.worker.ts', import.meta.url), {
+          type: 'module',
+        });
 
       worker.onmessage = (e: MessageEvent) => {
         const {

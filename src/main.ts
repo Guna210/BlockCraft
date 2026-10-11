@@ -113,7 +113,7 @@ function main() {
   const cpuTimes: number[] = [];
   const uploadTimes: number[] = [];
 
-  function render(time: number) {
+  async function render(time: number) {
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
     let glCheckMs = 0;
@@ -123,6 +123,8 @@ function main() {
       glCheckMs += performance.now() - t;
     }
     const startTime = performance.now();
+    // Every callback still updates and draws once. Include delivery work/turn in frame timing.
+    await worldManager.deliverTerrainResults();
     const dt = time - lastTime;
     lastTime = time;
 

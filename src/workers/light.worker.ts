@@ -39,7 +39,7 @@ export interface LightBatchResponse {
   duration: number;
 }
 
-ctx.onmessage = (event: MessageEvent) => {
+export function processLightMessage(event: MessageEvent): void {
   if ('bounds' in event.data) {
     const { id, bounds, interior, columns } = event.data as {
       id: number;
@@ -84,4 +84,6 @@ ctx.onmessage = (event: MessageEvent) => {
   }
 
   ctx.postMessage({ id, sections } as LightRegionResponse, transferables);
-};
+}
+
+ctx.onmessage = processLightMessage;

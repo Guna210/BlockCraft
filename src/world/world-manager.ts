@@ -1,3 +1,4 @@
+import { SharedWorkerBudget } from '../workers/shared-worker-budget';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
 import type { ColumnLight, LightColumns, LightRect } from './batch-light';
@@ -116,6 +117,7 @@ export class WorldManager {
   public atlas: TextureAtlas | null = null;
   public atlasTexture: WebGLTexture | null = null;
   public chunkRenderer: ChunkRenderer | null = null;
+  public readonly sharedWorkerBudget: SharedWorkerBudget;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
@@ -176,9 +178,12 @@ export class WorldManager {
   }
 
   private constructor() {
-    this.workerPool = new WorkerPool();
-    this.genWorkerPool = new GenWorkerPool();
-    this.lightWorkerPool = new LightWorkerPool();
+    this.sharedWorkerBudget = new SharedWorkerBudget();
+    this.sharedWorkerBudget.enableDeferredDelivery();
+    // Logical ports keep each pool's bounded posting and edit reserve; only this budget owns threads.
+    this.workerPool = new WorkerPool(2, this.sharedWorkerBudget);
+    this.genWorkerPool = new GenWorkerPool(2, this.sharedWorkerBudget);
+    this.lightWorkerPool = new LightWorkerPool(1, this.sharedWorkerBudget);
     this.pipeline = createDefaultPipeline();
     this.streamer = new Streamer<GenResult, MeshResult>(this.makeStreamerHost());
     // Not streaming until a world exists (createWorld) and while tests drive an empty world by hand.
@@ -818,10 +823,20 @@ export class WorldManager {
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
+  public async deliverTerrainResults(): Promise<void> {
+    await this.sharedWorkerBudget.messageTurn();
+    this.sharedWorkerBudget.flushDeliveries(3);
+  }
+
   public render(): boolean {
     this.lastUploadMs = 0;
     if (this.initialLoadCount > 0) return false;
     if (this.world && this.camera) {
+      this.sharedWorkerBudget.setView(
+        this.camera.position[0],
+        this.camera.position[2],
+        this.camera.yaw,
+      );
       this.streamer.update(this.streamerView(this.camera), performance.now());
       this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
     }
