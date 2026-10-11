@@ -4,6 +4,9 @@ import { buildLightLookupTables, computeRegionLight, LightEngine } from '../../s
 import { computeBatchLight, type LightColumns } from '../../src/world/batch-light';
 import { buildPaddedLight, collectLightPadding } from '../../src/world/light-padding';
 import { World } from '../../src/world/world';
+import { SKY_15_SECTION } from '../../src/world/lighting';
+import { buildPaddedSection } from '../../src/world/padded';
+import { columnKey } from '../../src/world/streaming-plan';
 import { createDefaultPipeline } from '../../src/gen/pipeline';
 import { hashString } from '../../src/engine/rng';
 import {
@@ -200,6 +203,45 @@ describe('M05b RGB and vertex format', () => {
 });
 
 describe('M05b smooth samples, AO, merges and diagonal symmetry', () => {
+  it('merges a flat sunlit plane at section and column edges with an unlit border', () => {
+    const world = new World();
+    const stone = registry.getStateId('stone')!;
+    const columns: LightColumns = {};
+    for (let z = -1; z <= 1; z++)
+      for (let x = -1; x <= 1; x++) {
+        const col = world.getColumn(x, z)!;
+        col.getOrCreateSection(0, stone);
+        col.getOrCreateSection(1, stone);
+        columns[`${x},${z}`] = [stone, stone];
+      }
+    const result = computeBatchLight(
+      { minCX: -1, maxCX: 1, minCZ: -1, maxCZ: 1 },
+      { minCX: 0, maxCX: 0, minCZ: 0, maxCZ: 0 },
+      columns,
+      tables,
+    )[0]!;
+    for (const section of result.sections) {
+      if (section.lightData === 0xf0)
+        world.lightEngine.storage.setRawDataByKey(section.key, SKY_15_SECTION);
+      else if (section.lightData instanceof Uint8Array)
+        world.lightEngine.storage.setRawDataByKey(section.key, section.lightData);
+    }
+    world.lightEngine.markLit(0, 0);
+    world.lightEngine.skirts.set(columnKey(0, 0), { height: result.height, data: result.skirt });
+    const blocks = buildPaddedSection(world, 0, 1, 0);
+    const light = buildPaddedLight(collectLightPadding(world, 0, 1, 0));
+    const mesh = greedyMesh(
+      blocks,
+      buildMeshLookupTables(registry, () => 1),
+      light,
+    );
+    expect(mesh.opaque.quadCount).toBe(1);
+    for (let i = 0; i < mesh.opaque.vertices.length; i += 2) {
+      const v = decodeVertex(mesh.opaque.vertices[i]!, mesh.opaque.vertices[i + 1]!);
+      expect([v.skyLight, v.blockR, v.blockG, v.blockB, v.ao]).toEqual([15, 0, 0, 0, 0]);
+    }
+  });
+
   it('drops the corner behind two opaque sides from the four-sample average', () => {
     const blocks = new Uint16Array(18 ** 3);
     const light = new Uint16Array(18 ** 3);

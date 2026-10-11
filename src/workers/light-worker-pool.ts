@@ -22,7 +22,7 @@ export class LightWorkerPool {
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: LightJob[] = [];
-  private activeJobs: Map<Worker, LightJob> = new Map();
+  private activeJobs: Map<Worker, LightJob[]> = new Map();
   private nextJobId = 1;
   private currentPoolSize: number;
 
@@ -54,11 +54,15 @@ export class LightWorkerPool {
 
       worker.onmessage = (e: MessageEvent) => {
         const response = e.data as LightRegionResponse & LightBatchResponse;
-        const { sections, columns, duration } = response;
+        const { id, sections, columns, duration } = response;
 
-        const job = this.activeJobs.get(worker);
-        this.activeJobs.delete(worker);
-        this.idleWorkers.push(worker);
+        const posted = this.activeJobs.get(worker) ?? [];
+        const index = id === undefined ? 0 : posted.findIndex((job) => job.id === id);
+        const job = index < 0 ? undefined : posted.splice(index, 1)[0];
+        if (posted.length === 0) {
+          this.activeJobs.delete(worker);
+          this.idleWorkers.push(worker);
+        }
 
         if (job) {
           job.resolve({ sections: sections ?? [], columns, duration });
@@ -68,11 +72,11 @@ export class LightWorkerPool {
       };
 
       worker.onerror = (err: ErrorEvent) => {
-        const job = this.activeJobs.get(worker);
+        const jobs = this.activeJobs.get(worker) ?? [];
         this.activeJobs.delete(worker);
         console.error('Light worker error:', err);
 
-        if (job) {
+        for (const job of jobs) {
           job.reject(
             err.error instanceof Error ? err.error : new Error(err.message || 'Light worker error'),
           );
@@ -91,7 +95,9 @@ export class LightWorkerPool {
   }
 
   public get queueLength(): number {
-    return this.queue.length + this.activeJobs.size;
+    return (
+      this.queue.length + [...this.activeJobs.values()].reduce((n, jobs) => n + jobs.length, 0)
+    );
   }
 
   public enqueueLightRegionJob(
@@ -138,11 +144,20 @@ export class LightWorkerPool {
   }
 
   private processQueue(): void {
-    while (this.idleWorkers.length > 0 && this.queue.length > 0 && this.activeJobs.size === 0) {
-      const worker = this.idleWorkers.pop()!;
+    while (this.queue.length > 0) {
+      // Batches stay serial on one worker, but ready work is posted before the main thread can
+      // block on a GPU frame. No extra light worker competes with generation or meshing.
+      const active = [...this.activeJobs][0];
+      const worker = active
+        ? active[1].length < 4
+          ? active[0]
+          : undefined
+        : this.idleWorkers.pop();
+      if (!worker) break;
       const job = this.queue.shift()!;
-
-      this.activeJobs.set(worker, job);
+      const posted = this.activeJobs.get(worker) ?? [];
+      posted.push(job);
+      this.activeJobs.set(worker, posted);
 
       const transferables: Transferable[] = [];
       for (const sectionArray of Object.values(job.regionColumns)) {

@@ -152,24 +152,19 @@ void main() {
     discard;
   }
 
-  // Per-block tint lookup for the block that owns the face
-  // TS reference implementation: tintTexelForFace in src/render/tint-utils.ts
-  ivec3 blockPos = ivec3(floor(v_worldPos - 0.5 * v_normal));
-  ivec2 tintTexel = (blockPos.xz % 16 + 16) % 16;
-  vec3 grassTint = texelFetch(u_grassTintMap, tintTexel, 0).rgb;
-  vec3 foliageTint = texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
-
-  // Biome Tinting
-  if (v_tintIndex == 1u) {
-    // Grass top
-    texColor.rgb *= grassTint;
-  } else if (v_tintIndex == 2u) {
-    // Foliage tinting (oak leaves)
-    texColor.rgb *= foliageTint;
-  } else if (v_tintIndex == 3u) {
-    // Grass side: tint fringe (texColor.a == 1.0), dirt base (texColor.a == 0.0) stays untinted
-    vec3 tintedRgb = texColor.rgb * grassTint;
-    texColor = vec4(mix(texColor.rgb, tintedRgb, texColor.a), 1.0);
+  // Flat tint IDs make this branch uniform within a face. Untinted stone and other faces need
+  // no biome texture lookup; tinted faces fetch only their own tint map.
+  if (v_tintIndex != 0u) {
+    ivec3 blockPos = ivec3(floor(v_worldPos - 0.5 * v_normal));
+    ivec2 tintTexel = (blockPos.xz % 16 + 16) % 16;
+    if (v_tintIndex == 1u) {
+      texColor.rgb *= texelFetch(u_grassTintMap, tintTexel, 0).rgb;
+    } else if (v_tintIndex == 2u) {
+      texColor.rgb *= texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
+    } else if (v_tintIndex == 3u) {
+      vec3 tintedRgb = texColor.rgb * texelFetch(u_grassTintMap, tintTexel, 0).rgb;
+      texColor = vec4(mix(texColor.rgb, tintedRgb, texColor.a), 1.0);
+    }
   }
 
   // Fixed face shade: top 1.0, +-Z 0.8, +-X 0.6, bottom 0.5 (decisions/M03g-face-shading.md)

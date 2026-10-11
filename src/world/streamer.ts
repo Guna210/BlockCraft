@@ -189,7 +189,8 @@ export class Streamer<G, M> {
   private deferred: Array<Pending<M>> = [];
   private applyQueue: ApplyJob[] = [];
   private prepQueue: Array<PrepJob<M>> = [];
-  private applyTurn = true;
+  private lightApplyQueue: Array<() => void> = [];
+  private workTurn = 0;
   private requests: PendingRequest[] = [];
   private cancelled = 0;
   private completed = { generated: 0, lit: 0, meshed: 0, uploaded: 0 };
@@ -282,6 +283,7 @@ export class Streamer<G, M> {
       this.meshQueue.length > 0 ||
       this.genTokens.size > 0 ||
       this.meshTokens.size > 0 ||
+      this.lightApplyQueue.length > 0 ||
       this.applyQueue.length > 0 ||
       this.prepQueue.length > 0 ||
       this.deferred.length > 0 ||
@@ -302,6 +304,7 @@ export class Streamer<G, M> {
     for (const t of this.meshTokens) t.abandoned = true;
     for (const t of this.lightTokens) t.abandoned = true;
     this.lightTokens.clear();
+    this.lightApplyQueue = [];
     this.lightQueue.length = 0;
     this.genTokens.clear();
     this.meshTokens.clear();
@@ -419,6 +422,7 @@ export class Streamer<G, M> {
   public abandonLights(): void {
     for (const token of this.lightTokens) token.abandoned = true;
     this.lightTokens.clear();
+    this.lightApplyQueue = [];
     for (const col of this.cols.values()) {
       if (col.phase === 'lighting') {
         col.serial++;
@@ -652,7 +656,10 @@ export class Streamer<G, M> {
     if (!neighboursReady(col.cx, col.cz, this.phaseAt)) return;
     if (this.host.requestLight && col.phase === 'generated') {
       col.phase = 'queuedLight';
+      this.refreshView();
+      computePriority(col.prio, this.view, col.cx, col.cz, this.pinnedMesh(col.cx, col.cz));
       this.lightQueue.push(col);
+      this.lightSorted = false;
       return;
     }
     col.phase = 'queuedMesh';
@@ -673,6 +680,7 @@ export class Streamer<G, M> {
     }
   }
 
+  private lightSorted = true;
   private genSorted = true;
   private meshSorted = true;
   private uploadSorted = true;
@@ -745,6 +753,7 @@ export class Streamer<G, M> {
     this.uploadSorted = false;
     this.genSorted = false;
     this.meshSorted = false;
+    this.lightSorted = false;
 
     this.freesPending = this.hasFreeWork();
   }
@@ -853,10 +862,13 @@ export class Streamer<G, M> {
     }
 
     this.refreshView();
-    for (const col of this.lightQueue)
-      computePriority(col.prio, this.view, col.cx, col.cz, this.pinnedMesh(col.cx, col.cz));
-    this.lightQueue.sort((a, b) => comparePriority(a.prio, b.prio));
-    if (this.lightTokens.size === 0 && this.lightQueue.length > 0) this.startLight();
+    if (!this.lightSorted) {
+      for (const col of this.lightQueue)
+        computePriority(col.prio, this.view, col.cx, col.cz, this.pinnedMesh(col.cx, col.cz));
+      this.lightQueue.sort((a, b) => comparePriority(a.prio, b.prio));
+      this.lightSorted = true;
+    }
+    while (this.lightTokens.size < 4 && this.lightQueue.length > 0) this.startLight();
 
     if (!this.meshSorted) {
       this.meshQueue.sort((a, b) => comparePriority(a.prio, b.prio));
@@ -915,36 +927,38 @@ export class Streamer<G, M> {
     this.host.requestLight!(batch.map(({ cx, cz }) => ({ cx, cz }))).then(
       (results) => {
         if (token.abandoned || epoch !== this.epoch) return;
-        this.task(() => {
-          this.lightTokens.delete(token);
-          for (let i = 0; i < batch.length; i++) {
-            const col = batch[i]!;
-            if (this.cols.get(col.key) !== col || col.serial !== serials[i]) {
-              this.cancels.light++;
-              this.cancelled++;
-              continue;
-            }
-            if (!this.wantMesh(col.cx, col.cz)) {
-              col.phase = 'generated';
-              this.cancels.light++;
-              this.cancelled++;
-              continue;
-            }
-            const result = results.find((r) => r.cx === col.cx && r.cz === col.cz);
-            if (!result) {
-              col.phase = 'generated';
+        for (let i = 0; i < batch.length; i++) {
+          this.lightApplyQueue.push(() => {
+            if (token.abandoned || epoch !== this.epoch) return;
+            try {
+              const col = batch[i]!;
+              if (this.cols.get(col.key) !== col || col.serial !== serials[i]) {
+                this.cancels.light++;
+                this.cancelled++;
+                return;
+              }
+              if (!this.wantMesh(col.cx, col.cz)) {
+                col.phase = 'generated';
+                this.cancels.light++;
+                this.cancelled++;
+                return;
+              }
+              const result = results.find((r) => r.cx === col.cx && r.cz === col.cz);
+              if (!result) {
+                col.phase = 'generated';
+                this.tryQueueMesh(col);
+                return;
+              }
+              result.apply();
+              col.phase = 'lit';
+              this.completed.lit++;
               this.tryQueueMesh(col);
-              continue;
+            } finally {
+              if (i === batch.length - 1) this.lightTokens.delete(token);
             }
-            result.apply();
-            col.phase = 'lit';
-            this.completed.lit++;
-            this.tryQueueMesh(col);
-          }
-          this.dispatch();
-          this.checkRequests();
-          this.schedulePump();
-        });
+          });
+        }
+        this.schedulePump();
       },
       (error) => {
         if (token.abandoned || epoch !== this.epoch) return;
@@ -1239,19 +1253,27 @@ export class Streamer<G, M> {
   private runWork(end: number): void {
     let did = false;
     while (!did || this.host.now() < end) {
-      const first = this.applyTurn;
-      this.applyTurn = !this.applyTurn;
-      const stepped = first
-        ? this.applyStep() || this.prepStep()
-        : this.prepStep() || this.applyStep();
+      const first = this.workTurn++ % 3;
+      const steps = [() => this.applyStep(), () => this.prepStep(), () => this.lightApplyStep()];
+      let stepped = false;
+      for (let offset = 0; offset < 3 && !stepped; offset++)
+        stepped = steps[(first + offset) % 3]!();
       if (!stepped) return;
       did = true;
     }
   }
 
+  private lightApplyStep(): boolean {
+    const apply = this.lightApplyQueue.shift();
+    if (!apply) return false;
+    apply();
+    return true;
+  }
+
   /** Whether a pump slice has something to do. */
   private hasPumpWork(): boolean {
     return (
+      this.lightApplyQueue.length > 0 ||
       this.applyQueue.length > 0 ||
       this.prepQueue.length > 0 ||
       this.freesPending ||

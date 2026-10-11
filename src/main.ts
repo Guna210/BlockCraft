@@ -116,17 +116,19 @@ function main() {
   function render(time: number) {
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
-    let glCheckMs = 0;
+    const gateStart = performance.now();
+    const draw = testScene !== null || !worldManager.world || worldManager.terrainFrameReady();
+    let glCheckMs = performance.now() - gateStart;
     if (frameDrain) {
       const t = performance.now();
       frameDrain.beginFrame();
-      glCheckMs = performance.now() - t;
+      glCheckMs += performance.now() - t;
     }
     const startTime = performance.now();
     const dt = time - lastTime;
     lastTime = time;
 
-    glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    if (draw) glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
 
     if (testScene) {
       testScene.render(dt / 1000, input);
@@ -136,7 +138,7 @@ function main() {
       }
     } else if (worldManager.world) {
       camera.update(dt / 1000, input);
-      worldManager.render();
+      worldManager.render(draw);
     }
 
     const endTime = performance.now();
@@ -146,14 +148,14 @@ function main() {
     uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
-    if (frameDrain) {
+    if (frameDrain && (draw || uploadMs > 0)) {
       const t = performance.now();
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
     frameStats.record(frameCpuMs, uploadMs, glCheckMs);
 
-    frameCount++;
+    if (draw) frameCount++;
     fpsTimer += dt;
     if (fpsTimer >= 1000) {
       renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);

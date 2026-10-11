@@ -38,5 +38,8 @@ ctx.onmessage = (event: MessageEvent) => {
     meshData.models.indices.buffer,
   ];
 
-  ctx.postMessage({ id, meshData, duration }, transferables);
+  ctx.postMessage(
+    { id, meshData, duration, finishedAt: performance.timeOrigin + performance.now() },
+    transferables,
+  );
 };

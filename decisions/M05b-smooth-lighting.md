@@ -19,3 +19,9 @@ The initial region computes from the generated outer ring but commits only its i
 For rendering cost, the worker labels meshes whose RGB components are all zero. Those use an algebraically identical sky-only fragment formula, including the minimum brightness of the zero block-light channels. Other meshes use the full RGB formula. Quad normals use flat interpolation; sky/RGB/AO still interpolate. Sampling reads the shared nine-cell face stencil once, with byte-separated channels for safe four-sample sums.
 
 The debug-light setter presents a frame synchronously, so fullbright also takes effect while a caller holds the normal animation loop. Debug wireframe outline buffers are created on first use, rather than alongside every terrain upload; their contents and mesh lifetime remain unchanged.
+
+## Continued performance profiling
+
+The owner rejects changing environments: compare against the measured master here. Master has Playwright `workers: 1` and history includes `60590f8`. Targets are at least 90% of master’s mesh/upload throughput and flight-end visible sections, with cancellations no higher than master. Re-check M05 after each change. Main-thread light work must be split/time-sliced within an 8 ms frame budget. After targets are met, run the configured full verify; if the sole failure is the same M04b mid-flight blank image already reproduced on master here, present the publish gate explicitly as incomplete and let the owner decide about the PR and CI.
+
+Flat unoccluded sky inputs were checked; no incorrect corner variation was found. Preserve strict merging. CPU/job-delivery profiling identifies GPU-bound main-thread delivery as a bottleneck; a bounded mesh packet preserves the existing foreground worker reserve while returning several ready sections in one message. Shader experiments that did not improve the target comparison were removed.

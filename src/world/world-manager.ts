@@ -1,3 +1,4 @@
+import { TerrainFrameGate } from '../render/terrain-frame-gate';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
 import type { ColumnLight, LightColumns, LightRect } from './batch-light';
@@ -149,13 +150,19 @@ export class WorldManager {
   // carry the epoch they were requested in and are dropped when it no longer matches.
   private worldEpoch = 0;
   private lightColumns: LightColumns = {};
-  public lightBatchTimes: Array<{ columns: number; workerMs: number; mainMs: number }> = [];
+  public lightBatchTimes: Array<{
+    columns: number;
+    workerMs: number;
+    mainMs: number;
+    maxSliceMs: number;
+  }> = [];
 
   // Number of createWorld calls that have not finished. While it is non-zero the frame loop draws
   // sky-clear frames only: every frame that draws freshly uploaded terrain takes tens to hundreds of
   // milliseconds of main-thread time under software rendering, and the rendering task outranks the
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
+  private terrainFrameGate: TerrainFrameGate | null = null;
 
   // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
   public drainGlErrors: (() => void) | null = null;
@@ -261,17 +268,38 @@ export class WorldManager {
     };
   }
 
-  private copyLightColumns(bounds: LightRect): LightColumns {
+  private async copyLightColumns(bounds: LightRect) {
     const result: LightColumns = {};
+    const sources: Array<[string, LightColumns[string]]> = [];
     for (let cz = bounds.minCZ; cz <= bounds.maxCZ; cz++)
       for (let cx = bounds.minCX; cx <= bounds.maxCX; cx++) {
-        const sections = this.lightColumns[`${cx},${cz}`];
+        const key = `${cx},${cz}`;
+        const sections = this.lightColumns[key];
         if (!sections) throw new Error(`Light block data missing for ${cx},${cz}`);
-        result[`${cx},${cz}`] = sections.map((section) =>
-          typeof section === 'number' ? section : section.slice(),
-        );
+        sources.push([key, sections.slice()]);
       }
-    return result;
+    // Copy outside dispatch/frame work, with a section as the atomic unit. Edits invalidate the
+    // streamer's captured serials, including snapshots depending on an edited border column.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    let sliceStart = performance.now();
+    let workMs = 0;
+    let maxSliceMs = 0;
+    for (const [key, sections] of sources) {
+      const copied: LightColumns[string] = [];
+      result[key] = copied;
+      for (const section of sections) {
+        copied.push(typeof section === 'number' ? section : section.slice());
+        const elapsed = performance.now() - sliceStart;
+        if (elapsed >= 2) {
+          workMs += elapsed;
+          maxSliceMs = Math.max(maxSliceMs, elapsed);
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          sliceStart = performance.now();
+        }
+      }
+    }
+    const elapsed = performance.now() - sliceStart;
+    return { blocks: result, workMs: workMs + elapsed, maxSliceMs: Math.max(maxSliceMs, elapsed) };
   }
 
   private commitColumnLight(world: World, column: ColumnLight): void {
@@ -295,7 +323,6 @@ export class WorldManager {
   }
 
   private async requestColumnLight(columns: Array<{ cx: number; cz: number }>) {
-    const start = performance.now();
     const world = this.world!;
     const interior = {
       minCX: Math.min(...columns.map((c) => c.cx)),
@@ -309,10 +336,14 @@ export class WorldManager {
       minCZ: interior.minCZ - 1,
       maxCZ: interior.maxCZ + 1,
     };
-    const blocks = this.copyLightColumns(bounds);
-    const copiedMs = performance.now() - start;
+    const { blocks, workMs: copiedMs, maxSliceMs } = await this.copyLightColumns(bounds);
     const result = await this.lightWorkerPool.enqueueBatch(bounds, interior, blocks);
-    const timing = { columns: columns.length, workerMs: result.duration ?? 0, mainMs: copiedMs };
+    const timing = {
+      columns: columns.length,
+      workerMs: result.duration ?? 0,
+      mainMs: copiedMs,
+      maxSliceMs,
+    };
     this.lightBatchTimes.push(timing);
     if (this.lightBatchTimes.length > 100) this.lightBatchTimes.shift();
     return (result.columns ?? []).map((column) => ({
@@ -321,15 +352,17 @@ export class WorldManager {
       apply: () => {
         const commitStart = performance.now();
         this.commitColumnLight(world, column);
-        timing.mainMs += performance.now() - commitStart;
+        const elapsed = performance.now() - commitStart;
+        timing.mainMs += elapsed;
+        timing.maxSliceMs = Math.max(timing.maxSliceMs, elapsed);
       },
     }));
   }
 
   /** In-flight work is bounded by the pool sizes, so queued work stays in the streamer, in priority order. */
   private updateStreamerLimits(): void {
-    this.streamer.limits.maxGenInFlight = Math.max(4, this.genWorkerPool.workerCount * 2);
-    this.streamer.limits.maxMeshColumnsInFlight = Math.max(2, this.workerPool.workerCount);
+    this.streamer.limits.maxGenInFlight = Math.max(4, this.genWorkerPool.workerCount * 8);
+    this.streamer.limits.maxMeshColumnsInFlight = Math.max(4, this.workerPool.workerCount * 2);
   }
 
   public setWorkerPoolSize(size: number): void {
@@ -586,7 +619,7 @@ export class WorldManager {
     if (epoch !== this.worldEpoch) return false;
 
     // Light terrain within the load radius using a single region LightWorkerPool job
-    const regionColumns = this.copyLightColumns({
+    const { blocks: regionColumns } = await this.copyLightColumns({
       minCX: -loadRadius,
       maxCX: loadRadius,
       minCZ: -loadRadius,
@@ -597,7 +630,13 @@ export class WorldManager {
 
     if (epoch !== this.worldEpoch) return false;
 
+    let commitSliceStart = performance.now();
     for (const column of lightResult.columns ?? []) {
+      if (performance.now() - commitSliceStart >= 2) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (epoch !== this.worldEpoch) return false;
+        commitSliceStart = performance.now();
+      }
       this.commitColumnLight(world, column);
       this.streamer.markLit(column.cx, column.cz);
     }
@@ -774,18 +813,32 @@ export class WorldManager {
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public render(): void {
+  public terrainFrameReady(): boolean {
+    if (!this.glWrapper || this.initialLoadCount > 0) return true;
+    this.terrainFrameGate ??= new TerrainFrameGate(this.glWrapper.gl);
+    return this.terrainFrameGate.ready();
+  }
+
+  /**
+   * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
+   * budget, then the draw; `lastUploadMs` is the upload time.
+   */
+  public render(draw = true): void {
     this.lastUploadMs = 0;
     if (this.initialLoadCount > 0) return;
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());
       this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
     }
-    this.drawTerrain();
+    if (draw) {
+      this.drawTerrain();
+      this.terrainFrameGate?.submitted();
+    }
   }
 
   private drawTerrainFrame(): void {
     if (!this.glWrapper) return;
+    this.terrainFrameGate?.reset();
     const gl = this.glWrapper.gl;
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.drawTerrain();

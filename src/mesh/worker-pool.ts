@@ -29,9 +29,12 @@ export class WorkerPool {
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: MeshJob[] = [];
-  private activeJobs: Map<Worker, MeshJob> = new Map();
+  private activeJobs: Map<Worker, MeshJob[]> = new Map();
   private meshMsTimes: number[] = [];
   private nextJobId = 1;
+  public completedWorkMs = 0;
+  public completedJobs = 0;
+  public deliveryMs: number[] = [];
 
   constructor(poolSize?: number) {
     if (typeof Worker === 'undefined') {
@@ -51,20 +54,31 @@ export class WorkerPool {
       });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { meshData, duration } = e.data as {
+        const { id, meshData, duration, finishedAt } = e.data as {
           id: number;
           meshData: SectionMeshData;
           duration: number;
+          finishedAt?: number;
         };
 
+        this.completedWorkMs += duration;
+        this.completedJobs++;
+        if (finishedAt !== undefined) {
+          this.deliveryMs.push(performance.timeOrigin + performance.now() - finishedAt);
+          if (this.deliveryMs.length > 100) this.deliveryMs.shift();
+        }
         this.meshMsTimes.push(duration);
         if (this.meshMsTimes.length > 100) {
           this.meshMsTimes.shift();
         }
 
-        const job = this.activeJobs.get(worker);
-        this.activeJobs.delete(worker);
-        this.idleWorkers.push(worker);
+        const posted = this.activeJobs.get(worker) ?? [];
+        const index = id === undefined ? 0 : posted.findIndex((job) => job.id === id);
+        const job = index < 0 ? undefined : posted.splice(index, 1)[0];
+        if (posted.length === 0) {
+          this.activeJobs.delete(worker);
+          this.idleWorkers.push(worker);
+        }
 
         if (job) {
           job.resolve({
@@ -81,11 +95,11 @@ export class WorkerPool {
       };
 
       worker.onerror = (err: ErrorEvent) => {
-        const job = this.activeJobs.get(worker);
+        const jobs = this.activeJobs.get(worker) ?? [];
         this.activeJobs.delete(worker);
         console.error('Mesh worker error:', err);
 
-        if (job) {
+        for (const job of jobs) {
           job.reject(
             err.error instanceof Error ? err.error : new Error(err.message || 'Mesh worker error'),
           );
@@ -104,7 +118,9 @@ export class WorkerPool {
   }
 
   public get queueLength(): number {
-    return this.queue.length + this.activeJobs.size;
+    return (
+      this.queue.length + [...this.activeJobs.values()].reduce((n, jobs) => n + jobs.length, 0)
+    );
   }
 
   public get meshMsP95(): number {
@@ -153,14 +169,23 @@ export class WorkerPool {
    */
   private processQueue(): void {
     const reserved = this.workers.length > 1 ? 1 : 0;
-    while (this.idleWorkers.length > 0 && this.queue.length > 0) {
-      const index =
-        this.idleWorkers.length > reserved ? 0 : this.queue.findIndex((j) => !j.background);
-      if (index < 0) break;
-      const worker = this.idleWorkers.pop()!;
-      const job = this.queue.splice(index, 1)[0]!;
-
-      this.activeJobs.set(worker, job);
+    while (this.queue.length > 0) {
+      const index = this.queue.findIndex((job) => !job.background);
+      const job = this.queue[index < 0 ? 0 : index]!;
+      let worker: Worker | undefined;
+      if (job.background) {
+        worker = [...this.activeJobs].find(
+          ([, jobs]) => jobs.length < 32 && jobs.every((posted) => posted.background),
+        )?.[0];
+        if (!worker && this.idleWorkers.length > reserved) worker = this.idleWorkers.shift();
+      } else {
+        worker = this.idleWorkers.shift();
+      }
+      if (!worker) break;
+      this.queue.splice(index < 0 ? 0 : index, 1);
+      const posted = this.activeJobs.get(worker) ?? [];
+      posted.push(job);
+      this.activeJobs.set(worker, posted);
 
       const transfers: Transferable[] = [job.paddedSection.buffer];
       if (job.light) {

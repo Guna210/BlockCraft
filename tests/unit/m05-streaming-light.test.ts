@@ -4,7 +4,7 @@ import { WorldManager } from '../../src/world/world-manager';
 import { World } from '../../src/world/world';
 import type { LightColumns } from '../../src/world/batch-light';
 
-function setup() {
+function setup(commitCost = 0) {
   const committed = new Set<string>();
   const meshes: string[] = [];
   const pending: Array<{ columns: Array<{ cx: number; cz: number }>; finish(): void }> = [];
@@ -24,6 +24,7 @@ function setup() {
                 cz,
                 apply: () => {
                   committed.add(`${cx},${cz}`);
+                  if (commitCost) vi.setSystemTime(Date.now() + commitCost);
                 },
               })),
             ),
@@ -135,4 +136,53 @@ it('batches a ready strip along Z when it is longer than the ready strip along X
     { cx: 0, cz: 2 },
   ]);
   streamer.reset();
+});
+
+it('splits a finished light batch across pump slices and checks edits before each commit', async () => {
+  const { streamer, committed, pending } = setup(4);
+  void streamer.requestRegion({ cx: 0, cz: 0, genRadius: 3, meshRadius: 2 });
+  const batch = pending.shift()!;
+  expect(batch.columns.length).toBeGreaterThan(1);
+  batch.finish();
+  await Promise.resolve();
+  const running = streamer.getStats().lightRunning;
+  streamer.pump();
+  expect(committed.size).toBe(1);
+  expect(streamer.getStats().lightRunning).toBe(running);
+  const stale = batch.columns[1]!;
+  streamer.invalidateLight(stale.cx, stale.cz);
+  streamer.pump();
+  expect(committed.has(`${stale.cx},${stale.cz}`)).toBe(false);
+  streamer.reset();
+});
+
+it('copies light block sections in separate tasks without transferring the editable source arrays', async () => {
+  const manager = Object.create(WorldManager.prototype) as {
+    lightColumns: LightColumns;
+    copyLightColumns(bounds: {
+      minCX: number;
+      maxCX: number;
+      minCZ: number;
+      maxCZ: number;
+    }): Promise<{ blocks: LightColumns; workMs: number; maxSliceMs: number }>;
+  };
+  const source = new Uint16Array(4096).fill(17);
+  manager.lightColumns = { '0,0': [0, source, source, source] };
+  let now = 0;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now++);
+  const copied = manager.copyLightColumns({ minCX: 0, maxCX: 0, minCZ: 0, maxCZ: 0 });
+  let finished = false;
+  void copied.then(() => {
+    finished = true;
+  });
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  await vi.advanceTimersByTimeAsync(30);
+  const result = await copied;
+  expect(result.blocks['0,0']![0]).toBe(0);
+  expect(result.blocks['0,0']![1]).toEqual(source);
+  expect(result.blocks['0,0']![1]).not.toBe(source);
+  expect(source.byteLength).toBe(8192);
+  expect(result.maxSliceMs).toBeLessThanOrEqual(2);
+  clock.mockRestore();
 });

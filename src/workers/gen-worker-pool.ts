@@ -30,9 +30,11 @@ export class GenWorkerPool {
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: GenJob[] = [];
-  private activeJobs: Map<Worker, GenJob> = new Map();
+  private activeJobs: Map<Worker, GenJob[]> = new Map();
   private genSamples: GenSample[] = [];
   private nextJobId = 1;
+  public completedWorkMs = 0;
+  public completedJobs = 0;
   private currentPoolSize: number;
 
   constructor(poolSize?: number) {
@@ -63,6 +65,7 @@ export class GenWorkerPool {
 
       worker.onmessage = (e: MessageEvent) => {
         const {
+          id,
           cx,
           cz,
           sections,
@@ -74,14 +77,20 @@ export class GenWorkerPool {
           perSectionMs,
         } = e.data as GenWorkerResponse;
 
+        this.completedWorkMs += columnMs;
+        this.completedJobs++;
         this.genSamples.push({ columnMs, sections: sectionCount });
         if (this.genSamples.length > GEN_STATS_WINDOW) {
           this.genSamples.shift();
         }
 
-        const job = this.activeJobs.get(worker);
-        this.activeJobs.delete(worker);
-        this.idleWorkers.push(worker);
+        const posted = this.activeJobs.get(worker) ?? [];
+        const index = id === undefined ? 0 : posted.findIndex((job) => job.id === id);
+        const job = index < 0 ? undefined : posted.splice(index, 1)[0];
+        if (posted.length === 0) {
+          this.activeJobs.delete(worker);
+          this.idleWorkers.push(worker);
+        }
 
         if (job) {
           job.resolve({
@@ -101,11 +110,11 @@ export class GenWorkerPool {
       };
 
       worker.onerror = (err: ErrorEvent) => {
-        const job = this.activeJobs.get(worker);
+        const jobs = this.activeJobs.get(worker) ?? [];
         this.activeJobs.delete(worker);
         console.error('Gen worker error:', err);
 
-        if (job) {
+        for (const job of jobs) {
           job.reject(
             err.error instanceof Error ? err.error : new Error(err.message || 'Gen worker error'),
           );
@@ -124,7 +133,9 @@ export class GenWorkerPool {
   }
 
   public get queueLength(): number {
-    return this.queue.length + this.activeJobs.size;
+    return (
+      this.queue.length + [...this.activeJobs.values()].reduce((n, jobs) => n + jobs.length, 0)
+    );
   }
 
   /**
@@ -166,11 +177,14 @@ export class GenWorkerPool {
   }
 
   private processQueue(): void {
-    while (this.idleWorkers.length > 0 && this.queue.length > 0) {
-      const worker = this.idleWorkers.pop()!;
+    while (this.queue.length > 0) {
+      const worker =
+        this.idleWorkers.shift() ?? [...this.activeJobs].find(([, jobs]) => jobs.length < 8)?.[0];
+      if (!worker) break;
       const job = this.queue.shift()!;
-
-      this.activeJobs.set(worker, job);
+      const posted = this.activeJobs.get(worker) ?? [];
+      posted.push(job);
+      this.activeJobs.set(worker, posted);
 
       worker.postMessage({
         id: job.id,
