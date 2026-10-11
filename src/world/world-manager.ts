@@ -20,7 +20,7 @@ import { TextureData } from '../render/textures/noise';
 import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
 import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
-import { buildPaddedSection } from './padded';
+import { collectBlockPadding, snapshotBlocks, type BlockColumnsSnapshot } from './block-snapshot';
 import { findSpawnPoint } from './spawn';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
@@ -276,27 +276,17 @@ export class WorldManager {
 
   private async copyLightColumns(bounds: LightRect) {
     const captureStart = performance.now();
-    const result: LightColumns = {};
-    const sources: Array<[string, LightColumns[string]]> = [];
+    const blocks: BlockColumnsSnapshot = {};
+    let sliceStart = captureStart;
+    let workMs = 0;
+    let maxSliceMs = 0;
     for (let cz = bounds.minCZ; cz <= bounds.maxCZ; cz++)
       for (let cx = bounds.minCX; cx <= bounds.maxCX; cx++) {
-        const key = `${cx},${cz}`;
-        const sections = this.lightColumns[key];
-        if (!sections) throw new Error(`Light block data missing for ${cx},${cz}`);
-        sources.push([key, sections.slice()]);
-      }
-    const captureMs = performance.now() - captureStart;
-    // Copy outside dispatch/frame work, with a section as the atomic unit. Edits invalidate the
-    // streamer's captured serials, including snapshots depending on an edited border column.
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    let sliceStart = performance.now();
-    let workMs = captureMs;
-    let maxSliceMs = captureMs;
-    for (const [key, sections] of sources) {
-      const copied: LightColumns[string] = [];
-      result[key] = copied;
-      for (const section of sections) {
-        copied.push(typeof section === 'number' ? section : section.slice());
+        const column = this.world?.getColumn(cx, cz, false);
+        if (!column) throw new Error(`Light block data missing for ${cx},${cz}`);
+        const sections: BlockColumnsSnapshot[string] = [];
+        blocks[`${cx},${cz}`] = sections;
+        for (let sy = 0; sy < 20; sy++) sections.push(snapshotBlocks(column.getSection(sy)));
         const elapsed = performance.now() - sliceStart;
         if (elapsed >= 1) {
           workMs += elapsed;
@@ -305,9 +295,8 @@ export class WorldManager {
           sliceStart = performance.now();
         }
       }
-    }
     const elapsed = performance.now() - sliceStart;
-    return { blocks: result, workMs: workMs + elapsed, maxSliceMs: Math.max(maxSliceMs, elapsed) };
+    return { blocks, workMs: workMs + elapsed, maxSliceMs: Math.max(maxSliceMs, elapsed) };
   }
 
   private commitColumnLight(world: World, column: ColumnLight): void {
@@ -789,11 +778,11 @@ export class WorldManager {
         continue;
       }
 
-      // 3. Copying the padded section is main-thread work: the streamer starts one job at a time.
+      // 3. Transfer compact neighbour snapshots; padded voxel extraction runs in the worker.
       starters.push(() => {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
-        const paddedSection = buildPaddedSection(world, cx, sy, cz);
+        const paddedSection = collectBlockPadding(world, cx, sy, cz);
         return this.workerPool.enqueueMeshJob(
           cx,
           sy,

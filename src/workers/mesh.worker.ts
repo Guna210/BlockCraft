@@ -1,3 +1,5 @@
+import { normalizeSharedQuads } from '../render/shared-quads';
+import { buildSnapshotPadding, type BlockPaddingInput } from '../world/block-snapshot';
 import { buildPaddedLight, type LightPaddingInput } from '../world/light-padding';
 import { greedyMesh } from '../mesh/greedy';
 import type { MeshLookupTables } from '../mesh/greedy';
@@ -8,13 +10,17 @@ const ctx: Worker = self as unknown as Worker;
 export function processMeshMessage(event: MessageEvent): void {
   const { id, paddedSection, tables, light } = event.data as {
     id: number;
-    paddedSection: Uint16Array;
+    paddedSection: Uint16Array | BlockPaddingInput;
     tables: MeshLookupTables;
     light?: LightPaddingInput;
   };
 
   const start = performance.now();
-  const meshData = greedyMesh(paddedSection, tables, light ? buildPaddedLight(light) : undefined);
+  const blocks =
+    paddedSection instanceof Uint16Array ? paddedSection : buildSnapshotPadding(paddedSection);
+  const meshData = greedyMesh(blocks, tables, light ? buildPaddedLight(light) : undefined);
+  for (const bucket of [meshData.opaque, meshData.cutout, meshData.translucent, meshData.models])
+    normalizeSharedQuads(bucket);
   meshData.hasBlockLight = false;
   for (const bucket of [meshData.opaque, meshData.cutout, meshData.translucent, meshData.models]) {
     for (let i = 0; i < bucket.vertices.length; i += 2) {

@@ -2,6 +2,7 @@ import type { MeshBucketData } from '../mesh/greedy';
 
 /** Reorder each indexed quad around its existing diagonal, without changing either triangle. */
 export function canonicalQuadVertices(bucket: MeshBucketData): Uint32Array {
+  if (bucket.canonicalQuads) return bucket.vertices;
   const vertices = new Uint32Array(bucket.quadCount * 8);
   for (let q = 0; q < bucket.quadCount; q++) {
     const offset = q * 6;
@@ -30,4 +31,13 @@ export function quadIndices(quads: number): Uint32Array {
     indices.set([b, b + 1, b + 2, b, b + 2, b + 3], q * 6);
   }
   return indices;
+}
+
+/** Normalize once in the worker so uploads pass the transferred buffer straight to WebGL. */
+export function normalizeSharedQuads(bucket: MeshBucketData): void {
+  if (bucket.canonicalQuads) return;
+  bucket.vertices = canonicalQuadVertices(bucket);
+  bucket.vertexCount = bucket.quadCount * 4;
+  bucket.indices = quadIndices(bucket.quadCount);
+  bucket.canonicalQuads = true;
 }

@@ -26,15 +26,25 @@ let scheduled = false;
 function runNext(): void {
   scheduled = false;
   queue.sort((a, b) => {
-    const kind = (a.foreground ? 0 : priorities[a.kind]) - (b.foreground ? 0 : priorities[b.kind]);
-    if (kind) return kind;
     const dxA = a.cx * 16 + 8 - view.x,
       dzA = a.cz * 16 + 8 - view.z;
     const dxB = b.cx * 16 + 8 - view.x,
       dzB = b.cz * 16 + 8 - view.z;
     const distance =
       Math.max(Math.abs(dxA), Math.abs(dzA)) - Math.max(Math.abs(dxB), Math.abs(dzB));
-    return distance || (dxB - dxA) * Math.cos(view.yaw) + (dzB - dzA) * Math.sin(view.yaw);
+    // Near-camera work wins across pools, then prefer the stage closest to producing a mesh.
+    const near =
+      Math.floor(Math.max(Math.abs(dxA), Math.abs(dzA)) / 32) -
+      Math.floor(Math.max(Math.abs(dxB), Math.abs(dzB)) / 32);
+    const foreground = Number(b.foreground) - Number(a.foreground);
+    const kind = priorities[a.kind] - priorities[b.kind];
+    return (
+      foreground ||
+      near ||
+      kind ||
+      distance ||
+      (dxB - dxA) * Math.cos(view.yaw) + (dzB - dzA) * Math.sin(view.yaw)
+    );
   });
   const job = queue.shift();
   if (!job) return;

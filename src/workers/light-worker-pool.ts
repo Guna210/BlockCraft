@@ -1,5 +1,6 @@
+import { blockSnapshotTransfers, type BlockColumnsSnapshot } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from './shared-worker-budget';
-import type { LightRect, LightColumns, ColumnLight } from '../world/batch-light';
+import type { LightRect, ColumnLight } from '../world/batch-light';
 import type { LightBatchResponse } from './light.worker';
 import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
 
@@ -14,7 +15,7 @@ interface LightJob {
   radiusChunks: number;
   bounds?: LightRect;
   interior?: LightRect;
-  regionColumns: Record<string, (Uint16Array | number)[]>;
+  regionColumns: BlockColumnsSnapshot;
   resolve: (result: LightRegionResult) => void;
   reject: (err: Error) => void;
 }
@@ -108,7 +109,7 @@ export class LightWorkerPool {
 
   public enqueueLightRegionJob(
     radiusChunks: number,
-    regionColumns: Record<string, (Uint16Array | number)[]>,
+    regionColumns: BlockColumnsSnapshot,
   ): Promise<LightRegionResult> {
     const bounds = {
       minCX: -radiusChunks,
@@ -133,7 +134,7 @@ export class LightWorkerPool {
   public enqueueBatch(
     bounds: LightRect,
     interior: LightRect,
-    regionColumns: LightColumns,
+    regionColumns: BlockColumnsSnapshot,
   ): Promise<LightRegionResult> {
     return new Promise((resolve, reject) => {
       this.queue.push({
@@ -168,9 +169,7 @@ export class LightWorkerPool {
       const transferables: Transferable[] = [];
       for (const sectionArray of Object.values(job.regionColumns)) {
         for (const item of sectionArray) {
-          if (item instanceof Uint16Array) {
-            transferables.push(item.buffer);
-          }
+          transferables.push(...blockSnapshotTransfers(item));
         }
       }
 

@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest';
-import { canonicalQuadVertices, quadIndices } from '../../src/render/shared-quads';
+import {
+  canonicalQuadVertices,
+  normalizeSharedQuads,
+  quadIndices,
+} from '../../src/render/shared-quads';
 import type { MeshBucketData } from '../../src/mesh/greedy';
 
 // Clockwise/counterclockwise winding and either AO diagonal must survive vertex reordering.
@@ -29,4 +33,24 @@ test.each([
   };
   expect(triangles(canonical, quadIndices(1))).toEqual(triangles(vertices, bucket.indices));
   expect(canonical.byteLength).toBe(4 * 8);
+});
+
+test('worker normalization preserves indexed geometry and makes upload reuse the transferred words', () => {
+  const bucket: MeshBucketData = {
+    vertices: new Uint32Array([10, 11, 20, 21, 30, 31, 40, 41]),
+    indices: new Uint32Array([0, 3, 1, 1, 3, 2]),
+    quadCount: 1,
+    vertexCount: 4,
+  };
+  const expected = canonicalQuadVertices(bucket);
+  normalizeSharedQuads(bucket);
+  expect(bucket.vertices).toEqual(expected);
+  expect(bucket.indices).toEqual(quadIndices(1));
+  expect(bucket.vertexCount).toBe(4);
+  const transferred = structuredClone(bucket, {
+    transfer: [bucket.vertices.buffer, bucket.indices.buffer],
+  });
+  expect(canonicalQuadVertices(transferred)).toBe(transferred.vertices);
+  normalizeSharedQuads(transferred);
+  expect(Array.from(transferred.vertices)).toEqual(Array.from(expected));
 });

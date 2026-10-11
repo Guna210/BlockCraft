@@ -18,6 +18,8 @@ export const DEFAULT_AO = 0;
 export const DEFAULT_TINT_INDEX = 0;
 
 export interface MeshBucketData {
+  /** Worker-normalized vertices use the renderer's common quad index order. */
+  canonicalQuads?: boolean;
   vertices: Uint32Array;
   indices: Uint32Array;
   vertexCount: number;

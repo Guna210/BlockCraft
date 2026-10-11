@@ -533,7 +533,16 @@ export class Streamer<G, M> {
     }
     let spent = 0;
     while (this.deferred.length > 0 && spent < budgetMs) {
-      const item = this.deferred.shift()!;
+      // A wanted result survives a temporarily incomplete perimeter. Keep it until generation
+      // restores that perimeter; every upload retains the mesh-neighbour invariant.
+      const index = this.deferred.findIndex(
+        (item) =>
+          item.col.serial !== item.serial ||
+          this.cols.get(item.col.key) !== item.col ||
+          neighboursReady(item.col.cx, item.col.cz, this.phaseAt),
+      );
+      if (index < 0) break;
+      const item = this.deferred.splice(index, 1)[0]!;
       const col = item.col;
       if (col.serial !== item.serial || this.cols.get(col.key) !== col) {
         this.cancels.upload++;
@@ -853,13 +862,6 @@ export class Streamer<G, M> {
 
   private dispatch(): void {
     if (!this.active && this.requests.length === 0) return;
-    if (!this.genSorted) {
-      this.genQueue.sort((a, b) => comparePriority(a.prio, b.prio));
-      this.genSorted = true;
-    }
-    while (this.genQueue.length > 0 && this.genTokens.size < this.limits.maxGenInFlight) {
-      this.startGen(this.genQueue.shift()!);
-    }
 
     this.refreshView();
     if (!this.lightSorted) {
@@ -880,6 +882,13 @@ export class Streamer<G, M> {
       this.deferred.length < this.limits.maxDeferred
     ) {
       this.startMesh(this.meshQueue.shift()!);
+    }
+    if (!this.genSorted) {
+      this.genQueue.sort((a, b) => comparePriority(a.prio, b.prio));
+      this.genSorted = true;
+    }
+    while (this.genQueue.length > 0 && this.genTokens.size < this.limits.maxGenInFlight) {
+      this.startGen(this.genQueue.shift()!);
     }
   }
 
@@ -1047,6 +1056,7 @@ export class Streamer<G, M> {
 
   /** Runs one step of the oldest generation result; true when it did something. */
   private applyStep(): boolean {
+    this.applyQueue.sort((a, b) => comparePriority(a.col.prio, b.col.prio));
     const job = this.applyQueue[0];
     if (!job) return false;
     const col = job.col;
@@ -1077,10 +1087,15 @@ export class Streamer<G, M> {
 
   private startMesh(col: Column): void {
     if (col.phase !== 'queuedMesh') return;
-    if (!this.wantMesh(col.cx, col.cz) || !neighboursReady(col.cx, col.cz, this.phaseAt)) {
+    if (!this.wantMesh(col.cx, col.cz)) {
       col.phase = this.host.requestLight ? 'lit' : 'generated';
       this.cancels.mesh++;
       this.cancelled++;
+      return;
+    }
+    if (!neighboursReady(col.cx, col.cz, this.phaseAt)) {
+      // Still wanted: await the perimeter instead of counting a cancellation of ready work.
+      col.phase = this.host.requestLight ? 'lit' : 'generated';
       return;
     }
     this.host.beginMeshAttempt(col.cx, col.cz);
@@ -1134,6 +1149,7 @@ export class Streamer<G, M> {
 
   /** Starts the next mesh job of the oldest column; true when it did something. */
   private prepStep(): boolean {
+    this.prepQueue.sort((a, b) => comparePriority(a.col.prio, b.col.prio));
     const job = this.prepQueue[0];
     if (!job) return false;
     const col = job.col;
@@ -1170,7 +1186,7 @@ export class Streamer<G, M> {
     }
     col.jobsLeft--;
     if (col.jobsLeft === 0) this.completed.meshed++;
-    if (this.wantMesh(col.cx, col.cz) && neighboursReady(col.cx, col.cz, this.phaseAt)) {
+    if (this.wantMesh(col.cx, col.cz)) {
       this.deferred.push({ col, serial, mesh });
       this.uploadSorted = false;
       col.uploadsPending++;

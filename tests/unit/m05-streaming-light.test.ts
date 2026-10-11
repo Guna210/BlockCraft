@@ -1,3 +1,4 @@
+import { expandBlockColumns, type BlockColumnsSnapshot } from '../../src/world/block-snapshot';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Streamer, type StreamerHost } from '../../src/world/streamer';
 import { WorldManager } from '../../src/world/world-manager';
@@ -159,14 +160,19 @@ it('splits a finished light batch across pump slices and checks edits before eac
 it('copies light block sections in separate tasks without transferring the editable source arrays', async () => {
   const manager = Object.create(WorldManager.prototype) as {
     lightColumns: LightColumns;
+    world: World;
     copyLightColumns(bounds: {
       minCX: number;
       maxCX: number;
       minCZ: number;
       maxCZ: number;
-    }): Promise<{ blocks: LightColumns; workMs: number; maxSliceMs: number }>;
+    }): Promise<{ blocks: BlockColumnsSnapshot; workMs: number; maxSliceMs: number }>;
   };
   const source = new Uint16Array(4096).fill(17);
+  source[0] = 18;
+  manager.world = new World();
+  const column = manager.world.getColumn(0, 0)!;
+  for (const sy of [1, 2, 3]) column.getOrCreateSection(sy)!.loadBlockStatesFrom(source);
   manager.lightColumns = { '0,0': [0, source, source, source] };
   let now = 0;
   const clock = vi.spyOn(performance, 'now').mockImplementation(() => now++);
@@ -179,9 +185,10 @@ it('copies light block sections in separate tasks without transferring the edita
   expect(finished).toBe(false);
   await vi.advanceTimersByTimeAsync(30);
   const result = await copied;
-  expect(result.blocks['0,0']![0]).toBe(0);
-  expect(result.blocks['0,0']![1]).toEqual(source);
-  expect(result.blocks['0,0']![1]).not.toBe(source);
+  const decoded = expandBlockColumns(result.blocks);
+  expect(decoded['0,0']![0]).toBe(0);
+  expect(decoded['0,0']![1]).toEqual(source);
+  expect(decoded['0,0']![1]).not.toBe(source);
   expect(source.byteLength).toBe(8192);
   expect(result.maxSliceMs).toBeLessThanOrEqual(2);
   clock.mockRestore();

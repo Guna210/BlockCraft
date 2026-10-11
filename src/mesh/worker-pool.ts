@@ -1,3 +1,4 @@
+import { blockSnapshotTransfers, type BlockPaddingInput } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from '../workers/shared-worker-budget';
 import type { LightPaddingInput } from '../world/light-padding';
 import type { SectionMeshData, MeshLookupTables } from './greedy';
@@ -17,7 +18,7 @@ interface MeshJob {
   sx: number;
   sy: number;
   sz: number;
-  paddedSection: Uint16Array;
+  paddedSection: Uint16Array | BlockPaddingInput;
   light?: LightPaddingInput;
   tables: MeshLookupTables;
   /** Streaming job: never takes the last idle worker (see `processQueue`). */
@@ -140,7 +141,7 @@ export class WorkerPool {
     sx: number,
     sy: number,
     sz: number,
-    paddedSection: Uint16Array,
+    paddedSection: Uint16Array | BlockPaddingInput,
     tables: MeshLookupTables,
     background = false,
     light?: LightPaddingInput,
@@ -196,7 +197,10 @@ export class WorkerPool {
       posted.push(job);
       this.activeJobs.set(worker, posted);
 
-      const transfers: Transferable[] = [job.paddedSection.buffer];
+      const transfers: Transferable[] =
+        job.paddedSection instanceof Uint16Array
+          ? [job.paddedSection.buffer]
+          : job.paddedSection.sections.flatMap(blockSnapshotTransfers);
       if (job.light) {
         for (const column of job.light.columns)
           for (const section of column.sections) {

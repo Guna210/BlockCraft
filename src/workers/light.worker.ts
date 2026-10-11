@@ -1,11 +1,7 @@
+import { expandBlockColumns, type BlockColumnsSnapshot } from '../world/block-snapshot';
 import { buildLightLookupTables, computeRegionLight, LightStorage } from '../world/lighting';
 import { BlockRegistry } from '../world/blocks/registry';
-import {
-  computeBatchLight,
-  type LightRect,
-  type LightColumns,
-  type ColumnLight,
-} from '../world/batch-light';
+import { computeBatchLight, type LightRect, type ColumnLight } from '../world/batch-light';
 
 const ctx: Worker = self as unknown as Worker;
 
@@ -17,7 +13,7 @@ export interface LightRegionRequest {
   id: number;
   radiusChunks: number;
   // Region block data transferred as map of chunkKey -> array of section data
-  regionColumns: Record<string, (Uint16Array | number)[]>;
+  regionColumns: BlockColumnsSnapshot;
 }
 
 export interface SectionLightTransfer {
@@ -45,10 +41,10 @@ export function processLightMessage(event: MessageEvent): void {
       id: number;
       bounds: LightRect;
       interior: LightRect;
-      columns: LightColumns;
+      columns: BlockColumnsSnapshot;
     };
     const start = performance.now();
-    const result = computeBatchLight(bounds, interior, columns, tables);
+    const result = computeBatchLight(bounds, interior, expandBlockColumns(columns), tables);
     const transferables: Transferable[] = [];
     for (const column of result) {
       transferables.push(column.skirt.buffer);
@@ -65,7 +61,7 @@ export function processLightMessage(event: MessageEvent): void {
   }
   const { id, radiusChunks, regionColumns } = event.data as LightRegionRequest;
 
-  const resultMap = computeRegionLight(radiusChunks, regionColumns, tables);
+  const resultMap = computeRegionLight(radiusChunks, expandBlockColumns(regionColumns), tables);
 
   const sections: SectionLightTransfer[] = [];
   const transferables: Transferable[] = [];
