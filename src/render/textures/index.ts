@@ -1,3 +1,4 @@
+import { genTorch, PAL_TORCH } from './light-sources';
 // src/render/textures/index.ts
 import { TextureData } from './noise';
 import {
@@ -139,6 +140,7 @@ import {
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
 export const textureGenerators: Record<string, TextureGenerator> = {
+  torch: genTorch,
   // Terrain
   grass_top: genGrassTop,
   grass_side: genGrassSide,
@@ -291,6 +293,7 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  torch: PAL_TORCH,
   // Terrain
   grass_top: PAL_GRASS,
   grass_side: [

@@ -1,5 +1,11 @@
 import { buildLightLookupTables, computeRegionLight, LightStorage } from '../world/lighting';
 import { BlockRegistry } from '../world/blocks/registry';
+import {
+  computeBatchLight,
+  type LightRect,
+  type LightColumns,
+  type ColumnLight,
+} from '../world/batch-light';
 
 const ctx: Worker = self as unknown as Worker;
 
@@ -27,7 +33,36 @@ export interface LightRegionResponse {
   sections: SectionLightTransfer[];
 }
 
+export interface LightBatchResponse {
+  id: number;
+  columns: ColumnLight[];
+  duration: number;
+}
+
 ctx.onmessage = (event: MessageEvent) => {
+  if ('bounds' in event.data) {
+    const { id, bounds, interior, columns } = event.data as {
+      id: number;
+      bounds: LightRect;
+      interior: LightRect;
+      columns: LightColumns;
+    };
+    const start = performance.now();
+    const result = computeBatchLight(bounds, interior, columns, tables);
+    const transferables: Transferable[] = [];
+    for (const column of result) {
+      transferables.push(column.skirt.buffer);
+      for (const section of column.sections) {
+        if (section.lightData instanceof Uint8Array) transferables.push(section.lightData.buffer);
+        for (const channel of section.rgb ?? []) transferables.push(channel.buffer);
+      }
+    }
+    ctx.postMessage(
+      { id, columns: result, duration: performance.now() - start } satisfies LightBatchResponse,
+      transferables,
+    );
+    return;
+  }
   const { id, radiusChunks, regionColumns } = event.data as LightRegionRequest;
 
   const resultMap = computeRegionLight(radiusChunks, regionColumns, tables);

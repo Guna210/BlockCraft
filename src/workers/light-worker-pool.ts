@@ -1,12 +1,18 @@
+import type { LightRect, LightColumns, ColumnLight } from '../world/batch-light';
+import type { LightBatchResponse } from './light.worker';
 import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
 
 export interface LightRegionResult {
   sections: SectionLightTransfer[];
+  columns?: ColumnLight[];
+  duration?: number;
 }
 
 interface LightJob {
   id: number;
   radiusChunks: number;
+  bounds?: LightRect;
+  interior?: LightRect;
   regionColumns: Record<string, (Uint16Array | number)[]>;
   resolve: (result: LightRegionResult) => void;
   reject: (err: Error) => void;
@@ -47,14 +53,15 @@ export class LightWorkerPool {
       });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { sections } = e.data as LightRegionResponse;
+        const response = e.data as LightRegionResponse & LightBatchResponse;
+        const { sections, columns, duration } = response;
 
         const job = this.activeJobs.get(worker);
         this.activeJobs.delete(worker);
         this.idleWorkers.push(worker);
 
         if (job) {
-          job.resolve({ sections });
+          job.resolve({ sections: sections ?? [], columns, duration });
         }
 
         this.processQueue();
@@ -91,24 +98,47 @@ export class LightWorkerPool {
     radiusChunks: number,
     regionColumns: Record<string, (Uint16Array | number)[]>,
   ): Promise<LightRegionResult> {
-    const id = this.nextJobId++;
+    const bounds = {
+      minCX: -radiusChunks,
+      maxCX: radiusChunks,
+      minCZ: -radiusChunks,
+      maxCZ: radiusChunks,
+    };
+    // The outer generated ring is the block-data border, not a lit interior. It will receive its
+    // own exact skirt when streaming supplies its neighbours and wants to mesh it.
+    return this.enqueueBatch(
+      bounds,
+      {
+        minCX: bounds.minCX + 1,
+        maxCX: bounds.maxCX - 1,
+        minCZ: bounds.minCZ + 1,
+        maxCZ: bounds.maxCZ - 1,
+      },
+      regionColumns,
+    );
+  }
 
-    return new Promise<LightRegionResult>((resolve, reject) => {
-      const job: LightJob = {
-        id,
-        radiusChunks,
+  public enqueueBatch(
+    bounds: LightRect,
+    interior: LightRect,
+    regionColumns: LightColumns,
+  ): Promise<LightRegionResult> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        id: this.nextJobId++,
+        radiusChunks: 0,
+        bounds,
+        interior,
         regionColumns,
         resolve,
         reject,
-      };
-
-      this.queue.push(job);
+      });
       this.processQueue();
     });
   }
 
   private processQueue(): void {
-    while (this.idleWorkers.length > 0 && this.queue.length > 0) {
+    while (this.idleWorkers.length > 0 && this.queue.length > 0 && this.activeJobs.size === 0) {
       const worker = this.idleWorkers.pop()!;
       const job = this.queue.shift()!;
 
@@ -128,6 +158,9 @@ export class LightWorkerPool {
           id: job.id,
           radiusChunks: job.radiusChunks,
           regionColumns: job.regionColumns,
+          ...(job.bounds
+            ? { bounds: job.bounds, interior: job.interior, columns: job.regionColumns }
+            : {}),
         },
         transferables,
       );

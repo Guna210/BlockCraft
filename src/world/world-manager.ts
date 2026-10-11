@@ -1,3 +1,7 @@
+import { SKY_15_SECTION } from './lighting';
+import { collectLightPadding } from './light-padding';
+import type { ColumnLight, LightColumns, LightRect } from './batch-light';
+import { columnKey } from './streaming-plan';
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from './world';
 import { setWorldInstance } from './world-instance';
@@ -144,6 +148,8 @@ export class WorldManager {
   // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
   // carry the epoch they were requested in and are dropped when it no longer matches.
   private worldEpoch = 0;
+  private lightColumns: LightColumns = {};
+  public lightBatchTimes: Array<{ columns: number; workerMs: number; mainMs: number }> = [];
 
   // Number of createWorld calls that have not finished. While it is non-zero the frame loop draws
   // sky-clear frames only: every frame that draws freshly uploaded terrain takes tens to hundreds of
@@ -183,8 +189,14 @@ export class WorldManager {
         this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
-        return world ? applyGenSteps(world, res) : [];
+        if (!world) return [];
+        const sections: (Uint16Array | number)[] = new Array(20).fill(0);
+        for (const section of res.sections)
+          sections[section.sy] = section.states ?? section.uniformStateId ?? 0;
+        this.lightColumns[`${res.cx},${res.cz}`] = sections;
+        return applyGenSteps(world, res);
       },
+      requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
       uploadSection: (cx, cz, res) => {
         if (!this.chunkRenderer) return;
@@ -213,10 +225,105 @@ export class WorldManager {
       freeData: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.world?.removeColumn(cx, cz);
+        delete this.lightColumns[`${cx},${cz}`];
       },
       now: () => performance.now(),
       recordSlice: (ms) => frameStats.recordPump(ms),
     };
+  }
+
+  private configureLighting(world: World): void {
+    world.lightEngine.onlyLitColumns = true;
+    world.onBlockEdited = (x, y, z, state) => {
+      const cx = Math.floor(x / 16);
+      const cz = Math.floor(z / 16);
+      const sections = this.lightColumns[`${cx},${cz}`];
+      if (sections) {
+        const sy = y >> 4;
+        let data = sections[sy];
+        if (typeof data === 'number') data = sections[sy] = new Uint16Array(4096).fill(data);
+        if (data) data[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)] = state;
+      }
+      // A worker snapshot also depends on the unlit block border, where incremental BFS does not
+      // write. Refresh the nearby columns whose snapshot or skirt can depend on this edit.
+      const affected = new Set<number>();
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) affected.add(columnKey(cx + dx, cz + dz));
+      for (const key of world.lightEngine.storage.touchedSections) {
+        affected.add(Math.floor(key / 32));
+      }
+      for (const column of affected)
+        this.streamer.invalidateLight(Math.floor(column / 65536) - 32768, (column % 65536) - 32768);
+      if ((x & 15) === 0) this.streamer.invalidate(cx - 1, cz);
+      if ((x & 15) === 15) this.streamer.invalidate(cx + 1, cz);
+      if ((z & 15) === 0) this.streamer.invalidate(cx, cz - 1);
+      if ((z & 15) === 15) this.streamer.invalidate(cx, cz + 1);
+    };
+  }
+
+  private copyLightColumns(bounds: LightRect): LightColumns {
+    const result: LightColumns = {};
+    for (let cz = bounds.minCZ; cz <= bounds.maxCZ; cz++)
+      for (let cx = bounds.minCX; cx <= bounds.maxCX; cx++) {
+        const sections = this.lightColumns[`${cx},${cz}`];
+        if (!sections) throw new Error(`Light block data missing for ${cx},${cz}`);
+        result[`${cx},${cz}`] = sections.map((section) =>
+          typeof section === 'number' ? section : section.slice(),
+        );
+      }
+    return result;
+  }
+
+  private commitColumnLight(world: World, column: ColumnLight): void {
+    const engine = world.lightEngine;
+    engine.storage.removeColumn(column.cx, column.cz);
+    for (const channel of engine.rgbChannels) channel.storage.removeColumn(column.cx, column.cz);
+    for (const section of column.sections) {
+      if (section.lightData === 0xf0) engine.storage.setRawDataByKey(section.key, SKY_15_SECTION);
+      else if (section.lightData instanceof Uint8Array)
+        engine.storage.setRawDataByKey(section.key, section.lightData);
+      for (let c = 0; c < 3; c++) {
+        const raw = section.rgb?.[c];
+        if (raw) engine.rgbChannels[c]!.storage.setRawDataByKey(section.key, raw);
+      }
+    }
+    engine.skirts.set(columnKey(column.cx, column.cz), {
+      height: column.height,
+      data: column.skirt,
+    });
+    engine.markLit(column.cx, column.cz);
+  }
+
+  private async requestColumnLight(columns: Array<{ cx: number; cz: number }>) {
+    const start = performance.now();
+    const world = this.world!;
+    const interior = {
+      minCX: Math.min(...columns.map((c) => c.cx)),
+      maxCX: Math.max(...columns.map((c) => c.cx)),
+      minCZ: Math.min(...columns.map((c) => c.cz)),
+      maxCZ: Math.max(...columns.map((c) => c.cz)),
+    };
+    const bounds = {
+      minCX: interior.minCX - 1,
+      maxCX: interior.maxCX + 1,
+      minCZ: interior.minCZ - 1,
+      maxCZ: interior.maxCZ + 1,
+    };
+    const blocks = this.copyLightColumns(bounds);
+    const copiedMs = performance.now() - start;
+    const result = await this.lightWorkerPool.enqueueBatch(bounds, interior, blocks);
+    const timing = { columns: columns.length, workerMs: result.duration ?? 0, mainMs: copiedMs };
+    this.lightBatchTimes.push(timing);
+    if (this.lightBatchTimes.length > 100) this.lightBatchTimes.shift();
+    return (result.columns ?? []).map((column) => ({
+      cx: column.cx,
+      cz: column.cz,
+      apply: () => {
+        const commitStart = performance.now();
+        this.commitColumnLight(world, column);
+        timing.mainMs += performance.now() - commitStart;
+      },
+    }));
   }
 
   /** In-flight work is bounded by the pool sizes, so queued work stays in the streamer, in priority order. */
@@ -230,6 +337,7 @@ export class WorldManager {
     this.lightWorkerPool.setPoolSize(size);
     // The old pool dropped its queued and running generation jobs without answering them.
     this.streamer.abandonGenerations();
+    this.streamer.abandonLights();
     this.updateStreamerLimits();
   }
 
@@ -254,6 +362,12 @@ export class WorldManager {
     };
   }
 
+  /** Debug controls also present a frame when the normal frame loop is suspended. */
+  public setDebugLight(on: boolean): void {
+    this.chunkRenderer?.setDebugLight(on);
+    this.drawTerrainFrame();
+  }
+
   public resetMainThreadGenCount(): void {
     this.mainThreadGenCount = 0;
   }
@@ -266,9 +380,12 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.worldType = type;
     this.worldEpoch++;
+    this.lightColumns = {};
+    this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
     this.world = new World();
+    this.configureLighting(this.world);
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
@@ -313,6 +430,18 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
     }
+    const sections: (Uint16Array | number)[] = new Array(20).fill(0);
+    for (let sy = 0; sy < 20; sy++) {
+      const section = col.getSection(sy);
+      if (!section) continue;
+      if (section.getBitsPerEntry() === 0) sections[sy] = section.uniformStateId;
+      else {
+        const states = new Uint16Array(4096);
+        section.copyBlockStatesTo(states);
+        sections[sy] = states;
+      }
+    }
+    this.lightColumns[`${cx},${cz}`] = sections;
     this.streamer.adoptColumn(cx, cz);
   }
 
@@ -334,6 +463,7 @@ export class WorldManager {
     }
     tiles.set(SENTINEL_KEY, createSentinelTile());
 
+    if (tiles.size >= 4096) throw new Error('Texture atlas reached the packed vertex tile limit');
     this.atlas = new TextureAtlas(tiles);
     renderStats.textureAtlasSize = [this.atlas.width, this.atlas.height];
 
@@ -440,6 +570,9 @@ export class WorldManager {
     const epoch = ++this.worldEpoch;
     const world = new World();
     this.world = world;
+    this.lightColumns = {};
+    this.lightBatchTimes = [];
+    this.configureLighting(world);
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
@@ -453,35 +586,20 @@ export class WorldManager {
     if (epoch !== this.worldEpoch) return false;
 
     // Light terrain within the load radius using a single region LightWorkerPool job
-    const regionColumns: Record<string, (Uint16Array | number)[]> = {};
-    for (let cx = -loadRadius; cx <= loadRadius; cx++) {
-      for (let cz = -loadRadius; cz <= loadRadius; cz++) {
-        const col = world.getColumn(cx, cz, false);
-        if (col) {
-          const secArray: (Uint16Array | number)[] = [];
-          for (let sy = 0; sy < 20; sy++) {
-            const sec = col.getSection(sy);
-            if (!sec) {
-              secArray.push(0);
-            } else if (sec.getBitsPerEntry() === 0) {
-              secArray.push(sec.uniformStateId);
-            } else {
-              const arr = new Uint16Array(4096);
-              sec.copyBlockStatesTo(arr);
-              secArray.push(arr);
-            }
-          }
-          regionColumns[`${cx},${cz}`] = secArray;
-        }
-      }
-    }
+    const regionColumns = this.copyLightColumns({
+      minCX: -loadRadius,
+      maxCX: loadRadius,
+      minCZ: -loadRadius,
+      maxCZ: loadRadius,
+    });
 
     const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(loadRadius, regionColumns);
 
     if (epoch !== this.worldEpoch) return false;
 
-    for (const secLight of lightResult.sections) {
-      world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
+    for (const column of lightResult.columns ?? []) {
+      this.commitColumnLight(world, column);
+      this.streamer.markLit(column.cx, column.cz);
     }
 
     // Set camera spawn position
@@ -626,7 +744,15 @@ export class WorldManager {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
         const paddedSection = buildPaddedSection(world, cx, sy, cz);
-        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables, true);
+        return this.workerPool.enqueueMeshJob(
+          cx,
+          sy,
+          cz,
+          paddedSection,
+          tables,
+          true,
+          collectLightPadding(world, cx, sy, cz),
+        );
       });
     }
     return starters;
@@ -636,7 +762,10 @@ export class WorldManager {
     return {
       genMsP95: this.genWorkerPool.genMsP95,
       meshMsP95: this.workerPool.meshMsP95,
-      queueLength: this.workerPool.queueLength + this.genWorkerPool.queueLength,
+      queueLength:
+        this.workerPool.queueLength +
+        this.genWorkerPool.queueLength +
+        this.lightWorkerPool.queueLength,
     };
   }
 

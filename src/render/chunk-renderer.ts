@@ -1,3 +1,10 @@
+import { VERTEX_LAYOUT } from '../mesh/vertex';
+import {
+  LIGHT_MIN_BRIGHTNESS,
+  LIGHT_BRIGHTNESS_RANGE,
+  AO_UNOCCLUDED,
+  AO_STEP,
+} from './light-curve';
 import { mat4 } from 'gl-matrix';
 import { GLWrapper } from './gl';
 import { TextureAtlas, CELL_SIZE } from './atlas';
@@ -19,7 +26,13 @@ layout(location = 1) in uint a_word1;
 uniform mat4 u_viewProj;
 uniform vec3 u_sectionOrigin;
 
-out vec3 v_normal;
+#ifdef SKY_ONLY
+out float v_skyLight;
+#else
+out vec4 v_light;
+#endif
+out float v_ao;
+flat out vec3 v_normal;
 out vec2 v_unwrappedUV;
 out vec3 v_worldPos;
 flat out uint v_tileIndex;
@@ -40,9 +53,15 @@ void main() {
   uint z = (a_word0 >> 10u) & 31u;
   uint normalIdx = (a_word0 >> 15u) & 7u;
 
-  uint tileIdx = a_word1 & 65535u;
-  float u_local = float((a_word1 >> 16u) & 255u);
-  float v_local = float((a_word1 >> 24u) & 255u);
+  uint tileIdx = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
+  float u_local = float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u);
+  float v_local = float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u);
+#ifdef SKY_ONLY
+  v_skyLight = float((a_word0 >> 20u) & 15u);
+#else
+  v_light = vec4(float((a_word0 >> 20u) & 15u), float((a_word0 >> 24u) & 15u), float((a_word1 >> ${VERTEX_LAYOUT.greenShift}u) & 15u), float((a_word1 >> ${VERTEX_LAYOUT.blueShift}u) & 15u));
+#endif
+  v_ao = float((a_word0 >> 18u) & 3u);
 
   vec3 localPos = vec3(float(x), float(y), float(z));
   vec3 worldPos = u_sectionOrigin + localPos;
@@ -62,7 +81,13 @@ void main() {
 const FS_CHUNK = `#version 300 es
 precision highp float;
 
-in vec3 v_normal;
+#ifdef SKY_ONLY
+in float v_skyLight;
+#else
+in vec4 v_light;
+#endif
+in float v_ao;
+flat in vec3 v_normal;
 in vec2 v_unwrappedUV;
 in vec3 v_worldPos;
 flat in uint v_tileIndex;
@@ -77,6 +102,12 @@ uniform int u_isCutout;
 uniform int u_isWireframe;
 // Fade-in of the column, 0 (nothing drawn) to 1 (all of it), dithered with the Bayer table below.
 uniform float u_fade;
+uniform float u_skyBrightness;
+uniform bool u_debugLight;
+const float LIGHT_MIN_BRIGHTNESS = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)};
+const float LIGHT_BRIGHTNESS_RANGE = ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)};
+const float AO_UNOCCLUDED = ${AO_UNOCCLUDED.toFixed(2)};
+const float AO_STEP = ${AO_STEP.toFixed(2)};
 
 const float BAYER_4X4[16] = ${bayerGlsl()};
 
@@ -144,7 +175,15 @@ void main() {
   // Fixed face shade: top 1.0, +-Z 0.8, +-X 0.6, bottom 0.5 (decisions/M03g-face-shading.md)
   float diff = v_normal.y > 0.5 ? 1.0 : (v_normal.y < -0.5 ? 0.5 : (abs(v_normal.z) > 0.5 ? 0.8 : 0.6));
 
-  fragColor = vec4(texColor.rgb * diff, texColor.a);
+#ifdef SKY_ONLY
+  float brightness = LIGHT_MIN_BRIGHTNESS + LIGHT_BRIGHTNESS_RANGE * v_skyLight / 15.0;
+  vec3 light = u_debugLight ? vec3(1.0) : vec3(max(brightness * u_skyBrightness, LIGHT_MIN_BRIGHTNESS));
+#else
+  vec4 brightness = LIGHT_MIN_BRIGHTNESS + LIGHT_BRIGHTNESS_RANGE * v_light / 15.0;
+  vec3 light = u_debugLight ? vec3(1.0) : max(vec3(brightness.x * u_skyBrightness), brightness.yzw);
+#endif
+  float ao = AO_UNOCCLUDED - AO_STEP * v_ao;
+  fragColor = vec4(texColor.rgb * light * ao * diff, texColor.a);
 }
 `;
 
@@ -155,12 +194,13 @@ export interface GPUBucketMesh {
   vao: WebGLVertexArrayObject;
   vbo: WebGLBuffer;
   ebo: WebGLBuffer;
-  lineEbo: WebGLBuffer;
+  lineEbo: WebGLBuffer | null;
   indexCount: number;
   lineIndexCount: number;
 }
 
 export interface GPUSectionMesh {
+  hasBlockLight: boolean;
   key: string;
   sx: number;
   sy: number;
@@ -173,6 +213,8 @@ export interface GPUSectionMesh {
 export class ChunkRenderer {
   private glWrapper: GLWrapper;
   private program: WebGLProgram;
+  private programs: WebGLProgram[];
+  private programLocations: Array<Record<string, WebGLUniformLocation>>;
 
   private locViewProj: WebGLUniformLocation;
   private locSectionOrigin: WebGLUniformLocation;
@@ -184,6 +226,10 @@ export class ChunkRenderer {
   private locGrassTintMap: WebGLUniformLocation;
   private locFoliageTintMap: WebGLUniformLocation;
   private locFade: WebGLUniformLocation;
+  private locSkyBrightness: WebGLUniformLocation;
+  private locDebugLight: WebGLUniformLocation;
+  private skyBrightness = 1;
+  private debugLight = false;
   // The fade value last written to u_fade: a column whose fade is unchanged (finished) is not written again.
   private fadeUniform: UniformValueCache;
 
@@ -213,6 +259,12 @@ export class ChunkRenderer {
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
     this.program = this.glWrapper.createProgram(VS_CHUNK, FS_CHUNK);
+    const skyOnly = (source: string) =>
+      source.replace('#version 300 es', '#version 300 es\n#define SKY_ONLY');
+    this.programs = [
+      this.program,
+      this.glWrapper.createProgram(skyOnly(VS_CHUNK), skyOnly(FS_CHUNK)),
+    ];
     this.tintCache = new ColumnTintCache(glWrapper);
 
     const gl = this.glWrapper.gl;
@@ -225,8 +277,39 @@ export class ChunkRenderer {
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
+    this.locSkyBrightness = gl.getUniformLocation(this.program, 'u_skyBrightness')!;
+    this.locDebugLight = gl.getUniformLocation(this.program, 'u_debugLight')!;
     this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
+    const fields = [
+      'locViewProj',
+      'locSectionOrigin',
+      'locAtlasSampler',
+      'locGrassTintMap',
+      'locFoliageTintMap',
+      'locAtlasSize',
+      'locCellSize',
+      'locIsCutout',
+      'locIsWireframe',
+      'locSkyBrightness',
+      'locDebugLight',
+      'locFade',
+    ];
+    this.programLocations = this.programs.map((program) =>
+      Object.fromEntries(
+        fields.map((field) => [
+          field,
+          gl.getUniformLocation(program, `u_${field[3]!.toLowerCase()}${field.slice(4)}`)!,
+        ]),
+      ),
+    );
     this.fadeUniform = new UniformValueCache((value) => gl.uniform1f(this.locFade, value));
+  }
+
+  public setSkyBrightness(brightness: number): void {
+    this.skyBrightness = Math.max(0, Math.min(1, brightness));
+  }
+  public setDebugLight(on: boolean): void {
+    this.debugLight = on;
   }
 
   /**
@@ -254,6 +337,7 @@ export class ChunkRenderer {
     const translucent = this.createGPUBucketMesh(meshData.translucent);
 
     const gpuMesh: GPUSectionMesh = {
+      hasBlockLight: meshData.hasBlockLight ?? true,
       key,
       sx,
       sy,
@@ -357,7 +441,6 @@ export class ChunkRenderer {
     const vao = this.glWrapper.createVertexArray();
     const vbo = this.glWrapper.createBuffer();
     const ebo = this.glWrapper.createBuffer();
-    const lineEbo = this.glWrapper.createBuffer();
 
     gl.bindVertexArray(vao);
 
@@ -380,9 +463,24 @@ export class ChunkRenderer {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, bucket.indices, gl.STATIC_DRAW);
 
-    // Line EBO (Lines: 8 Uint32 indices per quad)
-    const lineIndices = new Uint32Array(bucket.quadCount * 8);
-    for (let q = 0; q < bucket.quadCount; q++) {
+    gl.bindVertexArray(null);
+
+    return {
+      vao,
+      vbo,
+      ebo,
+      lineEbo: null,
+      indexCount: bucket.indices.length,
+      lineIndexCount: bucket.quadCount * 8,
+    };
+  }
+
+  /** Debug outlines are uploaded only when requested, rather than for every streamed mesh. */
+  private wireframeBuffer(bucket: GPUBucketMesh): WebGLBuffer {
+    if (bucket.lineEbo) return bucket.lineEbo;
+    const gl = this.glWrapper.gl;
+    const lineIndices = new Uint32Array(bucket.lineIndexCount);
+    for (let q = 0; q < bucket.lineIndexCount / 8; q++) {
       const base = q * 4;
       const o = q * 8;
       lineIndices[o] = base;
@@ -395,22 +493,11 @@ export class ChunkRenderer {
       lineIndices[o + 7] = base;
     }
 
+    const lineEbo = this.glWrapper.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineEbo);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
-
-    // Re-bind triangle EBO as default for VAO
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-
-    gl.bindVertexArray(null);
-
-    return {
-      vao,
-      vbo,
-      ebo,
-      lineEbo,
-      indexCount: bucket.indices.length,
-      lineIndexCount: lineIndices.length,
-    };
+    bucket.lineEbo = lineEbo;
+    return lineEbo;
   }
 
   private freeGPUBucketMesh(bucketMesh: GPUBucketMesh | null): void {
@@ -418,11 +505,11 @@ export class ChunkRenderer {
     this.glWrapper.deleteVertexArray(bucketMesh.vao);
     this.glWrapper.deleteBuffer(bucketMesh.vbo);
     this.glWrapper.deleteBuffer(bucketMesh.ebo);
-    this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
+    if (bucketMesh.lineEbo) this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
   /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
-  private drawPass(pass: number): void {
+  private drawPass(pass: number, skyOnly: boolean): void {
     const gl = this.glWrapper.gl;
     const columns = this.visColumns;
     for (let c = 0; c < columns.length; c++) {
@@ -430,6 +517,7 @@ export class ChunkRenderer {
       let tintsBound = false;
       for (let i = 0; i < list.length; i++) {
         const mesh = list[i]!;
+        if (mesh.hasBlockLight === skyOnly) continue;
         const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
         if (!bucket) continue;
         if (!tintsBound) {
@@ -461,6 +549,32 @@ export class ChunkRenderer {
     }
   }
 
+  private selectLightingProgram(skyOnly: boolean, viewProjMatrix: mat4, atlas: TextureAtlas): void {
+    const gl = this.glWrapper.gl;
+    const index = skyOnly ? 1 : 0;
+    this.program = this.programs[index]!;
+    Object.assign(this, this.programLocations[index]);
+    gl.useProgram(this.program);
+    gl.uniform1f(this.locSkyBrightness, this.skyBrightness);
+    gl.uniform1i(this.locDebugLight, this.debugLight ? 1 : 0);
+    gl.uniform1i(this.locAtlasSampler, 0);
+    gl.uniform1i(this.locGrassTintMap, 1);
+    gl.uniform1i(this.locFoliageTintMap, 2);
+    gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
+    gl.uniform1f(this.locCellSize, CELL_SIZE);
+    gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
+    this.fadeUniform.forget();
+  }
+
+  private drawLightingPass(pass: number, viewProjMatrix: mat4, atlas: TextureAtlas): void {
+    for (const skyOnly of [true, false]) {
+      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas);
+      this.glWrapper.gl.uniform1i(this.locIsCutout, pass === 1 ? 1 : 0);
+      this.glWrapper.gl.uniform1i(this.locIsWireframe, 0);
+      this.drawPass(pass, skyOnly);
+    }
+  }
+
   public render(
     viewProjMatrix: mat4,
     atlasTexture: WebGLTexture,
@@ -472,18 +586,8 @@ export class ChunkRenderer {
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
 
-    gl.useProgram(this.program);
-
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-    gl.uniform1i(this.locAtlasSampler, 0);
-
-    gl.uniform1i(this.locGrassTintMap, 1);
-    gl.uniform1i(this.locFoliageTintMap, 2);
-
-    gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
-    gl.uniform1f(this.locCellSize, CELL_SIZE);
-    gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
 
     // Column-level frustum culling: every pass draws only the sections of columns whose box touches
     // the frustum (decisions/M04a-streaming.md). Each visible column's tint textures are fetched once
@@ -522,20 +626,16 @@ export class ChunkRenderer {
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
-    gl.uniform1i(this.locIsCutout, 0);
-    gl.uniform1i(this.locIsWireframe, 0);
-    this.drawPass(0);
+    this.drawLightingPass(0, viewProjMatrix, atlas);
 
     // 2. Cutout Pass
-    gl.uniform1i(this.locIsCutout, 1);
-    this.drawPass(1);
+    this.drawLightingPass(1, viewProjMatrix, atlas);
 
     // 3. Translucent Pass
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    gl.uniform1i(this.locIsCutout, 0);
-    this.drawPass(2);
+    this.drawLightingPass(2, viewProjMatrix, atlas);
 
     let drawCalls = this.passDraws;
     const triangles = this.passTriangles;
@@ -545,6 +645,7 @@ export class ChunkRenderer {
 
     // 4. Wireframe Overlay Pass (if enabled)
     if (wireframeEnabled) {
+      this.selectLightingProgram(false, viewProjMatrix, atlas);
       gl.uniform1i(this.locIsWireframe, 1);
       gl.uniform1i(this.locIsCutout, 0);
       gl.enable(gl.POLYGON_OFFSET_FILL);
@@ -559,7 +660,7 @@ export class ChunkRenderer {
             if (bucket) {
               gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
               gl.bindVertexArray(bucket.vao);
-              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.wireframeBuffer(bucket));
               this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
               // The VAO records its element buffer: put the triangle indices back for the next frame.
               gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);

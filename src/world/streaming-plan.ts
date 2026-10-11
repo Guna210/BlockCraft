@@ -187,12 +187,26 @@ export function comparePriority(a: PriorityKey, b: PriorityKey): number {
 
 /** Phases of a column that is generated, i.e. whose block data is in the world. */
 export type ColumnPhase =
-  'queuedGen' | 'generating' | 'generated' | 'queuedMesh' | 'meshing' | 'meshed';
+  | 'queuedGen'
+  | 'generating'
+  | 'generated'
+  | 'queuedLight'
+  | 'lighting'
+  | 'lit'
+  | 'queuedMesh'
+  | 'meshing'
+  | 'meshed';
 
 /** Does the column hold its block data? */
 export function hasData(phase: ColumnPhase | undefined): boolean {
   return (
-    phase === 'generated' || phase === 'queuedMesh' || phase === 'meshing' || phase === 'meshed'
+    phase === 'generated' ||
+    phase === 'queuedLight' ||
+    phase === 'lighting' ||
+    phase === 'lit' ||
+    phase === 'queuedMesh' ||
+    phase === 'meshing' ||
+    phase === 'meshed'
   );
 }
 

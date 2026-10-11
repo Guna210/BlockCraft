@@ -1,3 +1,4 @@
+import type { LightPaddingInput } from '../world/light-padding';
 import type { SectionMeshData, MeshLookupTables } from './greedy';
 
 export interface MeshResult {
@@ -16,6 +17,7 @@ interface MeshJob {
   sy: number;
   sz: number;
   paddedSection: Uint16Array;
+  light?: LightPaddingInput;
   tables: MeshLookupTables;
   /** Streaming job: never takes the last idle worker (see `processQueue`). */
   background: boolean;
@@ -119,6 +121,7 @@ export class WorkerPool {
     paddedSection: Uint16Array,
     tables: MeshLookupTables,
     background = false,
+    light?: LightPaddingInput,
   ): Promise<MeshResult> {
     const key = `${sx},${sy},${sz}`;
     const id = this.nextJobId++;
@@ -133,6 +136,7 @@ export class WorkerPool {
         paddedSection,
         tables,
         background,
+        light,
         resolve,
         reject,
       };
@@ -158,13 +162,25 @@ export class WorkerPool {
 
       this.activeJobs.set(worker, job);
 
+      const transfers: Transferable[] = [job.paddedSection.buffer];
+      if (job.light) {
+        for (const column of job.light.columns)
+          for (const section of column.sections) {
+            if (section.raw instanceof Uint8Array) transfers.push(section.raw.buffer);
+            for (const channel of section.rgb ?? [])
+              if (channel instanceof Uint8Array) transfers.push(channel.buffer);
+          }
+        if (job.light.skirt) transfers.push(job.light.skirt.data.buffer);
+      }
+
       worker.postMessage(
         {
           id: job.id,
           paddedSection: job.paddedSection,
           tables: job.tables,
+          light: job.light,
         },
-        [job.paddedSection.buffer],
+        transfers,
       );
     }
   }

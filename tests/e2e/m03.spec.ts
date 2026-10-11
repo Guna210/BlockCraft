@@ -381,7 +381,9 @@ test.describe('M03g: fixed-viewpoint screenshots (SPEC M03 E2E criteria)', () =>
     expect(scene.surface).toBeGreaterThan(view.camera[1] + 20);
     expect(scene.iron).toBe('iron_ore');
     expect(scene.lumite).toBe('lumite_ore');
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(true));
     const png = await assertAndSaveScreenshot({ name: 'm03-cave', milestone: 'm03' });
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(false));
     assertNotBlank(png);
     assertNoMissingTexture(png);
     assertColorVariance(png, 20);

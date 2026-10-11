@@ -1,3 +1,4 @@
+import { decodeVertex } from '../../src/mesh/vertex';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { World } from '../../src/world/world';
@@ -210,16 +211,16 @@ describe('Greedy Mesher (M02b)', () => {
         const verts = bucket.vertices;
         for (let i = 0; i < verts.length; i += 8) {
           // 8 uint32s per quad (4 verts * 2 uint32/vert)
-          const normalIndex = (verts[i]! >> 15) & 7;
+          const normalIndex = decodeVertex(verts[i]!, verts[i + 1]!).normalIndex;
 
-          const u0 = (verts[i + 1]! >> 16) & 255;
-          const v0 = (verts[i + 1]! >> 24) & 255;
-          const u1 = (verts[i + 3]! >> 16) & 255;
-          const v1 = (verts[i + 3]! >> 24) & 255;
-          const u2 = (verts[i + 5]! >> 16) & 255;
-          const v2 = (verts[i + 5]! >> 24) & 255;
-          const u3 = (verts[i + 7]! >> 16) & 255;
-          const v3 = (verts[i + 7]! >> 24) & 255;
+          const u0 = decodeVertex(verts[i + 0]!, verts[i + 1]!).u;
+          const v0 = decodeVertex(verts[i + 0]!, verts[i + 1]!).v;
+          const u1 = decodeVertex(verts[i + 2]!, verts[i + 3]!).u;
+          const v1 = decodeVertex(verts[i + 2]!, verts[i + 3]!).v;
+          const u2 = decodeVertex(verts[i + 4]!, verts[i + 5]!).u;
+          const v2 = decodeVertex(verts[i + 4]!, verts[i + 5]!).v;
+          const u3 = decodeVertex(verts[i + 6]!, verts[i + 7]!).u;
+          const v3 = decodeVertex(verts[i + 6]!, verts[i + 7]!).v;
           const quadArea = Math.max(u0, u1, u2, u3) * Math.max(v0, v1, v2, v3);
 
           const currentArea = quadAreaPerDirection[normalIndex];
@@ -260,7 +261,7 @@ describe('Greedy Mesher (M02b)', () => {
     // Verify no vertex has normal index 0 (+X East)
     const verts = meshA.opaque.vertices;
     for (let i = 0; i < verts.length; i += 2) {
-      const normalIndex = (verts[i]! >> 15) & 7;
+      const normalIndex = decodeVertex(verts[i]!, verts[i + 1]!).normalIndex;
       expect(normalIndex).not.toBe(0); // Normal 0 is East (+X)
     }
   });
@@ -350,23 +351,23 @@ describe('Greedy Mesher (M02b)', () => {
   describe('Side-face UV Orientation and Rotated Logs (M02b-fix)', () => {
     function getQuadByNormal(vertices: Uint32Array, normalIndex: number) {
       for (let i = 0; i < vertices.length; i += 8) {
-        const norm = (vertices[i]! >> 15) & 7;
+        const norm = decodeVertex(vertices[i]!, vertices[i + 1]!).normalIndex;
         if (norm === normalIndex) {
           const v0 = {
-            u: (vertices[i + 1]! >> 16) & 255,
-            v: (vertices[i + 1]! >> 24) & 255,
+            u: decodeVertex(vertices[i + 0]!, vertices[i + 1]!).u,
+            v: decodeVertex(vertices[i + 0]!, vertices[i + 1]!).v,
           };
           const v1 = {
-            u: (vertices[i + 3]! >> 16) & 255,
-            v: (vertices[i + 3]! >> 24) & 255,
+            u: decodeVertex(vertices[i + 2]!, vertices[i + 3]!).u,
+            v: decodeVertex(vertices[i + 2]!, vertices[i + 3]!).v,
           };
           const v2 = {
-            u: (vertices[i + 5]! >> 16) & 255,
-            v: (vertices[i + 5]! >> 24) & 255,
+            u: decodeVertex(vertices[i + 4]!, vertices[i + 5]!).u,
+            v: decodeVertex(vertices[i + 4]!, vertices[i + 5]!).v,
           };
           const v3 = {
-            u: (vertices[i + 7]! >> 16) & 255,
-            v: (vertices[i + 7]! >> 24) & 255,
+            u: decodeVertex(vertices[i + 6]!, vertices[i + 7]!).u,
+            v: decodeVertex(vertices[i + 6]!, vertices[i + 7]!).v,
           };
           return { v0, v1, v2, v3 };
         }
@@ -390,13 +391,14 @@ describe('Greedy Mesher (M02b)', () => {
         for (let i = 0; i < 4; i++) {
           const w0 = vertices[offset + i * 2]!;
           const w1 = vertices[offset + i * 2 + 1]!;
+          const vertex = decodeVertex(w0, w1);
           verts.push({
-            x: w0 & 31,
-            y: (w0 >> 5) & 31,
-            z: (w0 >> 10) & 31,
-            normalIdx: (w0 >> 15) & 7,
-            u: (w1 >> 16) & 255,
-            v: (w1 >> 24) & 255,
+            x: vertex.x,
+            y: vertex.y,
+            z: vertex.z,
+            normalIdx: vertex.normalIndex,
+            u: vertex.u,
+            v: vertex.v,
           });
         }
         return verts;

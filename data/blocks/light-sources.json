@@ -1,0 +1,12 @@
+{
+  "torch": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 14,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": { "top": "torch", "side": "torch", "bottom": "torch" }
+  }
+}

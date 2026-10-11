@@ -5,7 +5,8 @@ import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './world';
 import { locate } from './locate';
 import './ore-locate';
-import { getLight } from './light';
+import { getLight, getBlockLightRGB } from './light';
+import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';
 import { setWorkerPoolSize, getMainThreadGenCount, resetMainThreadGenCount } from './workers';
 import {
@@ -35,6 +36,8 @@ export function initDebugApi() {
     api.getBiome = getBiome;
     api.getHeight = getHeight;
     api.getLight = getLight;
+    api.getBlockLightRGB = getBlockLightRGB;
+    api.setDebugLight = setDebugLight;
     api.locate = locate;
     api.worldHash = worldHash;
     api.setWorkerPoolSize = setWorkerPoolSize;
