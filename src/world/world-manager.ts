@@ -799,8 +799,7 @@ export class WorldManager {
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public async deliverTerrainResults(): Promise<void> {
-    await this.sharedWorkerBudget.messageTurn();
+  public deliverTerrainResults(): void {
     this.sharedWorkerBudget.flushDeliveries(3);
   }
 

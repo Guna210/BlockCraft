@@ -723,6 +723,9 @@ export class Streamer<G, M> {
     this.view.z = this.camZ;
     this.view.cx = this.camCX;
     this.view.cz = this.camCZ;
+    const wasMoving = this.view.travelX !== 0 || this.view.travelZ !== 0;
+    const moving = this.travel.dirX !== 0 || this.travel.dirZ !== 0;
+    if (wasMoving !== moving) this.chainDirty = true;
     this.view.travelX = this.travel.dirX;
     this.view.travelZ = this.travel.dirZ;
     this.view.planes = this.planes;
@@ -894,8 +897,8 @@ export class Streamer<G, M> {
       if (this.hasDispatchWork()) this.schedulePump();
       return;
     }
-    this.refreshChains();
     this.refreshView();
+    this.refreshChains();
     if (!this.lightSorted) {
       for (const col of this.lightQueue)
         computePriority(col.prio, this.view, col.cx, col.cz, this.pinnedMesh(col.cx, col.cz));
@@ -1372,7 +1375,8 @@ export class Streamer<G, M> {
       this.host.requestLight &&
       this.active &&
       this.backgroundEnabled &&
-      this.requests.length === 0
+      this.requests.length === 0 &&
+      (this.view.travelX !== 0 || this.view.travelZ !== 0)
     ) {
       const targets: Column[] = [];
       for (const col of this.cols.values()) {

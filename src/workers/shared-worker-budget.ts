@@ -27,13 +27,10 @@ export class SharedWorkerBudget {
   private inbox: Array<{ job: Posted; payload: unknown; receivedAt: number }> = [];
   public meshArrivalMs: number[] = [];
   public meshInboxMs: number[] = [];
-  private turn = new MessageChannel();
-  private turnWaiters: Array<() => void> = [];
   public readonly size: number;
 
   constructor(size = Math.max(1, (navigator.hardwareConcurrency || 2) - 1)) {
     this.size = Math.max(1, Math.floor(size));
-    this.turn.port1.onmessage = () => this.turnWaiters.shift()?.();
     for (let i = 0; i < this.size; i++) {
       const worker = new Worker(new URL('./shared.worker.ts', import.meta.url), { type: 'module' });
       this.workers.push(worker);
@@ -72,14 +69,6 @@ export class SharedWorkerBudget {
 
   public enableDeferredDelivery(): void {
     this.deferredDelivery = true;
-  }
-
-  /** One unconditional task turn lets already-posted worker messages arrive after a GL wait. */
-  public messageTurn(): Promise<void> {
-    return new Promise((resolve) => {
-      this.turnWaiters.push(resolve);
-      this.turn.port2.postMessage(0);
-    });
   }
 
   /** Deliver at least one result, then stop at the main-thread deadline. */
@@ -176,7 +165,5 @@ export class SharedWorkerBudget {
     this.posted.clear();
     this.loads.clear();
     this.inbox = [];
-    this.turn.port1.close();
-    this.turn.port2.close();
   }
 }
