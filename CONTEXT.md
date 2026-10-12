@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | ready (M06a merged); prompt to be rewritten (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
+| M12a | agy prompt written (Windows laptop, PowerShell, branch agy/m12a; owner opens PR via GitHub Desktop/web); decision 1 now = advance on M06a TickLoop | agy | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -53,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-12: Windows laptop set up: npm ci, typecheck, lint (2 existing any-warnings), placeholders, unit 425/425, MILESTONE=M06 verify:quick all pass in PowerShell. WezTerm defaulted to cmd; told owner to use powershell. Owner asked for the smaller ready task for agy: M12a (self-contained render/time) over M06b (blocks, model, physics, camera). agy prompt: branch agy/m12a, PowerShell syntax, full verify to log, laptop timing failures checked against master on the same laptop then draft PR, CI decides; push via git, owner creates PR in browser.
 - 2026-10-12: Owner merged M06a (#36, b18882b) and INFRA-win (#37, 43d8fe5). Ready next: M06b, M12a (owner picks).
 - 2026-10-12: INFRA-win round 2 (fc2fef7, 716b36a): test now uses os.tmpdir() fixtures and runs the script with cwd=fixture; no writes to repo src/server, retry loop gone, missing-server case added. VERDICT PASS; owner to merge. After merge: Windows clone works with PowerShell (`$env:MILESTONE=...`).
 - 2026-10-12: INFRA-win PR #37 review (orchestrator, round 1): script and .gitattributes OK. Blocking: lint-placeholders.test.ts plants forbidden files in real src/ and server/ while lint.test.ts (unchanged harness-adjacent test) expects a clean pass in parallel, so it can flake; the 2 s retry loop only shields the new test. Fix: run `node scripts/lint-placeholders.mjs` with cwd set to a temp fixture dir (the script uses process.cwd()) and drop the retry loop. Fix prompt given to owner for Codex.
