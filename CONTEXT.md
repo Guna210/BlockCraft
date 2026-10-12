@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); draft PR open, CI red (M02 worker count from orchestrator error; mid-flight flaky); fixing | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); draft PR #35 green; awaiting owner decision on debug light for M04b fast-flight shot | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-12: M05b `bd1feb7` pushed to draft PR #35: CI fully green (394 unit, 47 e2e, mid-flight first try, M04a max 14 ms). Codex kept it [INCOMPLETE] for (1) fast-flight VR and (2) local-only M01a GL-check count (1410 vs 1477; passes on CI, container-only). Orchestrator compared screenshots: same underground cave viewpoint as master; master unlit grey, branch correctly black under M05 light. Recommended the owner approve setDebugLight around the M04b fast-flight screenshot only (M03 precedent); otherwise accept and document. Next: verified title, ready for review, reviewer prompt (prefer a Claude reviewer).
 - 2026-10-11: M05b Codex asked whether light dispatch is serial (its own m05-light-scheduling test) or parallel. Orchestrator: parallel across the full light pool; batches are self-contained (16-block border ≥ light range 15), so in-flight batches only need disjoint interiors. Codex may update its own M05b test, replacing it with: all N workers used, disjoint interiors, result independent of completion order vs the exact reference.
 - 2026-10-11: M05b draft PR CI (hc 4): M04a passes (frame max 22.8, pump 18.6), so the 52 ms was container-only; M04b mid-flight flaky (first try all sky, retry passed); M02 workerCount 2 ≠ 3 fails. The M02 failure was caused by the orchestrator's shared-worker-budget instruction, which conflicts with SPEC §3.2 max(2, hc−1). Withdrawn; Codex told to restore pool sizes (master/SPEC), keep priority ordering, fix mid-flight to pass first try, re-verify and push to the same draft PR.
 - 2026-10-11: M05b gate (`36951bd` local): verify exit 1. M04a streaming task 52 ms > 50; M04b mid-flight 100 % sky (visible 22 vs master 334). GL audit: no extra churn on the branch, no code change. Orchestrator recommended: owner approves push + DRAFT [INCOMPLETE] PR for GitHub CI evidence (Verify runs only on PRs; Codex has a 2-core quota), and fixes continue on the same branch: slice the 52 ms task under ~30 ms; nearest-first dependency-chain scheduling (gen border → light → mesh), minimal near light batches, report enter-RD-to-drawn time. Waiting on the owner.
