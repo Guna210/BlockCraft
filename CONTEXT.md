@@ -25,14 +25,12 @@ Last updated: 2026-10-11
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06a | PR #36 review PASS (round 1, session_01SvTjUyqSyEjYuxd16JM41f); awaiting owner merge | Codex | Sonnet | #36 | 1 | Non-blocking: slabs use flat light (no smooth light/AO); no null-spawn test; progress header says exit 1. |
-| INFRA-win | PR #37 (716b36a) CI green (Verify #158/#159); orchestrator review round 2: PASS; harness-change label applied; awaiting owner merge | Codex | #37 | — | — | Lets agy build on Windows/PowerShell (agy can't use Git Bash). |
 | M12a | queued after M06a merges (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
@@ -55,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-12: Owner merged M06a (#36, b18882b) and INFRA-win (#37, 43d8fe5). Ready next: M06b, M12a (owner picks).
 - 2026-10-12: INFRA-win round 2 (fc2fef7, 716b36a): test now uses os.tmpdir() fixtures and runs the script with cwd=fixture; no writes to repo src/server, retry loop gone, missing-server case added. VERDICT PASS; owner to merge. After merge: Windows clone works with PowerShell (`$env:MILESTONE=...`).
 - 2026-10-12: INFRA-win PR #37 review (orchestrator, round 1): script and .gitattributes OK. Blocking: lint-placeholders.test.ts plants forbidden files in real src/ and server/ while lint.test.ts (unchanged harness-adjacent test) expects a clean pass in parallel, so it can flake; the 2 s retry loop only shields the new test. Fix: run `node scripts/lint-placeholders.mjs` with cwd set to a temp fixture dir (the script uses process.cwd()) and drop the retry loop. Fix prompt given to owner for Codex.
 - 2026-10-12: INFRA-win gate (11cc5aa): renormalize staged nothing unrelated; old/new lint equivalent; unit 424/424; e2e 4 fails (M02 mesh p95, M04a pump 62.8 ms also on master archive, M04b heap, mid-flight blank), all container-only. Recommended: approve push as draft PR, owner adds harness-change label, Codex retitles '— verified' once CI is green. M04a pump added to known container failures.
