@@ -25,52 +25,32 @@ Last updated: 2026-10-11
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); PR #35 review PASS (round 1); awaiting owner merge | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| — | none in flight | | | | | M05b merged as PR #35 (`431e5d5`, 2026-10-12); post-merge Verify re-run pending (ore-locator timeout flake). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready to start: **M05b** Smooth lighting & AO (depends on M04b #34 and M05a, both merged). Only ready task. Next: M06a and M12a in parallel (both need only M05b). Next: M05b (needs M04b + M05a), then M06a and M12a in parallel.
+Ready to start: **M06a** and **M12a** in parallel (both depend only on M05b, merged as #35). Owner to choose Codex or Claude for each.
 
 ## Open items for the owner
 
 - Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
 - `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
+- Unit-test timeouts: heavy generation tests use vitest's default 5 s timeout, which is not a SPEC limit (e.g. M03e ore locator 4.96–5.06 s on CI), and vitest has no CI retries. Suggest an explicit generous timeout (~30 s) on those tests: an owner change on master or a tiny task.
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
 
 ## Decisions not yet on master
 
-M04a and M01a-fix decisions are on master (`decisions/M04a-streaming.md`, `decisions/M01a-fix-gl-error-check.md`).
-
-M04b decisions are on master (`decisions/M04b-fade-and-memory.md`).
-
-M05b (in the builder prompt; to be recorded in `decisions/M05b-smooth-lighting.md`):
-
-- Streamed columns are lit by a per-column light job: block data of the column plus its 8 neighbours, computed from scratch, committing only the centre column. This is exact, because a light path is ≤ 15 blocks and the neighbours cover 16. It also returns a 1-block skirt, used for padded light where a neighbour isn't lit yet. Streamer phases: generated → lit → meshed; light ring = mesh ring (≤ RD). createWorld keeps the region job; a unit test checks the two methods agree cell for cell on interior columns.
-- Block light becomes R, G, B channels (each a BFS, combined by max). `getLight().block` = max(R,G,B), which equals the old single channel exactly, so M05a's tests stay unchanged. Emitters: level + tint, channel = round(level × tint component) with the tint's max component = 1. Torch 14 warm orange, lumite 12 cool cyan, lava 15. Lamp and glowcap values go to their own tasks.
-- Uniform sky-15 / no-block-light sections share one sentinel (no allocation).
-- Vertex: word0 block field = R; word1 repacked to tile 12 bits, u 5, v 5, G 4, B 4 (assert < 4096 tiles). A greedy merge requires identical corner tuples.
-- Smooth light: average of the transparent cells among the 4 samples, dropping the corner when both sides are opaque. AO: classic 0–3; quad flip on the diagonal comparison; plants and models take their own cell's light and no AO.
-- Shader: light interpolated per fragment, then a named brightness curve (brightness(0) ≤ 0.05, brightness(15) = 1), then max per channel of sky (white × u_skyBrightness, 1.0) and block RGB, × AO factor × the existing face shading.
-- Torch: a standing non-cube model, its texture per ART.md, in a new data/blocks file. No item or icon.
-- Existing tests whose assertions change legitimately under lighting: stop and ask, don't edit them. Re-check the heap test (M04b note).
-
-Lessons from the first M05b attempt (put them in the restart prompt):
-- Owner approved: M05b adds `setDebugLight(on)` (debug API, fullbright override, off by default) and calls it in the M03g underground cave viewpoint test and the m03d cave test only (SPEC line 523), on before and off after the screenshot. The debug light must reproduce master's unlit look (brightness 1.0, face shading and AO kept); the first attempt's version left M03g's stdDev at 11.7 < 20.
-- Torch rise > 40: apply the tint after the brightness curve (channel level = level − offset from the curve's inverse, not round(level × tint)). Use a linear curve (exponent 1.0). Use a paler warm tint (e.g. 1, 0.8, 0.55 → hue about 33°) to reach +40 with hue 20–40°. A small honest stone room is fine. round(level × tint) gave +25.5, and tint-after-curve with (1, 0.6, 0.2) gave +34.2.
-- Light jobs may be batched (any rectangle of ready columns plus a 1-column border, interior committed). The main thread copies only typed arrays (3–5 ms per batch was accepted).
-- Keep the merge rule (identical corner tuples). Triangles rise about 76 % at spawn (fps 1.52 → 1.18 under SwiftShader); record it for M22a.
-- First attempt's unsolved bug: at x500 mid-flight, visible sections fell from 152 (master) to 0–7, cancels rose 351 → 700–800, and the M04b horizon test timed out at 180 s. Suspects: neighbour re-mesh when a column gets lit, whole-batch cancels, mesh gated on neighbour light instead of the skirt, priority no longer distance-first, generation starved. Build in per-stage counters (columns/s and cancels per stage) from the start, and compare with master before the gate.
-- The padded light builder must handle sections below y = 0; a column lit before a region request must still be meshed. The flight helper must count light work as busy.
-- Torch is a cross-model sprite (vertex corners are integers, so a thin stick isn't possible).
+None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson for future builds: same-environment master comparisons and CI on a draft PR were the useful evidence; Codex's container has a 2-core quota.
 
 ## Log (newest first)
 
+- 2026-10-12: Owner merged PR #35 (M05b) → master 431e5d5. Post-merge Verify run 151 attempt 1 failed: unit only, tests/unit/ores.test.ts alt-seed locate('ore') 5,062 ms > vitest default 5,000 ms timeout (pre-M05b master was 4,958 ms; e2e 47/47 passed). Not a SPEC limit (M03e has no time criterion); vitest has no retries in CI. Owner re-running. Orchestrator advised an explicit generous timeout (~30 s) on heavy generation unit tests as an owner change or tiny task; added to open items.
 - 2026-10-12: M05b review round 1 (Claude Sonnet session_01D69ddb3QSAjVRZ5Z15eE2B): VERDICT PASS, no blockers. Non-blocking: progress/M05b.md cites f82a856/run 149 (stale) and has spacing typos; SPEC M05 says 'gamma curve' but the decision is linear (owner may update SPEC); long handoff files. Orchestrator: merge as is (docs push risks a timing flake); owner to merge PR #35. Next: M06a + M12a in parallel.
 - 2026-10-12: M05b PR #35 ready for review, '— verified', head 55629ba. Real mesh-worker optimisation f82a856; CI run 150 green first attempt (394 unit, 47 e2e, no retries). Ore locator 3,862 ms (master 4,958). Exact CI M02 meshMsP95 not logged. Reviewer prompt updated (f82a856 output-identical check, report meshMsP95). Next: owner starts the reviewer (Claude Sonnet preferred, Codex OK), round 1 of 3.
 - 2026-10-12: M05b PR #35: owner accepted fullbright fast-flight VR. CI on identical source: 6924a77 green, c1d0be2 red ×2 (M02 meshMsP95 6.1–9.2 > 6; M03e ore locator > 5000 ms), a00a9a8 green, so timing-edge flakiness. Orchestrator: not ready. Codex to compare master vs branch CI meshMsP95 and ore-locator durations; optimise the mesh worker to ≤ ~5 ms p95 on CI (no rule/test changes); fix the ore path if the branch regressed it, else record it as pre-existing. Ready only when green with M02 passing first try. If 5 ms isn't reachable: QUESTION for the owner.
@@ -90,21 +70,3 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 - 2026-10-11: M05b Codex report (uncommitted, not pushed): unit 370/370; e2e 46 pass, 1 fail (M04b mid-flight 100 % sky, which master also fails in Codex's env). Torch +46.4, hue 35.8°, AO 0.657, M03 caves pass. Same-env vs master: meshed 8.3 vs 14.3 col/s, uploaded 7.7 vs 14.2, visible sections at flight end 30 vs 186, cancels 617 vs 422, triangles +97 %, light-batch main-thread max 38 ms. Orchestrator: don't spend on a new baseline. The same-env comparison is valid and the regression is real. Fix throughput to within ~10 % of master in the same env (target meshed/uploaded ≥ 13 col/s, visible ≥ ~165); find why flat sunlit faces stop merging; cap main-thread commit ≤ 8 ms. Check nproc and that workers: 1 is on master. CI Verify on GitHub is the absolute judge for the mid-flight test.
 - 2026-10-11: M05b Codex QUESTION: the vertex repack breaks the bit decoders in tests/unit/greedy.test.ts and models.test.ts. Orchestrator authorised updating only the decoding (ideally importing the shared decoder from src), with no assertion or threshold changes; stop if any assertion then fails.
 - 2026-10-11: Owner set up Codex cloud for BlockCraft. M05b restart prompt written for Codex (decisions plus first-attempt lessons). The orchestrator stays the coordinator; the owner relays Codex messages.
-- 2026-10-10: Owner stopped the M05b builder and paused the project for a few days to save usage. M05b will restart on Sonnet from master; the first attempt's lessons are recorded under Decisions.
-- 2026-10-10: M05b round-3 report (`49679d2` local): torch rise 34.2; M03d cave passes with the debug light, M03g cave stdDev 11.7; triangles +76 % (fps 1.52→1.18) but visible sections at x500 down from 152 to 0–7, horizon test times out. Orchestrator: keep the merge rule; paler warm tint (hue 20–40°); fix the debug light to match master's look; find the pipeline bug (neighbour re-mesh, cancels, gating, priority, gen starvation). Suggested the owner switch this builder to Sonnet.
-- 2026-10-10: Owner approved setDebugLight in the M03g cave viewpoint and m03d cave tests (SPEC M03 "with debug light"). Relayed to the M05b builder.
-- 2026-10-10: M05b round-2 report: torch rise 31.7 (hue 25°), setDebugLight built, mid-flight still 100 % sky (now mesh-bound), M04b heap test 2.8 min (times out in the suite). Orchestrator: tune the curve exponent and room; diagnose the per-stage streaming throughput against master and fix the regression in M05b's code. Owner's cave decision still pending.
-- 2026-10-10: M05b QUESTION (4 e2e failing: M03d/M03g caves dark, M04b mid-flight 100 % sky, torch rise 25.5). Orchestrator rejected changing tests or criteria; gave fixes (tint after the curve, batched light jobs, cheaper main thread, debug light). Asked the owner about the cave tests.
-- 2026-10-10: Owner merged M04b (#34, `427660a`); master green. M05b builder prompt written (only ready task).
-- 2026-10-10: M04b review round 4: PASS, CI green on `2c89919`. Waiting for the owner to merge #34.
-- 2026-10-10: M04b docs fix pushed (`2c89919`, two doc files only). Orchestrator sent the round-4 request.
-- 2026-10-10: Owner chose option 3 for M04b: docs-only fix, then a 4th review round. Orchestrator sent the builder the 7 provenance items plus the decision 7 measurement.
-- 2026-10-10: M04b review round 3: CHANGES NEEDED, docs provenance only (7 unsourced or unlabelled historical heap figures). CI green on `7079849`; code accepted. 3-round limit hit: asked the owner. Recommended one more docs-only commit dropping the unsourced figures, then merge without a 4th review.
-- 2026-10-10: M04b docs fix pushed (`7079849`, two doc files only). Orchestrator sent the round-3 request.
-- 2026-10-10: M04b review round 2: CHANGES NEEDED, docs only (B2 heap figures). B1 resolved. Builder sent a docs-only fix for round 3 (the last).
-- 2026-10-10: M04b round-1 fixes pushed (`aa08b33`). Orchestrator sent the round-2 request (check that keeping the light data is legitimate; look at the +4.9 % second round).
-- 2026-10-10: M04b review round 1: CHANGES NEEDED (heap baseline inflated by ~7.9 MB of retained ArrayBuffers; handoff numbers inconsistent). Orchestrator sent the fix list to the builder.
-- 2026-10-10: Owner approved M04b gate; PR [#34](https://github.com/Guna210/BlockCraft/pull/34) opened from `claude/m04b` (`ca25171`). Reviewer prompt given.
-- 2026-10-10: M04b new gate on `f428c46`: verify green (629 s), heap self-check +61 MB, three m04 runs at −41 % growth, horizon largest hole 14 px. Waiting for owner approval.
-- 2026-10-10: Owner added `--enable-precise-memory-info` on master (`90c809b`, SPEC `67381df`). M04b builder told to merge master, run m04 ×3 and full verify, then post a new gate.
-- 2026-10-09: M04b builder corrected the orchestrator's fast-flight wording, with a probe (sky past the RD 8 edge; ceiling in view): the notes now say the enclosed sky can't be told apart from sky past the edge. Orchestrator agreed; no extra test (`dacd4e4`).
