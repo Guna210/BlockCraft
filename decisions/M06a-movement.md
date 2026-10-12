@@ -1,0 +1,28 @@
+# M06a — Tick loop and movement decisions
+
+The owner supplied the following binding decisions in the task prompt:
+
+1. Simulation runs at fixed 20 TPS with an accumulator. Run at most five catch-up ticks per frame, discard additional whole ticks, retain the fractional remainder, normalizing near-integer tick boundaries with the same floating-point tolerance used when consuming ticks. Rendering interpolates previous/current player position and camera. Pause, resume and synchronous `tick(n)` use the same simulation function; `tick(n)` requires pause and resolves after all n ticks.
+2. Player AABB is 0.6 × 1.8 × 0.6, eye 1.62; sneak height 1.5, eye 1.27. Keep sneaking until standing fits beneath a ceiling.
+3. Swept AABB resolves Y first, then the horizontal axis with greater absolute velocity, then the other. Epsilon 1e-7; grounded step-up up to 0.6 only through a free stepped position. Eject an intersecting player along the shortest free axis, preferring up.
+4. Walk/sprint/sneak speeds are 4.3/5.6/1.3 blocks/s. Ground acceleration 40 blocks/s² reaches walking speed in three ticks, with 100-tick distance within 21.5 ± 0.5. Air acceleration is 8 (20%). Double-tap forward within seven simulation ticks or sprint action enables sprint. Grounded sneak clips horizontal displacement to retain footprint support within 0.6 below.
+5. Gravity 32 blocks/s², terminal speed 60, jump 8.9. Constant-acceleration tick displacement clears one block; head collisions zero upward velocity.
+6. Health starts at 20 half-hearts. Fall damage is max(0, highest point since ground − landing height − 3), in half-hearts. Exact tick-end floor contacts also count as landings and zero vertical velocity. Entering/landing in water resets fall distance, including a thin layer crossed entirely within a terminal-speed tick. Hay and creative negate landing damage. `getPlayer().health` exposes current health.
+7. Add `hay_bale` in `data/blocks/hay.json`, registered through existing glob loading, with procedural top/side textures following ART.md.
+8. Creative double-tap jump within seven ticks toggles flight. Jump/sneak raise/lower; speed 10.9; no flight gravity.
+9. Freeze all player displacement and gravity when the current or destination footprint overlaps columns not yet generated, meshed and uploaded. Use streamer's `meshed` phase, including footprint boundary columns, rather than interpreting unloaded air as empty terrain.
+10. New-world player spawn uses the existing `findSpawnPoint` land selection, with feet at `topY + 1`. Its legacy camera offset is not reused as the player's eye height.
+11. The initial legacy world camera view is also preserved in a detached state. The player remains at the physical spawn; the first control attaches that spawn unless an external camera write moved the spectator view. Existing direct camera controls remain supported unchanged. Any external camera position or orientation write puts the player in a detached/spectator state: simulation/camera following stop and inputs clear. This persists until `teleport`, `input` or `look` (including real keyboard/mouse movement) explicitly attaches. Input/look attachment adopts camera position minus current eye height, preventing a snap back to the old player. `teleport` uses feet coordinates. A test-scene camera continues using its existing free-flight controls.
+12. Player API lives in `src/debug/api/player.ts`, registered by one call in index.ts. Signatures match SPEC §4, input names match input.ts. Invalid actions/counts/modes are rejected.
+13. Physics uses existing block-state accessors and cached numeric state-shape tables. Tick queries do not construct block JSON, vectors or arrays. Worker pools, draw cadence and performance thresholds remain unchanged.
+
+## Implementation choices within M06a
+
+- A minimal `stone_slab` with bottom/top states supplies the half-height collision geometry required for 0.6 step-up and the 1.5-block gap acceptance test. It reuses the procedural stone tile and introduces no recipes/items. This is supporting M06a geometry, not the later interaction systems.
+- Half-height slab meshes use previously spare bit 30 of vertex word 1 to add 0.5 to integer Y. All existing vertex fields and integer cube encodings are preserved. Shared decoder and shader read the same constant. Slabs emit six outward faces through the existing non-cube model bucket (opaque stone pixels keep normal depth writes); no draw is gated or skipped.
+- Player position/velocity use reusable double-precision tuples; the existing renderer camera remains float32. The controller remembers the exact last written camera values to distinguish legacy writes from interpolation.
+- Hunger, saturation, air, dimension and slot are initialized player state returned by the SPEC snapshot; their simulation belongs to later tasks. No later-task methods are introduced.
+
+## Owner publication and verification decision
+
+After reviewing the pre-push gate, the owner approved publishing `claude/m06a` as draft PR `[INCOMPLETE] M06a: Tick loop & movement`. The owner explicitly authorized retitling to `M06a: Tick loop & movement — verified`, clearing `blockers/M06a.md` and marking ready for review if the first CI attempt was green with no M06a-caused failures. First-attempt Verify #153 passed on unchanged source commit `9d25b33`: 422 unit tests and 55 browser tests, all verification steps green, no rerun. The conditional authorization therefore applies despite the recorded local-container failures.

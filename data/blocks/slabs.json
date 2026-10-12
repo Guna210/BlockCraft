@@ -1,0 +1,13 @@
+{
+  "stone_slab": {
+    "hardness": 1.5,
+    "blastResistance": 6,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "pickaxe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "stone", "side": "stone", "bottom": "stone" }
+  }
+}

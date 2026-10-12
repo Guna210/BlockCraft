@@ -1,5 +1,12 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  getPlayer?: () => import('../../entity/player').PlayerSnapshot;
+  teleport?: (x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
+  input?: (action: string, down: boolean) => void;
+  pause?: () => void;
+  resume?: () => void;
+  tick?: (n: number) => Promise<void>;
+  setGameMode?: (mode: 'survival' | 'creative') => void;
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;

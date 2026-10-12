@@ -1,3 +1,4 @@
+import { PlayerController } from './engine/player-controller';
 import { initDebugApi } from './debug/api/index';
 import { markReady, renderStats, setGlErrorDrain } from './debug/api/core';
 import { setTestSceneInitializer } from './debug/api/test-scene';
@@ -69,6 +70,12 @@ function main() {
 
   const worldManager = WorldManager.getInstance();
   worldManager.initGL(glWrapper, camera);
+  const playerController = new PlayerController(
+    camera,
+    input,
+    (x, z) => worldManager.streamer.phaseOf(Math.floor(x / 16), Math.floor(z / 16)) === 'meshed',
+  );
+  worldManager.playerController = playerController;
   let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
     frameDrain = new FencedErrorDrain(gl, () => glWrapper.drainErrors());
@@ -137,7 +144,7 @@ function main() {
         firstFrameResolve = null;
       }
     } else if (worldManager.world) {
-      camera.update(dt / 1000, input);
+      playerController.frame(dt / 1000);
       rendered = worldManager.render();
     }
 

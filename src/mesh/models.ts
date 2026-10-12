@@ -1,11 +1,13 @@
 // Non-cube block models. A model emits its own vertices instead of going through the greedy
 // merge, which only knows full cube faces. Everything here uses the packed vertex format of
-// decisions/M02b-vertex-format.md unchanged: integer corner positions inside the section, a normal
-// index, a tile index and quad-local UVs in block units.
+// the shared vertex layout: cube/cross corners stay integer, while slabs use its half-Y bit.
+// Normals, tile indices and quad-local UVs retain their existing fields.
 
 /** Values of `MeshLookupTables.modelKind`. */
 export const MODEL_CUBE = 0;
 export const MODEL_CROSS = 1;
+export const MODEL_BOTTOM_SLAB = 2;
+export const MODEL_TOP_SLAB = 3;
 
 /**
  * Signature of `packVertex` in greedy.ts, passed in so that this module does not import the
@@ -161,4 +163,91 @@ export function mergeMeshBuckets<
     vertexCount: a.vertexCount + b.vertexCount,
     quadCount: a.quadCount + b.quadCount,
   };
+}
+
+/** Six outward faces of a half-height stone slab, using the shared half-Y packed bit. */
+const SLAB_CORNERS = [
+  [
+    [1, 0, 0],
+    [1, 1, 0],
+    [1, 1, 1],
+    [1, 0, 1],
+  ],
+  [
+    [0, 0, 1],
+    [0, 1, 1],
+    [0, 1, 0],
+    [0, 0, 0],
+  ],
+  [
+    [0, 1, 1],
+    [1, 1, 1],
+    [1, 1, 0],
+    [0, 1, 0],
+  ],
+  [
+    [0, 0, 0],
+    [1, 0, 0],
+    [1, 0, 1],
+    [0, 0, 1],
+  ],
+  [
+    [1, 0, 1],
+    [1, 1, 1],
+    [0, 1, 1],
+    [0, 0, 1],
+  ],
+  [
+    [0, 0, 0],
+    [0, 1, 0],
+    [1, 1, 0],
+    [1, 0, 0],
+  ],
+] as const;
+export function emitSlabBlock(
+  pack: PackVertexFn,
+  vertices: Uint32Array,
+  wordOffset: number,
+  indices: Uint32Array,
+  indexOffset: number,
+  x: number,
+  y: number,
+  z: number,
+  top: boolean,
+  tile: number,
+  sky: number,
+  r: number,
+  g: number,
+  b: number,
+): void {
+  for (let face = 0; face < 6; face++) {
+    const base = wordOffset / 2 + face * 4;
+    for (let c = 0; c < 4; c++) {
+      const corner = SLAB_CORNERS[face]![c]!;
+      pack(
+        x + corner[0],
+        y + corner[1] * 0.5 + (top ? 0.5 : 0),
+        z + corner[2],
+        face,
+        0,
+        sky,
+        r,
+        0,
+        tile,
+        c === 1 || c === 2 ? 1 : 0,
+        c < 2 ? 1 : 0,
+        vertices,
+        wordOffset + face * 8 + c * 2,
+        g,
+        b,
+      );
+    }
+    const out = indexOffset + face * 6;
+    indices[out] = base;
+    indices[out + 1] = base + 1;
+    indices[out + 2] = base + 2;
+    indices[out + 3] = base;
+    indices[out + 4] = base + 2;
+    indices[out + 5] = base + 3;
+  }
 }

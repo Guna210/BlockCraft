@@ -1,3 +1,4 @@
+import { MODEL_BOTTOM_SLAB, MODEL_TOP_SLAB, emitSlabBlock } from './models';
 import { sampleFaceCorners, canMergeCorners, shouldFlipQuad, FACE_NORMAL_STRIDES } from './ao';
 import { packVertex } from './vertex';
 export { packVertex } from './vertex';
@@ -46,7 +47,7 @@ export interface MeshLookupTables {
   logAxis: Uint8Array; // numStates (0=y or none, 1=x, 2=z)
   tileIndices: Uint16Array; // numStates * 6 (faces: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
   tintIndices: Uint8Array; // numStates * 6 (0=none, 1=grass, 2=foliage)
-  modelKind: Uint8Array; // numStates (MODEL_CUBE or MODEL_CROSS, see models.ts)
+  modelKind: Uint8Array; // numStates (cube, cross or slab, see models.ts)
 }
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
@@ -81,7 +82,14 @@ export function buildMeshLookupTables(
 
     const def = resolved.definition;
     isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
-    modelKind[stateId] = def.model === 'cross' ? MODEL_CROSS : MODEL_CUBE;
+    modelKind[stateId] =
+      def.model === 'cross'
+        ? MODEL_CROSS
+        : def.model === 'slab'
+          ? resolved.properties.half === 'top'
+            ? MODEL_TOP_SLAB
+            : MODEL_BOTTOM_SLAB
+          : MODEL_CUBE;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -721,6 +729,33 @@ export function greedyMesh(
       const yzOff = py * 18 + zOff;
       for (let px = 1; px <= 16; px++) {
         const state = paddedSection[px + yzOff]!;
+        if (
+          tables.modelKind[state] === MODEL_BOTTOM_SLAB ||
+          tables.modelKind[state] === MODEL_TOP_SLAB
+        ) {
+          const bucket = modelScratch;
+          const light = paddedLight ? paddedLight[px + yzOff]! : 0xf000;
+          emitSlabBlock(
+            packVertex,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+            px - 1,
+            py - 1,
+            pz - 1,
+            tables.modelKind[state] === MODEL_TOP_SLAB,
+            tables.tileIndices[state * 6 + 2]!,
+            light >>> 12,
+            (light >>> 8) & 15,
+            (light >>> 4) & 15,
+            light & 15,
+          );
+          bucket.vertOffset += 48;
+          bucket.indexOffset += 36;
+          bucket.quadCount += 6;
+          continue;
+        }
         if (tables.modelKind[state] !== MODEL_CROSS) continue;
         const bucket = modelScratch;
         emitCrossBlock(
