@@ -18,7 +18,7 @@ export function processMeshMessage(event: MessageEvent): void {
   const start = performance.now();
   const blocks =
     paddedSection instanceof Uint16Array ? paddedSection : buildSnapshotPadding(paddedSection);
-  const meshData = greedyMesh(blocks, tables, light ? buildPaddedLight(light) : undefined);
+  const meshData = greedyMesh(blocks, tables, light ? () => buildPaddedLight(light) : undefined);
   for (const bucket of [meshData.opaque, meshData.cutout, meshData.translucent, meshData.models])
     normalizeSharedQuads(bucket);
   meshData.hasBlockLight = false;

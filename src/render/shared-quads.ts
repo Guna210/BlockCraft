@@ -12,14 +12,32 @@ export function canonicalQuadVertices(bucket: MeshBucketData): Uint32Array {
     const d = bucket.indices[offset + 3]!;
     const e = bucket.indices[offset + 4]!;
     const f = bucket.indices[offset + 5]!;
-    const shared = (v: number) => v === d || v === e || v === f;
-    const order =
-      shared(a) && shared(c) ? [a, b, c] : shared(b) && shared(a) ? [b, c, a] : [c, a, b];
-    order.push(d !== a && d !== b && d !== c ? d : e !== a && e !== b && e !== c ? e : f);
-    for (let i = 0; i < 4; i++) {
-      vertices[q * 8 + i * 2] = bucket.vertices[order[i]! * 2]!;
-      vertices[q * 8 + i * 2 + 1] = bucket.vertices[order[i]! * 2 + 1]!;
+    // Keep the same triangle order without a closure and growing array per quad.
+    let first: number, second: number, third: number;
+    const sharedA = a === d || a === e || a === f;
+    if (sharedA && (c === d || c === e || c === f)) {
+      first = a;
+      second = b;
+      third = c;
+    } else if (sharedA && (b === d || b === e || b === f)) {
+      first = b;
+      second = c;
+      third = a;
+    } else {
+      first = c;
+      second = a;
+      third = b;
     }
+    const fourth = d !== a && d !== b && d !== c ? d : e !== a && e !== b && e !== c ? e : f;
+    const out = q * 8;
+    vertices[out] = bucket.vertices[first * 2]!;
+    vertices[out + 1] = bucket.vertices[first * 2 + 1]!;
+    vertices[out + 2] = bucket.vertices[second * 2]!;
+    vertices[out + 3] = bucket.vertices[second * 2 + 1]!;
+    vertices[out + 4] = bucket.vertices[third * 2]!;
+    vertices[out + 5] = bucket.vertices[third * 2 + 1]!;
+    vertices[out + 6] = bucket.vertices[fourth * 2]!;
+    vertices[out + 7] = bucket.vertices[fourth * 2 + 1]!;
   }
   return vertices;
 }
@@ -28,7 +46,13 @@ export function quadIndices(quads: number): Uint32Array {
   const indices = new Uint32Array(quads * 6);
   for (let q = 0; q < quads; q++) {
     const b = q * 4;
-    indices.set([b, b + 1, b + 2, b, b + 2, b + 3], q * 6);
+    const out = q * 6;
+    indices[out] = b;
+    indices[out + 1] = b + 1;
+    indices[out + 2] = b + 2;
+    indices[out + 3] = b;
+    indices[out + 4] = b + 2;
+    indices[out + 5] = b + 3;
   }
   return indices;
 }

@@ -59,18 +59,40 @@ export function collectBlockPadding(
 
 export function buildSnapshotPadding(input: BlockPaddingInput): Uint16Array {
   const result = new Uint16Array(18 * 18 * 18);
-  for (let z = 0; z < 18; z++)
-    for (let y = 0; y < 18; y++)
-      for (let x = 0; x < 18; x++) {
-        const wy = input.sy * 16 + y - 1;
-        if (wy < 0 || wy >= 320) continue;
-        const dx = x === 0 ? -1 : x === 17 ? 1 : 0;
-        const dz = z === 0 ? -1 : z === 17 ? 1 : 0;
-        const dy = y === 0 ? -1 : y === 17 ? 1 : 0;
+  for (let z = 0; z < 18; z++) {
+    const dz = z === 0 ? -1 : z === 17 ? 1 : 0;
+    for (let y = 0; y < 18; y++) {
+      const wy = input.sy * 16 + y - 1;
+      if (wy < 0 || wy >= 320) continue;
+      const dy = y === 0 ? -1 : y === 17 ? 1 : 0;
+      const row = ((wy & 15) << 8) | (((z + 15) & 15) << 4);
+      const out = 18 * (y + 18 * z);
+      // Each row crosses only three section snapshots. Decode the centre span
+      // with one storage-kind check rather than repeating it for every voxel.
+      for (let dx = -1; dx <= 1; dx++) {
         const section = input.sections[((dz + 1) * 3 + dx + 1) * 3 + dy + 1]!;
-        const i = ((wy & 15) << 8) | (((z + 15) & 15) << 4) | ((x + 15) & 15);
-        result[x + 18 * (y + 18 * z)] = snapshotBlockAt(section, i);
+        const start = dx === -1 ? 0 : dx === 0 ? 1 : 17;
+        const end = dx === 0 ? 17 : start + 1;
+        if (typeof section === 'number') {
+          result.fill(section, out + start, out + end);
+        } else if (section instanceof Uint16Array) {
+          for (let x = start; x < end; x++) result[out + x] = section[row | ((x + 15) & 15)]!;
+        } else {
+          const { bits, indices, palette } = section;
+          const mask = (1 << bits) - 1;
+          if (bits >= 8) {
+            for (let x = start; x < end; x++)
+              result[out + x] = palette[indices[row | ((x + 15) & 15)]!]!;
+          } else {
+            for (let x = start; x < end; x++) {
+              const bit = (row | ((x + 15) & 15)) * bits;
+              result[out + x] = palette[(indices[bit >>> 3]! >>> (bit & 7)) & mask]!;
+            }
+          }
+        }
       }
+    }
+  }
   return result;
 }
 
