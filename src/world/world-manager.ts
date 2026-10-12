@@ -1,3 +1,4 @@
+import type { PlayerController } from '../engine/player-controller';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
 import type { ColumnLight, LightRect } from './batch-light';
@@ -114,6 +115,7 @@ export class WorldManager {
 
   public glWrapper: GLWrapper | null = null;
   public camera: Camera | null = null;
+  public playerController: PlayerController | null = null;
   public world: World | null = null;
   public atlas: TextureAtlas | null = null;
   public atlasTexture: WebGLTexture | null = null;
@@ -406,6 +408,7 @@ export class WorldManager {
     seed = 'blockcraft-test-seed-42',
     type: 'default' | 'flat' = 'default',
   ): void {
+    this.playerController?.reset();
     this.worldSeedStr = seed;
     this.worldSeed = hashString(seed);
     this.worldType = type;
@@ -585,6 +588,7 @@ export class WorldManager {
     }
     this.meshAttempts.clear();
 
+    this.playerController?.reset();
     const epoch = ++this.worldEpoch;
     const world = new World();
     this.world = world;
@@ -625,13 +629,15 @@ export class WorldManager {
       this.streamer.markLit(column.cx, column.cz);
     }
 
+    const playerSpawn = findSpawnPoint(world, radiusChunks);
+
     // Set camera spawn position
     if (this.camera) {
       if (worldType === 'flat') {
         this.camera.position = vec3.fromValues(0.5, 80.0, 0.5);
       } else {
         // Nearest generated land column to (0, 0): top block above sea level and not a fluid
-        const spawn = findSpawnPoint(world, radiusChunks);
+        const spawn = playerSpawn;
         if (spawn) {
           this.camera.position = vec3.fromValues(
             spawn.position[0],
@@ -646,6 +652,16 @@ export class WorldManager {
       this.camera.pitch = -0.05;
       this.camera.updateView();
     }
+
+    if (playerSpawn)
+      this.playerController?.spawn(
+        world,
+        playerSpawn.x + 0.5,
+        playerSpawn.topY + 1,
+        playerSpawn.z + 0.5,
+        opts?.mode ?? 'survival',
+        true,
+      );
 
     // Mesh terrain within radius 4
     await this.waitForTerrain(radiusChunks);

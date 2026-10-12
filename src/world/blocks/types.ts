@@ -23,7 +23,7 @@ export interface BlockTextures {
 }
 
 /** How the mesher draws a block: a cube (default) or two diagonal quads (plants). */
-export type BlockModel = 'cube' | 'cross';
+export type BlockModel = 'cube' | 'cross' | 'slab';
 
 export interface BlockDefinition {
   id: string;

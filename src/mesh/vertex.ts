@@ -6,6 +6,7 @@ export const VERTEX_LAYOUT = {
   uvMask: 31,
   greenShift: 22,
   blueShift: 26,
+  halfYShift: 30,
 } as const;
 
 export function vertexHasBlockLight(word0: number, word1: number): boolean {
@@ -15,7 +16,7 @@ export function vertexHasBlockLight(word0: number, word1: number): boolean {
 export function decodeVertex(word0: number, word1: number) {
   return {
     x: word0 & 31,
-    y: (word0 >>> 5) & 31,
+    y: ((word0 >>> 5) & 31) + ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5,
     z: (word0 >>> 10) & 31,
     normalIndex: (word0 >>> 15) & 7,
     ao: (word0 >>> 18) & 3,
@@ -61,5 +62,6 @@ export function packVertex(
     ((u & VERTEX_LAYOUT.uvMask) << VERTEX_LAYOUT.uShift) |
     ((v & VERTEX_LAYOUT.uvMask) << VERTEX_LAYOUT.vShift) |
     ((blockG & 15) << VERTEX_LAYOUT.greenShift) |
-    ((blockB & 15) << VERTEX_LAYOUT.blueShift);
+    ((blockB & 15) << VERTEX_LAYOUT.blueShift) |
+    (Number(y % 1 !== 0) << VERTEX_LAYOUT.halfYShift);
 }

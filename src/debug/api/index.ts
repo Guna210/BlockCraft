@@ -1,3 +1,4 @@
+import { registerPlayerApi } from './player';
 import { api } from './core';
 import { audioApi } from './audio';
 import { look } from './camera';
@@ -27,6 +28,7 @@ declare global {
 export function initDebugApi() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('debug') === '1') {
+    registerPlayerApi();
     api.audio = audioApi;
     api.look = look;
     api.showTestScene = showTestScene;

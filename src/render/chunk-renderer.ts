@@ -42,6 +42,7 @@ const vec3 NORMALS[6] = vec3[6](
 );
 void main() {
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
+  localPos.y += float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
   vec3 worldPos = u_sectionOrigin + localPos;
   vec3 normal = NORMALS[(a_word0 >> 15u) & 7u];
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));

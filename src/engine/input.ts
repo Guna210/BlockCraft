@@ -6,6 +6,7 @@ export class InputEngine {
   public actionStates = new Map<Action, boolean>();
   public mouseMovement = { x: 0, y: 0 };
   public pointerLocked = false;
+  public onAction?: (action: Action, down: boolean) => void;
   private canvas: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -75,6 +76,7 @@ export class InputEngine {
 
   setAction(action: Action, state: boolean) {
     this.actionStates.set(action, state);
+    this.onAction?.(action, state);
   }
 
   getAction(action: Action): boolean {
@@ -126,7 +128,7 @@ export class InputEngine {
     this.pointerLocked = document.pointerLockElement === this.canvas;
     if (!this.pointerLocked) {
       // Clear actions when losing pointer lock
-      this.actionStates.forEach((_, key) => this.actionStates.set(key, false));
+      this.actionStates.forEach((_, key) => this.setAction(key, false));
     }
   }
 
