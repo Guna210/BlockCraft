@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); PR #35 ready for review (55629ba, CI green); review round 1 pending | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); PR #35 review PASS (round 1); awaiting owner merge | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-12: M05b review round 1 (Claude Sonnet session_01D69ddb3QSAjVRZ5Z15eE2B): VERDICT PASS, no blockers. Non-blocking: progress/M05b.md cites f82a856/run 149 (stale) and has spacing typos; SPEC M05 says 'gamma curve' but the decision is linear (owner may update SPEC); long handoff files. Orchestrator: merge as is (docs push risks a timing flake); owner to merge PR #35. Next: M06a + M12a in parallel.
 - 2026-10-12: M05b PR #35 ready for review, '— verified', head 55629ba. Real mesh-worker optimisation f82a856; CI run 150 green first attempt (394 unit, 47 e2e, no retries). Ore locator 3,862 ms (master 4,958). Exact CI M02 meshMsP95 not logged. Reviewer prompt updated (f82a856 output-identical check, report meshMsP95). Next: owner starts the reviewer (Claude Sonnet preferred, Codex OK), round 1 of 3.
 - 2026-10-12: M05b PR #35: owner accepted fullbright fast-flight VR. CI on identical source: 6924a77 green, c1d0be2 red ×2 (M02 meshMsP95 6.1–9.2 > 6; M03e ore locator > 5000 ms), a00a9a8 green, so timing-edge flakiness. Orchestrator: not ready. Codex to compare master vs branch CI meshMsP95 and ore-locator durations; optimise the mesh worker to ≤ ~5 ms p95 on CI (no rule/test changes); fix the ore path if the branch regressed it, else record it as pre-existing. Ready only when green with M02 passing first try. If 5 ms isn't reachable: QUESTION for the owner.
 - 2026-10-12: M05b `6924a77`: CI green (one M02 timing flake passed on retry; all M04 first try). Fullbright fast-flight shot: near cave walls present, but more blue openings than master (many dithered = fading columns at 1–2 fps). Orchestrator recommended the owner accept it with a handoff note; gave a Codex finish block (clear blockers, '— verified', ready for review) and a Claude reviewer prompt (decisions, exact other-test diffs, no gating, pool sizes, disjoint light interiors, AO flip winding, numbers vs CI).
