@@ -22,3 +22,7 @@ The owner supplied the following binding decisions in the task prompt:
 - Half-height slab meshes use previously spare bit 30 of vertex word 1 to add 0.5 to integer Y. All existing vertex fields and integer cube encodings are preserved. Shared decoder and shader read the same constant. Slabs emit six outward faces through the existing non-cube model bucket (opaque stone pixels keep normal depth writes); no draw is gated or skipped.
 - Player position/velocity use reusable double-precision tuples; the existing renderer camera remains float32. The controller remembers the exact last written camera values to distinguish legacy writes from interpolation.
 - Hunger, saturation, air, dimension and slot are initialized player state returned by the SPEC snapshot; their simulation belongs to later tasks. No later-task methods are introduced.
+
+## Owner publication and verification decision
+
+After reviewing the pre-push gate, the owner approved publishing `claude/m06a` as draft PR `[INCOMPLETE] M06a: Tick loop & movement`. The owner explicitly authorized retitling to `M06a: Tick loop & movement — verified`, clearing `blockers/M06a.md` and marking ready for review if the first CI attempt was green with no M06a-caused failures. First-attempt Verify #153 passed on unchanged source commit `9d25b33`: 422 unit tests and 55 browser tests, all verification steps green, no rerun. The conditional authorization therefore applies despite the recorded local-container failures.
