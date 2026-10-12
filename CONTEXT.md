@@ -42,6 +42,8 @@ Ready next: M06b (after M06a), M12b and M12c (after M12a).
 
 - Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
 - `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
+- Deep water renders black: water opacity 2 in src/world/lighting.ts (sky light 0 below about 7–8 blocks) with M05b min brightness 0.04. Plan: in the M06b builder prompt, tune it (water opacity 1 and/or an underwater minimum) so a 20-block-deep seabed is dim but visible; M06b also adds underwater tint and fog.
+- Owner views builds with a bookmarklet that adds ?debug=1 and calls createWorld (no code change). A dev URL auto-create param would need a tiny task; deferred to M18a's menu unless asked.
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
 
 ## Decisions not yet on master
