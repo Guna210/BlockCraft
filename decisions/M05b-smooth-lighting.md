@@ -44,10 +44,16 @@ No diagnostic GPU timer queries, query polling, readPixels, clientWaitSync or fi
 
 ## Evidence and process history
 
-Current results and unresolved requirements live in `progress/M05b.md` and `blockers/M05b.md`. Superseded measurement tables and the rejected gate episode are retained in `decisions/M05b-profiling-history.md`, explicitly labelled historical. The owner approved pushing claude/m05b and opening draft PR #35; all requested follow-ups stay on that branch and PR. Do not commit work/ scratch files.
+Current results and closed-blocker records live in `progress/M05b.md` and `blockers/M05b.md`. Superseded measurement tables and the rejected gate episode are retained in `decisions/M05b-profiling-history.md`, explicitly labelled historical. The owner approved pushing claude/m05b and opening draft PR #35; all requested follow-ups stay on that branch and PR. Do not commit work/ scratch files.
 
 ## Owner-approved coverage screenshot and local limitation
 
 The owner explicitly approved the two fullbright calls in the M04b fast-flight screenshot test only. They follow the M03 cave pattern: enable immediately before screenshot capture and restore immediately afterward, retaining AO/face shading and normal lighting outside capture. No assertion, threshold, timeout, flight or timing change is authorized. This is a screenshot lighting choice, not a game lighting override or streaming workaround.
 
 The owner identifies the local M01a GL-check-count failure as container-specific (fewer frames), notes that it passes on GitHub CI, and explicitly removes it as a blocker. Retain the exact local result in Known limitations; do not alter M01 tests, GL statistics or frame semantics. Visual Review still requires opening the new fullbright capture and describing what is actually present. A green automated test alone does not satisfy the visual line.
+
+## Owner closure and publication approval
+
+The owner explicitly accepts the fullbright fast-flight capture as meeting the M04 coverage Visual Review. The openings are columns still loading or fading at SwiftShader frame rates; coverage is lower than master’s reference capture. This closes the earlier builder uncertainty through owner review. Preserve those visible limitations and the original screenshot descriptions; do not relabel historical captures as fully populated or change any tests.
+
+The local M01a count failure remains an explicit owner-accepted container limitation, with exact local exit/counts and passing CI documented. Once final-head CI is green and the remaining definition-of-done checks hold under these owner acceptances, clear blockers, title PR#35 `M05b: Smooth lighting & AO — verified`, use the final handoff as its description and mark it ready for review. The owner has authorized these publication actions and prior branch pushes.
