@@ -32,7 +32,7 @@ In flight:
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | M06a | PR #36 review PASS (round 1, session_01SvTjUyqSyEjYuxd16JM41f); awaiting owner merge | Codex | Sonnet | #36 | 1 | Non-blocking: slabs use flat light (no smooth light/AO); no null-spawn test; progress header says exit 1. |
-| INFRA-win | prompt written for Codex (smaller model): plain-Node lint-placeholders.mjs + .gitattributes `* text=auto eol=lf`; PR needs harness-change label | Codex | — | — | — | Lets agy build on Windows/PowerShell (agy can't use Git Bash). |
+| INFRA-win | gate 11cc5aa: unit 424/424; e2e 51 pass, 4 container-only fails; orchestrator recommends draft PR, retitle '— verified' if CI green; PR needs harness-change label | Codex | — | — | — | Lets agy build on Windows/PowerShell (agy can't use Git Bash). |
 | M12a | queued after M06a merges (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
@@ -49,12 +49,13 @@ Ready next: M06b (after M06a), M12b and M12c (after M12a).
 
 ## Decisions not yet on master
 
-Codex prompts from now on list the known container-only failures (M04b heap and RD12 timeouts, M04b mid-flight blank, M01a GL-check count, occasional M02 mesh p95): don't investigate or re-run master; go to a draft PR so CI decides. Owner may add this to AGENTS.md §9.
+Codex prompts from now on list the known container-only failures (M04b heap and RD12 timeouts, M04b mid-flight blank, M01a GL-check count, occasional M02 mesh p95, M04a pump max ~63 ms): don't investigate or re-run master; go to a draft PR so CI decides. Owner may add this to AGENTS.md §9.
 
 None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson for future builds: same-environment master comparisons and CI on a draft PR were the useful evidence; Codex's container has a 2-core quota.
 
 ## Log (newest first)
 
+- 2026-10-12: INFRA-win gate (11cc5aa): renormalize staged nothing unrelated; old/new lint equivalent; unit 424/424; e2e 4 fails (M02 mesh p95, M04a pump 62.8 ms also on master archive, M04b heap, mid-flight blank), all container-only. Recommended: approve push as draft PR, owner adds harness-change label, Codex retitles '— verified' once CI is green. M04a pump added to known container failures.
 - 2026-10-12: Owner wants to build on a Windows laptop with agy (PowerShell only, no Git Bash; Node 24). Only blockers found: lint-placeholders.mjs shells out to grep (silently passes on Windows) and no .gitattributes (CRLF breaks prettier). INFRA-win task prompt written. agy prompts must use PowerShell env syntax for MILESTONE.
 - 2026-10-12: M06a review PASS, no blockers. Next after merge: M06b (include deep-water light tuning) or M12a (swap decision 1 to M06a's tick); owner picks order.
 - 2026-10-12: M06a PR #36 ready (CI Verify green, 55 e2e, first attempt). Reviewer prompt written for a Claude Sonnet session. Owner deferred the Windows agy setup (notes: .gitattributes eol=lf; Git Bash terminal so grep is on PATH for lint-placeholders; middle PATH option).
