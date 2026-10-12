@@ -31,11 +31,11 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | queued after M06a merges (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
+| M12a | ready (M06a merged); prompt to be rewritten (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready next: M06b (after M06a), M12b and M12c (after M12a).
+Ready next: M06b and M12a (deps merged); M12b and M12c after M12a.
 
 ## Open items for the owner
 
