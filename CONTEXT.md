@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); draft PR #35 green; awaiting owner decision on debug light for M04b fast-flight shot | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); PR #35: debug light for M04b fast-flight shot approved; Codex finishing → ready for review | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-12: Owner chose (a): setDebugLight on/off around the M04b fast-flight screenshot only (no other test changes). Prompt sent to Codex; local M01a GL-check count is container-only, noted as a known limitation. Next: Codex re-checks VR, pushes, retitles '— verified' if §4 holds, marks ready; then reviewer prompt (Claude reviewer; include a winding/back-face check).
 - 2026-10-12: Owner saw lit surface faces from inside a mountain on the M05b build. Cause: back-face culling is off by design (decisions/M03g-face-winding.md; no CULL_FACE in src on master or branch), so back sides of surface faces render with their front-side light. Expected and pre-existing, not an M05b bug. Open item: enabling CULL_FACE (winding already fixed in M03g) roughly halves drawn triangles; candidate for M22a or an owner-approved small task.
 - 2026-10-12: M05b `bd1feb7` pushed to draft PR #35: CI fully green (394 unit, 47 e2e, mid-flight first try, M04a max 14 ms). Codex kept it [INCOMPLETE] for (1) fast-flight VR and (2) local-only M01a GL-check count (1410 vs 1477; passes on CI, container-only). Orchestrator compared screenshots: same underground cave viewpoint as master; master unlit grey, branch correctly black under M05 light. Recommended the owner approve setDebugLight around the M04b fast-flight screenshot only (M03 precedent); otherwise accept and document. Next: verified title, ready for review, reviewer prompt (prefer a Claude reviewer).
 - 2026-10-11: M05b Codex asked whether light dispatch is serial (its own m05-light-scheduling test) or parallel. Orchestrator: parallel across the full light pool; batches are self-contained (16-block border ≥ light range 15), so in-flight batches only need disjoint interiors. Codex may update its own M05b test, replacing it with: all N workers used, disjoint interiors, result independent of completion order vs the exact reference.
