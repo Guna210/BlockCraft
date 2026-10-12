@@ -32,7 +32,7 @@ In flight:
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | M06a | PR #36 review PASS (round 1, session_01SvTjUyqSyEjYuxd16JM41f); awaiting owner merge | Codex | Sonnet | #36 | 1 | Non-blocking: slabs use flat light (no smooth light/AO); no null-spawn test; progress header says exit 1. |
-| INFRA-win | PR #37 (b1f8600) CI green; orchestrator review round 1: CHANGES NEEDED (new test plants files in real src/ and races lint.test.ts under parallel vitest; fix = run the script with cwd in a temp dir); needs harness-change label | Codex | #37 | — | — | Lets agy build on Windows/PowerShell (agy can't use Git Bash). |
+| INFRA-win | PR #37 (716b36a) CI green (Verify #158/#159); orchestrator review round 2: PASS; harness-change label applied; awaiting owner merge | Codex | #37 | — | — | Lets agy build on Windows/PowerShell (agy can't use Git Bash). |
 | M12a | queued after M06a merges (Codex, smaller model OK) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Sequential: swap decision 1 to 'advance on M06a's fixed tick' and drop the merge-first line before starting. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
@@ -55,6 +55,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-12: INFRA-win round 2 (fc2fef7, 716b36a): test now uses os.tmpdir() fixtures and runs the script with cwd=fixture; no writes to repo src/server, retry loop gone, missing-server case added. VERDICT PASS; owner to merge. After merge: Windows clone works with PowerShell (`$env:MILESTONE=...`).
 - 2026-10-12: INFRA-win PR #37 review (orchestrator, round 1): script and .gitattributes OK. Blocking: lint-placeholders.test.ts plants forbidden files in real src/ and server/ while lint.test.ts (unchanged harness-adjacent test) expects a clean pass in parallel, so it can flake; the 2 s retry loop only shields the new test. Fix: run `node scripts/lint-placeholders.mjs` with cwd set to a temp fixture dir (the script uses process.cwd()) and drop the retry loop. Fix prompt given to owner for Codex.
 - 2026-10-12: INFRA-win gate (11cc5aa): renormalize staged nothing unrelated; old/new lint equivalent; unit 424/424; e2e 4 fails (M02 mesh p95, M04a pump 62.8 ms also on master archive, M04b heap, mid-flight blank), all container-only. Recommended: approve push as draft PR, owner adds harness-change label, Codex retitles '— verified' once CI is green. M04a pump added to known container failures.
 - 2026-10-12: Owner wants to build on a Windows laptop with agy (PowerShell only, no Git Bash; Node 24). Only blockers found: lint-placeholders.mjs shells out to grep (silently passes on Windows) and no .gitattributes (CRLF breaks prettier). INFRA-win task prompt written. agy prompts must use PowerShell env syntax for MILESTONE.
