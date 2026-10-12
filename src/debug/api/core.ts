@@ -37,6 +37,8 @@ export interface BlockCraftDebugAPI {
   getBiome?: (x: number, z: number) => string;
   getHeight?: (x: number, z: number) => number;
   getLight?: (x: number, y: number, z: number) => { sky: number; block: number };
+  getBlockLightRGB?: (x: number, y: number, z: number) => { r: number; g: number; b: number };
+  setDebugLight?: (on: boolean) => void;
   locate?: (
     kind: 'ore' | 'structure' | 'biome',
     id: string,

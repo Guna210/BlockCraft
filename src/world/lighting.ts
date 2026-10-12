@@ -1,9 +1,11 @@
+import { EMITTER_TINTS, tintOffset } from '../render/light-curve';
 import { BlockRegistry } from './blocks/registry';
 import { World } from './world';
 
 export interface LightLookupTables {
   opacityTable: Uint8Array;
   emissionTable: Uint8Array;
+  rgbEmission?: [Uint8Array, Uint8Array, Uint8Array];
 }
 
 export function buildLightLookupTables(registry: BlockRegistry): LightLookupTables {
@@ -11,6 +13,11 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
   const opacityTable = new Uint8Array(maxStateId + 1);
   const emissionTable = new Uint8Array(maxStateId + 1);
 
+  const rgbEmission: [Uint8Array, Uint8Array, Uint8Array] = [
+    new Uint8Array(maxStateId + 1),
+    new Uint8Array(maxStateId + 1),
+    new Uint8Array(maxStateId + 1),
+  ];
   for (let s = 0; s <= maxStateId; s++) {
     const resolved = registry.getResolvedState(s);
     if (!resolved) {
@@ -46,10 +53,15 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
 
     opacityTable[s] = opacity;
     emissionTable[s] = emission;
+    const tint = EMITTER_TINTS[blockId] ?? [1, 1, 1];
+    for (let c = 0; c < 3; c++)
+      rgbEmission[c]![s] = Math.max(0, emission - tintOffset(emission, tint[c]!));
   }
 
-  return { opacityTable, emissionTable };
+  return { opacityTable, emissionTable, rgbEmission };
 }
+
+export const SKY_15_SECTION = new Uint8Array(4096).fill(0xf0);
 
 export class LightStorage {
   // Map numeric section key to Uint8Array (4096 bytes)
@@ -146,6 +158,10 @@ export class LightStorage {
       data = new Uint8Array(4096);
       this.sections.set(key, data);
     }
+    if (data === SKY_15_SECTION) {
+      data = data.slice();
+      this.sections.set(key, data);
+    }
     const idx = (ly << 8) | (lz << 4) | lx;
     const oldVal = data[idx]!;
     const newVal = ((sky & 0x0f) << 4) | (block & 0x0f);
@@ -202,6 +218,12 @@ const DZ = [0, 0, 0, 0, 1, -1];
 export class LightEngine {
   public storage: LightStorage = new LightStorage();
   public tables: LightLookupTables;
+  /** Only the streamer enables this guard; standalone engine callers initialise their own worlds. */
+  public onlyLitColumns = false;
+  public readonly litColumns = new Set<number>();
+  public readonly skirts = new Map<number, { height: number; data: Uint16Array }>();
+  public readonly rgbChannels: LightEngine[] = [];
+  private readonly blockOnly: boolean;
 
   // Lazy BFS Queues
   private queueCapacity = DEFAULT_QUEUE_CAPACITY;
@@ -235,12 +257,47 @@ export class LightEngine {
   // Key: (cx + 32768) * 65536 + (cz + 32768)
   private heightmaps: Map<number, Int16Array> = new Map();
 
-  constructor(tables?: LightLookupTables) {
+  constructor(tables?: LightLookupTables, blockOnly = false) {
+    this.blockOnly = blockOnly;
     if (tables) {
       this.tables = tables;
     } else {
       this.tables = buildLightLookupTables(BlockRegistry.getInstance());
     }
+    if (!blockOnly && this.tables.rgbEmission) {
+      for (const emissionTable of this.tables.rgbEmission)
+        this.rgbChannels.push(
+          new LightEngine({ opacityTable: this.tables.opacityTable, emissionTable }, true),
+        );
+    }
+  }
+
+  public isLit(cx: number, cz: number): boolean {
+    return this.litColumns.has(LightEngine.getColumnKey(cx, cz));
+  }
+
+  public markLit(cx: number, cz: number): void {
+    this.litColumns.add(LightEngine.getColumnKey(cx, cz));
+    for (const engine of this.rgbChannels) {
+      engine.onlyLitColumns = this.onlyLitColumns;
+      engine.markLit(cx, cz);
+    }
+  }
+
+  public getBlockLightRGB(x: number, y: number, z: number): { r: number; g: number; b: number } {
+    if (this.rgbChannels.length === 0) {
+      const v = this.getLight(x, y, z).block;
+      return { r: v, g: v, b: v };
+    }
+    return {
+      r: this.rgbChannels[0]!.getLight(x, y, z).block,
+      g: this.rgbChannels[1]!.getLight(x, y, z).block,
+      b: this.rgbChannels[2]!.getLight(x, y, z).block,
+    };
+  }
+
+  private acceptsColumn(world: World, cx: number, cz: number): boolean {
+    return world.hasColumn(cx, cz) && (!this.onlyLitColumns || this.isLit(cx, cz));
   }
 
   private static getColumnKey(cx: number, cz: number): number {
@@ -291,6 +348,7 @@ export class LightEngine {
       this.tables.opacityTable = newOp;
     }
     this.tables.emissionTable[stateId] = emission;
+    for (const engine of this.rgbChannels) engine.setCustomEmission(stateId, emission);
   }
 
   public setCustomOpacity(stateId: number, opacity: number): void {
@@ -303,6 +361,7 @@ export class LightEngine {
       this.tables.opacityTable = newOp;
     }
     this.tables.opacityTable[stateId] = opacity;
+    for (const engine of this.rgbChannels) engine.setCustomOpacity(stateId, opacity);
   }
 
   public getLight(x: number, y: number, z: number): { sky: number; block: number } {
@@ -416,11 +475,15 @@ export class LightEngine {
   public removeColumn(cx: number, cz: number): void {
     this.storage.removeColumn(cx, cz);
     this.clearColumnCache(cx, cz);
+    this.litColumns.delete(LightEngine.getColumnKey(cx, cz));
+    this.skirts.delete(LightEngine.getColumnKey(cx, cz));
+    for (const engine of this.rgbChannels) engine.removeColumn(cx, cz);
   }
 
   public initializeColumnLight(world: World, cx: number, cz: number): void {
     const col = world.getColumn(cx, cz, false);
     if (!col) return;
+    this.markLit(cx, cz);
 
     this.clearColumnCache(cx, cz);
 
@@ -529,7 +592,7 @@ export class LightEngine {
               if (ny < 0 || ny > 319) continue;
               const ncx = Math.floor(nx / 16);
               const ncz = Math.floor(nz / 16);
-              if (!world.hasColumn(ncx, ncz)) continue;
+              if (!this.acceptsColumn(world, ncx, ncz)) continue;
 
               const stN = world.getBlockStateId(nx, ny, nz);
               const opN = this.tables.opacityTable[stN] ?? 0;
@@ -559,6 +622,24 @@ export class LightEngine {
     // Process BFS for initial light
     this.processSkyAdd(world);
     this.processBlockAdd(world);
+    for (const engine of this.rgbChannels) {
+      for (let sy = 0; sy < 20; sy++) {
+        const sec = col.getSection(sy);
+        if (!sec) continue;
+        if (sec.getBitsPerEntry() === 0 && !engine.tables.emissionTable[sec.uniformStateId])
+          continue;
+        for (let ly = 0; ly < 16; ly++)
+          for (let lz = 0; lz < 16; lz++)
+            for (let lx = 0; lx < 16; lx++) {
+              const emission = engine.tables.emissionTable[sec.getBlockStateId(lx, ly, lz)] ?? 0;
+              if (emission) {
+                engine.storage.setBlockLight(cx, sy, cz, lx, ly, lz, emission);
+                engine.pushBlockAdd(cx * 16 + lx, sy * 16 + ly, cz * 16 + lz);
+              }
+            }
+      }
+      engine.processBlockAdd(world);
+    }
   }
 
   public onBlockChanged(
@@ -570,8 +651,8 @@ export class LightEngine {
     newStateId: number,
   ): void {
     if (y < 0 || y > 319) return;
-
     this.storage.resetTouched();
+    if (!this.acceptsColumn(world, Math.floor(x / 16), Math.floor(z / 16))) return;
 
     const oldOp = this.tables.opacityTable[oldStateId] ?? 0;
     const newOp = this.tables.opacityTable[newStateId] ?? 0;
@@ -604,7 +685,15 @@ export class LightEngine {
     this.processBlockRem(world);
 
     if (newEmit > 0) {
-      this.storage.setBlockLight(cx, sy, cz, localX, ly, localZ, newEmit);
+      this.storage.setBlockLight(
+        cx,
+        sy,
+        cz,
+        localX,
+        ly,
+        localZ,
+        Math.max(newEmit, this.getLight(x, y, z).block),
+      );
       this.pushBlockAdd(x, y, z);
     } else if (newOp < oldOp) {
       // Light from neighbors could enter
@@ -615,7 +704,7 @@ export class LightEngine {
         if (ny >= 0 && ny <= 319) {
           const ncx = Math.floor(nx / 16);
           const ncz = Math.floor(nz / 16);
-          if (world.hasColumn(ncx, ncz)) {
+          if (this.acceptsColumn(world, ncx, ncz)) {
             const nBL = this.getLight(nx, ny, nz).block;
             if (nBL > 1) {
               this.pushBlockAdd(nx, ny, nz);
@@ -627,6 +716,11 @@ export class LightEngine {
 
     this.processBlockAdd(world);
 
+    if (this.blockOnly) return;
+    for (const engine of this.rgbChannels) {
+      engine.onBlockChanged(world, x, y, z, oldStateId, newStateId);
+      for (const key of engine.storage.touchedSections) this.storage.touchedSections.add(key);
+    }
     // --- Sky Light ---
     this.skyRemHead = 0;
     this.skyRemTail = 0;
@@ -706,7 +800,7 @@ export class LightEngine {
         if (ny >= 0 && ny <= 319) {
           const ncx = Math.floor(nx / 16);
           const ncz = Math.floor(nz / 16);
-          if (world.hasColumn(ncx, ncz)) {
+          if (this.acceptsColumn(world, ncx, ncz)) {
             const nSky = this.getLight(nx, ny, nz).sky;
             if (nSky > 1) {
               this.pushSkyAdd(nx, ny, nz);
@@ -786,7 +880,7 @@ export class LightEngine {
         const ncz = Math.floor(nz / 16);
         const nlx = ((nx % 16) + 16) % 16;
         const nlz = ((nz % 16) + 16) % 16;
-        if (!world.hasColumn(ncx, ncz)) continue;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
 
         const nsy = ny >> 4;
         const nly = ny & 15;
@@ -798,8 +892,9 @@ export class LightEngine {
         const isEmitter = emit > 0 && emit === nBL;
 
         if (nBL < val || (nBL === val && !isEmitter)) {
-          this.storage.setBlockLight(ncx, nsy, ncz, nlx, nly, nlz, 0);
+          this.storage.setBlockLight(ncx, nsy, ncz, nlx, nly, nlz, emit);
           this.pushBlockRem(nx, ny, nz, nBL);
+          if (emit > 0) this.pushBlockAdd(nx, ny, nz);
         } else if (nBL >= val) {
           this.pushBlockAdd(nx, ny, nz);
         }
@@ -834,7 +929,7 @@ export class LightEngine {
         const ncz = Math.floor(nz / 16);
         const nlx = ((nx % 16) + 16) % 16;
         const nlz = ((nz % 16) + 16) % 16;
-        if (!world.hasColumn(ncx, ncz)) continue;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
 
         const st = world.getBlockStateId(nx, ny, nz);
         const op = this.tables.opacityTable[st] ?? 0;
@@ -874,7 +969,7 @@ export class LightEngine {
         const ncz = Math.floor(nz / 16);
         const nlx = ((nx % 16) + 16) % 16;
         const nlz = ((nz % 16) + 16) % 16;
-        if (!world.hasColumn(ncx, ncz)) continue;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
 
         const nsy = ny >> 4;
         const nly = ny & 15;
@@ -920,7 +1015,7 @@ export class LightEngine {
         const ncz = Math.floor(nz / 16);
         const nlx = ((nx % 16) + 16) % 16;
         const nlz = ((nz % 16) + 16) % 16;
-        if (!world.hasColumn(ncx, ncz)) continue;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
 
         const st = world.getBlockStateId(nx, ny, nz);
         const op = this.tables.opacityTable[st] ?? 0;

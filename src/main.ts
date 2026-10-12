@@ -120,30 +120,32 @@ function main() {
     if (frameDrain) {
       const t = performance.now();
       frameDrain.beginFrame();
-      glCheckMs = performance.now() - t;
+      glCheckMs += performance.now() - t;
     }
     const startTime = performance.now();
     const dt = time - lastTime;
     lastTime = time;
 
     glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    let rendered = false;
 
     if (testScene) {
       testScene.render(dt / 1000, input);
+      rendered = true;
       if (firstFrameResolve) {
         firstFrameResolve();
         firstFrameResolve = null;
       }
     } else if (worldManager.world) {
       camera.update(dt / 1000, input);
-      worldManager.render();
+      rendered = worldManager.render();
     }
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
-    cpuTimes.push(frameCpuMs);
+    if (rendered) cpuTimes.push(frameCpuMs);
     const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
-    uploadTimes.push(uploadMs);
+    if (rendered) uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
     if (frameDrain) {
@@ -151,9 +153,10 @@ function main() {
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
-    frameStats.record(frameCpuMs, uploadMs, glCheckMs);
-
-    frameCount++;
+    if (rendered) {
+      frameStats.record(frameCpuMs, uploadMs, glCheckMs);
+      frameCount++;
+    }
     fpsTimer += dt;
     if (fpsTimer >= 1000) {
       renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);

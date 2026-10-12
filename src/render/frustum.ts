@@ -87,3 +87,21 @@ export function columnInFrustum(planes: ArrayLike<number>, cx: number, cz: numbe
     z + COLUMN_SIZE,
   );
 }
+
+/** Each drawn section must intersect the frustum, even inside a visible whole-height column. */
+export function sectionInFrustum(
+  planes: ArrayLike<number>,
+  sx: number,
+  sy: number,
+  sz: number,
+): boolean {
+  return aabbIntersectsFrustum(
+    planes,
+    sx * 16,
+    sy * 16,
+    sz * 16,
+    (sx + 1) * 16,
+    (sy + 1) * 16,
+    (sz + 1) * 16,
+  );
+}

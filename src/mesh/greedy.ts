@@ -1,3 +1,6 @@
+import { sampleFaceCorners, canMergeCorners, shouldFlipQuad, FACE_NORMAL_STRIDES } from './ao';
+import { packVertex } from './vertex';
+export { packVertex } from './vertex';
 import type { BlockRegistry } from '../world/blocks/registry';
 import type { BlockFaceDirection } from '../world/blocks/types';
 import {
@@ -15,6 +18,8 @@ export const DEFAULT_AO = 0;
 export const DEFAULT_TINT_INDEX = 0;
 
 export interface MeshBucketData {
+  /** Worker-normalized vertices use the renderer's common quad index order. */
+  canonicalQuads?: boolean;
   vertices: Uint32Array;
   indices: Uint32Array;
   vertexCount: number;
@@ -22,6 +27,8 @@ export interface MeshBucketData {
 }
 
 export interface SectionMeshData {
+  /** Worker-computed metadata; zero block light permits a smaller sky-only shader. */
+  hasBlockLight?: boolean;
   opaque: MeshBucketData;
   cutout: MeshBucketData;
   translucent: MeshBucketData;
@@ -174,6 +181,12 @@ export function shouldCullFace(
 // Scratch buffers pre-allocated to avoid heap allocations in inner loops
 const SCRATCH_MASK = new Uint32Array(16 * 16);
 const SCRATCH_VISITED = new Uint8Array(16 * 16);
+const FACE_U_STRIDES = [324, 324, 1, 1, 1, 1];
+const FACE_V_STRIDES = [18, 18, 324, 324, 18, 18];
+const FACE_D_STRIDES = [1, 1, 18, 18, 324, 324];
+const QUAD_ORDER = [0, 1, 2, 0, 2, 3];
+const FLIPPED_QUAD_ORDER = [0, 1, 3, 1, 2, 3];
+const SCRATCH_CORNERS = new Uint32Array(16 * 16 * 4);
 
 // Pre-allocated per-bucket vertex/index buffers
 // Max quads per bucket: 24,576 (e.g., 16³ leaf-leaf checkerboard has all 24,576 faces exposed)
@@ -211,37 +224,6 @@ function resetBucketScratch(scratch: BucketScratch): void {
   scratch.quadCount = 0;
 }
 
-export function packVertex(
-  x: number,
-  y: number,
-  z: number,
-  normalIndex: number,
-  ao: number,
-  skyLight: number,
-  blockLight: number,
-  tintIndex: number,
-  tileIndex: number,
-  u: number,
-  v: number,
-  target: Uint32Array,
-  offset: number,
-): void {
-  const word0 =
-    (x & 31) |
-    ((y & 31) << 5) |
-    ((z & 31) << 10) |
-    ((normalIndex & 7) << 15) |
-    ((ao & 3) << 18) |
-    ((skyLight & 15) << 20) |
-    ((blockLight & 15) << 24) |
-    ((tintIndex & 15) << 28);
-
-  const word1 = (tileIndex & 65535) | ((u & 255) << 16) | ((v & 255) << 24);
-
-  target[offset] = word0;
-  target[offset + 1] = word1;
-}
-
 function emitQuad(
   f: number,
   sliceD: number,
@@ -253,6 +235,8 @@ function emitQuad(
   tintIndex: number,
   logAxis: number,
   scratch: BucketScratch,
+  corners: Uint32Array,
+  cornerOffset: number,
 ): void {
   const vertBase = scratch.vertOffset / 2;
 
@@ -438,81 +422,79 @@ function emitQuad(
     y0,
     z0,
     f,
-    DEFAULT_AO,
-    DEFAULT_SKY_LIGHT,
-    DEFAULT_BLOCK_LIGHT,
+    corners[cornerOffset + 0]! >>> 16,
+    corners[cornerOffset + 0]! & 15,
+    (corners[cornerOffset + 0]! >>> 4) & 15,
     tintIndex,
     tileIndex,
     u0_val,
     v0_val,
     scratch.vertices,
     scratch.vertOffset,
+    (corners[cornerOffset + 0]! >>> 8) & 15,
+    (corners[cornerOffset + 0]! >>> 12) & 15,
   );
   packVertex(
     x1,
     y1,
     z1,
     f,
-    DEFAULT_AO,
-    DEFAULT_SKY_LIGHT,
-    DEFAULT_BLOCK_LIGHT,
+    corners[cornerOffset + 1]! >>> 16,
+    corners[cornerOffset + 1]! & 15,
+    (corners[cornerOffset + 1]! >>> 4) & 15,
     tintIndex,
     tileIndex,
     u1_val,
     v1_val,
     scratch.vertices,
     scratch.vertOffset + 2,
+    (corners[cornerOffset + 1]! >>> 8) & 15,
+    (corners[cornerOffset + 1]! >>> 12) & 15,
   );
   packVertex(
     x2,
     y2,
     z2,
     f,
-    DEFAULT_AO,
-    DEFAULT_SKY_LIGHT,
-    DEFAULT_BLOCK_LIGHT,
+    corners[cornerOffset + 2]! >>> 16,
+    corners[cornerOffset + 2]! & 15,
+    (corners[cornerOffset + 2]! >>> 4) & 15,
     tintIndex,
     tileIndex,
     u2_val,
     v2_val,
     scratch.vertices,
     scratch.vertOffset + 4,
+    (corners[cornerOffset + 2]! >>> 8) & 15,
+    (corners[cornerOffset + 2]! >>> 12) & 15,
   );
   packVertex(
     x3,
     y3,
     z3,
     f,
-    DEFAULT_AO,
-    DEFAULT_SKY_LIGHT,
-    DEFAULT_BLOCK_LIGHT,
+    corners[cornerOffset + 3]! >>> 16,
+    corners[cornerOffset + 3]! & 15,
+    (corners[cornerOffset + 3]! >>> 4) & 15,
     tintIndex,
     tileIndex,
     u3_val,
     v3_val,
     scratch.vertices,
     scratch.vertOffset + 6,
+    (corners[cornerOffset + 3]! >>> 8) & 15,
+    (corners[cornerOffset + 3]! >>> 12) & 15,
   );
 
   scratch.vertOffset += 8;
 
-  // Pack 6 indices (2 triangles)
   const idx = scratch.indexOffset;
-  scratch.indices[idx] = vertBase;
-  scratch.indices[idx + 3] = vertBase;
-  if (f === 0 || f === 1) {
-    // The +X and -X corner lists above run clockwise seen from outside; the other four run
-    // counter-clockwise. Reversing the triangle order makes all six directions counter-clockwise
-    // without moving any vertex or UV (decisions/M03g-face-winding.md).
-    scratch.indices[idx + 1] = vertBase + 2;
-    scratch.indices[idx + 2] = vertBase + 1;
-    scratch.indices[idx + 4] = vertBase + 3;
-    scratch.indices[idx + 5] = vertBase + 2;
-  } else {
-    scratch.indices[idx + 1] = vertBase + 1;
-    scratch.indices[idx + 2] = vertBase + 2;
-    scratch.indices[idx + 4] = vertBase + 2;
-    scratch.indices[idx + 5] = vertBase + 3;
+  const flipped = shouldFlipQuad(corners, cornerOffset);
+  const order = flipped ? FLIPPED_QUAD_ORDER : QUAD_ORDER;
+  for (let t = 0; t < 6; t += 3) {
+    scratch.indices[idx + t] = vertBase + order[t]!;
+    scratch.indices[idx + t + 1] = vertBase + order[t + (f === 0 || f === 1 ? 2 : 1)]!;
+    scratch.indices[idx + t + 2] = vertBase + order[t + (f === 0 || f === 1 ? 1 : 2)]!;
   }
 
   scratch.indexOffset += 6;
@@ -541,7 +523,11 @@ function emptyBucketData(): MeshBucketData {
  * Pure greedy mesher: generates typed arrays per bucket (opaque, cutout, translucent)
  * from an 18x18x18 Uint16Array padded section and registry lookup tables.
  */
-export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables): SectionMeshData {
+export function greedyMesh(
+  paddedSection: Uint16Array,
+  tables: MeshLookupTables,
+  lightInput?: Uint16Array | (() => Uint16Array),
+): SectionMeshData {
   // Fast path 1: Check if core 16x16x16 section is all air
   let isAllAir = true;
   let isAllOpaque = true;
@@ -606,6 +592,10 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
     }
   }
 
+  // Empty and fully enclosed sections need no light padding. Workers can defer
+  // its expansion until the section actually has geometry to shade.
+  const paddedLight = typeof lightInput === 'function' ? lightInput() : lightInput;
+
   // Reset scratch buffers
   resetBucketScratch(opaqueScratch);
   resetBucketScratch(cutoutScratch);
@@ -621,68 +611,15 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
       SCRATCH_VISITED.fill(0);
 
       // Populate 16x16 mask for current slice plane d and face direction f
+      const uStride = FACE_U_STRIDES[f]!;
+      const vStride = FACE_V_STRIDES[f]!;
+      const normalStride = FACE_NORMAL_STRIDES[f]!;
+      const sliceStart = 343 + d * FACE_D_STRIDES[f]!;
       for (let v = 0; v < 16; v++) {
-        for (let u = 0; u < 16; u++) {
-          let selfPx = 0,
-            selfPy = 0,
-            selfPz = 0;
-          let neighPx = 0,
-            neighPy = 0,
-            neighPz = 0;
-
-          switch (f) {
-            case 0: // East (+X)
-              selfPx = d + 1;
-              selfPy = v + 1;
-              selfPz = u + 1;
-              neighPx = d + 2;
-              neighPy = v + 1;
-              neighPz = u + 1;
-              break;
-            case 1: // West (-X)
-              selfPx = d + 1;
-              selfPy = v + 1;
-              selfPz = u + 1;
-              neighPx = d;
-              neighPy = v + 1;
-              neighPz = u + 1;
-              break;
-            case 2: // Top (+Y)
-              selfPx = u + 1;
-              selfPy = d + 1;
-              selfPz = v + 1;
-              neighPx = u + 1;
-              neighPy = d + 2;
-              neighPz = v + 1;
-              break;
-            case 3: // Bottom (-Y)
-              selfPx = u + 1;
-              selfPy = d + 1;
-              selfPz = v + 1;
-              neighPx = u + 1;
-              neighPy = d;
-              neighPz = v + 1;
-              break;
-            case 4: // South (+Z)
-              selfPx = u + 1;
-              selfPy = v + 1;
-              selfPz = d + 1;
-              neighPx = u + 1;
-              neighPy = v + 1;
-              neighPz = d + 2;
-              break;
-            case 5: // North (-Z)
-              selfPx = u + 1;
-              selfPy = v + 1;
-              selfPz = d + 1;
-              neighPx = u + 1;
-              neighPy = v + 1;
-              neighPz = d;
-              break;
-          }
-
-          const selfState = paddedSection[selfPx + 18 * (selfPy + 18 * selfPz)]!;
-          const neighState = paddedSection[neighPx + 18 * (neighPy + 18 * neighPz)]!;
+        let ownIndex = sliceStart + v * vStride;
+        for (let u = 0; u < 16; u++, ownIndex += uStride) {
+          const selfState = paddedSection[ownIndex]!;
+          const neighState = paddedSection[ownIndex + normalStride]!;
 
           if (!shouldCullFace(selfState, neighState, tables)) {
             const tileIdx = tables.tileIndices[selfState * 6 + f]!;
@@ -696,6 +633,16 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             // tileIdx: 16 bits
             const key = (tileIdx << 6) | (tintIdx << 4) | (axis << 2) | layer;
             SCRATCH_MASK[u + v * 16] = key;
+            sampleFaceCorners(
+              paddedSection,
+              paddedLight,
+              tables.isOpaqueCube,
+              ownIndex,
+              f,
+              layer === 3,
+              SCRATCH_CORNERS,
+              (u + v * 16) * 4,
+            );
           }
         }
       }
@@ -716,7 +663,8 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             while (
               u + W < 16 &&
               SCRATCH_VISITED[u + W + v * 16] === 0 &&
-              SCRATCH_MASK[u + W + v * 16] === key
+              SCRATCH_MASK[u + W + v * 16] === key &&
+              canMergeCorners(SCRATCH_CORNERS, idx * 4, (u + W + v * 16) * 4)
             ) {
               W++;
             }
@@ -727,7 +675,11 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             while (v + H < 16 && canGrowHeight) {
               for (let du = 0; du < W; du++) {
                 const checkIdx = u + du + (v + H) * 16;
-                if (SCRATCH_VISITED[checkIdx] !== 0 || SCRATCH_MASK[checkIdx] !== key) {
+                if (
+                  SCRATCH_VISITED[checkIdx] !== 0 ||
+                  SCRATCH_MASK[checkIdx] !== key ||
+                  !canMergeCorners(SCRATCH_CORNERS, idx * 4, checkIdx * 4)
+                ) {
                   canGrowHeight = false;
                   break;
                 }
@@ -755,7 +707,7 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
             }
 
             // Emit quad
-            emitQuad(f, d, u, v, W, H, tileIdx, tintIdx, logAxis, bucket);
+            emitQuad(f, d, u, v, W, H, tileIdx, tintIdx, logAxis, bucket, SCRATCH_CORNERS, idx * 4);
           }
         }
       }
@@ -783,8 +735,10 @@ export function greedyMesh(paddedSection: Uint16Array, tables: MeshLookupTables)
           tables.tileIndices[state * 6 + 2]!,
           tables.tintIndices[state * 6 + 2]!,
           DEFAULT_AO,
-          DEFAULT_SKY_LIGHT,
-          DEFAULT_BLOCK_LIGHT,
+          paddedLight ? paddedLight[px + yzOff]! >>> 12 : DEFAULT_SKY_LIGHT,
+          paddedLight ? (paddedLight[px + yzOff]! >>> 8) & 15 : DEFAULT_BLOCK_LIGHT,
+          paddedLight ? (paddedLight[px + yzOff]! >>> 4) & 15 : DEFAULT_BLOCK_LIGHT,
+          paddedLight ? paddedLight[px + yzOff]! & 15 : DEFAULT_BLOCK_LIGHT,
         );
         bucket.vertOffset += CROSS_VERTICES_PER_BLOCK * 2;
         bucket.indexOffset += CROSS_INDICES_PER_BLOCK;

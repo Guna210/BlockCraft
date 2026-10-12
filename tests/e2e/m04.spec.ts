@@ -361,7 +361,9 @@ test.describe('M04b: fade-in and memory', () => {
       if (at.x >= start.x + 500) break;
       await page.waitForTimeout(100);
     }
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(true));
     const png = await assertAndSaveScreenshot({ name: 'm04-fast-flight', milestone: 'M04b' });
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(false));
     const stats = await page.evaluate(() => window.__blockcraft!.getStreamingStats!());
     // Reported, not asserted: under SwiftShader this frame does not fully meet its checklist
     // (decisions/M04b-fade-and-memory.md, progress/M04b.md).

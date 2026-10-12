@@ -8,6 +8,7 @@ export class World {
   private registry: BlockRegistry;
   public lightEngine: LightEngine;
   public worldSeed: number = 42;
+  public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
   public worldType: 'default' | 'flat' = 'default';
 
   private lastCX = 0x7fffffff;
@@ -211,6 +212,7 @@ export class World {
     if (this.lightEngine) {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
     }
+    this.onBlockEdited?.(x, y, z, stateId);
   }
 
   public getBlock(

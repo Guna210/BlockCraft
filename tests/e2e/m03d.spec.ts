@@ -86,11 +86,13 @@ test.describe('M03d: Caves & Aquifers Visual & E2E Verification', () => {
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
 
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(true));
     // Capture screenshot
     const png = await assertAndSaveScreenshot({
       name: 'm03d-cave',
       milestone: 'm03',
     });
+    await page.evaluate(() => window.__blockcraft!.setDebugLight!(false));
 
     // Copy PNG to docs/screenshots/M03d/m03d-cave.png
     const destDir = path.resolve(process.cwd(), 'docs/screenshots/M03d');

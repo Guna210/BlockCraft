@@ -21,6 +21,15 @@
  * getByteSize() returns 4 bytes (for uniformStateId).
  */
 
+/** Packed storage transferred from a generation worker; ownership moves to the section. */
+export interface PackedChunkStorage {
+  uniformStateId: number;
+  bits: number;
+  palette: Uint16Array;
+  refCounts: Uint16Array;
+  indices: Uint8Array | Uint16Array;
+}
+
 export class ChunkSection {
   public static readonly SECTION_SIZE = 16;
   public static readonly TOTAL_BLOCKS = 4096; // 16 * 16 * 16
@@ -90,6 +99,14 @@ export class ChunkSection {
         }
       }
     }
+  }
+
+  public adoptPackedStorage(data: PackedChunkStorage): void {
+    this.uniformStateId = data.uniformStateId;
+    this.bitsPerEntry = data.bits;
+    this.palette = data.palette;
+    this.refCounts = data.refCounts;
+    this.indices = data.indices;
   }
 
   public loadBlockStatesFrom(states: Uint16Array): void {

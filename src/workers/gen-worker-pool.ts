@@ -1,3 +1,5 @@
+import type { SharedWorkerBudget } from './shared-worker-budget';
+import type { ColumnWorkPriority } from '../world/streamer';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 
@@ -27,15 +29,25 @@ interface GenJob {
 }
 
 export class GenWorkerPool {
+  private priorities = new Map<string, number>();
+
+  public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
+    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.gen]));
+  }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: GenJob[] = [];
-  private activeJobs: Map<Worker, GenJob> = new Map();
+  private activeJobs: Map<Worker, GenJob[]> = new Map();
   private genSamples: GenSample[] = [];
   private nextJobId = 1;
+  public completedWorkMs = 0;
+  public completedJobs = 0;
   private currentPoolSize: number;
 
-  constructor(poolSize?: number) {
+  constructor(
+    poolSize?: number,
+    private readonly sharedBudget?: SharedWorkerBudget,
+  ) {
     if (typeof Worker === 'undefined') {
       throw new Error('Web Workers are not supported in this environment');
     }
@@ -57,12 +69,15 @@ export class GenWorkerPool {
 
   private createWorkers(size: number): void {
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(new URL('./gen.worker.ts', import.meta.url), {
-        type: 'module',
-      });
+      const worker =
+        this.sharedBudget?.createPort('gen') ??
+        new Worker(new URL('./gen.worker.ts', import.meta.url), {
+          type: 'module',
+        });
 
       worker.onmessage = (e: MessageEvent) => {
         const {
+          id,
           cx,
           cz,
           sections,
@@ -74,14 +89,20 @@ export class GenWorkerPool {
           perSectionMs,
         } = e.data as GenWorkerResponse;
 
+        this.completedWorkMs += columnMs;
+        this.completedJobs++;
         this.genSamples.push({ columnMs, sections: sectionCount });
         if (this.genSamples.length > GEN_STATS_WINDOW) {
           this.genSamples.shift();
         }
 
-        const job = this.activeJobs.get(worker);
-        this.activeJobs.delete(worker);
-        this.idleWorkers.push(worker);
+        const posted = this.activeJobs.get(worker) ?? [];
+        const index = id === undefined ? 0 : posted.findIndex((job) => job.id === id);
+        const job = index < 0 ? undefined : posted.splice(index, 1)[0];
+        if (posted.length === 0) {
+          this.activeJobs.delete(worker);
+          this.idleWorkers.push(worker);
+        }
 
         if (job) {
           job.resolve({
@@ -101,11 +122,11 @@ export class GenWorkerPool {
       };
 
       worker.onerror = (err: ErrorEvent) => {
-        const job = this.activeJobs.get(worker);
+        const jobs = this.activeJobs.get(worker) ?? [];
         this.activeJobs.delete(worker);
         console.error('Gen worker error:', err);
 
-        if (job) {
+        for (const job of jobs) {
           job.reject(
             err.error instanceof Error ? err.error : new Error(err.message || 'Gen worker error'),
           );
@@ -124,7 +145,9 @@ export class GenWorkerPool {
   }
 
   public get queueLength(): number {
-    return this.queue.length + this.activeJobs.size;
+    return (
+      this.queue.length + [...this.activeJobs.values()].reduce((n, jobs) => n + jobs.length, 0)
+    );
   }
 
   /**
@@ -166,11 +189,19 @@ export class GenWorkerPool {
   }
 
   private processQueue(): void {
-    while (this.idleWorkers.length > 0 && this.queue.length > 0) {
-      const worker = this.idleWorkers.pop()!;
+    this.queue.sort(
+      (a, b) =>
+        (this.priorities.get(`${a.cx},${a.cz}`) ?? 1e9) -
+        (this.priorities.get(`${b.cx},${b.cz}`) ?? 1e9),
+    );
+    while (this.queue.length > 0) {
+      const worker =
+        this.idleWorkers.shift() ?? [...this.activeJobs].find(([, jobs]) => jobs.length < 8)?.[0];
+      if (!worker) break;
       const job = this.queue.shift()!;
-
-      this.activeJobs.set(worker, job);
+      const posted = this.activeJobs.get(worker) ?? [];
+      posted.push(job);
+      this.activeJobs.set(worker, posted);
 
       worker.postMessage({
         id: job.id,

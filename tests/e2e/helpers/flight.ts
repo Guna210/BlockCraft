@@ -83,6 +83,8 @@ export async function waitForStreamingIdle(page: Page, timeoutMs: number): Promi
     const busy =
       stats.genQueued +
       stats.genRunning +
+      stats.lightQueued +
+      stats.lightRunning +
       stats.meshQueued +
       stats.meshRunning +
       stats.uploadsDeferred;

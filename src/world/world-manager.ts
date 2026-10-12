@@ -1,3 +1,7 @@
+import { SKY_15_SECTION } from './lighting';
+import { collectLightPadding } from './light-padding';
+import type { ColumnLight, LightRect } from './batch-light';
+import { columnKey } from './streaming-plan';
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from './world';
 import { setWorldInstance } from './world-instance';
@@ -15,7 +19,7 @@ import { TextureData } from '../render/textures/noise';
 import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
 import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
-import { buildPaddedSection } from './padded';
+import { collectBlockPadding, snapshotBlocks, type BlockColumnsSnapshot } from './block-snapshot';
 import { findSpawnPoint } from './spawn';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
@@ -62,7 +66,9 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
       const col = world.getColumn(res.cx, res.cz, true)!;
       const sec = col.getOrCreateSection(secData.sy);
       if (sec) {
-        if (secData.states) {
+        if (secData.packed) {
+          sec.adoptPackedStorage(secData.packed);
+        } else if (secData.states) {
           sec.loadBlockStatesFrom(secData.states);
         } else if (secData.uniformStateId !== null) {
           sec.fill(secData.uniformStateId);
@@ -144,12 +150,21 @@ export class WorldManager {
   // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
   // carry the epoch they were requested in and are dropped when it no longer matches.
   private worldEpoch = 0;
+  public lightBatchTimes: Array<{
+    columns: number;
+    workerMs: number;
+    mainMs: number;
+    maxSliceMs: number;
+    copySliceMaxMs: number;
+    commitSliceMaxMs: number;
+  }> = [];
 
   // Number of createWorld calls that have not finished. While it is non-zero the frame loop draws
   // sky-clear frames only: every frame that draws freshly uploaded terrain takes tens to hundreds of
   // milliseconds of main-thread time under software rendering, and the rendering task outranks the
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
+  public terrainFrames = 0;
 
   // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
   public drainGlErrors: (() => void) | null = null;
@@ -162,6 +177,7 @@ export class WorldManager {
   }
 
   private constructor() {
+    // Each stage owns real workers at its SPEC/master default capacity.
     this.workerPool = new WorkerPool();
     this.genWorkerPool = new GenWorkerPool();
     this.lightWorkerPool = new LightWorkerPool();
@@ -183,8 +199,10 @@ export class WorldManager {
         this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
-        return world ? applyGenSteps(world, res) : [];
+        if (!world) return [];
+        return applyGenSteps(world, res);
       },
+      requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
       uploadSection: (cx, cz, res) => {
         if (!this.chunkRenderer) return;
@@ -210,19 +228,138 @@ export class WorldManager {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.chunkRenderer?.removeColumnMeshes(cx, cz);
       },
+      freeMeshStep: (cx, cz) => {
+        this.meshAttempts.abandon(`${cx},${cz}`);
+        return this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
+      },
       freeData: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.world?.removeColumn(cx, cz);
       },
       now: () => performance.now(),
       recordSlice: (ms) => frameStats.recordPump(ms),
+      setWorkPriorities: (priorities) => {
+        this.workerPool.setWorkPriorities(priorities);
+        this.genWorkerPool.setWorkPriorities(priorities);
+        this.lightWorkerPool.setWorkPriorities(priorities);
+      },
+      uploadPriority: (mesh) => Math.abs(mesh.sy * 16 + 8 - (this.camera?.position[1] ?? 0)),
     };
+  }
+
+  private configureLighting(world: World): void {
+    world.lightEngine.onlyLitColumns = true;
+    world.onBlockEdited = (x, y, z) => {
+      const cx = Math.floor(x / 16);
+      const cz = Math.floor(z / 16);
+      // A worker snapshot also depends on the unlit block border, where incremental BFS does not
+      // write. Refresh the nearby columns whose snapshot or skirt can depend on this edit.
+      const affected = new Set<number>();
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) affected.add(columnKey(cx + dx, cz + dz));
+      for (const key of world.lightEngine.storage.touchedSections) {
+        affected.add(Math.floor(key / 32));
+      }
+      for (const column of affected)
+        this.streamer.invalidateLight(Math.floor(column / 65536) - 32768, (column % 65536) - 32768);
+      if ((x & 15) === 0) this.streamer.invalidate(cx - 1, cz);
+      if ((x & 15) === 15) this.streamer.invalidate(cx + 1, cz);
+      if ((z & 15) === 0) this.streamer.invalidate(cx, cz - 1);
+      if ((z & 15) === 15) this.streamer.invalidate(cx, cz + 1);
+    };
+  }
+
+  private async copyLightColumns(bounds: LightRect) {
+    const captureStart = performance.now();
+    const blocks: BlockColumnsSnapshot = {};
+    let sliceStart = captureStart;
+    let workMs = 0;
+    let maxSliceMs = 0;
+    for (let cz = bounds.minCZ; cz <= bounds.maxCZ; cz++)
+      for (let cx = bounds.minCX; cx <= bounds.maxCX; cx++) {
+        const column = this.world?.getColumn(cx, cz, false);
+        if (!column) throw new Error(`Light block data missing for ${cx},${cz}`);
+        const sections: BlockColumnsSnapshot[string] = [];
+        blocks[`${cx},${cz}`] = sections;
+        for (let sy = 0; sy < 20; sy++) {
+          sections.push(snapshotBlocks(column.getSection(sy)));
+          const elapsed = performance.now() - sliceStart;
+          if (elapsed >= 1) {
+            workMs += elapsed;
+            maxSliceMs = Math.max(maxSliceMs, elapsed);
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            sliceStart = performance.now();
+          }
+        }
+      }
+    const elapsed = performance.now() - sliceStart;
+    return { blocks, workMs: workMs + elapsed, maxSliceMs: Math.max(maxSliceMs, elapsed) };
+  }
+
+  private commitColumnLight(world: World, column: ColumnLight): void {
+    const engine = world.lightEngine;
+    engine.storage.removeColumn(column.cx, column.cz);
+    for (const channel of engine.rgbChannels) channel.storage.removeColumn(column.cx, column.cz);
+    for (const section of column.sections) {
+      if (section.lightData === 0xf0) engine.storage.setRawDataByKey(section.key, SKY_15_SECTION);
+      else if (section.lightData instanceof Uint8Array)
+        engine.storage.setRawDataByKey(section.key, section.lightData);
+      for (let c = 0; c < 3; c++) {
+        const raw = section.rgb?.[c];
+        if (raw) engine.rgbChannels[c]!.storage.setRawDataByKey(section.key, raw);
+      }
+    }
+    engine.skirts.set(columnKey(column.cx, column.cz), {
+      height: column.height,
+      data: column.skirt,
+    });
+    engine.markLit(column.cx, column.cz);
+  }
+
+  private async requestColumnLight(columns: Array<{ cx: number; cz: number }>) {
+    const world = this.world!;
+    const interior = {
+      minCX: Math.min(...columns.map((c) => c.cx)),
+      maxCX: Math.max(...columns.map((c) => c.cx)),
+      minCZ: Math.min(...columns.map((c) => c.cz)),
+      maxCZ: Math.max(...columns.map((c) => c.cz)),
+    };
+    const bounds = {
+      minCX: interior.minCX - 1,
+      maxCX: interior.maxCX + 1,
+      minCZ: interior.minCZ - 1,
+      maxCZ: interior.maxCZ + 1,
+    };
+    const { blocks, workMs: copiedMs, maxSliceMs } = await this.copyLightColumns(bounds);
+    const result = await this.lightWorkerPool.enqueueBatch(bounds, interior, blocks);
+    const timing = {
+      columns: columns.length,
+      workerMs: result.duration ?? 0,
+      mainMs: copiedMs,
+      maxSliceMs,
+      copySliceMaxMs: maxSliceMs,
+      commitSliceMaxMs: 0,
+    };
+    this.lightBatchTimes.push(timing);
+    if (this.lightBatchTimes.length > 100) this.lightBatchTimes.shift();
+    return (result.columns ?? []).map((column) => ({
+      cx: column.cx,
+      cz: column.cz,
+      apply: () => {
+        const commitStart = performance.now();
+        this.commitColumnLight(world, column);
+        const elapsed = performance.now() - commitStart;
+        timing.mainMs += elapsed;
+        timing.maxSliceMs = Math.max(timing.maxSliceMs, elapsed);
+        timing.commitSliceMaxMs = Math.max(timing.commitSliceMaxMs, elapsed);
+      },
+    }));
   }
 
   /** In-flight work is bounded by the pool sizes, so queued work stays in the streamer, in priority order. */
   private updateStreamerLimits(): void {
-    this.streamer.limits.maxGenInFlight = Math.max(4, this.genWorkerPool.workerCount * 2);
-    this.streamer.limits.maxMeshColumnsInFlight = Math.max(2, this.workerPool.workerCount);
+    this.streamer.limits.maxGenInFlight = Math.max(4, this.genWorkerPool.workerCount * 8);
+    this.streamer.limits.maxMeshColumnsInFlight = Math.max(4, this.workerPool.workerCount * 2);
   }
 
   public setWorkerPoolSize(size: number): void {
@@ -230,6 +367,7 @@ export class WorldManager {
     this.lightWorkerPool.setPoolSize(size);
     // The old pool dropped its queued and running generation jobs without answering them.
     this.streamer.abandonGenerations();
+    this.streamer.abandonLights();
     this.updateStreamerLimits();
   }
 
@@ -254,6 +392,12 @@ export class WorldManager {
     };
   }
 
+  /** Debug controls also present a frame when the normal frame loop is suspended. */
+  public setDebugLight(on: boolean): void {
+    this.chunkRenderer?.setDebugLight(on);
+    this.drawTerrainFrame();
+  }
+
   public resetMainThreadGenCount(): void {
     this.mainThreadGenCount = 0;
   }
@@ -266,9 +410,11 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.worldType = type;
     this.worldEpoch++;
+    this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
     this.world = new World();
+    this.configureLighting(this.world);
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
@@ -313,6 +459,7 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
     }
+
     this.streamer.adoptColumn(cx, cz);
   }
 
@@ -334,6 +481,7 @@ export class WorldManager {
     }
     tiles.set(SENTINEL_KEY, createSentinelTile());
 
+    if (tiles.size >= 4096) throw new Error('Texture atlas reached the packed vertex tile limit');
     this.atlas = new TextureAtlas(tiles);
     renderStats.textureAtlasSize = [this.atlas.width, this.atlas.height];
 
@@ -440,6 +588,8 @@ export class WorldManager {
     const epoch = ++this.worldEpoch;
     const world = new World();
     this.world = world;
+    this.lightBatchTimes = [];
+    this.configureLighting(world);
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
@@ -453,35 +603,26 @@ export class WorldManager {
     if (epoch !== this.worldEpoch) return false;
 
     // Light terrain within the load radius using a single region LightWorkerPool job
-    const regionColumns: Record<string, (Uint16Array | number)[]> = {};
-    for (let cx = -loadRadius; cx <= loadRadius; cx++) {
-      for (let cz = -loadRadius; cz <= loadRadius; cz++) {
-        const col = world.getColumn(cx, cz, false);
-        if (col) {
-          const secArray: (Uint16Array | number)[] = [];
-          for (let sy = 0; sy < 20; sy++) {
-            const sec = col.getSection(sy);
-            if (!sec) {
-              secArray.push(0);
-            } else if (sec.getBitsPerEntry() === 0) {
-              secArray.push(sec.uniformStateId);
-            } else {
-              const arr = new Uint16Array(4096);
-              sec.copyBlockStatesTo(arr);
-              secArray.push(arr);
-            }
-          }
-          regionColumns[`${cx},${cz}`] = secArray;
-        }
-      }
-    }
+    const { blocks: regionColumns } = await this.copyLightColumns({
+      minCX: -loadRadius,
+      maxCX: loadRadius,
+      minCZ: -loadRadius,
+      maxCZ: loadRadius,
+    });
 
     const lightResult = await this.lightWorkerPool.enqueueLightRegionJob(loadRadius, regionColumns);
 
     if (epoch !== this.worldEpoch) return false;
 
-    for (const secLight of lightResult.sections) {
-      world.lightEngine.storage.setRawDataByKey(secLight.key, secLight.lightData);
+    let commitSliceStart = performance.now();
+    for (const column of lightResult.columns ?? []) {
+      if (performance.now() - commitSliceStart >= 2) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (epoch !== this.worldEpoch) return false;
+        commitSliceStart = performance.now();
+      }
+      this.commitColumnLight(world, column);
+      this.streamer.markLit(column.cx, column.cz);
     }
 
     // Set camera spawn position
@@ -607,8 +748,11 @@ export class WorldManager {
     const col = world.getColumn(cx, cz, false);
     if (!col) return [];
     const starters: Array<() => Promise<MeshResult>> = [];
+    const sectionOrder = Array.from({ length: 20 }, (_, sy) => sy);
+    const cameraY = this.camera?.position[1] ?? 0;
+    sectionOrder.sort((a, b) => Math.abs(a * 16 + 8 - cameraY) - Math.abs(b * 16 + 8 - cameraY));
 
-    for (let sy = 0; sy < 20; sy++) {
+    for (const sy of sectionOrder) {
       const sec = col.getSection(sy);
 
       // 1. Skip all-air / empty sections
@@ -621,12 +765,20 @@ export class WorldManager {
         continue;
       }
 
-      // 3. Copying the padded section is main-thread work: the streamer starts one job at a time.
+      // 3. Transfer compact neighbour snapshots; padded voxel extraction runs in the worker.
       starters.push(() => {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
-        const paddedSection = buildPaddedSection(world, cx, sy, cz);
-        return this.workerPool.enqueueMeshJob(cx, sy, cz, paddedSection, tables, true);
+        const paddedSection = collectBlockPadding(world, cx, sy, cz);
+        return this.workerPool.enqueueMeshJob(
+          cx,
+          sy,
+          cz,
+          paddedSection,
+          tables,
+          true,
+          collectLightPadding(world, cx, sy, cz),
+        );
       });
     }
     return starters;
@@ -636,23 +788,25 @@ export class WorldManager {
     return {
       genMsP95: this.genWorkerPool.genMsP95,
       meshMsP95: this.workerPool.meshMsP95,
-      queueLength: this.workerPool.queueLength + this.genWorkerPool.queueLength,
+      queueLength:
+        this.workerPool.queueLength +
+        this.genWorkerPool.queueLength +
+        this.lightWorkerPool.queueLength,
     };
   }
 
   /**
-   * Per-frame terrain update and draw. Skipped (sky-clear frame only) while createWorld is loading.
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public render(): void {
+  public render(): boolean {
     this.lastUploadMs = 0;
-    if (this.initialLoadCount > 0) return;
+    if (this.initialLoadCount > 0) return false;
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());
       this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
     }
-    this.drawTerrain();
+    return this.drawTerrain();
   }
 
   private drawTerrainFrame(): void {
@@ -663,10 +817,13 @@ export class WorldManager {
     if (this.drainGlErrors) this.drainGlErrors();
   }
 
-  private drawTerrain(): void {
+  private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
+      this.terrainFrames++;
+      return true;
     }
+    return false;
   }
 }

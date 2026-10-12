@@ -25,6 +25,8 @@ export type PackVertexFn = (
   v: number,
   target: Uint32Array,
   offset: number,
+  blockG?: number,
+  blockB?: number,
 ) => void;
 
 /**
@@ -83,6 +85,8 @@ export function emitCrossBlock(
   ao: number,
   skyLight: number,
   blockLight: number,
+  blockG = 0,
+  blockB = 0,
 ): void {
   const vertBase = vertWordOffset / 2;
   let w = vertWordOffset;
@@ -102,6 +106,8 @@ export function emitCrossBlock(
         c[4],
         vertices,
         w,
+        blockG,
+        blockB,
       );
       w += 2;
     }

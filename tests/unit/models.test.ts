@@ -1,3 +1,4 @@
+import { decodeVertex } from '../../src/mesh/vertex';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { PADDED_SECTION_VOLUME } from '../../src/world/padded';
@@ -63,18 +64,19 @@ interface DecodedVertex {
 function decode(bucket: MeshBucketData, i: number): DecodedVertex {
   const w0 = bucket.vertices[i * 2]!;
   const w1 = bucket.vertices[i * 2 + 1]!;
+  const vertex = decodeVertex(w0, w1);
   return {
-    x: w0 & 31,
-    y: (w0 >> 5) & 31,
-    z: (w0 >> 10) & 31,
-    normal: (w0 >> 15) & 7,
-    ao: (w0 >> 18) & 3,
-    sky: (w0 >> 20) & 15,
-    blk: (w0 >> 24) & 15,
-    tint: (w0 >> 28) & 15,
-    tile: w1 & 65535,
-    u: (w1 >> 16) & 255,
-    v: (w1 >> 24) & 255,
+    x: vertex.x,
+    y: vertex.y,
+    z: vertex.z,
+    normal: vertex.normalIndex,
+    ao: vertex.ao,
+    sky: vertex.skyLight,
+    blk: vertex.blockR,
+    tint: vertex.tintIndex,
+    tile: vertex.tileIndex,
+    u: vertex.u,
+    v: vertex.v,
   };
 }
 
