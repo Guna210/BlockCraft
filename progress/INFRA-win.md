@@ -1,8 +1,9 @@
 # INFRA-win — Plain-Node placeholder lint and LF line endings
 
-Status: incomplete
+Status: verified — first-attempt GitHub Verify #156 passed; the owner authorized promotion on green CI.
 Depends on: Owner-requested infrastructure task; based on `origin/master` at `b18882bcdfca9cac6ba9a444df81da2f6e0b94c6`.
 Full verify (this session): typecheck ✓ · lint ✓ (2 pre-existing warnings) · placeholders ✓ · unit 424 passed (61 files) · e2e 51 passed / 4 failed (25.4m) · exit 1.
+PR CI (first attempt, GitHub Actions [Verify #156](https://github.com/Guna210/BlockCraft/actions/runs/38278666721), head `d752c253782e0e7375af6bda4e5cb4516429c6bb`): typecheck ✓ · lint ✓ · placeholders ✓ · unit 424 passed (61 files, 151.07s) · e2e 55 passed (13.1m) · exit 0. The Verify summary table reports all five steps passed. PR: [#37](https://github.com/Guna210/BlockCraft/pull/37).
 
 ## Acceptance criteria owned
 
@@ -29,7 +30,7 @@ This changes the verification harness file `scripts/lint-placeholders.mjs`; the 
 
 The full `npm run verify` exited 1. Vitest passed all 424 tests in 61 files. Playwright reported 51 passed and 4 failed: M02 mesh p95 (9.8 ms against 6 ms), M04a streaming pump max (51.8 ms against 50 ms), M04b heap-growth timeout, and M04b mid-flight screenshot blank-color assertion (100%). The M02 and two M04b failures are on the owner's known container-only list. The M04b RD12 horizon test passed; no M01a GL-check-count failure occurred.
 
-The extra M04a failure was checked on an `origin/master` archive in the same container using only that test. It also failed the unchanged 50 ms pump limit there (62.8 ms); frame CPU max was 39.3 ms. This task changes no application code or e2e tests. The full verify remains red locally, so this handoff is incomplete and CI should decide whether the container-only failures clear on the PR.
+The extra M04a failure was checked on an `origin/master` archive in the same container using only that test. It also failed the unchanged 50 ms pump limit there (62.8 ms); frame CPU max was 39.3 ms. This task changes no application code or e2e tests. The local full verify remains red, while the first-attempt GitHub Verify #156 passed all steps and all 55 browser tests. The owner authorized promotion after green CI, so this handoff is verified for review with the local failures retained as container evidence.
 
 ## Notes for dependent tasks
 
