@@ -31,17 +31,17 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| — | none in flight | | | | | M05b merged as PR #35 (`431e5d5`, 2026-10-12); post-merge Verify re-run pending (ore-locator timeout flake). |
+| M06a | building in Codex (full model), branch claude/m06a | Codex | — | — | — | Decisions in prompt: 20 TPS accumulator, AABB per-axis, speeds, gravity 32, fall damage, hay_bale block, freeze on unloaded terrain, camera-driven tests unchanged. |
+| M12a | building in Codex (smaller model OK), branch claude/m12a | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. Parallel with M06a (both touch main.ts loop). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready to start: **M06a** and **M12a** in parallel (both depend only on M05b, merged as #35). Owner to choose Codex or Claude for each.
+Ready next: M06b (after M06a), M12b and M12c (after M12a).
 
 ## Open items for the owner
 
 - Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
 - `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
-- Unit-test timeouts: heavy generation tests use vitest's default 5 s timeout, which is not a SPEC limit (e.g. M03e ore locator 4.96–5.06 s on CI), and vitest has no CI retries. Suggest an explicit generous timeout (~30 s) on those tests: an owner change on master or a tiny task.
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
 
 ## Decisions not yet on master
@@ -50,6 +50,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-12: Owner set vitest testTimeout 30000 on master (43cbb77); open item resolved. M06a (Codex full model) and M12a (Codex, smaller model OK) prompts written. M12a pre-approved (owner may veto) to change only sky colour classification in tests/e2e/helpers/sky-holes.ts plus its unit test.
 - 2026-10-12: Owner merged PR #35 (M05b) → master 431e5d5. Post-merge Verify run 151 attempt 1 failed: unit only, tests/unit/ores.test.ts alt-seed locate('ore') 5,062 ms > vitest default 5,000 ms timeout (pre-M05b master was 4,958 ms; e2e 47/47 passed). Not a SPEC limit (M03e has no time criterion); vitest has no retries in CI. Owner re-running. Orchestrator advised an explicit generous timeout (~30 s) on heavy generation unit tests as an owner change or tiny task; added to open items.
 - 2026-10-12: M05b review round 1 (Claude Sonnet session_01D69ddb3QSAjVRZ5Z15eE2B): VERDICT PASS, no blockers. Non-blocking: progress/M05b.md cites f82a856/run 149 (stale) and has spacing typos; SPEC M05 says 'gamma curve' but the decision is linear (owner may update SPEC); long handoff files. Orchestrator: merge as is (docs push risks a timing flake); owner to merge PR #35. Next: M06a + M12a in parallel.
 - 2026-10-12: M05b PR #35 ready for review, '— verified', head 55629ba. Real mesh-worker optimisation f82a856; CI run 150 green first attempt (394 unit, 47 e2e, no retries). Ore locator 3,862 ms (master 4,958). Exact CI M02 meshMsP95 not logged. Reviewer prompt updated (f82a856 output-identical check, report meshMsP95). Next: owner starts the reviewer (Claude Sonnet preferred, Codex OK), round 1 of 3.
@@ -69,4 +70,3 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 - 2026-10-11: M05b Codex gate report (`11743e4` local on claude/m05b, not pushed): verify exit 0, unit 380, e2e 47; mid-flight passes; meshed 31.5 vs master 14.3 col/s, visible 509 vs 186, cancels 0; triangles still +97 %; titled [INCOMPLETE] with blockers/M05b.md. Orchestrator advised the owner to hold the gate: new terrain-frame-gate.ts (16 terrain frames in 33 s, GL p95 2380→2.2 ms) may throttle draws and so weaken the M04a timings; asked Codex for draws/s, the blocker content, dark mid-flight terrain, and a triangle breakdown.
 - 2026-10-11: M05b Codex report (uncommitted, not pushed): unit 370/370; e2e 46 pass, 1 fail (M04b mid-flight 100 % sky, which master also fails in Codex's env). Torch +46.4, hue 35.8°, AO 0.657, M03 caves pass. Same-env vs master: meshed 8.3 vs 14.3 col/s, uploaded 7.7 vs 14.2, visible sections at flight end 30 vs 186, cancels 617 vs 422, triangles +97 %, light-batch main-thread max 38 ms. Orchestrator: don't spend on a new baseline. The same-env comparison is valid and the regression is real. Fix throughput to within ~10 % of master in the same env (target meshed/uploaded ≥ 13 col/s, visible ≥ ~165); find why flat sunlit faces stop merging; cap main-thread commit ≤ 8 ms. Check nproc and that workers: 1 is on master. CI Verify on GitHub is the absolute judge for the mid-flight test.
 - 2026-10-11: M05b Codex QUESTION: the vertex repack breaks the bit decoders in tests/unit/greedy.test.ts and models.test.ts. Orchestrator authorised updating only the decoding (ideally importing the shared decoder from src), with no assertion or threshold changes; stop if any assertion then fails.
-- 2026-10-11: Owner set up Codex cloud for BlockCraft. M05b restart prompt written for Codex (decisions plus first-attempt lessons). The orchestrator stays the coordinator; the owner relays Codex messages.
