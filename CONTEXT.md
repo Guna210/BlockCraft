@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M05b | building in Codex (branch codex/m05b); PR #35 green; owner VR acceptance pending → verified + ready; reviewer prompt written | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
+| M05b | building in Codex (branch codex/m05b); PR #35 draft: VR accepted; fixing M02 mesh p95 margin + ore-locator timeout before ready; reviewer prompt written | Codex (owner relays) | — | — | — | Restart from master `427660a` with the decisions and lessons below. The first Claude attempt (`session_01RsegcCFUbMz3XUzDKjxLBs`) is stopped and was never pushed. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -71,6 +71,7 @@ Lessons from the first M05b attempt (put them in the restart prompt):
 
 ## Log (newest first)
 
+- 2026-10-12: M05b PR #35: owner accepted fullbright fast-flight VR. CI on identical source: 6924a77 green, c1d0be2 red ×2 (M02 meshMsP95 6.1–9.2 > 6; M03e ore locator > 5000 ms), a00a9a8 green, so timing-edge flakiness. Orchestrator: not ready. Codex to compare master vs branch CI meshMsP95 and ore-locator durations; optimise the mesh worker to ≤ ~5 ms p95 on CI (no rule/test changes); fix the ore path if the branch regressed it, else record it as pre-existing. Ready only when green with M02 passing first try. If 5 ms isn't reachable: QUESTION for the owner.
 - 2026-10-12: M05b `6924a77`: CI green (one M02 timing flake passed on retry; all M04 first try). Fullbright fast-flight shot: near cave walls present, but more blue openings than master (many dithered = fading columns at 1–2 fps). Orchestrator recommended the owner accept it with a handoff note; gave a Codex finish block (clear blockers, '— verified', ready for review) and a Claude reviewer prompt (decisions, exact other-test diffs, no gating, pool sizes, disjoint light interiors, AO flip winding, numbers vs CI).
 - 2026-10-12: Owner chose (a): setDebugLight on/off around the M04b fast-flight screenshot only (no other test changes). Prompt sent to Codex; local M01a GL-check count is container-only, noted as a known limitation. Next: Codex re-checks VR, pushes, retitles '— verified' if §4 holds, marks ready; then reviewer prompt (Claude reviewer; include a winding/back-face check).
 - 2026-10-12: Owner saw lit surface faces from inside a mountain on the M05b build. Cause: back-face culling is off by design (decisions/M03g-face-winding.md; no CULL_FACE in src on master or branch), so back sides of surface faces render with their front-side light. Expected and pre-existing, not an M05b bug. Open item: enabling CULL_FACE (winding already fixed in M03g) roughly halves drawn triangles; candidate for M22a or an owner-approved small task.
