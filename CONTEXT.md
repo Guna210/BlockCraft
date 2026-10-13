@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | on master 5a73d9a (agy, no PR), CI #161 green. Review round 1 (session_01GyyAJpooj3Ez6nGPRqF7HM): CHANGES NEEDED. M12a-fix prompt given to owner for Codex (branch claude/m12a-fix). | agy | — | — | — | Blocking: isSkyPixel band matches packed_ice at fog 0, snow/blue flowers/lumite at partial fog (4,792 colours); progress notes misstate band and SKY_RGB. Owner-reported: hard fog edge (fog only 0.95×sky; per-vertex fog wedges on big quads). Stars only above horizon = intended. |
+| M12a | on master 5a73d9a (agy, no PR). Round 1 CHANGES NEEDED (session_01GyyAJpooj3Ez6nGPRqF7HM). Fix = PR #38 (M12a-fix, head f25f950, Verify #163 green, ready) → round-2 review in the same reviewer session. | Codex | #38 | — | — | Fix: curve-only classifier radius 1.73 (margin 2.005), per-fragment fog factor, fog 100 % sky, fogEnd (RD−1)×16, fogStart 0.7×. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
