@@ -201,8 +201,8 @@ export class PlayerController {
     } else if (settings.viewBobbing && !p.inFluid && !p.climbing && !p.flying) {
       const distance = p.previousWalkDistance + (p.walkDistance - p.previousWalkDistance) * alpha;
       const amount = p.previousWalkAmount + (p.walkAmount - p.previousWalkAmount) * alpha;
-      this.camera.position[1] += Math.sin(distance * Math.PI * 2) * 0.025 * amount;
-      this.camera.roll = Math.sin(distance * Math.PI) * 0.008 * amount;
+      this.camera.position[1] += Math.sin(distance * Math.PI) * 0.02 * amount;
+      this.camera.roll = Math.sin(distance * Math.PI * 0.5) * 0.008 * amount;
     }
     this.camera.updateView();
     this.rememberCamera();
