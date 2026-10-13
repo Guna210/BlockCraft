@@ -2,6 +2,7 @@ import { test, expect } from '../harness/fixture';
 import type { PNG } from 'pngjs';
 import { mkdirSync, copyFileSync } from 'node:fs';
 import { waitForStreamingIdle } from './helpers/flight';
+import { isSkyPixel } from './helpers/sky-holes';
 import { LCG } from '../../src/render/textures/noise';
 
 function pixelLuminance(png: PNG, x: number, y: number): number {
@@ -251,4 +252,61 @@ test('M12a time of day, noon sky, sunset west horizon glow, and midnight stars',
   expect(nextDayNoonTop.luminance).toBeGreaterThan(150);
   expect(nextDayNoonTop.hue).toBeGreaterThanOrEqual(190);
   expect(nextDayNoonTop.hue).toBeLessThanOrEqual(215);
+});
+
+test('M12a-fix RD8 noon and tick 10000 sky remain detectable above the fog edge', async ({
+  page,
+  assertAndSaveScreenshot,
+}) => {
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setRenderDistance!(8);
+    await api.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' });
+    api.pause!();
+    api.setGameMode!('creative');
+    await api.waitForTerrain!(8);
+    let top = 64;
+    for (let x = -112; x <= 112; x += 8) {
+      for (let z = -112; z <= 112; z += 8) top = Math.max(top, api.getHeight!(x, z));
+    }
+    // A horizontal overlook keeps the top quarter pure sky and shows the RD8 fog edge.
+    api.teleport!(0.5, top + 12, 0.5, 0, 0);
+    await api.waitForTerrain!(8);
+  });
+  await waitForStreamingIdle(page, 120_000);
+  for (const ticks of [6000, 10000]) {
+    await page.evaluate(async (time) => {
+      window.__blockcraft!.setTimeOfDay!(time);
+      window.__blockcraft!.look!(0, 0);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }, ticks);
+    const name = ticks === 6000 ? 'm12a-fix-sky-noon' : 'm12a-fix-sky-10000';
+    const png = await assertAndSaveScreenshot({ name, milestone: 'M12a-fix' });
+    const rows = Math.floor(png.height / 4);
+    let sky = 0;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < png.width; x++) {
+        if (isSkyPixel(png, x, y)) sky++;
+      }
+    }
+    const fraction = sky / (rows * png.width);
+    console.log(
+      'm12a-fix real sky coverage',
+      JSON.stringify({ ticks, sky, total: rows * png.width, fraction }),
+    );
+    expect(fraction, `pure sky classified at worldTime ${ticks}, RD8`).toBeGreaterThanOrEqual(0.98);
+  }
+  // Use a lower view for the visual review: the pure-sky overlook above hides
+  // foreground terrain below the screen, so it cannot demonstrate the fog edge.
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    let localTop = 64;
+    for (let x = -24; x <= 24; x += 4) {
+      for (let z = -24; z <= 24; z += 4) localTop = Math.max(localTop, api.getHeight!(x, z));
+    }
+    api.setTimeOfDay!(6000);
+    api.teleport!(0.5, localTop + 12, 0.5, 0, (-20 * Math.PI) / 180);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+  await assertAndSaveScreenshot({ name: 'm12a-fix-fog-edge', milestone: 'M12a-fix' });
 });

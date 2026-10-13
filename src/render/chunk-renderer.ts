@@ -43,7 +43,7 @@ flat out vec2 v_tileOrigin;
 out vec3 v_light;
 out vec3 v_tint;
 flat out float v_grassSide;
-out float v_fogFactor;
+out vec3 v_worldPos;
 out vec3 v_fogColor;
 const vec3 NORMALS[6] = vec3[6](
   vec3(1.0, 0.0, 0.0), vec3(-1.0, 0.0, 0.0),
@@ -79,14 +79,10 @@ void main() {
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
   vec3 toVertex = worldPos - u_cameraPos;
-  float horizDist = length(toVertex.xz);
-  v_fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
-  if (v_fogFactor > 0.0) {
-    vec3 viewDir = normalize(toVertex + vec3(0.0, 1e-5, 0.0));
-    v_fogColor = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor) * 0.95;
-  } else {
-    v_fogColor = vec3(0.0);
-  }
+  v_worldPos = worldPos;
+  // Always supply the colour: a large quad can cross fogStart between vertices.
+  vec3 viewDir = normalize(toVertex + vec3(0.0, 1e-5, 0.0));
+  v_fogColor = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
 `;
@@ -98,8 +94,11 @@ flat in vec2 v_tileOrigin;
 in vec3 v_light;
 in vec3 v_tint;
 flat in float v_grassSide;
-in float v_fogFactor;
+in vec3 v_worldPos;
 in vec3 v_fogColor;
+uniform vec3 u_cameraPos;
+uniform float u_fogStart;
+uniform float u_fogEnd;
 uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
 uniform int u_isCutout;
@@ -124,7 +123,9 @@ void main() {
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
   vec3 litColor = texColor.rgb * tint * v_light;
-  vec3 finalColor = mix(litColor, v_fogColor, v_fogFactor);
+  float horizDist = length((v_worldPos - u_cameraPos).xz);
+  float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
+  vec3 finalColor = mix(litColor, v_fogColor, fogFactor);
   fragColor = vec4(finalColor, mix(texColor.a, 1.0, v_grassSide));
 }
 `;
