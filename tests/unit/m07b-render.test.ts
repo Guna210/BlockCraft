@@ -93,4 +93,13 @@ it('M07b 100 mixed block/sprite items and 16 lit textured particles use two subm
   expect([...data.slice(0, 3)]).not.toEqual([...saved.slice(0, 3)]);
   expect(data[3]).toBe(saved[3]);
   expect(glCalls.bufferData).toHaveBeenCalledTimes(1);
+  for (const entity of entities.pool) entity.active = false;
+  for (const particle of particles.pool) particle.active = false;
+  draw.mockClear();
+  glCalls.bufferSubData!.mockClear();
+  glCalls.useProgram!.mockClear();
+  expect(renderer.render(c, mat4.create(), {} as WebGLTexture, 1)).toBe(0);
+  expect(draw).not.toHaveBeenCalled();
+  expect(glCalls.bufferSubData).not.toHaveBeenCalled();
+  expect(glCalls.useProgram).not.toHaveBeenCalled();
 });
