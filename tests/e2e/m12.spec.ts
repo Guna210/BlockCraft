@@ -3,6 +3,7 @@ import type { PNG } from 'pngjs';
 import { mkdirSync, copyFileSync } from 'node:fs';
 import { waitForStreamingIdle } from './helpers/flight';
 import { isSkyPixel } from './helpers/sky-holes';
+import { diffFraction } from '../harness/pixels';
 import { LCG } from '../../src/render/textures/noise';
 
 function pixelLuminance(png: PNG, x: number, y: number): number {
@@ -86,9 +87,9 @@ function countIsolatedStarPixels(png: PNG, maxY: number): number {
   return count;
 }
 
-function saveScreenshotToDocs(name: string): void {
-  mkdirSync('docs/screenshots/M12a', { recursive: true });
-  copyFileSync(`artifacts/M12a/${name}.png`, `docs/screenshots/M12a/${name}.png`);
+function saveScreenshotToDocs(name: string, milestone = 'M12a'): void {
+  mkdirSync(`docs/screenshots/${milestone}`, { recursive: true });
+  copyFileSync(`artifacts/${milestone}/${name}.png`, `docs/screenshots/${milestone}/${name}.png`);
 }
 
 test('M12a time of day, noon sky, sunset west horizon glow, and midnight stars', async ({
@@ -309,4 +310,189 @@ test('M12a-fix RD8 noon and tick 10000 sky remain detectable above the fog edge'
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });
   await assertAndSaveScreenshot({ name: 'm12a-fix-fog-edge', milestone: 'M12a-fix' });
+});
+
+test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare', async ({
+  page,
+  assertAndSaveScreenshot,
+}) => {
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setRenderDistance!(4);
+    await api.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' });
+    api.pause!();
+    await api.waitForTerrain!(4);
+  });
+  await waitForStreamingIdle(page, 120_000);
+
+  // Set up player on overlook terrace
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setGameMode!('creative');
+    let maxH = 64;
+    for (let x = -64; x <= 16; x += 2) {
+      for (let z = -32; z <= 32; z += 2) {
+        const h = api.getHeight!(x, z);
+        if (h > maxH) maxH = h;
+      }
+    }
+    const baseY = maxH + 2;
+    api.fill!(-10, baseY - 2, -5, 4, baseY - 1, 5, 'stone');
+    api.fill!(-10, baseY, -5, 4, baseY, 5, 'grass_block');
+    api.setBlock!(-5, baseY + 1, -2, 'torch');
+    api.setBlock!(-7, baseY + 1, 2, 'torch');
+    api.teleport!(2.5, baseY + 1, 0.5, Math.PI, 0.12);
+    await api.waitForTerrain!(4);
+  });
+  await waitForStreamingIdle(page, 120_000);
+
+  // 1. Visual Review: m12-noon.png with clouds clearly visible in the sky at noon
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setTimeOfDay!(6000);
+    api.look!(Math.PI, 0.12);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+
+  const noonCloudsPng = await assertAndSaveScreenshot({ name: 'm12-noon', milestone: 'M12b' });
+  saveScreenshotToDocs('m12-noon', 'M12b');
+
+  // Verify clouds are rendered: check that there are cloud pixels in the upper sky (neutral white/shaded, b - r < 60 and r > 160, distinct from sky-blue b - r > 110)
+  const upperRows = Math.floor(noonCloudsPng.height * 0.4);
+  let cloudPixels = 0;
+  for (let y = 0; y < upperRows; y++) {
+    for (let x = 0; x < noonCloudsPng.width; x++) {
+      const i = (y * noonCloudsPng.width + x) * 4;
+      const r = noonCloudsPng.data[i]!;
+      const b = noonCloudsPng.data[i + 2]!;
+      if (r > 160 && b - r < 60) cloudPixels++;
+    }
+  }
+  console.log('m12b noon clouds cloudPixels:', cloudPixels);
+  expect(cloudPixels).toBeGreaterThan(500);
+
+  // 2. Visual Review: m12-sun-glare-noon.png looking up toward the sun at noon
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setClouds!('off'); // Unobstructed sky shader glare review
+    api.setTimeOfDay!(6000);
+    api.look!(Math.PI / 2, (75 * Math.PI) / 180);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+
+  const noonGlarePng = await assertAndSaveScreenshot({
+    name: 'm12-sun-glare-noon',
+    milestone: 'M12b',
+  });
+  saveScreenshotToDocs('m12-sun-glare-noon', 'M12b');
+
+  // Center region where the sun is: saturates to near white so pixel sun disc can't be made out
+  const noonGlareCenter = regionStats(noonGlarePng, {
+    x: Math.floor(noonGlarePng.width / 2) - 20,
+    y: Math.floor(noonGlarePng.height / 2) - 20,
+    w: 40,
+    h: 40,
+  });
+  console.log('m12b noon glare center:', JSON.stringify(noonGlareCenter));
+  expect(noonGlareCenter.luminance).toBeGreaterThan(245);
+  expect(noonGlareCenter.r).toBeGreaterThan(245);
+  expect(noonGlareCenter.g).toBeGreaterThan(245);
+  expect(noonGlareCenter.b).toBeGreaterThan(245);
+
+  // Restore fancy clouds
+  await page.evaluate(() => {
+    window.__blockcraft!.setClouds!('fancy');
+  });
+
+  // 3. Visual Review: m12-sun-glare-sunset.png looking near sunset showing the disc
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setTimeOfDay!(12000);
+    api.look!(Math.PI, 0.05);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+
+  const sunsetGlarePng = await assertAndSaveScreenshot({
+    name: 'm12-sun-glare-sunset',
+    milestone: 'M12b',
+  });
+  saveScreenshotToDocs('m12-sun-glare-sunset', 'M12b');
+
+  // Warm horizon hue at sunset
+  const sunsetHorizon = regionStats(sunsetGlarePng, {
+    x: 0,
+    y: Math.floor(sunsetGlarePng.height * 0.4),
+    w: sunsetGlarePng.width,
+    h: Math.floor(sunsetGlarePng.height * 0.2),
+  });
+  console.log('m12b sunset glare horizon:', JSON.stringify(sunsetHorizon));
+  expect(sunsetHorizon.hue).toBeGreaterThanOrEqual(0);
+  expect(sunsetHorizon.hue).toBeLessThanOrEqual(45);
+
+  // Center region of sunset sun disc has distinct pixel art values (not washed out to solid white)
+  const sunsetDiscCenter = regionStats(sunsetGlarePng, {
+    x: Math.floor(sunsetGlarePng.width / 2) - 10,
+    y: Math.floor(sunsetGlarePng.height / 2) - 10,
+    w: 20,
+    h: 20,
+  });
+  console.log('m12b sunset disc center:', JSON.stringify(sunsetDiscCenter));
+  expect(sunsetDiscCenter.luminance).toBeLessThan(235);
+  expect(sunsetDiscCenter.r).toBeGreaterThan(180);
+
+  // 4. Cloud modes: fast 2D option vs fancy 3D volumes vs off
+  const fancyStats = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setClouds!('fancy');
+    api.look!(0, 0.35);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return api.getRenderStats();
+  });
+
+  const fastStats = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setClouds!('fast');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return api.getRenderStats();
+  });
+
+  const offStats = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setClouds!('off');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return api.getRenderStats();
+  });
+
+  console.log(
+    'm12b cloud stats:',
+    JSON.stringify({
+      fancyTriangles: fancyStats.triangles,
+      fastTriangles: fastStats.triangles,
+      offTriangles: offStats.triangles,
+    }),
+  );
+  expect(fancyStats.triangles).toBeGreaterThan(fastStats.triangles);
+  expect(fastStats.triangles).toBeGreaterThan(offStats.triangles);
+
+  // Restore fancy mode
+  await page.evaluate(() => {
+    window.__blockcraft!.setClouds!('fancy');
+  });
+
+  // 5. Wind drift along +X
+  const beforeDriftPng = await assertAndSaveScreenshot({
+    name: 'm12-drift-before',
+    milestone: 'M12b',
+  });
+  await page.evaluate(async () => {
+    await window.__blockcraft!.tick!(60); // 3 seconds = 3 blocks drift along +X
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+  const afterDriftPng = await assertAndSaveScreenshot({
+    name: 'm12-drift-after',
+    milestone: 'M12b',
+  });
+  const diff = diffFraction(beforeDriftPng, afterDriftPng);
+  console.log('m12b wind drift diff fraction:', diff);
+  expect(diff).toBeGreaterThan(0.005);
 });
