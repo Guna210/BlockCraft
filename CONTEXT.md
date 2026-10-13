@@ -25,17 +25,18 @@ Last updated: 2026-10-11
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), M12a (5a73d9a, agy direct push) + M12a-fix (#38, 58dfc07), M06b (#39), M13b (#41, 6e3cd8f; agy), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), M12a (5a73d9a, agy direct push) + M12a-fix (#38, 58dfc07), M06b (#39), M13b (#41, 6e3cd8f; agy), M07a (#40, 3addcbc), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M07a | PR #40 head af82297 review PASS (session_012FRdb9DXCH5wFVWtZG4Yq3); CI green (1 flaky retry: M02 mesh p95 7.8 ms, known). Awaiting owner merge (may need Update branch after #41). | Codex | #40 | session_012FRdb9DXCH5wFVWtZG4Yq3 | 1 | Non-blocking: water not replaceable for placement; raycast test doesn't assert hitbox shapes; foundation_stone literal churn. |
+| M07b | prompt given (Codex full model), branch claude/m07b | Codex | — | — | — | Item registry + inventory core (36 slots, hotbar 0–8), loot JSON in data/loot/, wooden_pickaxe etc. for tests, dedicated item-entity manager (not ECS; M13a owns ECS), placement uses selected hotbar block and consumes in survival. |
+| M12b | prompt given (agy, old laptop), branch agy/m12b (owner creates on GitHub) | agy | — | — | — | Clouds y=192 fancy/fast/off in settings.ts, fade to sky by distance; sun glare (owner extra). Pre-approved (owner may veto): if clouds break M12a-fix coverage test or M04 hole tests, those tests may call a new debug setClouds('off') before measuring, no threshold/flow change otherwise. Local failures → CI decides. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready next: M12b (owner extra: sun glare), M12c. M07a + M13b in flight.
+Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Open items for the owner
 
