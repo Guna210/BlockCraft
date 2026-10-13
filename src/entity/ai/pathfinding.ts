@@ -38,6 +38,7 @@ export interface WorldQuery {
  */
 export class DefaultBlockClassifier implements BlockClassifier {
   private cache: Uint8Array | null = null;
+  private cacheInitialized = false;
   public isDoorPassable?: (x: number, y: number, z: number, stateId: number) => boolean;
   public isDoorBlock?: (stateId: number) => boolean;
 
@@ -56,6 +57,8 @@ export class DefaultBlockClassifier implements BlockClassifier {
   }
 
   private initCache(): void {
+    if (this.cacheInitialized) return;
+    this.cacheInitialized = true;
     try {
       const registry = BlockRegistry.getInstance();
       const maxId = registry.getMaxStateId();
@@ -96,10 +99,14 @@ export class DefaultBlockClassifier implements BlockClassifier {
   classify(stateId: number, x: number, y: number, z: number): NodeClassification {
     if (stateId === 0) return 'passable';
 
+    if (!this.cacheInitialized) {
+      this.initCache();
+    }
+
     // Check if this block is identified as a door
     const isDoor =
       (this.isDoorBlock && this.isDoorBlock(stateId)) ||
-      (this.cache && stateId < this.cache.length && this.cache[stateId] === 4);
+      (this.cache !== null && stateId < this.cache.length && this.cache[stateId] === 4);
 
     if (isDoor) {
       if (this.isDoorPassable && this.isDoorPassable(x, y, z, stateId)) {
@@ -108,11 +115,7 @@ export class DefaultBlockClassifier implements BlockClassifier {
       return 'solid';
     }
 
-    if (!this.cache) {
-      this.initCache();
-    }
-
-    if (this.cache && stateId < this.cache.length) {
+    if (this.cache !== null && stateId < this.cache.length) {
       const code = this.cache[stateId]!;
       if (code === 0) return 'passable';
       if (code === 1) return 'solid';
@@ -124,6 +127,12 @@ export class DefaultBlockClassifier implements BlockClassifier {
   }
 }
 
+export interface WorldLike {
+  getBlockStateId(x: number, y: number, z: number): number;
+  hasColumn?(cx: number, cz: number): boolean;
+  onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
+}
+
 /**
  * Adapter over the game World object conforming to WorldQuery.
  */
@@ -131,15 +140,49 @@ export class WorldAdapter implements WorldQuery {
   private _version: number = 0;
 
   constructor(
-    public readonly world: { getBlockStateId(x: number, y: number, z: number): number },
+    public readonly world: WorldLike,
     public readonly classifier: BlockClassifier = new DefaultBlockClassifier(),
-  ) {}
+  ) {
+    this.subscribeWorldEdits();
+  }
+
+  private subscribeWorldEdits(): void {
+    if (!this.world) return;
+    let chained = this.world.onBlockEdited;
+    try {
+      Object.defineProperty(this.world, 'onBlockEdited', {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          return (x: number, y: number, z: number, state: number) => {
+            this._version++;
+            chained?.(x, y, z, state);
+          };
+        },
+        set: (newCb) => {
+          chained = newCb;
+        },
+      });
+    } catch {
+      const prev = this.world.onBlockEdited;
+      this.world.onBlockEdited = (x: number, y: number, z: number, state: number) => {
+        this._version++;
+        prev?.(x, y, z, state);
+      };
+    }
+  }
 
   getBlockStateId(x: number, y: number, z: number): number {
     return this.world.getBlockStateId(x, y, z);
   }
 
   classify(x: number, y: number, z: number): NodeClassification {
+    if (y < 0 || y >= 320) {
+      return 'solid';
+    }
+    if (this.world.hasColumn && !this.world.hasColumn(Math.floor(x / 16), Math.floor(z / 16))) {
+      return 'solid';
+    }
     const stateId = this.world.getBlockStateId(x, y, z);
     return this.classifier.classify(stateId, x, y, z);
   }
@@ -165,10 +208,10 @@ export interface PathOptions {
   maxNodes?: number;
 }
 
-export type SearchStatus = 'pending' | 'success' | 'unreachable';
+export type SearchStatus = 'pending' | 'success' | 'unreachable' | 'limit';
 
 export interface PathResult {
-  status: 'success' | 'unreachable';
+  status: 'success' | 'unreachable' | 'limit';
   path: BlockPos[] | null;
   cost: number;
   nodesExpanded: number;
@@ -180,6 +223,7 @@ export interface PathSearch {
   readonly cost: number;
   readonly nodesExpanded: number;
   step(maxNodes?: number): SearchStatus;
+  dispose?(): void;
 }
 
 interface CacheEntry {
@@ -197,6 +241,9 @@ const COST_DROP_3 = 1.2;
 const COST_WATER = 2.0;
 const COST_WATER_EXIT = 1.5;
 const COST_WATER_EXIT_JUMP = 2.0;
+
+const DIR_DX = new Int32Array([1, -1, 0, 0]);
+const DIR_DZ = new Int32Array([0, 0, 1, -1]);
 
 const POOL_CAPACITY = 32768;
 const HASH_TABLE_CAPACITY = 65536;
@@ -226,7 +273,7 @@ class NodePool {
 
   allocate(x: number, y: number, z: number, g: number, h: number, parent: number): number {
     if (this.size >= POOL_CAPACITY) {
-      throw new Error(`NodePool capacity exceeded (${POOL_CAPACITY})`);
+      return -1;
     }
     const idx = this.size++;
     this.x[idx] = x;
@@ -399,13 +446,32 @@ class CoordMap {
 }
 
 /**
+ * Isolated context containing reusable search structures.
+ */
+class SearchContext {
+  readonly pool = new NodePool();
+  readonly heap = new MinHeap(this.pool);
+  readonly coordMap = new CoordMap();
+
+  readonly neighborsBufferX = new Int32Array(16);
+  readonly neighborsBufferY = new Int16Array(16);
+  readonly neighborsBufferZ = new Int32Array(16);
+  readonly neighborsCost = new Float64Array(16);
+
+  inUse = false;
+
+  reset(): void {
+    this.pool.reset();
+    this.heap.reset();
+    this.coordMap.reset();
+  }
+}
+
+/**
  * 3D A* Pathfinding implementation for voxel grid.
  */
 export class Pathfinder {
-  private readonly pool = new NodePool();
-  private readonly heap = new MinHeap(this.pool);
-  private readonly coordMap = new CoordMap();
-
+  private readonly contextPool: SearchContext[] = [new SearchContext()];
   private readonly cache = new Map<string, CacheEntry>();
   private readonly maxCacheEntries = 500;
 
@@ -416,6 +482,26 @@ export class Pathfinder {
 
   clearCache(): void {
     this.cache.clear();
+  }
+
+  private acquireContext(): SearchContext {
+    for (let i = 0; i < this.contextPool.length; i++) {
+      const ctx = this.contextPool[i]!;
+      if (!ctx.inUse) {
+        ctx.inUse = true;
+        ctx.reset();
+        return ctx;
+      }
+    }
+    const ctx = new SearchContext();
+    ctx.inUse = true;
+    ctx.reset();
+    this.contextPool.push(ctx);
+    return ctx;
+  }
+
+  private releaseContext(ctx: SearchContext): void {
+    ctx.inUse = false;
   }
 
   private classify(x: number, y: number, z: number): NodeClassification {
@@ -456,7 +542,17 @@ export class Pathfinder {
     const search = this.createSearch(start, goal, options);
     const maxNodes = options?.maxNodes ?? 10000;
     while (search.status === 'pending') {
-      search.step(maxNodes);
+      const budget = Math.max(1, maxNodes - search.nodesExpanded);
+      search.step(budget);
+      if (search.status === 'pending' && search.nodesExpanded >= maxNodes) {
+        search.dispose?.();
+        return {
+          status: 'limit',
+          path: null,
+          cost: 0,
+          nodesExpanded: search.nodesExpanded,
+        };
+      }
     }
     return {
       status: search.status,
@@ -480,12 +576,14 @@ export class Pathfinder {
     const cached = this.cache.get(cacheKey);
 
     if (cached && cached.worldVersion === currentVersion) {
+      const pathCopy = cached.path ? cached.path.map((p) => [p[0], p[1], p[2]] as BlockPos) : null;
       return {
         status: cached.status,
-        path: cached.path,
+        path: pathCopy,
         cost: cached.cost,
         nodesExpanded: 0,
         step: () => cached.status,
+        dispose: () => {},
       };
     }
 
@@ -512,52 +610,57 @@ export class Pathfinder {
       return this.createInstantSearch('success', instantPath, 0);
     }
 
-    // Initialize search
-    this.pool.reset();
-    this.heap.reset();
-    this.coordMap.reset();
+    // Acquire isolated search context
+    const ctx = this.acquireContext();
 
     const h0 = this.heuristic(sx, sy, sz, gx, gy, gz);
-    const startNodeIdx = this.pool.allocate(sx, sy, sz, 0, h0, -1);
-    this.heap.push(startNodeIdx);
-    this.coordMap.set(sx, sy, sz, startNodeIdx);
+    const startNodeIdx = ctx.pool.allocate(sx, sy, sz, 0, h0, -1);
+    if (startNodeIdx < 0) {
+      this.releaseContext(ctx);
+      return this.createInstantSearch('limit', null, 0);
+    }
+    ctx.heap.push(startNodeIdx);
+    ctx.coordMap.set(sx, sy, sz, startNodeIdx);
 
     let status: SearchStatus = 'pending';
     let path: BlockPos[] | null = null;
     let cost = 0;
     let nodesExpanded = 0;
 
-    const neighborsBufferX = new Int32Array(16);
-    const neighborsBufferY = new Int16Array(16);
-    const neighborsBufferZ = new Int32Array(16);
-    const neighborsCost = new Float64Array(16);
-
     const step = (maxNodes: number = 2000): SearchStatus => {
       if (status !== 'pending') return status;
 
       let remainingBudget = maxNodes;
 
-      while (this.heap.size > 0 && remainingBudget > 0 && this.pool.size < POOL_CAPACITY - 16) {
+      while (ctx.heap.size > 0 && remainingBudget > 0) {
+        if (ctx.pool.size >= POOL_CAPACITY - 16) {
+          status = 'limit';
+          path = null;
+          this.releaseContext(ctx);
+          return 'limit';
+        }
+
         remainingBudget--;
-        const currentIdx = this.heap.pop();
+        const currentIdx = ctx.heap.pop();
         if (currentIdx < 0) break;
 
         // Skip if already closed
-        if (this.pool.closed[currentIdx] === 1) continue;
-        this.pool.closed[currentIdx] = 1;
+        if (ctx.pool.closed[currentIdx] === 1) continue;
+        ctx.pool.closed[currentIdx] = 1;
         nodesExpanded++;
 
-        const cx = this.pool.x[currentIdx]!;
-        const cy = this.pool.y[currentIdx]!;
-        const cz = this.pool.z[currentIdx]!;
-        const currentG = this.pool.g[currentIdx]!;
+        const cx = ctx.pool.x[currentIdx]!;
+        const cy = ctx.pool.y[currentIdx]!;
+        const cz = ctx.pool.z[currentIdx]!;
+        const currentG = ctx.pool.g[currentIdx]!;
 
         // Check if goal reached
         if (cx === gx && cy === gy && cz === gz) {
           status = 'success';
           cost = currentG;
-          path = this.reconstructPath(currentIdx);
+          path = this.reconstructPath(ctx, currentIdx);
           this.storeInCache(cacheKey, path, 'success', cost, currentVersion);
+          this.releaseContext(ctx);
           return 'success';
         }
 
@@ -567,52 +670,70 @@ export class Pathfinder {
           cy,
           cz,
           height,
-          neighborsBufferX,
-          neighborsBufferY,
-          neighborsBufferZ,
-          neighborsCost,
+          ctx.neighborsBufferX,
+          ctx.neighborsBufferY,
+          ctx.neighborsBufferZ,
+          ctx.neighborsCost,
         );
 
         for (let i = 0; i < neighborCount; i++) {
-          const nx = neighborsBufferX[i]!;
-          const ny = neighborsBufferY[i]!;
-          const nz = neighborsBufferZ[i]!;
-          const edgeCost = neighborsCost[i]!;
+          const nx = ctx.neighborsBufferX[i]!;
+          const ny = ctx.neighborsBufferY[i]!;
+          const nz = ctx.neighborsBufferZ[i]!;
+          const edgeCost = ctx.neighborsCost[i]!;
 
           const tentativeG = currentG + edgeCost;
-          let neighborIdx = this.coordMap.get(nx, ny, nz);
+          let neighborIdx = ctx.coordMap.get(nx, ny, nz);
 
           if (neighborIdx >= 0) {
-            if (this.pool.closed[neighborIdx] === 1) continue;
-            if (tentativeG < this.pool.g[neighborIdx]!) {
-              this.pool.g[neighborIdx] = tentativeG;
-              this.pool.f[neighborIdx] = tentativeG + this.pool.h[neighborIdx]!;
-              this.pool.parent[neighborIdx] = currentIdx;
-              if (this.pool.heapIdx[neighborIdx]! >= 0) {
-                this.heap.decreaseKey(neighborIdx);
+            if (ctx.pool.closed[neighborIdx] === 1) continue;
+            if (tentativeG < ctx.pool.g[neighborIdx]!) {
+              ctx.pool.g[neighborIdx] = tentativeG;
+              ctx.pool.f[neighborIdx] = tentativeG + ctx.pool.h[neighborIdx]!;
+              ctx.pool.parent[neighborIdx] = currentIdx;
+              if (ctx.pool.heapIdx[neighborIdx]! >= 0) {
+                ctx.heap.decreaseKey(neighborIdx);
               } else {
-                this.heap.push(neighborIdx);
+                ctx.heap.push(neighborIdx);
               }
             }
           } else {
             // New unvisited node
-            if (this.pool.size >= POOL_CAPACITY) break;
+            if (ctx.pool.size >= POOL_CAPACITY - 16) {
+              status = 'limit';
+              path = null;
+              this.releaseContext(ctx);
+              return 'limit';
+            }
             const nh = this.heuristic(nx, ny, nz, gx, gy, gz);
-            neighborIdx = this.pool.allocate(nx, ny, nz, tentativeG, nh, currentIdx);
-            this.coordMap.set(nx, ny, nz, neighborIdx);
-            this.heap.push(neighborIdx);
+            neighborIdx = ctx.pool.allocate(nx, ny, nz, tentativeG, nh, currentIdx);
+            if (neighborIdx < 0) {
+              status = 'limit';
+              path = null;
+              this.releaseContext(ctx);
+              return 'limit';
+            }
+            ctx.coordMap.set(nx, ny, nz, neighborIdx);
+            ctx.heap.push(neighborIdx);
           }
         }
       }
 
-      if ((this.heap.size === 0 || this.pool.size >= POOL_CAPACITY - 16) && status === 'pending') {
+      if (ctx.heap.size === 0 && status === 'pending') {
         status = 'unreachable';
         path = null;
         this.storeInCache(cacheKey, null, 'unreachable', 0, currentVersion);
+        this.releaseContext(ctx);
         return 'unreachable';
       }
 
       return 'pending';
+    };
+
+    const dispose = (): void => {
+      if (status === 'pending') {
+        this.releaseContext(ctx);
+      }
     };
 
     return {
@@ -620,7 +741,7 @@ export class Pathfinder {
         return status;
       },
       get path() {
-        return path;
+        return path ? path.map((p) => [p[0], p[1], p[2]] as BlockPos) : null;
       },
       get cost() {
         return cost;
@@ -629,29 +750,32 @@ export class Pathfinder {
         return nodesExpanded;
       },
       step,
+      dispose,
     };
   }
 
   private createInstantSearch(
-    status: 'success' | 'unreachable',
+    status: 'success' | 'unreachable' | 'limit',
     path: BlockPos[] | null,
     cost: number,
   ): PathSearch {
+    const pathCopy = path ? path.map((p) => [p[0], p[1], p[2]] as BlockPos) : null;
     return {
       status,
-      path,
+      path: pathCopy,
       cost,
       nodesExpanded: 0,
       step: () => status,
+      dispose: () => {},
     };
   }
 
-  private reconstructPath(endNodeIdx: number): BlockPos[] {
+  private reconstructPath(ctx: SearchContext, endNodeIdx: number): BlockPos[] {
     const coords: BlockPos[] = [];
     let curr = endNodeIdx;
     while (curr >= 0) {
-      coords.push([this.pool.x[curr]!, this.pool.y[curr]!, this.pool.z[curr]!]);
-      curr = this.pool.parent[curr]!;
+      coords.push([ctx.pool.x[curr]!, ctx.pool.y[curr]!, ctx.pool.z[curr]!]);
+      curr = ctx.pool.parent[curr]!;
     }
     coords.reverse();
     return coords;
@@ -670,7 +794,8 @@ export class Pathfinder {
         this.cache.delete(oldestKey);
       }
     }
-    this.cache.set(key, { path, status, cost, worldVersion });
+    const pathCopy = path ? path.map((p) => [p[0], p[1], p[2]] as BlockPos) : null;
+    this.cache.set(key, { path: pathCopy, status, cost, worldVersion });
   }
 
   /**
@@ -710,16 +835,11 @@ export class Pathfinder {
       }
 
       // 2. Horizontal movements in water
-      const dirs = [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ];
       for (let i = 0; i < 4; i++) {
-        const [dx, dz] = dirs[i]!;
-        const nx = x + dx!;
-        const nz = z + dz!;
+        const dx = DIR_DX[i]!;
+        const dz = DIR_DZ[i]!;
+        const nx = x + dx;
+        const nz = z + dz;
 
         if (!this.isOccupiable(nx, y, nz, height)) continue;
 
@@ -759,17 +879,11 @@ export class Pathfinder {
     }
 
     // On solid land
-    const dirs = [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ];
-
     for (let i = 0; i < 4; i++) {
-      const [dx, dz] = dirs[i]!;
-      const nx = x + dx!;
-      const nz = z + dz!;
+      const dx = DIR_DX[i]!;
+      const dz = DIR_DZ[i]!;
+      const nx = x + dx;
+      const nz = z + dz;
 
       // Case A: 1-block step up (jump)
       // Check head clearance at current position to initiate jump

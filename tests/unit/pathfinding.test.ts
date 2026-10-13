@@ -9,6 +9,8 @@ import {
   type PathOptions,
 } from '../../src/entity/ai/pathfinding';
 import { PRNG } from '../../src/engine/rng';
+import { World } from '../../src/world/world';
+import { BlockRegistry } from '../../src/world/blocks/registry';
 
 /**
  * In-memory 3D grid implementing WorldQuery for unit tests.
@@ -625,6 +627,320 @@ describe('M13b: A* pathfinding (voxel grid)', () => {
       const resOpen = pf.findPath(start, goal, { height: 2 });
       expect(resOpen.status).toBe('success');
       expect(resOpen.path).toContainEqual([5, 1, 5]);
+    });
+  });
+
+  describe('Interleaved Concurrent Searches', () => {
+    it('isolates search contexts so 3 interleaved searches all find optimal costs matching findPath', () => {
+      const grid = new InMemoryGrid(35, 6, 35);
+      for (let x = 0; x < 35; x++) {
+        for (let z = 0; z < 35; z++) {
+          grid.set(x, 0, z, 'solid');
+        }
+      }
+      // Add interior obstacle walls
+      for (let x = 5; x < 25; x++) {
+        grid.set(x, 1, 10, 'solid');
+        grid.set(x, 2, 10, 'solid');
+      }
+      for (let z = 5; z < 25; z++) {
+        grid.set(15, 1, z, 'solid');
+        grid.set(15, 2, z, 'solid');
+      }
+      // Leave openings
+      grid.set(10, 1, 10, 'passable');
+      grid.set(10, 2, 10, 'passable');
+      grid.set(15, 1, 20, 'passable');
+      grid.set(15, 2, 20, 'passable');
+
+      const pf = new Pathfinder(grid);
+
+      const startA: BlockPos = [1, 1, 1];
+      const goalA: BlockPos = [30, 1, 30];
+
+      const startB: BlockPos = [1, 1, 30];
+      const goalB: BlockPos = [30, 1, 1];
+
+      const startC: BlockPos = [5, 1, 15];
+      const goalC: BlockPos = [25, 1, 15];
+
+      // Compute standalone reference solutions
+      const refA = pf.findPath(startA, goalA, { height: 2 });
+      const refB = pf.findPath(startB, goalB, { height: 2 });
+      const refC = pf.findPath(startC, goalC, { height: 2 });
+
+      expect(refA.status).toBe('success');
+      expect(refB.status).toBe('success');
+      expect(refC.status).toBe('success');
+
+      // Clear cache so concurrent searches must actually expand nodes
+      pf.clearCache();
+
+      // Launch 3 concurrent searches on the SAME Pathfinder instance
+      const sA = pf.createSearch(startA, goalA, { height: 2 });
+      const sB = pf.createSearch(startB, goalB, { height: 2 });
+      const sC = pf.createSearch(startC, goalC, { height: 2 });
+
+      // Interleave steps
+      let iterations = 0;
+      while (
+        (sA.status === 'pending' || sB.status === 'pending' || sC.status === 'pending') &&
+        iterations < 500
+      ) {
+        if (sA.status === 'pending') sA.step(15);
+        if (sB.status === 'pending') sB.step(20);
+        if (sC.status === 'pending') sC.step(10);
+        iterations++;
+      }
+
+      expect(sA.status).toBe('success');
+      expect(sB.status).toBe('success');
+      expect(sC.status).toBe('success');
+
+      // Verify each interleaved search achieved the exact optimal cost
+      expect(sA.cost).toBeCloseTo(refA.cost, 5);
+      expect(sB.cost).toBeCloseTo(refB.cost, 5);
+      expect(sC.cost).toBeCloseTo(refC.cost, 5);
+
+      expect(sA.path).toEqual(refA.path);
+      expect(sB.path).toEqual(refB.path);
+      expect(sC.path).toEqual(refC.path);
+    });
+  });
+
+  describe('Real WorldAdapter & Dynamic Cache Invalidation', () => {
+    it('subscribes to world.onBlockEdited and invalidates cached paths upon edits', () => {
+      const world = new World(false);
+      // Create solid platform
+      for (let x = 0; x < 16; x++) {
+        for (let z = 0; z < 16; z++) {
+          world.setBlockStateId(x, 0, z, 1);
+        }
+      }
+
+      const adapter = new WorldAdapter(world);
+      const pf = new Pathfinder(adapter);
+
+      const start: BlockPos = [1, 1, 1];
+      const goal: BlockPos = [5, 1, 1];
+
+      // First path search computes path
+      const res1 = pf.findPath(start, goal, { height: 2 });
+      expect(res1.status).toBe('success');
+      expect(res1.nodesExpanded).toBeGreaterThan(0);
+      expect(res1.path).toContainEqual([3, 1, 1]);
+
+      // Repeated search hits cache (0 node expansions)
+      const res2 = pf.findPath(start, goal, { height: 2 });
+      expect(res2.status).toBe('success');
+      expect(res2.nodesExpanded).toBe(0);
+
+      const initialVersion = adapter.version;
+
+      // Edit a block right in the middle of the path using real World.setBlockStateId
+      world.setBlockStateId(3, 1, 1, 1); // place solid obstacle
+      world.setBlockStateId(3, 2, 1, 1);
+
+      // Verify adapter version bumped automatically
+      expect(adapter.version).toBeGreaterThan(initialVersion);
+
+      // Next findPath recomputes and routes around the obstacle
+      const res3 = pf.findPath(start, goal, { height: 2 });
+      expect(res3.status).toBe('success');
+      expect(res3.nodesExpanded).toBeGreaterThan(0);
+      expect(res3.path).not.toContainEqual([3, 1, 1]);
+    });
+
+    it('classifies unloaded columns and y out of bounds as solid', () => {
+      const world = new World(false);
+      // Load column (0, 0)
+      world.getColumn(0, 0, true);
+
+      const adapter = new WorldAdapter(world);
+
+      // Out of world bounds in y
+      expect(adapter.classify(0, -1, 0)).toBe('solid');
+      expect(adapter.classify(0, -10, 0)).toBe('solid');
+      expect(adapter.classify(0, 320, 0)).toBe('solid');
+      expect(adapter.classify(0, 500, 0)).toBe('solid');
+
+      // Unloaded chunk column (e.g. at x=100, z=100 which is cx=6, cz=6)
+      expect(adapter.classify(100, 10, 100)).toBe('solid');
+
+      // Within loaded chunk column (0, 0), air at y=10 is passable
+      expect(adapter.classify(0, 10, 0)).toBe('passable');
+    });
+  });
+
+  describe('Defensive Cache Protection', () => {
+    it('returns a copy so mutating the returned path array does not corrupt cached path', () => {
+      const grid = new InMemoryGrid(10, 6, 10);
+      for (let x = 0; x < 10; x++) {
+        for (let z = 0; z < 10; z++) {
+          grid.set(x, 0, z, 'solid');
+        }
+      }
+      const pf = new Pathfinder(grid);
+      const start: BlockPos = [1, 1, 1];
+      const goal: BlockPos = [4, 1, 1];
+
+      const res1 = pf.findPath(start, goal, { height: 2 });
+      expect(res1.status).toBe('success');
+      expect(res1.path).toBeDefined();
+
+      // Mutate returned path
+      res1.path![0]![0] = 9999;
+      res1.path!.push([888, 888, 888]);
+
+      // Query again from cache
+      const res2 = pf.findPath(start, goal, { height: 2 });
+      expect(res2.nodesExpanded).toBe(0);
+      expect(res2.path![0]![0]).toBe(1);
+      expect(res2.path).not.toContainEqual([888, 888, 888]);
+    });
+  });
+
+  describe('Node-Pool Budget & Limit Handling', () => {
+    it('returns limit status when budget is exhausted and does not cache as unreachable', () => {
+      const grid = new InMemoryGrid(30, 6, 30);
+      for (let x = 0; x < 30; x++) {
+        for (let z = 0; z < 30; z++) {
+          grid.set(x, 0, z, 'solid');
+        }
+      }
+      const pf = new Pathfinder(grid);
+      const start: BlockPos = [1, 1, 1];
+      const goal: BlockPos = [28, 1, 28];
+
+      // Run with artificially small maxNodes limit
+      const resLimit = pf.findPath(start, goal, { height: 2, maxNodes: 10 });
+      expect(resLimit.status).toBe('limit');
+      expect(resLimit.path).toBeNull();
+
+      // Ensure that this was NOT cached as unreachable
+      const search = pf.createSearch(start, goal, { height: 2, maxNodes: 10000 });
+      expect(search.status).toBe('pending');
+      const resSuccess = pf.findPath(start, goal, { height: 2 });
+      expect(resSuccess.status).toBe('success');
+    });
+  });
+
+  describe('Real Block Registry Classification', () => {
+    it('classifies all standard block types correctly from registry definitions', () => {
+      const registry = BlockRegistry.getInstance();
+      const classifier = new DefaultBlockClassifier();
+
+      const waterId = registry.getDefaultStateId('water');
+      const lavaId = registry.getDefaultStateId('lava');
+      const cactusId = registry.getDefaultStateId('cactus');
+      const torchId = registry.getDefaultStateId('torch');
+      const ladderId = registry.getDefaultStateId('ladder');
+      const vineId = registry.getDefaultStateId('vine');
+      const tallGrassId = registry.getDefaultStateId('tall_grass');
+      const stoneId = registry.getDefaultStateId('stone');
+      const leavesId = registry.getDefaultStateId('oak_leaves');
+      const slabId = registry.getDefaultStateId('stone_slab');
+      const grassBlockId = registry.getDefaultStateId('grass_block');
+
+      expect(waterId).toBeDefined();
+      expect(lavaId).toBeDefined();
+      expect(cactusId).toBeDefined();
+      expect(torchId).toBeDefined();
+      expect(ladderId).toBeDefined();
+      expect(vineId).toBeDefined();
+      expect(tallGrassId).toBeDefined();
+      expect(stoneId).toBeDefined();
+      expect(leavesId).toBeDefined();
+      expect(slabId).toBeDefined();
+      expect(grassBlockId).toBeDefined();
+
+      expect(classifier.classify(waterId!, 0, 0, 0)).toBe('water');
+      expect(classifier.classify(lavaId!, 0, 0, 0)).toBe('forbidden');
+      expect(classifier.classify(cactusId!, 0, 0, 0)).toBe('forbidden');
+      expect(classifier.classify(torchId!, 0, 0, 0)).toBe('passable');
+      expect(classifier.classify(ladderId!, 0, 0, 0)).toBe('passable');
+      expect(classifier.classify(vineId!, 0, 0, 0)).toBe('passable');
+      expect(classifier.classify(tallGrassId!, 0, 0, 0)).toBe('passable');
+      expect(classifier.classify(stoneId!, 0, 0, 0)).toBe('solid');
+      expect(classifier.classify(leavesId!, 0, 0, 0)).toBe('solid');
+      expect(classifier.classify(slabId!, 0, 0, 0)).toBe('solid');
+      expect(classifier.classify(grassBlockId!, 0, 0, 0)).toBe('solid');
+    });
+
+    it('honours door predicate on the very first classify call', () => {
+      let isDoorAllowed = false;
+      const classifier = new DefaultBlockClassifier(
+        (_x, _y, _z, stateId) => stateId === 55 && isDoorAllowed,
+        (stateId) => stateId === 55,
+      );
+
+      // Very first call to classify() with door block
+      expect(classifier.classify(55, 1, 1, 1)).toBe('solid');
+
+      isDoorAllowed = true;
+      expect(classifier.classify(55, 1, 1, 1)).toBe('passable');
+    });
+  });
+
+  describe('Cliff Avoidance (4-Block Drop Refusal)', () => {
+    it('refuses a 4-block drop shortcut in favour of a longer safe route', () => {
+      const grid = new InMemoryGrid(15, 10, 15);
+
+      // High platform at y=5, supported by solid block at y=4
+      grid.set(2, 4, 2, 'solid');
+      grid.set(2, 5, 2, 'passable'); // start position
+      grid.set(2, 6, 2, 'passable');
+
+      // Goal is at (3, 1, 2) on floor y=0 (drop of 4 blocks from y=5 to y=1)
+      grid.set(3, 0, 2, 'solid');
+      grid.set(3, 1, 2, 'passable'); // goal position
+      grid.set(3, 2, 2, 'passable');
+
+      // The space between y=1 and y=4 at (3, y, 2) is open air
+      for (let y = 1; y <= 4; y++) {
+        grid.set(3, y, 2, 'passable');
+      }
+
+      // Safe stepped staircase detour route on the other side:
+      grid.set(1, 4, 2, 'solid');
+
+      grid.set(1, 3, 3, 'solid');
+      grid.set(1, 4, 3, 'passable');
+      grid.set(1, 5, 3, 'passable');
+
+      grid.set(1, 2, 4, 'solid');
+      grid.set(1, 3, 4, 'passable');
+      grid.set(1, 4, 4, 'passable');
+
+      grid.set(2, 1, 4, 'solid');
+      grid.set(2, 2, 4, 'passable');
+      grid.set(2, 3, 4, 'passable');
+
+      grid.set(3, 0, 4, 'solid');
+      grid.set(3, 1, 4, 'passable');
+      grid.set(3, 2, 4, 'passable');
+
+      grid.set(3, 0, 3, 'solid');
+      grid.set(3, 1, 3, 'passable');
+      grid.set(3, 2, 3, 'passable');
+
+      const pf = new Pathfinder(grid);
+      const res = pf.findPath([2, 5, 2], [3, 1, 2], { height: 2 });
+
+      expect(res.status).toBe('success');
+      expect(res.path).toBeDefined();
+
+      const path = res.path!;
+      // Verify path took the safe detour and never performed a 4-block drop
+      for (let i = 1; i < path.length; i++) {
+        const prevY = path[i - 1]![1];
+        const currY = path[i]![1];
+        const drop = prevY - currY;
+        expect(drop).toBeLessThanOrEqual(3);
+      }
+
+      // Ensure the direct drop transition [2, 5, 2] -> [3, 1, 2] was NOT taken
+      expect(path[1]).not.toEqual([3, 1, 2]);
     });
   });
 });
