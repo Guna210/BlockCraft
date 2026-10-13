@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06b | prompt given (Codex full model), branch claude/m06b | Codex | — | — | — | Includes deep-water lighting fix and underwater visuals. |
+| M06b | gate 28f2745: full local verify PASSED (unit 452/452, e2e 64/64, 20.0m); recommended approve with '— verified' title; Codex gh got Forbidden from api.github.com | Codex | — | — | — | Includes deep-water lighting fix and underwater visuals. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
