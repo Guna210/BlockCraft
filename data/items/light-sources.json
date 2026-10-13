@@ -1,0 +1,7 @@
+{
+  "torch": {
+    "kind": "block",
+    "block": "torch",
+    "maxStack": 64
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "wall_torch": {
+    "kind": "block",
+    "block": "wall_torch",
+    "maxStack": 64
+  }
+}

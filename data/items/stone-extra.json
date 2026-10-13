@@ -1,0 +1,12 @@
+{
+  "mossy_cobblestone": {
+    "kind": "block",
+    "block": "mossy_cobblestone",
+    "maxStack": 64
+  },
+  "packed_ice": {
+    "kind": "block",
+    "block": "packed_ice",
+    "maxStack": 64
+  }
+}

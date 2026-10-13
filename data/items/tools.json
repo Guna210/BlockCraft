@@ -1,0 +1,82 @@
+{
+  "wooden_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "wooden_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 0,
+      "speed": 2
+    }
+  },
+  "stone_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "copper_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "iron_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "wooden_axe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "wooden_axe",
+    "tool": {
+      "type": "axe",
+      "tier": 0,
+      "speed": 2
+    }
+  },
+  "wooden_shovel": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "wooden_shovel",
+    "tool": {
+      "type": "shovel",
+      "tier": 0,
+      "speed": 2
+    }
+  },
+  "wooden_hoe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "wooden_hoe",
+    "tool": {
+      "type": "hoe",
+      "tier": 0,
+      "speed": 2
+    }
+  },
+  "iron_shears": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_shears",
+    "tool": {
+      "type": "shears",
+      "tier": 3,
+      "speed": 6
+    }
+  }
+}

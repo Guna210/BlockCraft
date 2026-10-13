@@ -1,0 +1,72 @@
+{
+  "tall_grass": {
+    "kind": "block",
+    "block": "tall_grass",
+    "maxStack": 64
+  },
+  "bluebell": {
+    "kind": "block",
+    "block": "bluebell",
+    "maxStack": 64
+  },
+  "buttercup": {
+    "kind": "block",
+    "block": "buttercup",
+    "maxStack": 64
+  },
+  "marigold": {
+    "kind": "block",
+    "block": "marigold",
+    "maxStack": 64
+  },
+  "violet": {
+    "kind": "block",
+    "block": "violet",
+    "maxStack": 64
+  },
+  "daisy": {
+    "kind": "block",
+    "block": "daisy",
+    "maxStack": 64
+  },
+  "wild_rose": {
+    "kind": "block",
+    "block": "wild_rose",
+    "maxStack": 64
+  },
+  "lupine": {
+    "kind": "block",
+    "block": "lupine",
+    "maxStack": 64
+  },
+  "heather": {
+    "kind": "block",
+    "block": "heather",
+    "maxStack": 64
+  },
+  "sugar_reeds": {
+    "kind": "block",
+    "block": "sugar_reeds",
+    "maxStack": 64
+  },
+  "brown_mushroom": {
+    "kind": "block",
+    "block": "brown_mushroom",
+    "maxStack": 64
+  },
+  "red_mushroom": {
+    "kind": "block",
+    "block": "red_mushroom",
+    "maxStack": 64
+  },
+  "cactus": {
+    "kind": "block",
+    "block": "cactus",
+    "maxStack": 64
+  },
+  "pumpkin": {
+    "kind": "block",
+    "block": "pumpkin",
+    "maxStack": 64
+  }
+}

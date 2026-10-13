@@ -1,0 +1,7 @@
+{
+  "stone_slab": {
+    "kind": "block",
+    "block": "stone_slab",
+    "maxStack": 64
+  }
+}

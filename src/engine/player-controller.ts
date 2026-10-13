@@ -6,11 +6,18 @@ import type { Camera } from '../render/camera';
 import type { World } from '../world/world';
 import { Player, type GameMode } from '../entity/player';
 import { BlockCollision } from '../entity/physics';
+import { ItemEntityManager } from '../entity/item-entity';
+import { BreakParticles } from '../render/particles';
+import { canHarvest } from '../gameplay/mining';
+import { blockLoot } from '../gameplay/loot';
+import { BlockRegistry } from '../world/blocks/registry';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
   public player: Player | null = null;
   public interaction: BlockInteraction | null = null;
+  public itemEntities: ItemEntityManager | null = null;
+  public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
@@ -18,6 +25,8 @@ export class PlayerController {
   public readonly loop = new TickLoop(() => {
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
+    if (this.player) this.itemEntities?.tick(this.player);
+    this.particles?.tick();
     this.interaction?.tick();
   });
   private x = 0;
@@ -61,9 +70,21 @@ export class PlayerController {
     this.camera.fov = (settings.fov * Math.PI) / 180;
     this.camera.updateProjection();
     this.player = new Player(new BlockCollision(world), this.ready);
+    this.itemEntities = new ItemEntityManager(world);
+    this.particles = new BreakParticles(world);
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
+    this.interaction.onBreak = (state, x, y, z, tool) => {
+      this.particles!.spawn(state, x, y, z);
+      const block = BlockRegistry.getInstance().getResolvedState(state)!;
+      if (this.player!.mode === 'creative' || !canHarvest(block.definition, tool)) return;
+      const loot = blockLoot(block.blockId);
+      for (let n = 0; n < loot.length; n++) {
+        const entry = loot[n]!;
+        this.itemEntities!.spawn(entry.id, entry.count, x + 0.5, y + 0.5, z + 0.5);
+      }
+    };
     this.player.setGameMode(mode);
     this.input.actionStates.forEach((_, action) => this.input.actionStates.set(action, false));
     this.loop.resume();
@@ -78,6 +99,8 @@ export class PlayerController {
   reset(): void {
     this.player = null;
     this.interaction = null;
+    this.itemEntities = null;
+    this.particles = null;
     this.perspective = 0;
     this.perspectiveDown = false;
     this.camera.roll = 0;
