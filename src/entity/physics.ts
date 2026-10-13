@@ -11,6 +11,8 @@ export class BlockCollision {
   private readonly bottoms: Float64Array;
   private readonly water: Uint8Array;
   private readonly hay: Uint8Array;
+  private readonly mire: Uint8Array;
+  private readonly climbers: Uint8Array;
   constructor(public readonly world: World) {
     const registry = BlockRegistry.getInstance();
     const n = registry.getMaxStateId() + 1;
@@ -18,11 +20,17 @@ export class BlockCollision {
     this.bottoms = new Float64Array(n);
     this.water = new Uint8Array(n);
     this.hay = new Uint8Array(n);
+    this.mire = new Uint8Array(n);
+    this.climbers = new Uint8Array(n);
     for (const id of registry.getAllStateIds()) {
       const state = registry.getResolvedState(id)!;
       const def = state.definition;
       this.water[id] = state.blockId === 'water' ? 1 : 0;
       this.hay[id] = state.blockId === 'hay_bale' ? 1 : 0;
+      this.mire[id] = state.blockId === 'mire' ? 1 : 0;
+      if (state.blockId === 'ladder' || state.blockId === 'vine')
+        this.climbers[id] =
+          ['north', 'south', 'east', 'west'].indexOf(String(state.properties.facing)) + 1;
       if (def.model === 'slab') {
         this.heights[id] = 0.5;
         this.bottoms[id] = state.properties.half === 'top' ? 0.5 : 0;
@@ -30,7 +38,8 @@ export class BlockCollision {
         state.blockId !== 'air' &&
         state.blockId !== 'water' &&
         state.blockId !== 'lava' &&
-        def.model !== 'cross'
+        def.model !== 'cross' &&
+        def.model !== 'wall'
       ) {
         this.heights[id] = 1;
       }
@@ -132,6 +141,123 @@ export class BlockCollision {
         )
           if (this.water[this.state(x, y, z)]) return true;
     return false;
+  }
+
+  /** Highest water surface touched by the body; NaN if there is no overlap. */
+  waterSurface(pos: Position, height: number): number {
+    let surface = NaN;
+    for (let y = Math.floor(pos[1]); y <= Math.floor(pos[1] + height - EPSILON); y++)
+      for (
+        let z = Math.floor(pos[2] - HALF_WIDTH + EPSILON);
+        z <= Math.floor(pos[2] + HALF_WIDTH - EPSILON);
+        z++
+      )
+        for (
+          let x = Math.floor(pos[0] - HALF_WIDTH + EPSILON);
+          x <= Math.floor(pos[0] + HALF_WIDTH - EPSILON);
+          x++
+        )
+          if (this.water[this.state(x, y, z)] && !this.water[this.state(x, y + 1, z)])
+            surface = Number.isNaN(surface) ? y + 1 : Math.max(surface, y + 1);
+    return surface;
+  }
+
+  /** Overlap uses the whole block volume; facing points away from its supporting wall. */
+  climbing(pos: Position, height: number, dx = 0, dz = 0, intoOnly = false): boolean {
+    for (let y = Math.floor(pos[1]); y <= Math.floor(pos[1] + height - EPSILON); y++)
+      for (
+        let z = Math.floor(pos[2] - HALF_WIDTH + EPSILON);
+        z <= Math.floor(pos[2] + HALF_WIDTH - EPSILON);
+        z++
+      )
+        for (
+          let x = Math.floor(pos[0] - HALF_WIDTH + EPSILON);
+          x <= Math.floor(pos[0] + HALF_WIDTH - EPSILON);
+          x++
+        ) {
+          const facing = this.climbers[this.state(x, y, z)];
+          if (
+            facing &&
+            (!intoOnly ||
+              (facing === 1
+                ? dz > EPSILON
+                : facing === 2
+                  ? dz < -EPSILON
+                  : facing === 3
+                    ? dx < -EPSILON
+                    : dx > EPSILON))
+          )
+            return true;
+        }
+    return false;
+  }
+
+  onMire(pos: Position): boolean {
+    for (
+      let z = Math.floor(pos[2] - HALF_WIDTH + EPSILON);
+      z <= Math.floor(pos[2] + HALF_WIDTH - EPSILON);
+      z++
+    )
+      for (
+        let x = Math.floor(pos[0] - HALF_WIDTH + EPSILON);
+        x <= Math.floor(pos[0] + HALF_WIDTH - EPSILON);
+        x++
+      )
+        if (this.mire[this.state(x, Math.floor(pos[1] - EPSILON), z)]) return true;
+    return false;
+  }
+
+  /** Exact ray/solid-shape intersection, including slabs. No per-query allocations. */
+  cameraDistance(
+    x: number,
+    y: number,
+    z: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    distance = 4,
+  ): number {
+    let hit = distance;
+    for (
+      let bz = Math.floor(Math.min(z, z + dz * distance));
+      bz <= Math.floor(Math.max(z, z + dz * distance));
+      bz++
+    )
+      for (
+        let by = Math.floor(Math.min(y, y + dy * distance));
+        by <= Math.floor(Math.max(y, y + dy * distance));
+        by++
+      )
+        for (
+          let bx = Math.floor(Math.min(x, x + dx * distance));
+          bx <= Math.floor(Math.max(x, x + dx * distance));
+          bx++
+        ) {
+          const id = this.state(bx, by, bz),
+            h = this.heights[id]!;
+          if (!h) continue;
+          let enter = 0,
+            leave = hit;
+          for (let axis = 0; axis < 3; axis++) {
+            const origin = axis === 0 ? x : axis === 1 ? y : z;
+            const dir = axis === 0 ? dx : axis === 1 ? dy : dz;
+            const low = axis === 0 ? bx : axis === 1 ? by + this.bottoms[id]! : bz;
+            const high = low + (axis === 1 ? h : 1);
+            if (Math.abs(dir) < EPSILON) {
+              if (origin < low || origin > high) {
+                leave = -1;
+                break;
+              }
+            } else {
+              const a = (low - origin) / dir,
+                b = (high - origin) / dir;
+              enter = Math.max(enter, Math.min(a, b));
+              leave = Math.min(leave, Math.max(a, b));
+            }
+          }
+          if (enter <= leave) hit = Math.min(hit, enter);
+        }
+    return hit < distance ? Math.max(0, hit - 0.2) : distance;
   }
 
   /** Detect even water crossed entirely between two ticks at terminal speed. */
