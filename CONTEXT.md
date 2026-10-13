@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | on master 5a73d9a (agy, no PR). Round 1 CHANGES NEEDED (session_01GyyAJpooj3Ez6nGPRqF7HM). Fix = PR #38 (M12a-fix, head f25f950, Verify #163 green, ready) → round-2 review in the same reviewer session. | Codex | #38 | — | — | Fix: curve-only classifier radius 1.73 (margin 2.005), per-fragment fog factor, fog 100 % sky, fogEnd (RD−1)×16, fogStart 0.7×. |
+| M12a | on master 5a73d9a (agy). M12a-fix PR #38 round-2 review PASS (Verify #163 green); awaiting owner merge. | Codex | #38 | — | — | Non-blocking: fog >0.8 reads as sky (accepted); pale vertical strips in fog-edge shot near x≈700/790 (likely fading cliff faces); RD8 test covers top quarter only; classifier formula duplicated in unit sweep. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -53,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-13: M12a-fix round 2 PASS. Owner request: sun should be a blinding glare at midday with the disc only readable near sunrise/sunset. Plan: add to the M12b prompt as an owner extra (elevation-scaled additive halo in sky shader + sun billboard saturating to white; disc dims/reddens near horizon; no HDR/bloom pass; must keep M12 noon/sunset tests and M04 tests unchanged).
 - 2026-10-13: M12a-fix gate c873ccd: radius 1.73, closest terrain 3.735 (2.005 margin), real sky coverage 100 % at 6000/10000; unit 433/433; e2e 55 pass, 2 container-only fails (M01a GL count 1446<1449, M04a pump 57.1 ms); RD12, fast-flight, M12 pass. Recommended approve → draft PR, CI decides.
 - 2026-10-13: M12a-fix Codex QUESTION: legacy SKY_RGB±16 check accepts fogged lumite (117,206,252). Answered Option B: drop legacy check, curve-only match, radius = largest rejecting full sweep with ≥2 margin; plus m12.spec assertion ≥98 % of top-quarter noon pixels are isSkyPixel at 6000 and 10000 ticks (guards against silent hole loss).
 - 2026-10-13: Owner asked about fog in deserts. Found gap: SPEC Appendix (line ~1459) says each biome defines a fog color, but biomes.ts has no fog field and no task row owns it. Not added to M12a-fix (keeps classifier simple). Open item for owner: assign per-biome fog tint to a task (e.g. M12c) via SPEC.
