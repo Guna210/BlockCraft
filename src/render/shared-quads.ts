@@ -60,6 +60,8 @@ export function quadIndices(quads: number): Uint32Array {
 /** Normalize once in the worker so uploads pass the transferred buffer straight to WebGL. */
 export function normalizeSharedQuads(bucket: MeshBucketData): void {
   if (bucket.canonicalQuads) return;
+  // Model quads carry both windings; the emitted index pairs are the authoritative draw count.
+  bucket.quadCount = bucket.indices.length / 6;
   bucket.vertices = canonicalQuadVertices(bucket);
   bucket.vertexCount = bucket.quadCount * 4;
   bucket.indices = quadIndices(bucket.quadCount);

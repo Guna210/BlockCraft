@@ -1,0 +1,15 @@
+{
+  "wall_torch": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 14,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "wall_torch",
+    "tool": "none",
+    "states": {
+      "facing": { "type": "enum", "values": ["north", "south", "east", "west"], "default": "north" }
+    },
+    "textures": { "top": "torch", "side": "torch", "bottom": "torch" }
+  }
+}

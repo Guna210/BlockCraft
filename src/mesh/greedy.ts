@@ -1,3 +1,4 @@
+import { MODEL_WALL_TORCH, emitWallTorch } from './wall-torch';
 import {
   MODEL_BOTTOM_SLAB,
   MODEL_TOP_SLAB,
@@ -89,16 +90,19 @@ export function buildMeshLookupTables(
     const def = resolved.definition;
     isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
     modelKind[stateId] =
-      def.model === 'cross'
-        ? MODEL_CROSS
-        : def.model === 'slab'
-          ? resolved.properties.half === 'top'
-            ? MODEL_TOP_SLAB
-            : MODEL_BOTTOM_SLAB
-          : def.model === 'wall'
-            ? MODEL_WALL_NORTH +
-              ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
-            : MODEL_CUBE;
+      def.model === 'wall_torch'
+        ? MODEL_WALL_TORCH +
+          ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
+        : def.model === 'cross'
+          ? MODEL_CROSS
+          : def.model === 'slab'
+            ? resolved.properties.half === 'top'
+              ? MODEL_TOP_SLAB
+              : MODEL_BOTTOM_SLAB
+            : def.model === 'wall'
+              ? MODEL_WALL_NORTH +
+                ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
+              : MODEL_CUBE;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -764,6 +768,26 @@ export function greedyMesh(
           bucket.vertOffset += 48;
           bucket.indexOffset += 36;
           bucket.quadCount += 6;
+          continue;
+        }
+        if (tables.modelKind[state]! >= MODEL_WALL_TORCH) {
+          const bucket = modelScratch;
+          emitWallTorch(
+            packVertex,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+            px - 1,
+            py - 1,
+            pz - 1,
+            tables.modelKind[state]! - MODEL_WALL_TORCH,
+            tables.tileIndices[state * 6 + 2]!,
+            paddedLight ? paddedLight[px + yzOff]! : 0xf000,
+          );
+          bucket.vertOffset += 16;
+          bucket.indexOffset += 24;
+          bucket.quadCount += 2;
           continue;
         }
         if (tables.modelKind[state]! >= MODEL_WALL_NORTH) {

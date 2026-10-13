@@ -1,5 +1,20 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  raycast?: () => {
+    hit: boolean;
+    block?: [number, number, number];
+    face?: string;
+    distance?: number;
+  };
+  setHeldBlock?: (id: string, state?: Record<string, string | number>) => void;
+  getInteraction?: () => {
+    editFrame: number;
+    meshFrame: number;
+    meshRevision: number;
+    progress: number;
+    stage: number;
+    heldBlock: string | null;
+  };
   getPlayer?: () => import('../../entity/player').PlayerSnapshot;
   teleport?: (x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
   input?: (action: string, down: boolean) => void;
