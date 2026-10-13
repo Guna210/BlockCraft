@@ -1,4 +1,13 @@
 import {
+  genPlayerHead,
+  genPlayerHair,
+  genPlayerCoat,
+  genPlayerLeg,
+  PAL_PLAYER_HEAD,
+  PAL_PLAYER_COAT,
+  PAL_PLAYER_LEG,
+} from './player';
+import {
   genSun,
   genMoon0,
   genMoon1,
@@ -11,6 +20,7 @@ import {
   PAL_SUN,
   PAL_MOON,
 } from './sky';
+import { genLadder, genVine, PAL_LADDER, PAL_VINE } from './climbing';
 import { genHayTop, genHaySide, PAL_HAY } from './hay';
 import { genTorch, PAL_TORCH } from './light-sources';
 // src/render/textures/index.ts
@@ -163,6 +173,12 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   moon_5: genMoon5,
   moon_6: genMoon6,
   moon_7: genMoon7,
+  player_head: genPlayerHead,
+  player_hair: genPlayerHair,
+  player_coat: genPlayerCoat,
+  player_leg: genPlayerLeg,
+  ladder: genLadder,
+  vine: genVine,
   hay_top: genHayTop,
   hay_side: genHaySide,
   torch: genTorch,
@@ -327,6 +343,12 @@ export const texturePalettes: Record<string, RGBA[]> = {
   moon_5: PAL_MOON,
   moon_6: PAL_MOON,
   moon_7: PAL_MOON,
+  player_head: PAL_PLAYER_HEAD,
+  player_hair: PAL_PLAYER_HEAD,
+  player_coat: PAL_PLAYER_COAT,
+  player_leg: PAL_PLAYER_LEG,
+  ladder: PAL_LADDER,
+  vine: PAL_VINE,
   hay_top: PAL_HAY,
   hay_side: PAL_HAY,
   torch: PAL_TORCH,

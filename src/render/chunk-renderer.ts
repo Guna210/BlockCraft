@@ -1,3 +1,4 @@
+import type { UnderwaterView } from './underwater';
 import { canonicalQuadVertices, quadIndices } from './shared-quads';
 import { VERTEX_LAYOUT } from '../mesh/vertex';
 import {
@@ -29,6 +30,7 @@ uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform float u_skyBrightness;
 uniform bool u_debugLight;
+uniform float u_underwaterFloor;
 uniform sampler2D u_grassTintMap;
 uniform sampler2D u_foliageTintMap;
 uniform vec3 u_cameraPos;
@@ -56,6 +58,7 @@ void main() {
   localPos.y += float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
   vec3 worldPos = u_sectionOrigin + localPos;
   vec3 normal = NORMALS[(a_word0 >> 15u) & 7u];
+  worldPos += normal * float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0;
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
   float ao = ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u);
   float sky = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * float((a_word0 >> 20u) & 15u) / 15.0;
@@ -66,7 +69,7 @@ void main() {
   vec3 brightness = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * rgb / 15.0;
   vec3 light = max(vec3(sky * u_skyBrightness), brightness);
 #endif
-  v_light = (u_debugLight ? vec3(1.0) : light) * ao * faceShade;
+  v_light = (u_debugLight ? vec3(1.0) : max(light, vec3(u_underwaterFloor))) * ao * faceShade;
   uint tintIdx = (a_word0 >> 28u) & 15u;
   // Clamp to this column's edge texel: vertices at x/z=16 still belong to this column.
   ivec2 tintTexel = ivec2(clamp(floor(localPos.xz - 0.5 * normal.xz), vec2(0.0), vec2(15.0)));
@@ -101,6 +104,8 @@ uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
+uniform bool u_underwater;
+uniform vec3 u_waterFogColor;
 uniform int u_isCutout;
 uniform int u_isWireframe;
 uniform float u_fade;
@@ -123,9 +128,9 @@ void main() {
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
   vec3 litColor = texColor.rgb * tint * v_light;
-  float horizDist = length((v_worldPos - u_cameraPos).xz);
+  float horizDist = u_underwater ? length(v_worldPos - u_cameraPos) : length((v_worldPos - u_cameraPos).xz);
   float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
-  vec3 finalColor = mix(litColor, v_fogColor, fogFactor);
+  vec3 finalColor = mix(litColor, u_underwater ? u_waterFogColor : v_fogColor, fogFactor);
   fragColor = vec4(finalColor, mix(texColor.a, 1.0, v_grassSide));
 }
 `;
@@ -179,6 +184,10 @@ export class ChunkRenderer {
   private locSunDir: WebGLUniformLocation;
   private locDayFactor: WebGLUniformLocation;
   private locTwilightFactor: WebGLUniformLocation;
+  private locUnderwaterFloor: WebGLUniformLocation;
+  private locUnderwater: WebGLUniformLocation;
+  private locWaterFogColor: WebGLUniformLocation;
+  private underwater: UnderwaterView | null = null;
   private locNightFactor: WebGLUniformLocation;
   private skyBrightness = 1;
   private debugLight = false;
@@ -250,6 +259,9 @@ export class ChunkRenderer {
     this.locDayFactor = gl.getUniformLocation(this.program, 'u_dayFactor')!;
     this.locTwilightFactor = gl.getUniformLocation(this.program, 'u_twilightFactor')!;
     this.locNightFactor = gl.getUniformLocation(this.program, 'u_nightFactor')!;
+    this.locUnderwater = gl.getUniformLocation(this.program, 'u_underwater')!;
+    this.locUnderwaterFloor = gl.getUniformLocation(this.program, 'u_underwaterFloor')!;
+    this.locWaterFogColor = gl.getUniformLocation(this.program, 'u_waterFogColor')!;
     const fields = [
       'locViewProj',
       'locSectionOrigin',
@@ -270,6 +282,9 @@ export class ChunkRenderer {
       'locDayFactor',
       'locTwilightFactor',
       'locNightFactor',
+      'locUnderwater',
+      'locUnderwaterFloor',
+      'locWaterFogColor',
     ];
     this.programLocations = this.programs.map((program) =>
       Object.fromEntries(
@@ -294,6 +309,7 @@ export class ChunkRenderer {
     dayFactor: number;
     twilightFactor: number;
     nightFactor: number;
+    underwater?: UnderwaterView;
   }): void {
     this.cameraPos[0] = params.cameraPos[0] ?? 0;
     this.cameraPos[1] = params.cameraPos[1] ?? 0;
@@ -306,6 +322,7 @@ export class ChunkRenderer {
     this.dayFactor = params.dayFactor;
     this.twilightFactor = params.twilightFactor;
     this.nightFactor = params.nightFactor;
+    this.underwater = params.underwater ?? null;
   }
   public setDebugLight(on: boolean): void {
     this.debugLight = on;
@@ -588,6 +605,10 @@ export class ChunkRenderer {
     gl.uniform1f(this.locDayFactor, this.dayFactor);
     gl.uniform1f(this.locTwilightFactor, this.twilightFactor);
     gl.uniform1f(this.locNightFactor, this.nightFactor);
+    gl.uniform1i(this.locUnderwater, this.underwater?.submerged ? 1 : 0);
+    gl.uniform1f(this.locUnderwaterFloor, this.underwater?.brightnessFloor ?? 0);
+    const color = this.underwater?.fogColor;
+    gl.uniform3f(this.locWaterFogColor, color?.[0] ?? 0, color?.[1] ?? 0, color?.[2] ?? 0);
     this.fadeUniform.forget();
   }
 
@@ -605,6 +626,7 @@ export class ChunkRenderer {
     atlasTexture: WebGLTexture,
     atlas: TextureAtlas,
     world?: import('../world/world').World | null,
+    drawPlayer?: () => number,
   ): void {
     const gl = this.glWrapper.gl;
 
@@ -663,14 +685,17 @@ export class ChunkRenderer {
     // 2. Cutout Pass
     this.drawLightingPass(1, viewProjMatrix, atlas);
 
+    const playerDraws = drawPlayer?.() ?? 0;
+    if (playerDraws > 0) this.activeUnit = 0;
+
     // 3. Translucent Pass
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     this.drawLightingPass(2, viewProjMatrix, atlas);
 
-    let drawCalls = this.passDraws;
-    const triangles = this.passTriangles;
+    let drawCalls = this.passDraws + playerDraws;
+    const triangles = this.passTriangles + playerDraws * 12;
 
     // Restore depth write
     gl.depthMask(true);

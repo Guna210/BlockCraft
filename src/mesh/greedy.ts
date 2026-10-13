@@ -1,4 +1,10 @@
-import { MODEL_BOTTOM_SLAB, MODEL_TOP_SLAB, emitSlabBlock } from './models';
+import {
+  MODEL_BOTTOM_SLAB,
+  MODEL_TOP_SLAB,
+  MODEL_WALL_NORTH,
+  emitWallBlock,
+  emitSlabBlock,
+} from './models';
 import { sampleFaceCorners, canMergeCorners, shouldFlipQuad, FACE_NORMAL_STRIDES } from './ao';
 import { packVertex } from './vertex';
 export { packVertex } from './vertex';
@@ -89,7 +95,10 @@ export function buildMeshLookupTables(
           ? resolved.properties.half === 'top'
             ? MODEL_TOP_SLAB
             : MODEL_BOTTOM_SLAB
-          : MODEL_CUBE;
+          : def.model === 'wall'
+            ? MODEL_WALL_NORTH +
+              ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
+            : MODEL_CUBE;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -131,6 +140,7 @@ export function buildMeshLookupTables(
           tintIndices[stateId * 6 + f] = 0; // dirt bottom
         }
       } else if (
+        resolved.blockId === 'vine' ||
         resolved.blockId === 'oak_leaves' ||
         resolved.blockId === 'rainwood_leaves' ||
         resolved.blockId === 'acacia_leaves'
@@ -754,6 +764,31 @@ export function greedyMesh(
           bucket.vertOffset += 48;
           bucket.indexOffset += 36;
           bucket.quadCount += 6;
+          continue;
+        }
+        if (tables.modelKind[state]! >= MODEL_WALL_NORTH) {
+          const bucket = modelScratch;
+          const light = paddedLight ? paddedLight[px + yzOff]! : 0xf000;
+          emitWallBlock(
+            packVertex,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+            px - 1,
+            py - 1,
+            pz - 1,
+            tables.modelKind[state]! - MODEL_WALL_NORTH,
+            tables.tileIndices[state * 6 + 2]!,
+            tables.tintIndices[state * 6 + 2]!,
+            light >>> 12,
+            (light >>> 8) & 15,
+            (light >>> 4) & 15,
+            light & 15,
+          );
+          bucket.vertOffset += 16;
+          bucket.indexOffset += 12;
+          bucket.quadCount += 2;
           continue;
         }
         if (tables.modelKind[state] !== MODEL_CROSS) continue;

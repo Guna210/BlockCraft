@@ -1,3 +1,4 @@
+import { PlayerModelRenderer } from '../render/player-model';
 import type { PlayerController } from '../engine/player-controller';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
@@ -13,6 +14,7 @@ import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
 import { OVERWORLD_BIOME_IDS } from '../gen/biomes';
 import { hashString } from '../engine/rng';
+import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
 import {
@@ -129,6 +131,9 @@ export class WorldManager {
   public atlas: TextureAtlas | null = null;
   public atlasTexture: WebGLTexture | null = null;
   public chunkRenderer: ChunkRenderer | null = null;
+  public readonly underwaterView = new UnderwaterView();
+  private underwaterTint: UnderwaterTint | null = null;
+  public playerModelRenderer: PlayerModelRenderer | null = null;
   public skyRenderer: SkyRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
@@ -199,6 +204,21 @@ export class WorldManager {
     this.streamer.active = false;
     this.updateStreamerLimits();
     setRenderStatsRefresh(() => {
+      if (this.camera) {
+        renderStats.cameraPosition[0] = this.camera.position[0];
+        renderStats.cameraPosition[1] = this.camera.position[1];
+        renderStats.cameraPosition[2] = this.camera.position[2];
+        renderStats.cameraFov = (this.camera.fov * 180) / Math.PI;
+        renderStats.cameraRoll = this.camera.roll;
+      }
+      renderStats.perspective = this.playerController?.perspective ?? 0;
+      renderStats.underwater = this.underwaterView.submerged;
+      renderStats.underwaterFog[0] = this.underwaterView.submerged
+        ? this.underwaterView.fogStart
+        : 0;
+      renderStats.underwaterFog[1] = this.underwaterView.submerged ? this.underwaterView.fogEnd : 0;
+      renderStats.underwaterBrightnessFloor = this.underwaterView.brightnessFloor;
+      renderStats.playerModelParts = this.playerModelRenderer?.lastPartDraws ?? 0;
       renderStats.chunksLoaded = this.streamer.loadedColumns;
       renderStats.chunksMeshed = this.streamer.meshedColumns;
     });
@@ -563,6 +583,8 @@ export class WorldManager {
 
     // 4. Sky & Chunk Renderers
     this.skyRenderer = new SkyRenderer(this.glWrapper);
+    this.underwaterTint = new UnderwaterTint(this.glWrapper);
+    this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
 
@@ -863,12 +885,16 @@ export class WorldManager {
         : { drawCalls: 0, triangles: 0 };
 
       const maxFogDist = (this.renderDistance - 1) * 16;
+      const skyBrightness = skyLightMultiplier(ticks);
+      if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
+      const underwater = this.underwaterView;
       const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
       this.chunkRenderer.setSkyBrightness?.(skyLightMultiplier(ticks));
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
-        fogStart: maxFogDist * 0.7,
-        fogEnd: maxFogDist,
+        fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
+        fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
+        underwater,
         sunDir: sunDirection(ticks),
         dayFactor,
         twilightFactor,
@@ -876,9 +902,30 @@ export class WorldManager {
       });
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
-      this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
-      renderStats.drawCalls += skyStats.drawCalls;
-      renderStats.triangles += skyStats.triangles;
+      this.chunkRenderer.render(
+        this.viewProj,
+        this.atlasTexture,
+        this.atlas,
+        this.world,
+        () =>
+          this.playerModelRenderer?.render(
+            this.playerController,
+            this.viewProj,
+            this.atlasTexture!,
+            this.atlas!,
+            underwater,
+            skyBrightness,
+            sunDirection(ticks),
+            dayFactor,
+            twilightFactor,
+            nightFactor,
+            underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
+            underwater.submerged ? underwater.fogEnd : maxFogDist,
+          ) ?? 0,
+      );
+      this.underwaterTint?.render(underwater);
+      renderStats.drawCalls += skyStats.drawCalls + Number(underwater.submerged);
+      renderStats.triangles += skyStats.triangles + Number(underwater.submerged);
       this.terrainFrames++;
       return true;
     }

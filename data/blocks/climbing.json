@@ -1,0 +1,44 @@
+{
+  "ladder": {
+    "hardness": 2,
+    "blastResistance": 3,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "wall",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "side": "ladder",
+      "top": "ladder",
+      "bottom": "ladder"
+    }
+  },
+  "vine": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "wall",
+    "tool": "shears/hoe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "side": "vine",
+      "top": "vine",
+      "bottom": "vine"
+    }
+  }
+}

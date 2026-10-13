@@ -8,6 +8,8 @@ export const MODEL_CUBE = 0;
 export const MODEL_CROSS = 1;
 export const MODEL_BOTTOM_SLAB = 2;
 export const MODEL_TOP_SLAB = 3;
+export const MODEL_WALL_NORTH = 4;
+export const WALL_NORMALS = [5, 4, 0, 1] as const;
 
 /**
  * Signature of `packVertex` in greedy.ts, passed in so that this module does not import the
@@ -249,5 +251,56 @@ export function emitSlabBlock(
     indices[out + 3] = base;
     indices[out + 4] = base + 2;
     indices[out + 5] = base + 3;
+  }
+}
+
+/** Face attached 1/32 block in front of its wall, encoded with word1's last spare bit. */
+export function emitWallBlock(
+  pack: PackVertexFn,
+  vertices: Uint32Array,
+  wordOffset: number,
+  indices: Uint32Array,
+  indexOffset: number,
+  x: number,
+  y: number,
+  z: number,
+  facing: number,
+  tile: number,
+  tint: number,
+  sky: number,
+  r: number,
+  g: number,
+  b: number,
+): void {
+  const normal = WALL_NORMALS[facing]!;
+  // Side-face UVs run left-to-right as viewed from the outward normal.
+  const corners = SLAB_CORNERS[normal ^ 1]!;
+  for (let side = 0; side < 2; side++) {
+    const base = wordOffset / 2 + side * 4;
+    for (let c = 0; c < 4; c++) {
+      const source = side === 0 ? c : 3 - c;
+      const corner = corners[source]!;
+      const offset = wordOffset + side * 8 + c * 2;
+      pack(
+        x + corner[0],
+        y + corner[1],
+        z + corner[2],
+        normal,
+        0,
+        sky,
+        r,
+        tint,
+        tile,
+        source < 2 ? 0 : 1,
+        1 - corner[1],
+        vertices,
+        offset,
+        g,
+        b,
+      );
+      vertices[offset + 1] = vertices[offset + 1]! | 0x80000000;
+    }
+    const out = indexOffset + side * 6;
+    indices.set([base, base + 1, base + 2, base, base + 2, base + 3], out);
   }
 }

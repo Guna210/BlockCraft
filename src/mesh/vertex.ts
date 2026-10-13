@@ -7,6 +7,7 @@ export const VERTEX_LAYOUT = {
   greenShift: 22,
   blueShift: 26,
   halfYShift: 30,
+  wallInsetShift: 31,
 } as const;
 
 export function vertexHasBlockLight(word0: number, word1: number): boolean {
@@ -14,10 +15,12 @@ export function vertexHasBlockLight(word0: number, word1: number): boolean {
 }
 
 export function decodeVertex(word0: number, word1: number) {
+  const normal = (word0 >>> 15) & 7;
+  const inset = ((word1 >>> VERTEX_LAYOUT.wallInsetShift) & 1) / 32;
   return {
-    x: word0 & 31,
+    x: (word0 & 31) + (normal === 0 ? inset : normal === 1 ? -inset : 0),
     y: ((word0 >>> 5) & 31) + ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5,
-    z: (word0 >>> 10) & 31,
+    z: ((word0 >>> 10) & 31) + (normal === 4 ? inset : normal === 5 ? -inset : 0),
     normalIndex: (word0 >>> 15) & 7,
     ao: (word0 >>> 18) & 3,
     skyLight: (word0 >>> 20) & 15,

@@ -41,7 +41,7 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
     } else if (blockId.includes('leaves')) {
       opacity = 1;
     } else if (blockId === 'water') {
-      opacity = 2;
+      opacity = 1;
     } else {
       opacity = 0;
     }

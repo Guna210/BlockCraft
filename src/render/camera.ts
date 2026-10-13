@@ -1,10 +1,12 @@
 import { mat4, vec3 } from 'gl-matrix';
+import { settings } from '../engine/settings';
 import type { InputEngine } from '../engine/input';
 
 export class Camera {
   public position: vec3;
   public yaw: number;
   public pitch: number;
+  public roll = 0;
 
   public fov: number;
   public aspect: number;
@@ -15,13 +17,16 @@ export class Camera {
   public viewMatrix: mat4;
 
   public sensitivity = 0.002;
+  private readonly viewForward = vec3.create();
+  private readonly viewTarget = vec3.create();
+  private readonly viewUp = vec3.create();
   public speed = 10.0; // units per second
 
   constructor(aspect: number) {
     this.position = vec3.fromValues(0, 0, 0);
     this.yaw = 0;
     this.pitch = 0;
-    this.fov = 70 * (Math.PI / 180);
+    this.fov = settings.fov * (Math.PI / 180);
     this.aspect = aspect;
     this.near = 0.1;
     this.far = 1000.0;
@@ -43,11 +48,18 @@ export class Camera {
   }
 
   updateView() {
-    const forward = this.getForward();
-    const target = vec3.create();
-    vec3.add(target, this.position, forward);
-    const up = vec3.fromValues(0, 1, 0);
-    mat4.lookAt(this.viewMatrix, this.position, target, up);
+    const cp = Math.cos(this.pitch),
+      sp = Math.sin(this.pitch);
+    const cy = Math.cos(this.yaw),
+      sy = Math.sin(this.yaw);
+    vec3.set(this.viewForward, cy * cp, sp, sy * cp);
+    vec3.normalize(this.viewForward, this.viewForward);
+    vec3.add(this.viewTarget, this.position, this.viewForward);
+    const cr = Math.cos(this.roll),
+      sr = Math.sin(this.roll);
+    if (this.roll === 0) vec3.set(this.viewUp, 0, 1, 0);
+    else vec3.set(this.viewUp, -cy * sp * cr - sy * sr, cp * cr, -sy * sp * cr + cy * sr);
+    mat4.lookAt(this.viewMatrix, this.position, this.viewTarget, this.viewUp);
   }
 
   getForward(): vec3 {

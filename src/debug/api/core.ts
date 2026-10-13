@@ -73,6 +73,14 @@ export interface BlockCraftDebugAPI {
     glErrors: number;
     textureAtlasSize: [number, number];
     missingTextures: string[];
+    cameraPosition: [number, number, number];
+    cameraFov: number;
+    cameraRoll: number;
+    perspective: number;
+    underwater: boolean;
+    underwaterFog: [number, number];
+    underwaterBrightnessFloor: number;
+    playerModelParts: number;
   };
 }
 
@@ -95,6 +103,14 @@ export const renderStats = {
   glErrors: 0,
   textureAtlasSize: [0, 0] as [number, number],
   missingTextures: [] as string[],
+  cameraPosition: [0, 0, 0] as [number, number, number],
+  cameraFov: 70,
+  cameraRoll: 0,
+  perspective: 0,
+  underwater: false,
+  underwaterFog: [0, 0] as [number, number],
+  underwaterBrightnessFloor: 0,
+  playerModelParts: 0,
 };
 
 // Set by main.ts in debug mode: reads pending WebGL errors into renderStats.glErrors.
@@ -118,7 +134,11 @@ export const api: BlockCraftDebugAPI = {
     // Count errors that no frame has drained yet, so a test that holds requestAnimationFrame
     // still sees them.
     if (drainGlErrors) drainGlErrors();
-    return { ...renderStats };
+    return {
+      ...renderStats,
+      cameraPosition: [...renderStats.cameraPosition],
+      underwaterFog: [...renderStats.underwaterFog],
+    };
   },
 };
 

@@ -1,5 +1,14 @@
 export type Action =
-  'forward' | 'back' | 'left' | 'right' | 'jump' | 'sneak' | 'sprint' | 'attack' | 'use';
+  | 'forward'
+  | 'back'
+  | 'left'
+  | 'right'
+  | 'jump'
+  | 'sneak'
+  | 'sprint'
+  | 'attack'
+  | 'use'
+  | 'perspective';
 
 export class InputEngine {
   public keyBindings = new Map<string, Action>();
@@ -20,6 +29,7 @@ export class InputEngine {
     this.bindKey('Space', 'jump');
     this.bindKey('ShiftLeft', 'sneak');
     this.bindKey('ControlLeft', 'sprint');
+    this.bindKey('F5', 'perspective');
 
     // Default state
     const actions: Action[] = [
@@ -32,6 +42,7 @@ export class InputEngine {
       'sprint',
       'attack',
       'use',
+      'perspective',
     ];
     for (const action of actions) {
       this.actionStates.set(action, false);
