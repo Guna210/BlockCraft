@@ -31,10 +31,12 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| M07a | prompt given (Codex full model), branch claude/m07a | Codex | — | — | — | Decisions: DDA in src/world/raycast.ts, reach 4.5/5, hitboxes from physics shapes; A.1 progress with bare hand only (tools come in M07b); 10 crack stages; logs by axis; wall-torch facing states (new); stairs skipped (no block yet); creative instant break + pick block; edits reuse existing setBlock remesh/relight path. |
+| M13b | prompt given (agy, old laptop), branch agy/m13b created by owner on GitHub, checked out in GitHub Desktop; agy never switches/creates branches or pushes; owner pushes via Desktop; verify:quick only, CI = full verify | agy | — | — | — | Module src/entity/ai/pathfinding.ts, pure over a world-query interface; entity height 1–2, width 1; Dijkstra reference for optimality; 50 seeded mazes. Owner enabled master branch protection. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready next: M07a, M13b, M12b (owner extra: sun glare), M12c.
+Ready next: M12b (owner extra: sun glare), M12c. M07a + M13b in flight.
 
 ## Open items for the owner
 
