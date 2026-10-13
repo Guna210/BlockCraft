@@ -32,7 +32,7 @@ In flight:
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | M07a | prompt given (Codex full model), branch claude/m07a | Codex | — | — | — | Decisions: DDA in src/world/raycast.ts, reach 4.5/5, hitboxes from physics shapes; A.1 progress with bare hand only (tools come in M07b); 10 crack stages; logs by axis; wall-torch facing states (new); stairs skipped (no block yet); creative instant break + pick block; edits reuse existing setBlock remesh/relight path. |
-| M13b | prompt given (agy, old laptop), branch agy/m13b created by owner on GitHub, checked out in GitHub Desktop; agy never switches/creates branches or pushes; owner pushes via Desktop; verify:quick only, CI = full verify | agy | — | — | — | Module src/entity/ai/pathfinding.ts, pure over a world-query interface; entity height 1–2, width 1; Dijkstra reference for optimality; 50 seeded mazes. Owner enabled master branch protection. |
+| M13b | agy gate 9fdcbf4: unit 461/461, 50 mazes match Dijkstra, ~0.35 ms mean. Issue: agy added placeholder tests/e2e/m13.spec.ts (renamed from m13b.spec.ts) only so verify:quick e2e passes; told to git rm it, fix progress status/link, new commit, re-gate. Then owner pushes via Desktop, draft PR. | agy | — | — | — | Lesson: verify:quick e2e step fails with 'no tests found' for unit-only tasks; future prompts must say this is expected. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
