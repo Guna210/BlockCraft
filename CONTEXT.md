@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M07a | prompt given (Codex full model), branch claude/m07a | Codex | — | — | — | Decisions: DDA in src/world/raycast.ts, reach 4.5/5, hitboxes from physics shapes; A.1 progress with bare hand only (tools come in M07b); 10 crack stages; logs by axis; wall-torch facing states (new); stairs skipped (no block yet); creative instant break + pick block; edits reuse existing setBlock remesh/relight path. |
+| M07a | gate 897ae0a: unit 462/462; e2e 67 pass, 1 fail = M04a pump 84.8 ms (listed container failure, but higher than usual 57–63); recommended approve → draft PR, CI decides; watch pump on CI. | Codex | — | — | — | Reviewer to check: terrain.json/wood.json/lighting.ts edits, mesh vertex changes for wall torch, block-shapes shared with physics. |
 | M13b | agy gate 9fdcbf4: unit 461/461, 50 mazes match Dijkstra, ~0.35 ms mean. Issue: agy added placeholder tests/e2e/m13.spec.ts (renamed from m13b.spec.ts) only so verify:quick e2e passes; told to git rm it, fix progress status/link, new commit, re-gate. Then owner pushes via Desktop, draft PR. | agy | — | — | — | Lesson: verify:quick e2e step fails with 'no tests found' for unit-only tasks; future prompts must say this is expected. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
