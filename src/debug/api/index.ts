@@ -7,6 +7,7 @@ import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './worl
 import { locate } from './locate';
 import './ore-locate';
 import './time';
+import './raycast';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';

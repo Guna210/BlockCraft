@@ -1,3 +1,4 @@
+import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
 import type { PlayerController } from '../engine/player-controller';
 import { SKY_15_SECTION } from './lighting';
@@ -132,6 +133,7 @@ export class WorldManager {
   public atlasTexture: WebGLTexture | null = null;
   public chunkRenderer: ChunkRenderer | null = null;
   public readonly underwaterView = new UnderwaterView();
+  private blockSelection: BlockSelectionRenderer | null = null;
   private underwaterTint: UnderwaterTint | null = null;
   public playerModelRenderer: PlayerModelRenderer | null = null;
   public skyRenderer: SkyRenderer | null = null;
@@ -182,6 +184,54 @@ export class WorldManager {
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
   public terrainFrames = 0;
+  private editSerial = 0;
+  private readonly editMeshes: Array<{ result: MeshResult; serial: number; primary: boolean }> = [];
+  private readonly editVersions = new Map<string, number>();
+  public interactionEditFrame = -1;
+  public interactionMeshFrame = -1;
+  public interactionMeshRevision = 0;
+  public requestInteractionMesh(x: number, y: number, z: number): void {
+    const world = this.world,
+      tables = this.tables;
+    if (!world || !tables) return;
+    this.interactionEditFrame = this.terrainFrames;
+    this.interactionMeshFrame = -1;
+    const serial = ++this.editSerial,
+      epoch = this.worldEpoch;
+    const cx = Math.floor(x / 16),
+      sy = Math.floor(y / 16),
+      cz = Math.floor(z / 16);
+    const sections = [[cx, sy, cz]];
+    if ((x & 15) === 0) sections.push([cx - 1, sy, cz]);
+    if ((x & 15) === 15) sections.push([cx + 1, sy, cz]);
+    if ((z & 15) === 0) sections.push([cx, sy, cz - 1]);
+    if ((z & 15) === 15) sections.push([cx, sy, cz + 1]);
+    if ((y & 15) === 0 && sy > 0) sections.push([cx, sy - 1, cz]);
+    if ((y & 15) === 15 && sy < 19) sections.push([cx, sy + 1, cz]);
+    for (const [sx, sectionY, sz] of sections) {
+      if (!world.hasColumn(sx!, sz!)) continue;
+      const key = `${sx},${sectionY},${sz}`;
+      this.editVersions.set(key, serial);
+      void this.workerPool
+        .enqueueMeshJob(
+          sx!,
+          sectionY!,
+          sz!,
+          collectBlockPadding(world, sx!, sectionY!, sz!),
+          tables,
+          false,
+          collectLightPadding(world, sx!, sectionY!, sz!),
+        )
+        .then((result) => {
+          if (epoch === this.worldEpoch && this.editVersions.get(key) === serial)
+            this.editMeshes.push({
+              result,
+              serial,
+              primary: sx === cx && sectionY === sy && sz === cz,
+            });
+        });
+    }
+  }
 
   // Set by main.ts in debug mode: reads pending WebGL errors after the synchronous terrain frame.
   public drainGlErrors: (() => void) | null = null;
@@ -448,6 +498,8 @@ export class WorldManager {
     type: 'default' | 'flat' = 'default',
   ): void {
     resetWorldTime();
+    this.editMeshes.length = 0;
+    this.editVersions.clear();
     this.playerController?.reset();
     this.worldSeedStr = seed;
     this.worldSeed = hashString(seed);
@@ -585,6 +637,7 @@ export class WorldManager {
     this.skyRenderer = new SkyRenderer(this.glWrapper);
     this.underwaterTint = new UnderwaterTint(this.glWrapper);
     this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
+    this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
 
@@ -632,6 +685,8 @@ export class WorldManager {
     this.meshAttempts.clear();
 
     resetWorldTime();
+    this.editMeshes.length = 0;
+    this.editVersions.clear();
     this.playerController?.reset();
     const epoch = ++this.worldEpoch;
     const world = new World();
@@ -707,6 +762,8 @@ export class WorldManager {
         true,
       );
 
+    if (this.playerController)
+      this.playerController.onInteractionEdit = (x, y, z) => this.requestInteractionMesh(x, y, z);
     // Mesh terrain within radius 4
     await this.waitForTerrain(radiusChunks);
     return epoch === this.worldEpoch;
@@ -864,7 +921,21 @@ export class WorldManager {
     if (this.initialLoadCount > 0) return false;
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());
-      this.lastUploadMs = this.streamer.drainUploads(UPLOAD_BUDGET_MS);
+      const uploadStart = performance.now();
+      while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
+        const { result: mesh, serial, primary } = this.editMeshes.shift()!;
+        if (this.editVersions.get(mesh.key) !== serial) continue;
+        this.editVersions.delete(mesh.key);
+        this.chunkRenderer?.uploadSectionMesh(mesh.sx, mesh.sy, mesh.sz, mesh.meshData, -Infinity);
+        if (primary && serial === this.editSerial) {
+          this.interactionMeshFrame = this.terrainFrames + 1;
+          this.interactionMeshRevision++;
+        }
+      }
+      this.lastUploadMs = performance.now() - uploadStart;
+      this.lastUploadMs += this.streamer.drainUploads(
+        Math.max(0, UPLOAD_BUDGET_MS - this.lastUploadMs),
+      );
     }
     return this.drawTerrain();
   }
@@ -923,6 +994,10 @@ export class WorldManager {
             underwater.submerged ? underwater.fogEnd : maxFogDist,
           ) ?? 0,
       );
+      const selectionDraws =
+        this.blockSelection?.render(this.playerController?.interaction ?? null, this.viewProj) ?? 0;
+      renderStats.drawCalls += selectionDraws;
+      if (selectionDraws === 2) renderStats.triangles += 12;
       this.underwaterTint?.render(underwater);
       renderStats.drawCalls += skyStats.drawCalls + Number(underwater.submerged);
       renderStats.triangles += skyStats.triangles + Number(underwater.submerged);

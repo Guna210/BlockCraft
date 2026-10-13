@@ -53,7 +53,7 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
 
     opacityTable[s] = opacity;
     emissionTable[s] = emission;
-    const tint = EMITTER_TINTS[blockId] ?? [1, 1, 1];
+    const tint = EMITTER_TINTS[blockId === 'wall_torch' ? 'torch' : blockId] ?? [1, 1, 1];
     for (let c = 0; c < 3; c++)
       rgbEmission[c]![s] = Math.max(0, emission - tintOffset(emission, tint[c]!));
   }

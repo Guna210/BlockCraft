@@ -1,3 +1,4 @@
+import { BlockInteraction } from '../gameplay/block-interaction';
 import { settings } from './settings';
 import { TickLoop } from './loop';
 import type { InputEngine, Action } from './input';
@@ -9,12 +10,15 @@ import { BlockCollision } from '../entity/physics';
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
   public player: Player | null = null;
+  public interaction: BlockInteraction | null = null;
+  public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
   private perspectiveDown = false;
   public readonly loop = new TickLoop(() => {
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
+    this.interaction?.tick();
   });
   private x = 0;
   private y = 0;
@@ -37,7 +41,10 @@ export class PlayerController {
           this.render(1);
         }
         this.perspectiveDown = down;
-      } else this.player?.input(action, down);
+      } else {
+        this.player?.input(action, down);
+        this.interaction?.input(action, down);
+      }
     };
   }
   spawn(
@@ -54,6 +61,9 @@ export class PlayerController {
     this.camera.fov = (settings.fov * Math.PI) / 180;
     this.camera.updateProjection();
     this.player = new Player(new BlockCollision(world), this.ready);
+    this.interaction = new BlockInteraction(this.player, (x, y, z) =>
+      this.onInteractionEdit(x, y, z),
+    );
     this.player.setGameMode(mode);
     this.input.actionStates.forEach((_, action) => this.input.actionStates.set(action, false));
     this.loop.resume();
@@ -67,6 +77,7 @@ export class PlayerController {
   }
   reset(): void {
     this.player = null;
+    this.interaction = null;
     this.perspective = 0;
     this.perspectiveDown = false;
     this.camera.roll = 0;
@@ -95,6 +106,7 @@ export class PlayerController {
       this.player.detached = true;
       this.spawnView = false;
       this.player.clearInput();
+      this.interaction?.clear();
       this.perspective = 0;
       this.camera.roll = 0;
       this.camera.fov = (settings.fov * Math.PI) / 180;
@@ -121,6 +133,7 @@ export class PlayerController {
   }
   teleport(x: number, y: number, z: number, yaw?: number, pitch?: number): void {
     this.spawnView = false;
+    this.interaction?.reset();
     this.player?.teleport(x, y, z, yaw, pitch);
     this.previousEye = this.player?.eye ?? 1.62;
     this.render(1);

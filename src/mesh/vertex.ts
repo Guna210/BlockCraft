@@ -1,3 +1,4 @@
+import { wallTorchOffset } from './wall-torch';
 /** M05b revision of decisions/M02b-vertex-format.md: two unsigned words per vertex. */
 export const VERTEX_LAYOUT = {
   tileMask: 4095,
@@ -17,10 +18,22 @@ export function vertexHasBlockLight(word0: number, word1: number): boolean {
 export function decodeVertex(word0: number, word1: number) {
   const normal = (word0 >>> 15) & 7;
   const inset = ((word1 >>> VERTEX_LAYOUT.wallInsetShift) & 1) / 32;
+  const torch =
+    normal >= 6
+      ? wallTorchOffset(
+          (word1 >>> VERTEX_LAYOUT.uShift) & 31,
+          (word1 >>> VERTEX_LAYOUT.vShift) & 31,
+          normal - 6,
+          word0 >>> 28,
+        )
+      : null;
   return {
-    x: (word0 & 31) + (normal === 0 ? inset : normal === 1 ? -inset : 0),
-    y: ((word0 >>> 5) & 31) + ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5,
-    z: ((word0 >>> 10) & 31) + (normal === 4 ? inset : normal === 5 ? -inset : 0),
+    x: (word0 & 31) + (torch?.[0] ?? 0) + (normal === 0 ? inset : normal === 1 ? -inset : 0),
+    y: ((word0 >>> 5) & 31) + (torch?.[1] ?? 0) + ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5,
+    z:
+      ((word0 >>> 10) & 31) +
+      (torch?.[2] ?? 0) +
+      (normal === 4 ? inset : normal === 5 ? -inset : 0),
     normalIndex: (word0 >>> 15) & 7,
     ao: (word0 >>> 18) & 3,
     skyLight: (word0 >>> 20) & 15,

@@ -9,7 +9,8 @@
       "top": "grass_top",
       "side": "grass_side",
       "bottom": "dirt"
-    }
+    },
+    "tool": "shovel"
   },
   "dirt": {
     "hardness": 0.5,
@@ -21,11 +22,12 @@
       "top": "dirt",
       "side": "dirt",
       "bottom": "dirt"
-    }
+    },
+    "tool": "shovel"
   },
   "foundation_stone": {
-    "hardness": 1e9,
-    "blastResistance": 1e9,
+    "hardness": 1000000000.0,
+    "blastResistance": 1000000000.0,
     "lightEmission": 0,
     "renderLayer": "opaque",
     "fullOpaqueCube": true,
@@ -45,7 +47,9 @@
       "top": "stone",
       "side": "stone",
       "bottom": "stone"
-    }
+    },
+    "tool": "pickaxe",
+    "minTier": 0
   },
   "cobblestone": {
     "hardness": 2.0,
@@ -57,7 +61,9 @@
       "top": "cobblestone",
       "side": "cobblestone",
       "bottom": "cobblestone"
-    }
+    },
+    "tool": "pickaxe",
+    "minTier": 0
   },
   "sand": {
     "hardness": 0.5,
@@ -69,7 +75,8 @@
       "top": "sand",
       "side": "sand",
       "bottom": "sand"
-    }
+    },
+    "tool": "shovel"
   },
   "gravel": {
     "hardness": 0.6,
@@ -81,6 +88,7 @@
       "top": "gravel",
       "side": "gravel",
       "bottom": "gravel"
-    }
+    },
+    "tool": "shovel"
   }
 }

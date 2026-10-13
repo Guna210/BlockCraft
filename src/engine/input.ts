@@ -8,7 +8,8 @@ export type Action =
   | 'sprint'
   | 'attack'
   | 'use'
-  | 'perspective';
+  | 'perspective'
+  | 'pick';
 
 export class InputEngine {
   public keyBindings = new Map<string, Action>();
@@ -17,6 +18,9 @@ export class InputEngine {
   public pointerLocked = false;
   public onAction?: (action: Action, down: boolean) => void;
   private canvas: HTMLCanvasElement;
+  private readonly onContextMenu = (event: Event) => {
+    if (this.pointerLocked) event.preventDefault();
+  };
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -43,6 +47,7 @@ export class InputEngine {
       'attack',
       'use',
       'perspective',
+      'pick',
     ];
     for (const action of actions) {
       this.actionStates.set(action, false);
@@ -65,6 +70,7 @@ export class InputEngine {
     window.addEventListener('mouseup', this.onMouseUp);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     this.canvas.addEventListener('click', this.requestPointerLock);
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   detach() {
@@ -75,6 +81,7 @@ export class InputEngine {
     window.removeEventListener('mouseup', this.onMouseUp);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.canvas.removeEventListener('click', this.requestPointerLock);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
   }
 
   bindKey(code: string, action: Action) {
@@ -127,12 +134,14 @@ export class InputEngine {
     if (!this.pointerLocked) return;
     if (e.button === 0) this.setAction('attack', true);
     if (e.button === 2) this.setAction('use', true);
+    if (e.button === 1) this.setAction('pick', true);
   }
 
   private onMouseUp(e: MouseEvent) {
     if (!this.pointerLocked) return;
     if (e.button === 0) this.setAction('attack', false);
     if (e.button === 2) this.setAction('use', false);
+    if (e.button === 1) this.setAction('pick', false);
   }
 
   private onPointerLockChange() {

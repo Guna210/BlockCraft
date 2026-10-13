@@ -31,6 +31,7 @@ export class Player {
   public air = 300;
   public dimension = 'overworld';
   public selectedSlot = 0;
+  public heldBlock: number | null = null;
   public onGround = false;
   public inFluid: string | null = null;
   public mode: GameMode = 'survival';

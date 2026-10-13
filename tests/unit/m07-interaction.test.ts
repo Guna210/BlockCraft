@@ -1,0 +1,97 @@
+import { it, expect } from 'vitest';
+import { World } from '../../src/world/world';
+import { BlockCollision } from '../../src/entity/physics';
+import { Player } from '../../src/entity/player';
+import { BlockInteraction } from '../../src/gameplay/block-interaction';
+import { BlockRegistry } from '../../src/world/blocks/registry';
+function scene() {
+  const world = new World(false);
+  world.fill(-2, 64, -2, 8, 64, 2, 'stone');
+  world.setBlock(3, 66, 0, 'stone');
+  const player = new Player(new BlockCollision(world), () => true);
+  player.teleport(0.5, 65, 0.5, 0, 0);
+  player.tick();
+  const edits: number[][] = [];
+  const i = new BlockInteraction(player, (x, y, z) => edits.push([x, y, z]));
+  return { world, player, i, edits };
+}
+it('M07a accumulates on fixed ticks and resets on release, different block and detach', () => {
+  const { world, player, i, edits } = scene();
+  i.input('attack', true);
+  for (let n = 0; n < 75; n++) i.tick();
+  expect(i.progress).toBeCloseTo(0.5);
+  expect(edits).toHaveLength(0);
+  i.input('attack', false);
+  expect(i.progress).toBe(0);
+  i.input('attack', true);
+  i.tick();
+  world.setBlock(3, 66, 0, 'oak_log');
+  i.tick();
+  expect(i.progress).toBeCloseTo(1 / 60);
+  player.detached = true;
+  i.tick();
+  expect(i.progress).toBe(0);
+  expect(i.target.hit).toBe(false);
+});
+it('M07a water and airborne each multiply duration by five, both multiply by 25', () => {
+  const { player, i } = scene();
+  i.input('attack', true);
+  player.inFluid = 'water';
+  i.tick();
+  expect(i.progress).toBeCloseTo(1 / 750);
+  i.reset();
+  player.inFluid = null;
+  player.onGround = false;
+  i.tick();
+  expect(i.progress).toBeCloseTo(1 / 750);
+  i.reset();
+  player.inFluid = 'water';
+  i.tick();
+  expect(i.progress).toBeCloseTo(1 / 3750);
+});
+it('M07a creative instant breaking, no fluid targeting, reach by mode and Foundation protection', () => {
+  const { world, player, i, edits } = scene();
+  player.setGameMode('creative');
+  i.input('attack', true);
+  i.tick();
+  expect(world.getBlock(3, 66, 0).id).toBe('air');
+  expect(edits).toEqual([[3, 66, 0]]);
+  world.setBlock(3, 66, 0, 'water');
+  world.setBlock(4, 66, 0, 'lava');
+  world.setBlock(5, 66, 0, 'stone');
+  player.setGameMode('survival');
+  player.pos[0] = 0.49;
+  i.updateTarget();
+  expect(i.target.hit).toBe(false);
+  player.setGameMode('creative');
+  i.updateTarget();
+  expect(i.target.x).toBe(5);
+  world.setBlock(5, 66, 0, 'foundation_stone');
+  i.tick();
+  expect(world.getBlock(5, 66, 0).id).toBe('foundation_stone');
+});
+it('M07a creative pick copies default state, survival pick does nothing, and plants are replaceable', () => {
+  const { world, player, i } = scene(),
+    r = BlockRegistry.getInstance();
+  world.setBlock(3, 66, 0, 'oak_log', { axis: 'z' });
+  i.input('pick', true);
+  i.tick();
+  expect(player.heldBlock).toBeNull();
+  i.input('pick', false);
+  player.setGameMode('creative');
+  i.input('pick', true);
+  i.tick();
+  expect(player.heldBlock).toBe(r.getDefaultStateId('oak_log'));
+  i.input('pick', false);
+  world.setBlock(3, 66, 0, 'wall_torch', { facing: 'west' });
+  i.input('pick', true);
+  i.tick();
+  expect(player.heldBlock).toBe(r.getDefaultStateId('wall_torch'));
+
+  world.setBlock(3, 66, 0, 'bluebell');
+  player.heldBlock = r.getDefaultStateId('stone')!;
+  i.input('use', true);
+  i.tick();
+  expect(world.getBlock(3, 66, 0).id).toBe('stone');
+  expect(world.getBlock(2, 66, 0).id).toBe('air');
+});

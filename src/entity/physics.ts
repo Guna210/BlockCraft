@@ -1,3 +1,4 @@
+import { BOTTOM_SLAB_BOX, TOP_SLAB_BOX } from '../world/block-shapes';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { World } from '../world/world';
 
@@ -32,14 +33,16 @@ export class BlockCollision {
         this.climbers[id] =
           ['north', 'south', 'east', 'west'].indexOf(String(state.properties.facing)) + 1;
       if (def.model === 'slab') {
-        this.heights[id] = 0.5;
-        this.bottoms[id] = state.properties.half === 'top' ? 0.5 : 0;
+        const box = state.properties.half === 'top' ? TOP_SLAB_BOX : BOTTOM_SLAB_BOX;
+        this.heights[id] = box[4] - box[1];
+        this.bottoms[id] = box[1];
       } else if (
         state.blockId !== 'air' &&
         state.blockId !== 'water' &&
         state.blockId !== 'lava' &&
         def.model !== 'cross' &&
-        def.model !== 'wall'
+        def.model !== 'wall' &&
+        def.model !== 'wall_torch'
       ) {
         this.heights[id] = 1;
       }

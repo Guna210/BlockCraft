@@ -16,7 +16,8 @@
       "top": "oak_log_top",
       "side": "oak_log_side",
       "bottom": "oak_log_top"
-    }
+    },
+    "tool": "axe"
   },
   "birch_log": {
     "hardness": 2.0,
@@ -35,7 +36,8 @@
       "top": "birch_log_top",
       "side": "birch_log_side",
       "bottom": "birch_log_top"
-    }
+    },
+    "tool": "axe"
   },
   "pine_log": {
     "hardness": 2.0,
@@ -54,7 +56,8 @@
       "top": "pine_log_top",
       "side": "pine_log_side",
       "bottom": "pine_log_top"
-    }
+    },
+    "tool": "axe"
   },
   "oak_planks": {
     "hardness": 2.0,
@@ -66,7 +69,8 @@
       "top": "oak_planks",
       "side": "oak_planks",
       "bottom": "oak_planks"
-    }
+    },
+    "tool": "axe"
   },
   "birch_planks": {
     "hardness": 2.0,
@@ -78,7 +82,8 @@
       "top": "birch_planks",
       "side": "birch_planks",
       "bottom": "birch_planks"
-    }
+    },
+    "tool": "axe"
   },
   "pine_planks": {
     "hardness": 2.0,
@@ -90,7 +95,8 @@
       "top": "pine_planks",
       "side": "pine_planks",
       "bottom": "pine_planks"
-    }
+    },
+    "tool": "axe"
   },
   "oak_leaves": {
     "hardness": 0.2,

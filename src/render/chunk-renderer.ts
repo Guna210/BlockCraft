@@ -1,3 +1,4 @@
+import { WALL_TORCH_GLSL } from '../mesh/wall-torch';
 import type { UnderwaterView } from './underwater';
 import { canonicalQuadVertices, quadIndices } from './shared-quads';
 import { VERTEX_LAYOUT } from '../mesh/vertex';
@@ -53,11 +54,21 @@ const vec3 NORMALS[6] = vec3[6](
   vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, -1.0)
 );
 ${GLSL_SKY_ATMOSPHERE}
+#ifdef WALL_TORCH
+${WALL_TORCH_GLSL}
+#endif
 void main() {
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
   localPos.y += float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
   vec3 worldPos = u_sectionOrigin + localPos;
+  #ifdef WALL_TORCH
+  uint normalIdx=(a_word0 >> 15u) & 7u;
+  bool wallTorch=normalIdx>=6u;
+  if(wallTorch) worldPos += wallTorchOffset(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u)&31u),float((a_word1 >> ${VERTEX_LAYOUT.vShift}u)&31u),normalIdx-6u,(a_word0>>28u)&15u);
+  vec3 normal = wallTorch ? vec3(0.0,1.0,0.0) : NORMALS[normalIdx];
+  #else
   vec3 normal = NORMALS[(a_word0 >> 15u) & 7u];
+  #endif
   worldPos += normal * float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0;
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
   float ao = ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u);
@@ -70,7 +81,11 @@ void main() {
   vec3 light = max(vec3(sky * u_skyBrightness), brightness);
 #endif
   v_light = (u_debugLight ? vec3(1.0) : max(light, vec3(u_underwaterFloor))) * ao * faceShade;
+  #ifdef WALL_TORCH
+  uint tintIdx = wallTorch ? 0u : (a_word0 >> 28u) & 15u;
+  #else
   uint tintIdx = (a_word0 >> 28u) & 15u;
+  #endif
   // Clamp to this column's edge texel: vertices at x/z=16 still belong to this column.
   ivec2 tintTexel = ivec2(clamp(floor(localPos.xz - 0.5 * normal.xz), vec2(0.0), vec2(15.0)));
   v_tint = vec3(1.0);
@@ -149,6 +164,7 @@ export interface GPUBucketMesh {
 
 export interface GPUSectionMesh {
   hasBlockLight: boolean;
+  hasWallTorch: boolean;
   key: string;
   sx: number;
   sy: number;
@@ -233,9 +249,13 @@ export class ChunkRenderer {
     this.program = this.glWrapper.createProgram(VS_CHUNK, FS_CHUNK);
     const skyOnly = (source: string) =>
       source.replace('#version 300 es', '#version 300 es\n#define SKY_ONLY');
+    const wallTorch = (source: string) =>
+      source.replace('#version 300 es', '#version 300 es\n#define WALL_TORCH');
     this.programs = [
       this.program,
       this.glWrapper.createProgram(skyOnly(VS_CHUNK), skyOnly(FS_CHUNK)),
+      this.glWrapper.createProgram(wallTorch(VS_CHUNK), FS_CHUNK),
+      this.glWrapper.createProgram(skyOnly(wallTorch(VS_CHUNK)), skyOnly(FS_CHUNK)),
     ];
     this.tintCache = new ColumnTintCache(glWrapper);
 
@@ -350,7 +370,15 @@ export class ChunkRenderer {
     const cutout = this.createGPUBucketMesh(mergeMeshBuckets(meshData.cutout, meshData.models));
     const translucent = this.createGPUBucketMesh(meshData.translucent);
 
+    let hasWallTorch = false;
+    for (let i = 0; i < meshData.models.vertices.length; i += 2) {
+      if (((meshData.models.vertices[i]! >>> 15) & 7) >= 6) {
+        hasWallTorch = true;
+        break;
+      }
+    }
     const gpuMesh: GPUSectionMesh = {
+      hasWallTorch,
       hasBlockLight: meshData.hasBlockLight ?? true,
       key,
       sx,
@@ -544,7 +572,7 @@ export class ChunkRenderer {
   }
 
   /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
-  private drawPass(pass: number, skyOnly: boolean): void {
+  private drawPass(pass: number, skyOnly: boolean, wallTorch = false): void {
     const gl = this.glWrapper.gl;
     const columns = this.visColumns;
     for (let c = 0; c < columns.length; c++) {
@@ -552,7 +580,7 @@ export class ChunkRenderer {
       let tintsBound = false;
       for (let i = 0; i < list.length; i++) {
         const mesh = list[i]!;
-        if (mesh.hasBlockLight === skyOnly) continue;
+        if (mesh.hasBlockLight === skyOnly || Boolean(mesh.hasWallTorch) !== wallTorch) continue;
         const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
         if (!bucket) continue;
         if (!tintsBound) {
@@ -584,9 +612,14 @@ export class ChunkRenderer {
     }
   }
 
-  private selectLightingProgram(skyOnly: boolean, viewProjMatrix: mat4, atlas: TextureAtlas): void {
+  private selectLightingProgram(
+    skyOnly: boolean,
+    viewProjMatrix: mat4,
+    atlas: TextureAtlas,
+    wallTorch = false,
+  ): void {
     const gl = this.glWrapper.gl;
-    const index = skyOnly ? 1 : 0;
+    const index = (skyOnly ? 1 : 0) + (wallTorch ? 2 : 0);
     this.program = this.programs[index]!;
     Object.assign(this, this.programLocations[index]);
     gl.useProgram(this.program);
@@ -613,11 +646,13 @@ export class ChunkRenderer {
   }
 
   private drawLightingPass(pass: number, viewProjMatrix: mat4, atlas: TextureAtlas): void {
-    for (const skyOnly of [true, false]) {
-      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas);
+    for (let variant = 0; variant < 4; variant++) {
+      const skyOnly = (variant & 1) === 0,
+        wallTorch = variant >= 2;
+      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas, wallTorch);
       this.glWrapper.gl.uniform1i(this.locIsCutout, pass === 1 ? 1 : 0);
       this.glWrapper.gl.uniform1i(this.locIsWireframe, 0);
-      this.drawPass(pass, skyOnly);
+      this.drawPass(pass, skyOnly, wallTorch);
     }
   }
 
@@ -715,6 +750,10 @@ export class ChunkRenderer {
           const buckets = [mesh.opaque, mesh.cutout, mesh.translucent];
           for (const bucket of buckets) {
             if (bucket) {
+              this.selectLightingProgram(false, viewProjMatrix, atlas, mesh.hasWallTorch);
+              gl.uniform1i(this.locIsWireframe, 1);
+              gl.uniform1i(this.locIsCutout, 0);
+              this.fadeUniform.set(this.visFade[c]!);
               gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
               gl.bindVertexArray(bucket.vao);
               gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.wireframeBuffer(bucket));
