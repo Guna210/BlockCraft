@@ -32,11 +32,17 @@ function paint(
 }
 
 describe('sky holes: the sky colour', () => {
-  it('matches the clear colour and not terrain', () => {
+  it('matches the clear colour, noon sky gradient, and not terrain or fogged terrain', () => {
     const png = frame(4, 4);
     paint(png, 0, 0, 1, 1, SKY_RGB);
+    paint(png, 1, 0, 1, 1, [72, 168, 248]); // noon zenith
+    paint(png, 2, 0, 1, 1, [132, 212, 255]); // noon horizon
+    paint(png, 3, 0, 1, 1, [125, 201, 242]); // fogged terrain at 1.0 RD (sky * 0.95)
     expect(isSkyPixel(png, 0, 0)).toBe(true);
-    expect(isSkyPixel(png, 1, 0)).toBe(false);
+    expect(isSkyPixel(png, 1, 0)).toBe(true);
+    expect(isSkyPixel(png, 2, 0)).toBe(true);
+    expect(isSkyPixel(png, 3, 0)).toBe(false);
+    expect(isSkyPixel(png, 0, 1)).toBe(false);
   });
 });
 

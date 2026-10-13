@@ -1,3 +1,16 @@
+import {
+  genSun,
+  genMoon0,
+  genMoon1,
+  genMoon2,
+  genMoon3,
+  genMoon4,
+  genMoon5,
+  genMoon6,
+  genMoon7,
+  PAL_SUN,
+  PAL_MOON,
+} from './sky';
 import { genHayTop, genHaySide, PAL_HAY } from './hay';
 import { genTorch, PAL_TORCH } from './light-sources';
 // src/render/textures/index.ts
@@ -141,6 +154,15 @@ import {
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
 export const textureGenerators: Record<string, TextureGenerator> = {
+  sun: genSun,
+  moon_0: genMoon0,
+  moon_1: genMoon1,
+  moon_2: genMoon2,
+  moon_3: genMoon3,
+  moon_4: genMoon4,
+  moon_5: genMoon5,
+  moon_6: genMoon6,
+  moon_7: genMoon7,
   hay_top: genHayTop,
   hay_side: genHaySide,
   torch: genTorch,
@@ -296,6 +318,15 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  sun: PAL_SUN,
+  moon_0: PAL_MOON,
+  moon_1: PAL_MOON,
+  moon_2: PAL_MOON,
+  moon_3: PAL_MOON,
+  moon_4: PAL_MOON,
+  moon_5: PAL_MOON,
+  moon_6: PAL_MOON,
+  moon_7: PAL_MOON,
   hay_top: PAL_HAY,
   hay_side: PAL_HAY,
   torch: PAL_TORCH,

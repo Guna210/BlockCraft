@@ -21,13 +21,19 @@ export interface SkyHoleReport {
   largestEnclosed: number;
 }
 
-/** Whether pixel (x, y) of `png` has the sky colour. */
+/** Whether pixel (x, y) of `png` has the sky colour (clear colour or M12a noon sky gradient). */
 export function isSkyPixel(png: PNG, x: number, y: number): boolean {
   const i = (y * png.width + x) * 4;
-  const dr = png.data[i]! - SKY_RGB[0];
-  const dg = png.data[i + 1]! - SKY_RGB[1];
-  const db = png.data[i + 2]! - SKY_RGB[2];
-  return dr * dr + dg * dg + db * db <= SKY_TOLERANCE * SKY_TOLERANCE;
+  const r = png.data[i]!;
+  const g = png.data[i + 1]!;
+  const b = png.data[i + 2]!;
+  const dr = r - SKY_RGB[0];
+  const dg = g - SKY_RGB[1];
+  const db = b - SKY_RGB[2];
+  if (dr * dr + dg * dg + db * db <= SKY_TOLERANCE * SKY_TOLERANCE) {
+    return true;
+  }
+  return b >= 245 && g >= 164 && g <= 216 && r >= 68 && r <= 138 && b - r >= 110;
 }
 
 /**

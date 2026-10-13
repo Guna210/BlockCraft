@@ -17,6 +17,7 @@ import { mergeMeshBuckets } from '../mesh/models';
 import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from './frustum';
 import { bayerGlsl } from './dither';
 import { ColumnFades, UniformValueCache } from './column-fade';
+import { GLSL_SKY_ATMOSPHERE } from './sky';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -30,16 +31,26 @@ uniform float u_skyBrightness;
 uniform bool u_debugLight;
 uniform sampler2D u_grassTintMap;
 uniform sampler2D u_foliageTintMap;
+uniform vec3 u_cameraPos;
+uniform float u_fogStart;
+uniform float u_fogEnd;
+uniform vec3 u_sunDir;
+uniform float u_dayFactor;
+uniform float u_twilightFactor;
+uniform float u_nightFactor;
 out vec2 v_unwrappedUV;
 flat out vec2 v_tileOrigin;
 out vec3 v_light;
 out vec3 v_tint;
 flat out float v_grassSide;
+out float v_fogFactor;
+out vec3 v_fogColor;
 const vec3 NORMALS[6] = vec3[6](
   vec3(1.0, 0.0, 0.0), vec3(-1.0, 0.0, 0.0),
   vec3(0.0, 1.0, 0.0), vec3(0.0, -1.0, 0.0),
   vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, -1.0)
 );
+${GLSL_SKY_ATMOSPHERE}
 void main() {
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
   localPos.y += float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
@@ -67,6 +78,15 @@ void main() {
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
+  vec3 toVertex = worldPos - u_cameraPos;
+  float horizDist = length(toVertex.xz);
+  v_fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
+  if (v_fogFactor > 0.0) {
+    vec3 viewDir = normalize(toVertex + vec3(0.0, 1e-5, 0.0));
+    v_fogColor = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor) * 0.95;
+  } else {
+    v_fogColor = vec3(0.0);
+  }
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
 `;
@@ -78,6 +98,8 @@ flat in vec2 v_tileOrigin;
 in vec3 v_light;
 in vec3 v_tint;
 flat in float v_grassSide;
+in float v_fogFactor;
+in vec3 v_fogColor;
 uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
 uniform int u_isCutout;
@@ -101,7 +123,9 @@ void main() {
   if (u_isCutout == 1 && texColor.a < 0.5) discard;
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
-  fragColor = vec4(texColor.rgb * tint * v_light, mix(texColor.a, 1.0, v_grassSide));
+  vec3 litColor = texColor.rgb * tint * v_light;
+  vec3 finalColor = mix(litColor, v_fogColor, v_fogFactor);
+  fragColor = vec4(finalColor, mix(texColor.a, 1.0, v_grassSide));
 }
 `;
 
@@ -148,8 +172,26 @@ export class ChunkRenderer {
   private locFade: WebGLUniformLocation;
   private locSkyBrightness: WebGLUniformLocation;
   private locDebugLight: WebGLUniformLocation;
+  private locCameraPos: WebGLUniformLocation;
+  private locFogStart: WebGLUniformLocation;
+  private locFogEnd: WebGLUniformLocation;
+  private locSunDir: WebGLUniformLocation;
+  private locDayFactor: WebGLUniformLocation;
+  private locTwilightFactor: WebGLUniformLocation;
+  private locNightFactor: WebGLUniformLocation;
   private skyBrightness = 1;
   private debugLight = false;
+  private cameraPos: [number, number, number] = [0, 0, 0];
+  private fogStart = 0;
+  private fogEnd = 0;
+  private sunDir: [number, number, number] = [
+    0,
+    Math.cos((15 * Math.PI) / 180),
+    Math.sin((15 * Math.PI) / 180),
+  ];
+  private dayFactor = 1;
+  private twilightFactor = 0;
+  private nightFactor = 0;
   // The fade value last written to u_fade: a column whose fade is unchanged (finished) is not written again.
   private fadeUniform: UniformValueCache;
 
@@ -200,6 +242,13 @@ export class ChunkRenderer {
     this.locSkyBrightness = gl.getUniformLocation(this.program, 'u_skyBrightness')!;
     this.locDebugLight = gl.getUniformLocation(this.program, 'u_debugLight')!;
     this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
+    this.locCameraPos = gl.getUniformLocation(this.program, 'u_cameraPos')!;
+    this.locFogStart = gl.getUniformLocation(this.program, 'u_fogStart')!;
+    this.locFogEnd = gl.getUniformLocation(this.program, 'u_fogEnd')!;
+    this.locSunDir = gl.getUniformLocation(this.program, 'u_sunDir')!;
+    this.locDayFactor = gl.getUniformLocation(this.program, 'u_dayFactor')!;
+    this.locTwilightFactor = gl.getUniformLocation(this.program, 'u_twilightFactor')!;
+    this.locNightFactor = gl.getUniformLocation(this.program, 'u_nightFactor')!;
     const fields = [
       'locViewProj',
       'locSectionOrigin',
@@ -213,6 +262,13 @@ export class ChunkRenderer {
       'locSkyBrightness',
       'locDebugLight',
       'locFade',
+      'locCameraPos',
+      'locFogStart',
+      'locFogEnd',
+      'locSunDir',
+      'locDayFactor',
+      'locTwilightFactor',
+      'locNightFactor',
     ];
     this.programLocations = this.programs.map((program) =>
       Object.fromEntries(
@@ -227,6 +283,28 @@ export class ChunkRenderer {
 
   public setSkyBrightness(brightness: number): void {
     this.skyBrightness = Math.max(0, Math.min(1, brightness));
+  }
+
+  public setAtmosphere(params: {
+    cameraPos: ArrayLike<number>;
+    fogStart: number;
+    fogEnd: number;
+    sunDir: readonly [number, number, number];
+    dayFactor: number;
+    twilightFactor: number;
+    nightFactor: number;
+  }): void {
+    this.cameraPos[0] = params.cameraPos[0] ?? 0;
+    this.cameraPos[1] = params.cameraPos[1] ?? 0;
+    this.cameraPos[2] = params.cameraPos[2] ?? 0;
+    this.fogStart = params.fogStart;
+    this.fogEnd = params.fogEnd;
+    this.sunDir[0] = params.sunDir[0];
+    this.sunDir[1] = params.sunDir[1];
+    this.sunDir[2] = params.sunDir[2];
+    this.dayFactor = params.dayFactor;
+    this.twilightFactor = params.twilightFactor;
+    this.nightFactor = params.nightFactor;
   }
   public setDebugLight(on: boolean): void {
     this.debugLight = on;
@@ -502,6 +580,13 @@ export class ChunkRenderer {
     gl.uniform2f(this.locAtlasSize, atlas.width, atlas.height);
     gl.uniform1f(this.locCellSize, CELL_SIZE);
     gl.uniformMatrix4fv(this.locViewProj, false, viewProjMatrix);
+    gl.uniform3f(this.locCameraPos, this.cameraPos[0], this.cameraPos[1], this.cameraPos[2]);
+    gl.uniform1f(this.locFogStart, this.fogStart);
+    gl.uniform1f(this.locFogEnd, this.fogEnd);
+    gl.uniform3f(this.locSunDir, this.sunDir[0], this.sunDir[1], this.sunDir[2]);
+    gl.uniform1f(this.locDayFactor, this.dayFactor);
+    gl.uniform1f(this.locTwilightFactor, this.twilightFactor);
+    gl.uniform1f(this.locNightFactor, this.nightFactor);
     this.fadeUniform.forget();
   }
 

@@ -6,6 +6,7 @@ import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './world';
 import { locate } from './locate';
 import './ore-locate';
+import './time';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';

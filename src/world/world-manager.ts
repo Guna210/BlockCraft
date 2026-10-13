@@ -14,6 +14,15 @@ import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
 import { OVERWORLD_BIOME_IDS } from '../gen/biomes';
 import { hashString } from '../engine/rng';
 import { ChunkRenderer } from '../render/chunk-renderer';
+import { SkyRenderer } from '../render/sky';
+import {
+  getWorldTime,
+  resetWorldTime,
+  setWorldTime,
+  skyAtmosphereFactors,
+  skyLightMultiplier,
+  sunDirection,
+} from './time';
 import { TextureAtlas, ATLAS_MAX_MIP } from '../render/atlas';
 import { textureGenerators } from '../render/textures/index';
 import { TextureData } from '../render/textures/noise';
@@ -120,6 +129,7 @@ export class WorldManager {
   public atlas: TextureAtlas | null = null;
   public atlasTexture: WebGLTexture | null = null;
   public chunkRenderer: ChunkRenderer | null = null;
+  public skyRenderer: SkyRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
@@ -400,6 +410,15 @@ export class WorldManager {
     this.drawTerrainFrame();
   }
 
+  /** Sets world time in ticks and presents a frame immediately if terrain is loaded. */
+  public setTimeOfDay(ticks: number): void {
+    setWorldTime(ticks);
+    this.chunkRenderer?.setSkyBrightness(skyLightMultiplier(getWorldTime()));
+    if (this.world && this.initialLoadCount === 0) {
+      this.drawTerrainFrame();
+    }
+  }
+
   public resetMainThreadGenCount(): void {
     this.mainThreadGenCount = 0;
   }
@@ -408,6 +427,7 @@ export class WorldManager {
     seed = 'blockcraft-test-seed-42',
     type: 'default' | 'flat' = 'default',
   ): void {
+    resetWorldTime();
     this.playerController?.reset();
     this.worldSeedStr = seed;
     this.worldSeed = hashString(seed);
@@ -541,7 +561,8 @@ export class WorldManager {
 
     this.tables = buildMeshLookupTables(registry, tileResolver);
 
-    // 4. Chunk Renderer
+    // 4. Sky & Chunk Renderers
+    this.skyRenderer = new SkyRenderer(this.glWrapper);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
 
@@ -588,6 +609,7 @@ export class WorldManager {
     }
     this.meshAttempts.clear();
 
+    resetWorldTime();
     this.playerController?.reset();
     const epoch = ++this.worldEpoch;
     const world = new World();
@@ -835,8 +857,28 @@ export class WorldManager {
 
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
+      const ticks = getWorldTime();
+      const skyStats = this.skyRenderer
+        ? this.skyRenderer.render(this.camera, this.atlasTexture, this.atlas, ticks)
+        : { drawCalls: 0, triangles: 0 };
+
+      const maxFogDist = this.renderDistance * 16;
+      const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
+      this.chunkRenderer.setSkyBrightness?.(skyLightMultiplier(ticks));
+      this.chunkRenderer.setAtmosphere?.({
+        cameraPos: this.camera.position,
+        fogStart: maxFogDist * 0.75,
+        fogEnd: maxFogDist,
+        sunDir: sunDirection(ticks),
+        dayFactor,
+        twilightFactor,
+        nightFactor,
+      });
+
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world);
+      renderStats.drawCalls += skyStats.drawCalls;
+      renderStats.triangles += skyStats.triangles;
       this.terrainFrames++;
       return true;
     }

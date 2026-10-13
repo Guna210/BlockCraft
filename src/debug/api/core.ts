@@ -7,6 +7,7 @@ export interface BlockCraftDebugAPI {
   resume?: () => void;
   tick?: (n: number) => Promise<void>;
   setGameMode?: (mode: 'survival' | 'creative') => void;
+  setTimeOfDay?: (ticks: number) => void;
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
