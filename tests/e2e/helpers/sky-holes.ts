@@ -1,8 +1,8 @@
 import type { PNG } from 'pngjs';
 
-/** The sky: the clear colour of main.ts, hsl(200, 100 %, 70 %). Fog does not exist until M12a. */
+/** The sky: the clear colour of main.ts, hsl(200, 100 %, 70 %). Historical value; no longer accepted by the noon classifier. */
 export const SKY_RGB = [102, 204, 255] as const;
-export const SKY_TOLERANCE = 16;
+export const NOON_SKY_RADIUS = 1.73;
 
 /**
  * Largest enclosed sky area a frame may have. Gaps between leaves are smaller; one missing 16x16 chunk
@@ -21,19 +21,24 @@ export interface SkyHoleReport {
   largestEnclosed: number;
 }
 
-/** Whether pixel (x, y) of `png` has the sky colour (clear colour or M12a noon sky gradient). */
+/** Whether pixel (x, y) of `png` has the sky colour (M12a noon sky gradient). */
 export function isSkyPixel(png: PNG, x: number, y: number): boolean {
   const i = (y * png.width + x) * 4;
   const r = png.data[i]!;
   const g = png.data[i + 1]!;
   const b = png.data[i + 2]!;
-  const dr = r - SKY_RGB[0];
-  const dg = g - SKY_RGB[1];
-  const db = b - SKY_RGB[2];
-  if (dr * dr + dg * dg + db * db <= SKY_TOLERANCE * SKY_TOLERANCE) {
-    return true;
-  }
-  return b >= 245 && g >= 164 && g <= 216 && r >= 68 && r <= 138 && b - r >= 110;
+  // Mirror sky.ts at noon: h = clamp(dir.y, 0, 1), t = h * (2 - h).
+  // Its RGB locus is the segment horizon (132,212,255) -> zenith (72,168,248).
+  // Project onto the continuous segment; a 1.73 RGB-unit Euclidean radius covers
+  // framebuffer rounding without admitting the old band's blue terrain colours.
+  const hr = r - 132;
+  const hg = g - 212;
+  const hb = b - 255;
+  const t = Math.max(0, Math.min(1, (-60 * hr - 44 * hg - 7 * hb) / 5585));
+  const cr = hr + 60 * t;
+  const cg = hg + 44 * t;
+  const cb = hb + 7 * t;
+  return cr * cr + cg * cg + cb * cb <= NOON_SKY_RADIUS * NOON_SKY_RADIUS;
 }
 
 /**

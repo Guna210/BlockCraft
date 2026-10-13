@@ -862,12 +862,12 @@ export class WorldManager {
         ? this.skyRenderer.render(this.camera, this.atlasTexture, this.atlas, ticks)
         : { drawCalls: 0, triangles: 0 };
 
-      const maxFogDist = this.renderDistance * 16;
+      const maxFogDist = (this.renderDistance - 1) * 16;
       const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
       this.chunkRenderer.setSkyBrightness?.(skyLightMultiplier(ticks));
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
-        fogStart: maxFogDist * 0.75,
+        fogStart: maxFogDist * 0.7,
         fogEnd: maxFogDist,
         sunDir: sunDirection(ticks),
         dayFactor,
