@@ -41,7 +41,9 @@ Ready next: M12b (owner extra: sun glare), M12c. M06b in flight.
 
 - Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
 - `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
-- Deep water renders black: water opacity 2 in src/world/lighting.ts (sky light 0 below about 7–8 blocks) with M05b min brightness 0.04. Plan: in the M06b builder prompt, tune it (water opacity 1 and/or an underwater minimum) so a 20-block-deep seabed is dim but visible; M06b also adds underwater tint and fog.
+- Deep water renders black: addressed in M06b (water opacity 1 + underwater brightness floor), PR #39 under review.
+- Planned worldgen-tuning task (owner, later): increase biome size AND reduce Mire patch coverage in Swampland (src/gen/surface.ts, patchNoise > 0.25 threshold) at the same time. Biome size needs an owner SPEC edit first: the M03c unit test requires ≥ 10 biomes in 2048×2048 with 20–50 % ocean (e.g. widen the sample to 4096×4096). Biome climate noise is at 0.0012 in src/gen/biomes.ts.
+- Per-biome fog colour: SPEC biome appendix lists it, but no task row owns it and biomes.ts has no fog field. Owner to assign (e.g. M12c) or drop.
 - Owner views builds with a bookmarklet that adds ?debug=1 and calls createWorld (no code change). A dev URL auto-create param would need a tiny task; deferred to M18a's menu unless asked.
 - `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
 
@@ -53,6 +55,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-13: Owner decision: will increase biome size later and reduce Mire spawning in the same worldgen-tuning task (open item added).
 - 2026-10-13: Owner asked about brown slowing blocks on grass: Mire patches in Swampland (surface.ts patchNoise>0.25), slowdown by SPEC design ('soul-sand-style'); 0.4 multiplier was orchestrator's choice. Offered: soften to 0.6 in the same M06b tweak (owner's call); patch coverage is M03 territory (later tuning).
 - 2026-10-13: Owner merged #38 (58dfc07). M06b prompt given for Codex full model (branch claude/m06b). Decisions: swim/ladder/vine/Mire numbers, ladder+vine as thin face models with 4 facings, no worldgen placement, F5 via input action (no new debug API), settings.ts in-memory viewBobbing default on, water opacity 2→1 + underwater min brightness floor, underwater fog 2–24 blocks overriding M12 fog.
 - 2026-10-13: M12a-fix round 2 PASS. Owner request: sun should be a blinding glare at midday with the disc only readable near sunrise/sunset. Plan: add to the M12b prompt as an owner extra (elevation-scaled additive halo in sky shader + sun billboard saturating to white; disc dims/reddens near horizon; no HDR/bloom pass; must keep M12 noon/sunset tests and M04 tests unchanged).
