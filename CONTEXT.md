@@ -25,17 +25,17 @@ Last updated: 2026-10-11
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), M12a (5a73d9a, agy direct push) + M12a-fix (#38, 58dfc07), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
 
 In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | on master 5a73d9a (agy). M12a-fix PR #38 round-2 review PASS (Verify #163 green); awaiting owner merge. | Codex | #38 | — | — | Non-blocking: fog >0.8 reads as sky (accepted); pale vertical strips in fog-edge shot near x≈700/790 (likely fading cliff faces); RD8 test covers top quarter only; classifier formula duplicated in unit sweep. |
+| M06b | prompt given (Codex full model), branch claude/m06b | Codex | — | — | — | Includes deep-water lighting fix and underwater visuals. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
-Ready next: M06b and M12a (deps merged); M12b and M12c after M12a.
+Ready next: M12b (owner extra: sun glare), M12c. M06b in flight.
 
 ## Open items for the owner
 
@@ -53,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-13: Owner merged #38 (58dfc07). M06b prompt given for Codex full model (branch claude/m06b). Decisions: swim/ladder/vine/Mire numbers, ladder+vine as thin face models with 4 facings, no worldgen placement, F5 via input action (no new debug API), settings.ts in-memory viewBobbing default on, water opacity 2→1 + underwater min brightness floor, underwater fog 2–24 blocks overriding M12 fog.
 - 2026-10-13: M12a-fix round 2 PASS. Owner request: sun should be a blinding glare at midday with the disc only readable near sunrise/sunset. Plan: add to the M12b prompt as an owner extra (elevation-scaled additive halo in sky shader + sun billboard saturating to white; disc dims/reddens near horizon; no HDR/bloom pass; must keep M12 noon/sunset tests and M04 tests unchanged).
 - 2026-10-13: M12a-fix gate c873ccd: radius 1.73, closest terrain 3.735 (2.005 margin), real sky coverage 100 % at 6000/10000; unit 433/433; e2e 55 pass, 2 container-only fails (M01a GL count 1446<1449, M04a pump 57.1 ms); RD12, fast-flight, M12 pass. Recommended approve → draft PR, CI decides.
 - 2026-10-13: M12a-fix Codex QUESTION: legacy SKY_RGB±16 check accepts fogged lumite (117,206,252). Answered Option B: drop legacy check, curve-only match, radius = largest rejecting full sweep with ≥2 margin; plus m12.spec assertion ≥98 % of top-quarter noon pixels are isSkyPixel at 6000 and 10000 ticks (guards against silent hole loss).
