@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M12a | Codex prompt given (branch claude/m12a; time advances on M06a TickLoop); agy attempt abandoned locally (old laptop too slow for full verify, nothing pushed) | Codex | — | — | — | Decisions: time.ts, start at 6000, cosine sky curve on u_skyBrightness, full-screen sky pass, fog 0.75–1.0 RD; owner-approved narrow change to sky-holes.ts colour classification only. |
+| M12a | agy pushed commit 5a73d9a straight to master (no PR, no review). Master CI Verify #161 running. Orchestrator recommends keeping it + post-hoc review, fixes via M12a-fix PR; revert PR if CI red badly. Codex M12a to be stopped. | agy | — | — | — | Cause: branch created with `git checkout -B agy/m12a origin/master` tracks origin/master, so a plain push went to master. Future local prompts: `--no-track` and explicit `git push -u origin <branch>`; owner to consider branch protection on master. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
@@ -53,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-13: agy gate looked good (unit 430/430; 5 laptop-only streaming-idle timeouts reproduced on master). Owner approved; agy pushed 5a73d9a directly to master (19 files, +1469). No harness paths touched. Recommended: keep, wait for CI #161, post-hoc review on the commit, stop Codex M12a, add branch protection on master.
 - 2026-10-13: Owner: old laptop struggles with full verify; agy postponed (maybe Ryzen 5700U laptop later, low disk). Back to Codex cloud + Claude Code cloud. M12a reassigned to Codex (agy work stays local, unpushed). Option noted for future local builders: verify:quick locally + CI as full-verify evidence (owner's call).
 - 2026-10-12: Windows laptop set up: npm ci, typecheck, lint (2 existing any-warnings), placeholders, unit 425/425, MILESTONE=M06 verify:quick all pass in PowerShell. WezTerm defaulted to cmd; told owner to use powershell. Owner asked for the smaller ready task for agy: M12a (self-contained render/time) over M06b (blocks, model, physics, camera). agy prompt: branch agy/m12a, PowerShell syntax, full verify to log, laptop timing failures checked against master on the same laptop then draft PR, CI decides; push via git, owner creates PR in browser.
 - 2026-10-12: Owner merged M06a (#36, b18882b) and INFRA-win (#37, 43d8fe5). Ready next: M06b, M12a (owner picks).
