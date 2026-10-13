@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06b | PR #39 (head aab81f8) CI green (Verify run 38402018212); reviewer prompt given (Claude Sonnet) | Codex | — | #39 | 1 | Includes deep-water lighting fix and underwater visuals. |
+| M06b | PR #39 green. Owner: view bobbing too strong. Tweak sent to Codex before review: halve frequency (vertical bounce per 2 blocks, roll per 4), vertical 0.025→0.02. Then reviewer (Sonnet, new session). | Codex | #39 | — | — | Current code: player-controller.ts sin(dist·2π)·0.025 vertical, roll sin(dist·π)·0.008. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
