@@ -31,8 +31,8 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M07a | PR #40 draft (897ae0a), CI verify running (queued behind #41). Local: only M04a pump 84.8 ms. Watch pump on CI. | Codex | #40 | — | — | Codex also fixed a pre-existing shared-quad normalization bug dropping back-facing sprite triangles (found via horizon test). Reviewer to check that fix plus terrain.json/wood.json/lighting.ts edits. |
-| M13b | PR #41 review round 1 CHANGES NEEDED (session_01Pc6EKoyzMDCJ6XCyBQNwGB). Fix prompt for agy (same session/branch; owner pushes via Desktop). | agy | #41 | session_01Pc6EKoyzMDCJ6XCyBQNwGB | 1 | Blocking: shared pool/heap/map across searches (interleaved search gave cost 56 < optimum 58); WorldAdapter cache not invalidated on real edits; per-expansion dirs allocation. Also fixing: unloaded=solid, classify init order, cache returns copy, don't cache pool-cap unreachable, real-registry test, 4-drop refusal test. |
+| M07a | PR #40 CI verify green (18:28, pump passed on CI). Reviewer prompt given (Sonnet). Codex to retitle verified/ready. | Codex | #40 | — | — | Codex also fixed pre-existing shared-quad normalization bug dropping back-facing sprite triangles. Check terrain.json/wood.json/lighting.ts edits. |
+| M13b | PR #41 round 2 PASS (fix 9148c1c, CI green 18:46). Recommended merge now (file-disjoint from #40). | agy | #41 | session_01Pc6EKoyzMDCJ6XCyBQNwGB | 2 | Notes for M13c: must call PathSearch.dispose(); call adapter.invalidate() on chunk load (unloaded=solid cached near edges). PR body stale (progress file is current). |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
