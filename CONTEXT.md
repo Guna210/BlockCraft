@@ -32,7 +32,7 @@ In flight:
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | M07a | PR #40 draft (897ae0a), CI verify running (queued behind #41). Local: only M04a pump 84.8 ms. Watch pump on CI. | Codex | #40 | — | — | Codex also fixed a pre-existing shared-quad normalization bug dropping back-facing sprite triangles (found via horizon test). Reviewer to check that fix plus terrain.json/wood.json/lighting.ts edits. |
-| M13b | PR #41 (agy/m13b) CI green, marked ready; reviewer prompt given (Sonnet). No file overlap with #40. | agy | #41 | — | — | Lesson: verify:quick e2e 'no tests found' is expected for unit-only tasks; say so in future prompts. |
+| M13b | PR #41 review round 1 CHANGES NEEDED (session_01Pc6EKoyzMDCJ6XCyBQNwGB). Fix prompt for agy (same session/branch; owner pushes via Desktop). | agy | #41 | session_01Pc6EKoyzMDCJ6XCyBQNwGB | 1 | Blocking: shared pool/heap/map across searches (interleaved search gave cost 56 < optimum 58); WorldAdapter cache not invalidated on real edits; per-expansion dirs allocation. Also fixing: unloaded=solid, classify init order, cache returns copy, don't cache pool-cap unreachable, real-registry test, 4-drop refusal test. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
