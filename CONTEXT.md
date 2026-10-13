@@ -53,6 +53,7 @@ None. M05b decisions are on master (`decisions/M05b-smooth-lighting.md`). Lesson
 
 ## Log (newest first)
 
+- 2026-10-13: Owner asked about brown slowing blocks on grass: Mire patches in Swampland (surface.ts patchNoise>0.25), slowdown by SPEC design ('soul-sand-style'); 0.4 multiplier was orchestrator's choice. Offered: soften to 0.6 in the same M06b tweak (owner's call); patch coverage is M03 territory (later tuning).
 - 2026-10-13: Owner merged #38 (58dfc07). M06b prompt given for Codex full model (branch claude/m06b). Decisions: swim/ladder/vine/Mire numbers, ladder+vine as thin face models with 4 facings, no worldgen placement, F5 via input action (no new debug API), settings.ts in-memory viewBobbing default on, water opacity 2→1 + underwater min brightness floor, underwater fog 2–24 blocks overriding M12 fog.
 - 2026-10-13: M12a-fix round 2 PASS. Owner request: sun should be a blinding glare at midday with the disc only readable near sunrise/sunset. Plan: add to the M12b prompt as an owner extra (elevation-scaled additive halo in sky shader + sun billboard saturating to white; disc dims/reddens near horizon; no HDR/bloom pass; must keep M12 noon/sunset tests and M04 tests unchanged).
 - 2026-10-13: M12a-fix gate c873ccd: radius 1.73, closest terrain 3.735 (2.005 margin), real sky coverage 100 % at 6000/10000; unit 433/433; e2e 55 pass, 2 container-only fails (M01a GL count 1446<1449, M04a pump 57.1 ms); RD12, fast-flight, M12 pass. Recommended approve → draft PR, CI decides.
