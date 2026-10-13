@@ -30,3 +30,9 @@ All behavior in this record is the M06b scope approved in the task prompt.
 ## Publication
 
 Before the first push, report status, changed-file list against origin/master, full verification summary and exact Vitest/Playwright totals, then wait for the owner's reply. Known container-only failures listed in the task prompt are recorded without master reruns or investigation; any other failures are fixed. The PR remains draft/incomplete until the required verification gate (or the owner's explicit green-CI exception) holds.
+
+## Owner publication approval
+
+After the publish-gate report, the owner approved pushing the branch. Because the full local verify passed, the owner explicitly instructed the builder to title the PR `M06b: Swimming, climbing & camera — verified` and open it ready for review rather than as a draft, before CI completed. The owner also authorized the connected GitHub integration if `gh` remained blocked, and required fixing any red CI result on the same branch. The branch push succeeded; `gh api user` still returned Forbidden, so the connected GitHub integration created ready-for-review PR #39. The earlier proposed draft workflow is superseded by this explicit approval.
+
+Source CI closure: first-attempt Verify #165 on `28f2745bb4e71de8f30accfe4b238c6d8f3cb581` passes all stages with 452 unit tests and 64 browser tests (17.0m), without failed/flaky tests or retries. Harness Guard #113 passes. The publication/evidence follow-up changes only this decision record and the handoff; its final-head CI is monitored before task completion.
