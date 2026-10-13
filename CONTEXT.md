@@ -31,7 +31,7 @@ In flight:
 
 | Task | State | Builder session | Reviewer session | PR | Round | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| M06b | PR #39 green. Owner: view bobbing too strong. Tweak sent to Codex before review: halve frequency (vertical bounce per 2 blocks, roll per 4), vertical 0.025→0.02. Then reviewer (Sonnet, new session). | Codex | #39 | — | — | Current code: player-controller.ts sin(dist·2π)·0.025 vertical, roll sin(dist·π)·0.008. |
+| M06b | PR #39 head 30ba78a (bobbing tweak in), Verify #167 green. Review round 1 PASS (session_01GnzfF2QX4fwRCC8GiBGdbB, 84 s, substantive). Awaiting owner merge. | Codex | #39 | — | — | Non-blocking: bob curve not locked by a test; limb swing unasserted; long PR body; tint pass counted as +1 triangle. Mire stays 0.4. |
 
 States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
 
