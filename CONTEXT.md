@@ -53,13 +53,14 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Decisions not yet on master
 
-- Codex prompts list the known container-only failures (M04b heap and RD12 timeouts, M04b mid-flight blank, M01a GL-check count, occasional M02 mesh p95, M04a pump max over 50 ms, seen up to 84.8 ms in M07a and passing on CI): don't investigate or re-run master; draft PR, CI decides. Owner may add this to AGENTS.md §9.
+- Codex prompts list the known container-only failures (M04b heap and RD12 timeouts, M04b mid-flight blank, M01a GL-check count, occasional M02 mesh p95, M04a pump max over 50 ms, seen up to 84.8 ms in M07a and passing on CI; an M05 streaming timeout that also fails on unchanged master, seen in M07b): don't investigate or re-run master; draft PR, CI decides. Owner may add this to AGENTS.md §9.
 - For the M13c prompt (from M13b review, PR #41): callers must call PathSearch.dispose() on abandoned searches; WorldAdapter caches stay valid across chunk loads (unloaded = solid), so call adapter.invalidate() or hook chunk-load events.
 - For the M12c prompt: per-biome fog colour is an open owner item; weather must keep the M12a-fix sky classifier and M04 hole tests valid (same issue as M12b clouds).
 - M06b non-blocking leftovers: bob curve not pinned by a test; limb swing unasserted. M07a: water not replaceable for placement (revisit with buckets, M08).
 
 ## Log (newest first)
 
+- 2026-10-14: M07b Codex QUESTION: M05 timeout reproduces on unchanged master. Answered: add it to the container exceptions, remove blockers/M07b.md (not M07b's problem), finish full verify with the M04 polling fix, post gate; CI decides.
 - 2026-10-13: Owner merged M07a (#40). M07b → Codex, M12b (clouds + owner sun-glare request) → agy on agy/m12b. Owner confirmed: laptop test failures → GitHub CI is the standard. CONTEXT tidied before compaction.
 - 2026-10-13: M13b merged (#41). M13c prompt must include: call PathSearch.dispose() for abandoned searches; adapter.invalidate() (or hook) on chunk load. M07a review PASS.
 - 2026-10-13: Owner merged M06b (#39). Owner wants parallel builds: Codex + agy. Recommended Codex = M07a (core, critical path, touches world/input/mesh), agy = M13b (pure A* module, unit tests only, suits old laptop; verify:quick + CI as evidence; agy prompt must use --no-track branch + explicit push; owner to add master branch protection). M12b/M12c next after. Merge conflicts: fresh Sonnet session merges origin/master into the later PR's branch (no rebase), re-runs verify, pushes.
