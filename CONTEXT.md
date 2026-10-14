@@ -60,6 +60,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Log (newest first)
 
+- 2026-10-14: M12b agy gate 56082af (14 files, 0 setClouds lines; unit 490/490; M12b + M12a time-of-day e2e pass; m12.spec:258 RD8 sky test timed out locally at waitForTerrain, so the clouds-vs-sky-classifier risk is unverified). Recommended: push, draft PR '[INCOMPLETE] M12b: Clouds'; on CI watch m12.spec:258 — a coverage (not timeout) failure means clouds break the classifier → use the pre-approved setClouds('off') fallback unless owner vetoed.
 - 2026-10-14: M07b Codex QUESTION: M05 timeout reproduces on unchanged master. Answered: add it to the container exceptions, remove blockers/M07b.md (not M07b's problem), finish full verify with the M04 polling fix, post gate; CI decides.
 - 2026-10-13: Owner merged M07a (#40). M07b → Codex, M12b (clouds + owner sun-glare request) → agy on agy/m12b. Owner confirmed: laptop test failures → GitHub CI is the standard. CONTEXT tidied before compaction.
 - 2026-10-13: M13b merged (#41). M13c prompt must include: call PathSearch.dispose() for abandoned searches; adapter.invalidate() (or hook) on chunk load. M07a review PASS.
