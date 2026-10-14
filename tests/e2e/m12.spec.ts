@@ -372,7 +372,7 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   console.log('m12b noon clouds cloudPixels:', cloudPixels);
   expect(cloudPixels).toBeGreaterThan(500);
 
-  // 2. Visual Review: m12-clouds-overhead.png at noon, pitch ~25° up, from high ground (camera well below y=192)
+  // 2. Visual Review: m12-clouds-overhead.png at noon, pitch ~25° up, from near sea level (eye around y=70–80)
   await page.evaluate(async () => {
     const api = window.__blockcraft!;
     api.setTimeOfDay!(6000);
@@ -416,14 +416,14 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   // Reposition player back to overlooking west for sunset review
   await page.evaluate(() => {
     const y = window.__blockcraft!.getHeight!(2, 0) + 2;
-    window.__blockcraft!.teleport!(2.5, y, 0.5, Math.PI, 0.05);
+    window.__blockcraft!.teleport!(2.5, y, 0.5, Math.PI, 0.08);
   });
 
-  // 3. Visual Review: m12-sun-glare-sunset.png looking near sunset showing the disc
+  // 3. Visual Review: m12-sun-glare-sunset.png looking near sunset showing the disc and warm-tinted clouds
   await page.evaluate(async () => {
     const api = window.__blockcraft!;
     api.setTimeOfDay!(12000);
-    api.look!(Math.PI, 0.05);
+    api.look!(Math.PI, 0.08);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });
 

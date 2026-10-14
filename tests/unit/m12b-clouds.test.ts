@@ -29,7 +29,7 @@ describe('M12b — Clouds & Sun Glare', () => {
       expect(CLOUD_REGION_SIZE).toBe(384);
     });
 
-    it('defines shading with white top, near-white sides for bright rim, and pale blue-grey bottom', () => {
+    it('defines shading with top 1.0, sides 0.96, bottom 0.78', () => {
       expect(CLOUD_SHADE_TOP).toBe(1.0);
       expect(CLOUD_SHADE_SIDE).toBe(0.96);
       expect(CLOUD_SHADE_BOTTOM).toBe(0.78);
@@ -46,7 +46,7 @@ describe('M12b — Clouds & Sun Glare', () => {
 
       expect(coverage).toBeGreaterThanOrEqual(0.3);
       expect(coverage).toBeLessThanOrEqual(0.4);
-      expect(activeCount).toBe(358); // Exactly 34.96 %
+      expect(activeCount).toBe(345); // 33.69 %
     });
 
     it('is deterministic for the same seed and produces different shapes for different seeds', () => {
@@ -58,18 +58,21 @@ describe('M12b — Clouds & Sun Glare', () => {
       expect(gridA1).not.toEqual(gridB);
     });
 
-    it('mixes lone cells, small clumps, and larger ragged clusters with notches and holes', () => {
+    it('ensures no active cell belongs to a 1-cell-wide strand unless it is a lone cell or part of a 2–3 cell clump', () => {
       const active = generateCloudGrid(12006, 32, 32, 0.35);
       const visited = new Array<boolean>(32 * 32).fill(false);
-      const components: number[] = [];
+      const compId = new Int32Array(32 * 32).fill(-1);
+      const compSizes: number[] = [];
 
       for (let y = 0; y < 32; y++) {
         for (let x = 0; x < 32; x++) {
           const idx = y * 32 + x;
           if (!active[idx] || visited[idx]) continue;
+          const cid = compSizes.length;
           let size = 0;
           const queue: [number, number][] = [[x, y]];
           visited[idx] = true;
+          compId[idx] = cid;
           while (queue.length > 0) {
             const [cx, cy] = queue.shift()!;
             size++;
@@ -84,49 +87,66 @@ describe('M12b — Clouds & Sun Glare', () => {
               const nidx = ny * 32 + nx;
               if (active[nidx] && !visited[nidx]) {
                 visited[nidx] = true;
+                compId[nidx] = cid;
                 queue.push([nx, ny]);
               }
             }
           }
-          components.push(size);
+          compSizes.push(size);
         }
       }
 
-      const loneCells = components.filter((s) => s === 1).length;
-      const smallClumps = components.filter((s) => s >= 2 && s <= 5).length;
-      const mediumClusters = components.filter((s) => s >= 6 && s <= 30).length;
-      const largeClusters = components.filter((s) => s > 30).length;
-      const maxCluster = Math.max(...components);
+      // Check that every cell in a cluster >= 4 cells is part of at least one 2x2 block of active cells
+      const has2x2 = (x: number, y: number): boolean => {
+        for (const [ox, oy] of [
+          [0, 0],
+          [-1, 0],
+          [0, -1],
+          [-1, -1],
+        ] as const) {
+          const x0 = (x + ox + 32) % 32;
+          const x1 = (x0 + 1) % 32;
+          const y0 = (y + oy + 32) % 32;
+          const y1 = (y0 + 1) % 32;
+          if (
+            active[y0 * 32 + x0] &&
+            active[y0 * 32 + x1] &&
+            active[y1 * 32 + x0] &&
+            active[y1 * 32 + x1]
+          ) {
+            return true;
+          }
+        }
+        return false;
+      };
 
-      // Verify mix of shapes per Requirement 4
-      expect(loneCells).toBeGreaterThan(0);
-      expect(smallClumps).toBeGreaterThan(0);
-      expect(mediumClusters).toBeGreaterThan(0);
-      expect(largeClusters).toBeGreaterThan(0);
-      // No single giant smooth blob dominating the grid
-      expect(maxCluster).toBeLessThan(200);
-
-      // Verify presence of notches/holes (inactive cells with 3+ active neighbors)
-      let holes = 0;
+      let strandViolations = 0;
       for (let y = 0; y < 32; y++) {
         for (let x = 0; x < 32; x++) {
-          if (!active[y * 32 + x]) {
-            let activeNeighbors = 0;
-            for (const [dx, dy] of [
-              [1, 0],
-              [-1, 0],
-              [0, 1],
-              [0, -1],
-            ] as const) {
-              const nx = (x + dx + 32) % 32;
-              const ny = (y + dy + 32) % 32;
-              if (active[ny * 32 + nx]) activeNeighbors++;
+          const idx = y * 32 + x;
+          if (!active[idx]) continue;
+          const size = compSizes[compId[idx]!]!;
+          if (size >= 4) {
+            if (!has2x2(x, y)) {
+              strandViolations++;
             }
-            if (activeNeighbors >= 3) holes++;
           }
         }
       }
-      expect(holes).toBeGreaterThan(0);
+      expect(strandViolations).toBe(0);
+
+      // Verify mix of shapes: lone cells, small 2–3 cell clumps, and chunky compact blobs (>= 4)
+      const loneCells = compSizes.filter((s) => s === 1).length;
+      const smallClumps = compSizes.filter((s) => s >= 2 && s <= 3).length;
+      const chunkyBlobs = compSizes.filter((s) => s >= 4).length;
+
+      expect(loneCells).toBeGreaterThan(0);
+      expect(smallClumps).toBeGreaterThan(0);
+      expect(chunkyBlobs).toBeGreaterThan(0);
+
+      // Verify compact clouds (most 2–6 cells across in both directions, no giant monolith dominating grid)
+      const maxCluster = Math.max(...compSizes);
+      expect(maxCluster).toBeLessThan(100);
     });
   });
 

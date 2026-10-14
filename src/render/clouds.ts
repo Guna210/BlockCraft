@@ -25,8 +25,9 @@ export const CLOUD_SHADE_BOTTOM = 0.78; // Underside: flat pale blue-grey tinted
 /**
  * Generates a deterministic, seamlessly periodic 2D boolean cloud grid of 32x32 cells.
  * Tuned to roughly 30–40% coverage (35% target).
- * Produces scattered, irregular, flat blocky shapes on a 12-block cell grid,
- * mixing lone cells, small clumps, and larger ragged clusters with notches and holes.
+ * Produces chunky, compact blobs (most clouds 2–6 cells across in both directions,
+ * with stepped outlines), mixing lone single cells and small 2–3 cell clumps.
+ * Eliminates 1-cell-wide strands via 2x2 morphological opening.
  */
 export function generateCloudGrid(
   seed = 12006,
@@ -75,76 +76,123 @@ export function generateCloudGrid(
     return nx0 + v * (nx1 - nx0);
   };
 
-  const values = new Float32Array(width * height);
+  const rawValues = new Float32Array(width * height);
   for (let cz = 0; cz < height; cz++) {
     for (let cx = 0; cx < width; cx++) {
-      // Harmonic periodic noise octaves (periods 8, 4, 2 cells)
-      const v1 = perlin2DPeriodic(cx / 8, cz / 8, 4);
-      const v2 = perlin2DPeriodic(cx / 4, cz / 4, 8);
-      const v3 = perlin2DPeriodic(cx / 2, cz / 2, 16);
-      // Notch and hole carvers with distinct spatial offsets
-      const carve1 = Math.abs(perlin2DPeriodic((cx + 9) / 4, (cz + 13) / 4, 8));
-      const carve2 = Math.abs(perlin2DPeriodic((cx + 5) / 2, (cz + 17) / 2, 16));
-      // Scattered cellular jitter for lone cells
-      const jitter = (perm(cx, cz) / 255.0 - 0.5) * 0.4;
-      values[cz * width + cx] =
-        v1 * 0.45 + v2 * 0.35 + v3 * 0.2 - carve1 * 0.35 - carve2 * 0.25 + jitter;
+      // Lower frequency periodic noise: period 8 (4-cell wavelength) + period 16 (2-cell wavelength)
+      const gx = (cx + 8) % width;
+      const gz = cz;
+      const v1 = perlin2DPeriodic(gx / 4, gz / 4, 8);
+      const v2 = perlin2DPeriodic(gx / 2, gz / 2, 16);
+      rawValues[cz * width + cx] = v1 * 0.8 + v2 * 0.2;
     }
   }
 
-  // Pre-filter with a slightly higher initial threshold to allow punching holes
-  const initialCoverage = Math.min(0.5, targetCoverage + 0.05);
-  const sorted = Array.from(values).sort((a, b) => b - a);
-  const initialCount = Math.round(width * height * initialCoverage);
-  const threshold = sorted[initialCount - 1]!;
-
-  const active = new Array<boolean>(width * height);
-  for (let i = 0; i < width * height; i++) {
-    active[i] = values[i]! >= threshold;
-  }
-
-  // Punch holes into interiors of large clusters (cells with 7+ active neighbors)
-  const canPunch: { x: number; y: number; score: number }[] = [];
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (!active[y * width + x]) continue;
-      let neighbors = 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = (x + dx + width) % width;
-          const ny = (y + dy + height) % height;
-          if (active[ny * width + nx]) neighbors++;
+  // Morphological open (erode then dilate) with a 2x2 structuring element
+  const doOpen = (th: number): boolean[] => {
+    const base = new Array<boolean>(width * height);
+    for (let i = 0; i < width * height; i++) {
+      base[i] = rawValues[i]! >= th;
+    }
+    const eroded = new Array<boolean>(width * height).fill(false);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const x1 = (x + 1) % width;
+        const y1 = (y + 1) % height;
+        if (
+          base[y * width + x] &&
+          base[y * width + x1] &&
+          base[y1 * width + x] &&
+          base[y1 * width + x1]
+        ) {
+          eroded[y * width + x] = true;
         }
       }
-      if (neighbors >= 7) {
-        canPunch.push({ x, y, score: perm((x * 7) & 255, (y * 13) & 255) });
+    }
+    const opened = new Array<boolean>(width * height).fill(false);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (eroded[y * width + x]) {
+          const x1 = (x + 1) % width;
+          const y1 = (y + 1) % height;
+          opened[y * width + x] = true;
+          opened[y * width + x1] = true;
+          opened[y1 * width + x] = true;
+          opened[y1 * width + x1] = true;
+        }
+      }
+    }
+    return opened;
+  };
+
+  // Binary search for threshold matching desired target cell count
+  const target = Math.round(width * height * targetCoverage - 2);
+  let best: boolean[] = [];
+  let bestDiff = Infinity;
+  let low = -1.0;
+  let high = 1.0;
+  for (let iter = 0; iter < 32; iter++) {
+    const mid = (low + high) / 2;
+    const op = doOpen(mid);
+    const count = op.filter(Boolean).length;
+    const diff = Math.abs(count - target);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = op;
+    }
+    if (count > target) low = mid;
+    else high = mid;
+  }
+
+  const result = best.slice();
+
+  // Find isolated candidates for lone single cells and small 2–3 cell clumps
+  const isIsolated = (x: number, y: number): boolean => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = (x + dx + width) % width;
+        const ny = (y + dy + height) % height;
+        if (result[ny * width + nx]) return false;
+      }
+    }
+    return true;
+  };
+
+  const candidates: { x: number; y: number; val: number }[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (!result[idx] && isIsolated(x, y)) {
+        candidates.push({ x, y, val: rawValues[idx]! });
       }
     }
   }
-  canPunch.sort((a, b) => b.score - a.score);
-  const desiredFinalCount = Math.round(width * height * targetCoverage);
-  let currentActive = active.filter(Boolean).length;
-  for (const p of canPunch) {
-    if (currentActive <= desiredFinalCount) break;
-    active[p.y * width + p.x] = false;
-    currentActive--;
-  }
+  candidates.sort((a, b) => b.val - a.val);
 
-  if (currentActive > desiredFinalCount) {
-    const remainingActive: { i: number; val: number }[] = [];
-    for (let i = 0; i < width * height; i++) {
-      if (active[i]) remainingActive.push({ i, val: values[i]! });
-    }
-    remainingActive.sort((a, b) => a.val - b.val);
-    for (const rem of remainingActive) {
-      if (currentActive <= desiredFinalCount) break;
-      active[rem.i] = false;
-      currentActive--;
+  let addedLone = 0;
+  for (const c of candidates) {
+    if (addedLone >= 3) break;
+    if (isIsolated(c.x, c.y)) {
+      result[c.y * width + c.x] = true;
+      addedLone++;
     }
   }
 
-  return active;
+  let addedClumps = 0;
+  for (const c of candidates) {
+    if (addedClumps >= 2) break;
+    if (isIsolated(c.x, c.y)) {
+      const nx = (c.x + 1) % width;
+      const ny = c.y;
+      if (isIsolated(nx, ny)) {
+        result[c.y * width + c.x] = true;
+        result[ny * width + nx] = true;
+        addedClumps++;
+      }
+    }
+  }
+
+  return result;
 }
 
 const CLOUD_VS = `#version 300 es
@@ -215,32 +263,34 @@ void main() {
   vec3 viewDir = normalize(v_worldPos - u_cameraPos);
   vec3 skyCol = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
 
-  // Shading per Owner Requirement 5:
-  // - underside: flat pale blue-grey, about 0.75-0.8 of white, tinted toward the sky colour
-  // - sides: near-white, so a thin bright rim shows along the edges
+  // Shading per Owner Requirements:
+  // - underside: lavender-blue tint toward sky colour roughly mix(underside, skyCol, 0.30)
+  // - sides: near-white rim, softened side-to-underside contrast
   // - top: white
-  // - all of it scaled by sky brightness so clouds darken at dusk and night
   vec3 dayCol;
   if (u_isFast == 1) {
-    dayCol = mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12);
+    dayCol = mix(vec3(0.72, 0.74, 0.82), skyCol, 0.30);
   } else if (v_shade >= 0.99) {
     dayCol = vec3(1.0, 1.0, 1.0);
   } else if (v_shade >= 0.85) {
-    dayCol = vec3(0.96, 0.97, 0.99);
+    dayCol = vec3(0.90, 0.92, 0.95);
   } else {
-    dayCol = mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12);
+    dayCol = mix(vec3(0.72, 0.74, 0.82), skyCol, 0.30);
   }
 
-  // Dusk: muted twilight grey / warm dusk tint
-  vec3 duskCol = vec3(0.55, 0.48, 0.52) * v_shade;
+  // Sunrise/sunset: warm horizon/sunset colour (orange-pink tint, lighter where the sun is)
+  vec2 horizView = normalize((v_worldPos.xz - u_cameraPos.xz) + vec2(1e-5, 0.0));
+  vec2 horizSun = normalize(u_sunDir.xz + vec2(1e-5, 0.0));
+  float sunAzimuth = clamp(dot(horizView, horizSun) * 0.5 + 0.5, 0.0, 1.0);
+  vec3 sunsetCol = mix(vec3(0.85, 0.52, 0.42), vec3(0.98, 0.72, 0.55), sunAzimuth) * (v_shade * 0.35 + 0.65);
 
-  // Night: dark grey / navy
-  vec3 nightCol = vec3(0.10, 0.12, 0.18) * v_shade;
+  // Night: dim blue-grey driven by sky brightness
+  vec3 nightCol = vec3(0.12, 0.15, 0.22) * v_shade;
 
-  vec3 litCol = mix(mix(nightCol, dayCol, u_dayFactor), duskCol, u_twilightFactor * 0.80);
+  vec3 litCol = mix(mix(nightCol, dayCol, u_dayFactor), sunsetCol, u_twilightFactor * 0.85);
   litCol *= (0.20 + 0.80 * u_skyBrightness);
 
-  // Fade only far away: blend into sky/horizon color in outer ~30% of cloud range
+  // Fade only far away: smooth gentle fade into sky/horizon color
   vec3 finalRgb = mix(litCol, skyCol, v_fogFactor);
 
   // Fully solid opaque clouds (alpha 1, depth-tested against sky, hiding sun disc & glare)
@@ -523,10 +573,10 @@ export class CloudRenderer {
 
     const gl = this.glWrapper.gl;
 
-    // Cloud range is independent of terrain fog, reaching visibly to horizon (at least max(256, 2 * fogEnd))
+    // Cloud range reaches visibly to horizon: max(512, 2 * fogEnd), fading gently from 50%
     const terrainFogEnd = (renderDistance - 1) * 16;
-    const cloudRange = Math.max(768, 2 * terrainFogEnd);
-    const fogStart = cloudRange * 0.7;
+    const cloudRange = Math.max(512, 2 * terrainFogEnd);
+    const fogStart = cloudRange * 0.5;
     const fogEnd = cloudRange;
 
     // Wind drift at 1 block/s along +X, advanced on fixed tick per Decision 1

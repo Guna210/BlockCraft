@@ -1,6 +1,6 @@
 # M12b — Clouds and Sun Glare Decisions
 
-## Round 1 Redesign & Owner Decisions
+## Round 1 Decisions
 
 1. **Opaque clouds (`src/render/clouds.ts`)**:
    - Drawn fully solid (alpha 1.0, depth-tested against the sky dome, depth write enabled `gl.depthMask(true)`, blending disabled `gl.disable(gl.BLEND)`), with zero translucency.
@@ -9,39 +9,45 @@
 2. **Distance fade only far away**:
    - No fade overhead, near the camera, or toward screen edges.
    - Distance metric is horizontal distance across the cloud sheet: `length(worldPos.xz - cameraPos.xz)`.
-   - Clouds stay fully solid until the outer ~30% of cloud range (`fogStart = cloudRange * 0.70`).
-   - In the outer ~30%, cloud RGB seamlessly blends into `skyAtmosphereColor` in the view direction (`finalRgb = mix(litCol, skyCol, fogFactor)`). Fragments with `dist >= cloudRange` are discarded.
    - No fade based on view angle or pitch.
 
-3. **Range reaching visibly to horizon**:
-   - Cloud range is decoupled from terrain fog: `cloudRange = Math.max(768, 2 * (renderDistance - 1) * 16)` blocks.
-   - Reaches visibly to the horizon at any render distance.
-   - Static GPU buffers: mesh generated once at init time. Tiled regions around player are dynamically calculated (`radius = Math.ceil(fogEnd / regSize)`) with CPU bounding-box distance culling against `fogEnd`. Zero per-frame mesh allocation or buffer re-creation.
+3. **Static GPU buffers & Fast 2D option**:
+   - Static GPU buffers: mesh generated once at init time. Tiled regions around player are dynamically calculated with CPU bounding-box distance culling against `fogEnd`. Zero per-frame mesh allocation or buffer re-creation.
+   - Fast 2D mode: single flat textured plane at y=192 controlled by `settings.clouds: 'fancy' | 'fast' | 'off'`.
 
-4. **Irregular blocky cloud shapes**:
-   - Procedural generation on a 12-block cell grid (`CLOUD_CELL_SIZE = 12`, `CLOUD_GRID_CELLS = 32`, 4 blocks thick `y=192..196`).
-   - Uses multi-octave periodic noise (periods 8, 4, 2 cells) with dual-offset carving waves and cellular jitter.
-   - Interior hole punching pass carves notches and holes into large clusters (cells with 7+ active neighbors).
-   - Results in a natural mix of lone cells (components of size 1), small clumps (sizes 2–5), and larger ragged clusters with notches and interior holes.
-   - No single large smooth blob (max cluster size bounded < 200).
-   - Strict 30–40% coverage (target exactly 35%, 358 out of 1024 cells).
+4. **Sun glare in sky shader (`src/render/sky.ts`)**:
+   - Height-dependent sun glare calculated in `SKY_FS` based on view ray alignment with `u_sunDir` and sun altitude `u_sunDir.y`.
+   - High sun: large radius, bright white halo washing out billboard disc.
+   - Low sun: shrunken radius, dimmed warm amber halo, crisp legible pixel disc.
+   - Opaque clouds depth-test and overwrite the sky dome, completely blocking glare where clouds pass in front of the sun.
 
-5. **Shading matching reference image**:
-   - Underside (`CLOUD_SHADE_BOTTOM = 0.78`): flat pale blue-grey, ~0.76 of white, subtly tinted toward the sky colour (`mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12)`).
-   - Sides (`CLOUD_SHADE_SIDE = 0.96`): near-white (`vec3(0.96, 0.97, 0.99)`), creating a distinct thin bright rim along all outer stepped edges and hole perimeters when viewed from below.
-   - Top (`CLOUD_SHADE_TOP = 1.0`): pure white (`vec3(1.0, 1.0, 1.0)`).
-   - Scaled by `(0.20 + 0.80 * u_skyBrightness)` and time of day, darkening to muted purple-grey at dusk and dark navy at night.
-   - Sun glare is preserved in the sky shader, but completely blocked by opaque clouds passing in front of it.
-
-6. **Owner-approved lines in existing tests**:
+5. **Owner-approved lines in existing tests**:
    - `tests/e2e/m12.spec.ts:264`: `window.__blockcraft!.setClouds!('off');` inside the first `page.evaluate` of `M12a-fix RD8 noon and tick 10000 sky remain detectable above the fog edge`.
      - *Reason*: The camera in this test is elevated on an overlook near y=192 and tests the RD8 horizon sky coverage against a strict ≥ 0.98 threshold, which was obstructed by overhead clouds.
    - `tests/e2e/m04.spec.ts:281`: `window.__blockcraft!.setClouds!('off');` inside the first `page.evaluate` of `at render distance 12 the terrain reaches the horizon with no holes`.
      - *Reason*: Eye at 40 blocks above highest ground looking 20° down caused clouds to cover the top screen edge, interfering with the sky-hole detector on attempt 1.
    - Clouds remain enabled in all other tests, including the full M12b suite and all visual review screenshots.
 
-7. **Visual review screenshots (`docs/screenshots/M12b/`)**:
-   - `m12-clouds-overhead.png`: noon, pitch ~25° up, camera on high ground terrace (well below y=192). Directly comparable to the reference image, showing flat blocky cloud slabs with pale blue-grey undersides, thin bright rims, ragged stepped edges, holes, and perspective receding toward the horizon.
-   - `m12-noon.png`: looking west at pitch 0.12. Foreground terrace and torches, misty peak on left in blue fog, and vast 3D blocky cloud canopy stretching across the sky.
-   - `m12-sun-glare-noon.png`: looking up at pitch 75° toward the noon sun with cloud cell `(cx=6, cz=2)` passing directly over the sun, visibly and completely blocking the sun disc and intense glare center with its solid pale blue-grey underside and bright rim, while the glare halo shines around the cloud edge.
-   - `m12-sun-glare-sunset.png`: looking west at sunset (tick 12000). Darkened dusk clouds overhead, setting sun with crisp pixel disc and warm amber halo, and warm glowing horizon.
+## Round 2 Redesign Decisions (Owner Feedback)
+
+1. **Chunky Compact Shapes & Elimination of 1-Cell Strands**:
+   - Replaced old carving/hole-punching terms with lower-frequency noise: period 8 (4-cell wavelength) + period 16 (2-cell wavelength) combined as `v1 * 0.8 + v2 * 0.2`.
+   - Applied a 2×2 morphological opening (erode then dilate with periodic grid wrapping). Mathematically guarantees that every cell in a cluster of size >= 4 belongs to at least one 2×2 block of active cells (`strandViolations = 0`), eliminating all thin 1-cell-wide arms, corridors, and maze-like L-shapes.
+   - Most clouds are chunky, compact blobs 2–6 cells across in both directions with stepped outlines.
+   - A few isolated lone cells (size 1) and small 2–3 cell clumps are added at local noise peaks that do not touch the opened blobs.
+   - Zero interior holes. Coverage is 33.7% (345 active cells for seed 12006).
+
+2. **Colour & Softened Contrast**:
+   - Underside (`CLOUD_SHADE_BOTTOM = 0.78`): tinted toward sky colour (`mix(vec3(0.72, 0.74, 0.82), skyCol, 0.30)`), matching the lavender-blue tint from the reference.
+   - Sides (`CLOUD_SHADE_SIDE = 0.96`): `vec3(0.90, 0.92, 0.95)`, softening the side-to-underside contrast while preserving the bright near-white highlight rim along stepped edges.
+   - Top (`CLOUD_SHADE_TOP = 1.0`): pure white (`vec3(1.0, 1.0, 1.0)`).
+
+3. **Dusk and Night Lighting**:
+   - Sunrise/sunset: clouds take on warm horizon/sunset colour (orange-pink tint, lighter where the sun is):
+     `sunsetCol = mix(vec3(0.85, 0.52, 0.42), vec3(0.98, 0.72, 0.55), sunAzimuth) * (v_shade * 0.35 + 0.65)`, driven by `u_twilightFactor * 0.85`.
+   - Night: dim blue-grey `vec3(0.12, 0.15, 0.22) * v_shade` scaled by `(0.20 + 0.80 * u_skyBrightness)`.
+
+4. **Gentle 50% Horizon Fade & Range**:
+   - Cloud range reduced to `cloudRange = Math.max(512, 2 * terrainFogEnd)` (512 blocks at RD8).
+   - Smooth fade starts earlier at 50% of range (`fogStart = cloudRange * 0.50`), gently blending clouds into the sky dome before reaching `fogEnd`. Clouds never end in a visible line, eliminating flickery far cloud bands.
+   - Reduces fancy mode triangle count from ~59,800 to 25,603 triangles.
