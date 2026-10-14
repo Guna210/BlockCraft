@@ -18,13 +18,15 @@ export const CLOUD_Y_BOTTOM = 192; // Cloud field at y=192 per Decision 1
 export const CLOUD_THICKNESS = 4; // Extruded 3D volumes ~4 blocks thick per Decision 1
 export const CLOUD_Y_TOP = CLOUD_Y_BOTTOM + CLOUD_THICKNESS; // 196
 export const CLOUD_WIND_SPEED = 1.0; // 1 block/s along +X per Decision 1
-export const CLOUD_SHADE_TOP = 1.0; // Lighter tops
-export const CLOUD_SHADE_SIDE = 0.85; // Intermediate sides
-export const CLOUD_SHADE_BOTTOM = 0.7; // Darker bottoms
+export const CLOUD_SHADE_TOP = 1.0; // Top face: white
+export const CLOUD_SHADE_SIDE = 0.96; // Sides: near-white (thin bright rim along edges)
+export const CLOUD_SHADE_BOTTOM = 0.78; // Underside: flat pale blue-grey tinted toward sky
 
 /**
  * Generates a deterministic, seamlessly periodic 2D boolean cloud grid of 32x32 cells.
  * Tuned to roughly 30–40% coverage (35% target).
+ * Produces scattered, irregular, flat blocky shapes on a 12-block cell grid,
+ * mixing lone cells, small clumps, and larger ragged clusters with notches and holes.
  */
 export function generateCloudGrid(
   seed = 12006,
@@ -76,20 +78,72 @@ export function generateCloudGrid(
   const values = new Float32Array(width * height);
   for (let cz = 0; cz < height; cz++) {
     for (let cx = 0; cx < width; cx++) {
-      const v1 = perlin2DPeriodic(cx / 16, cz / 16, 2);
-      const v2 = perlin2DPeriodic(cx / 8, cz / 8, 4);
-      values[cz * width + cx] = v1 * 0.7 + v2 * 0.3;
+      // Harmonic periodic noise octaves (periods 8, 4, 2 cells)
+      const v1 = perlin2DPeriodic(cx / 8, cz / 8, 4);
+      const v2 = perlin2DPeriodic(cx / 4, cz / 4, 8);
+      const v3 = perlin2DPeriodic(cx / 2, cz / 2, 16);
+      // Notch and hole carvers with distinct spatial offsets
+      const carve1 = Math.abs(perlin2DPeriodic((cx + 9) / 4, (cz + 13) / 4, 8));
+      const carve2 = Math.abs(perlin2DPeriodic((cx + 5) / 2, (cz + 17) / 2, 16));
+      // Scattered cellular jitter for lone cells
+      const jitter = (perm(cx, cz) / 255.0 - 0.5) * 0.4;
+      values[cz * width + cx] =
+        v1 * 0.45 + v2 * 0.35 + v3 * 0.2 - carve1 * 0.35 - carve2 * 0.25 + jitter;
     }
   }
 
+  // Pre-filter with a slightly higher initial threshold to allow punching holes
+  const initialCoverage = Math.min(0.5, targetCoverage + 0.05);
   const sorted = Array.from(values).sort((a, b) => b - a);
-  const targetCount = Math.round(width * height * targetCoverage);
-  const threshold = sorted[targetCount - 1]!;
+  const initialCount = Math.round(width * height * initialCoverage);
+  const threshold = sorted[initialCount - 1]!;
 
   const active = new Array<boolean>(width * height);
   for (let i = 0; i < width * height; i++) {
     active[i] = values[i]! >= threshold;
   }
+
+  // Punch holes into interiors of large clusters (cells with 7+ active neighbors)
+  const canPunch: { x: number; y: number; score: number }[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!active[y * width + x]) continue;
+      let neighbors = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = (x + dx + width) % width;
+          const ny = (y + dy + height) % height;
+          if (active[ny * width + nx]) neighbors++;
+        }
+      }
+      if (neighbors >= 7) {
+        canPunch.push({ x, y, score: perm((x * 7) & 255, (y * 13) & 255) });
+      }
+    }
+  }
+  canPunch.sort((a, b) => b.score - a.score);
+  const desiredFinalCount = Math.round(width * height * targetCoverage);
+  let currentActive = active.filter(Boolean).length;
+  for (const p of canPunch) {
+    if (currentActive <= desiredFinalCount) break;
+    active[p.y * width + p.x] = false;
+    currentActive--;
+  }
+
+  if (currentActive > desiredFinalCount) {
+    const remainingActive: { i: number; val: number }[] = [];
+    for (let i = 0; i < width * height; i++) {
+      if (active[i]) remainingActive.push({ i, val: values[i]! });
+    }
+    remainingActive.sort((a, b) => a.val - b.val);
+    for (const rem of remainingActive) {
+      if (currentActive <= desiredFinalCount) break;
+      active[rem.i] = false;
+      currentActive--;
+    }
+  }
+
   return active;
 }
 
@@ -117,6 +171,7 @@ void main() {
   v_shade = a_shade;
   v_uv = a_uv;
 
+  // Horizontal distance across the cloud sheet to avoid overhead or view-angle fade
   float dist = length(worldPos.xz - u_cameraPos.xz);
   v_fogFactor = smoothstep(u_fogStart, u_fogEnd, dist);
 
@@ -157,32 +212,39 @@ void main() {
     }
   }
 
-  float shade = (u_isFast == 1) ? 0.85 : v_shade;
-
-  // Base cloud colors per time of day (Decision 1)
-  // Daytime: bright white cloud with soft shading and subtle cool shadow
-  vec3 dayCol = mix(vec3(0.82, 0.84, 0.88), vec3(1.0, 1.0, 1.0), smoothstep(0.70, 1.0, shade));
-
-  // Dusk: muted twilight grey (Decision 1)
-  vec3 duskCol = vec3(0.52, 0.48, 0.52) * shade;
-
-  // Night: dark grey/navy (Decision 1)
-  vec3 nightCol = vec3(0.08, 0.10, 0.16) * shade;
-
-  vec3 litCol = mix(mix(nightCol, dayCol, u_dayFactor), duskCol, u_twilightFactor * 0.80);
-  litCol *= (0.25 + 0.75 * u_skyBrightness);
-
   vec3 viewDir = normalize(v_worldPos - u_cameraPos);
   vec3 skyCol = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
 
-  vec3 finalRgb = mix(litCol, skyCol, v_fogFactor);
-  float alpha = (1.0 - v_fogFactor) * 0.92;
-
-  if (alpha <= 0.01) {
-    discard;
+  // Shading per Owner Requirement 5:
+  // - underside: flat pale blue-grey, about 0.75-0.8 of white, tinted toward the sky colour
+  // - sides: near-white, so a thin bright rim shows along the edges
+  // - top: white
+  // - all of it scaled by sky brightness so clouds darken at dusk and night
+  vec3 dayCol;
+  if (u_isFast == 1) {
+    dayCol = mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12);
+  } else if (v_shade >= 0.99) {
+    dayCol = vec3(1.0, 1.0, 1.0);
+  } else if (v_shade >= 0.85) {
+    dayCol = vec3(0.96, 0.97, 0.99);
+  } else {
+    dayCol = mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12);
   }
 
-  fragColor = vec4(finalRgb, alpha);
+  // Dusk: muted twilight grey / warm dusk tint
+  vec3 duskCol = vec3(0.55, 0.48, 0.52) * v_shade;
+
+  // Night: dark grey / navy
+  vec3 nightCol = vec3(0.10, 0.12, 0.18) * v_shade;
+
+  vec3 litCol = mix(mix(nightCol, dayCol, u_dayFactor), duskCol, u_twilightFactor * 0.80);
+  litCol *= (0.20 + 0.80 * u_skyBrightness);
+
+  // Fade only far away: blend into sky/horizon color in outer ~30% of cloud range
+  vec3 finalRgb = mix(litCol, skyCol, v_fogFactor);
+
+  // Fully solid opaque clouds (alpha 1, depth-tested against sky, hiding sun disc & glare)
+  fragColor = vec4(finalRgb, 1.0);
 }
 `;
 
@@ -461,10 +523,11 @@ export class CloudRenderer {
 
     const gl = this.glWrapper.gl;
 
-    // Tie cloud draw distance to render distance per Decision 3
-    const maxFogDist = (renderDistance - 1) * 16;
-    const fogEnd = Math.max(140, maxFogDist);
-    const fogStart = fogEnd * 0.35;
+    // Cloud range is independent of terrain fog, reaching visibly to horizon (at least max(256, 2 * fogEnd))
+    const terrainFogEnd = (renderDistance - 1) * 16;
+    const cloudRange = Math.max(768, 2 * terrainFogEnd);
+    const fogStart = cloudRange * 0.7;
+    const fogEnd = cloudRange;
 
     // Wind drift at 1 block/s along +X, advanced on fixed tick per Decision 1
     const windOffset = (ticks / 20.0) * CLOUD_WIND_SPEED;
@@ -496,11 +559,11 @@ export class CloudRenderer {
     gl.uniform1f(this.uNightFactor, nightFactor);
     gl.uniform1f(this.uSkyBrightness, skyBrightness);
 
+    // Opaque clouds: fully solid (alpha 1), depth-tested, writing depth, no translucency
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
-    gl.depthMask(false);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
 
     let drawCalls = 0;
     let triangles = 0;
@@ -523,9 +586,10 @@ export class CloudRenderer {
     const vertexCount = isFast ? this.fastVertexCount : this.fancyVertexCount;
     const triCountPerInstance = vertexCount / 3;
 
-    // Draw 3x3 region instances around the player
-    for (let j = -1; j <= 1; j++) {
-      for (let i = -1; i <= 1; i++) {
+    // Tile regions covering cloud range to reach visibly to horizon
+    const radius = Math.ceil(fogEnd / regSize);
+    for (let j = -radius; j <= radius; j++) {
+      for (let i = -radius; i <= radius; i++) {
         const instGridX = baseGridX + i * regSize;
         const instGridZ = baseGridZ + j * regSize;
         const worldX = instGridX + windOffset;
@@ -548,7 +612,6 @@ export class CloudRenderer {
     }
 
     gl.bindVertexArray(null);
-    gl.disable(gl.BLEND);
     gl.disable(gl.CULL_FACE);
     gl.depthMask(true);
 

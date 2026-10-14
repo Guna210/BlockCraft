@@ -261,6 +261,7 @@ test('M12a-fix RD8 noon and tick 10000 sky remain detectable above the fog edge'
 }) => {
   await page.evaluate(async () => {
     const api = window.__blockcraft!;
+    window.__blockcraft!.setClouds!('off');
     api.setRenderDistance!(8);
     await api.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' });
     api.pause!();
@@ -371,12 +372,26 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   console.log('m12b noon clouds cloudPixels:', cloudPixels);
   expect(cloudPixels).toBeGreaterThan(500);
 
-  // 2. Visual Review: m12-sun-glare-noon.png looking up toward the sun at noon
+  // 2. Visual Review: m12-clouds-overhead.png at noon, pitch ~25° up, from high ground (camera well below y=192)
   await page.evaluate(async () => {
     const api = window.__blockcraft!;
-    api.setClouds!('off'); // Unobstructed sky shader glare review
     api.setTimeOfDay!(6000);
-    api.look!(Math.PI / 2, (75 * Math.PI) / 180);
+    api.look!(Math.PI, (25 * Math.PI) / 180);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+  await assertAndSaveScreenshot({
+    name: 'm12-clouds-overhead',
+    milestone: 'M12b',
+  });
+  saveScreenshotToDocs('m12-clouds-overhead', 'M12b');
+
+  // 3. Visual Review: m12-sun-glare-noon.png looking up toward the sun at noon with a cloud passing over the sun visibly blocking glare
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setTimeOfDay!(6000);
+    // Position at x = -5 on terrace so cloud cell (cx=6, cz=2) is directly between camera and sun
+    const y = api.getHeight!(-5, 0) + 2;
+    api.teleport!(-5.0, y, 0.5, Math.PI / 2, (75 * Math.PI) / 180);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });
 
@@ -386,22 +401,22 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   });
   saveScreenshotToDocs('m12-sun-glare-noon', 'M12b');
 
-  // Center region where the sun is: saturates to near white so pixel sun disc can't be made out
+  // Verify that the opaque cloud blocks the sun disc and intense glare behind it:
+  // The center region covered by the cloud underside is pale blue-grey (luminance < 235), not saturated white (>250)
   const noonGlareCenter = regionStats(noonGlarePng, {
     x: Math.floor(noonGlarePng.width / 2) - 20,
     y: Math.floor(noonGlarePng.height / 2) - 20,
     w: 40,
     h: 40,
   });
-  console.log('m12b noon glare center:', JSON.stringify(noonGlareCenter));
-  expect(noonGlareCenter.luminance).toBeGreaterThan(245);
-  expect(noonGlareCenter.r).toBeGreaterThan(245);
-  expect(noonGlareCenter.g).toBeGreaterThan(245);
-  expect(noonGlareCenter.b).toBeGreaterThan(245);
+  console.log('m12b noon glare center (blocked by cloud):', JSON.stringify(noonGlareCenter));
+  expect(noonGlareCenter.luminance).toBeLessThan(235);
+  expect(noonGlareCenter.luminance).toBeGreaterThan(150);
 
-  // Restore fancy clouds
+  // Reposition player back to overlooking west for sunset review
   await page.evaluate(() => {
-    window.__blockcraft!.setClouds!('fancy');
+    const y = window.__blockcraft!.getHeight!(2, 0) + 2;
+    window.__blockcraft!.teleport!(2.5, y, 0.5, Math.PI, 0.05);
   });
 
   // 3. Visual Review: m12-sun-glare-sunset.png looking near sunset showing the disc

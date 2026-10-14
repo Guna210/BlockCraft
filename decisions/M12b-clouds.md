@@ -1,50 +1,47 @@
 # M12b — Clouds and Sun Glare Decisions
 
-## Owner Decisions
+## Round 1 Redesign & Owner Decisions
 
-1. **Cloud field at y=192 (`src/render/clouds.ts`)**:
-   - Seeded, deterministic 2D periodic noise grid on a 32×32 cell grid (each cell 12×12 blocks, region size 384×384 blocks).
-   - Rendered as extruded 3D volumes 4 blocks thick (y=192 to y=196) with soft shading:
-     - Top faces: `CLOUD_SHADE_TOP = 1.0` (lighter tops).
-     - Side faces: `CLOUD_SHADE_SIDE = 0.85` (intermediate sides).
-     - Bottom faces: `CLOUD_SHADE_BOTTOM = 0.70` (darker bottoms).
-     - Internal faces between adjacent active cells are culled.
-   - Wind drift along +X at 1.0 block/s, advanced on the fixed simulation tick (`(worldTime / 20.0) * 1.0` blocks).
-   - Coverage roughly 30–40% (quantile threshold set to exactly 35% active cells, 358 out of 1024 cells).
-   - Lit by M12 sky brightness (`skyLightMultiplier`) and time of day:
-     - Daytime: bright crisp white with subtle cool shading.
-     - Dusk / sunset: soft twilight grey.
-     - Night: dark grey / navy.
+1. **Opaque clouds (`src/render/clouds.ts`)**:
+   - Drawn fully solid (alpha 1.0, depth-tested against the sky dome, depth write enabled `gl.depthMask(true)`, blending disabled `gl.disable(gl.BLEND)`), with zero translucency.
+   - Clouds completely hide the sun disc and its bright glare halo behind them; no glare bleeds through the cloud underside.
 
-2. **Fast 2D option**:
-   - Added `clouds: 'fancy' | 'fast' | 'off'` (default `'fancy'`) to `settings` in `src/engine/settings.ts`.
-   - In `'fast'` mode, `CloudRenderer` renders a single flat plane at y=192 textured with a 32×32 pixel texture generated from the identical active cell grid with `NEAREST` filtering and `REPEAT` wrapping, drastically reducing vertex and triangle count.
-   - In `'off'` mode, cloud rendering is skipped.
-   - Added `setClouds(mode: 'fancy' | 'fast' | 'off')` to the debug API in `src/debug/api/clouds.ts` and registered in `src/debug/api/index.ts`.
+2. **Distance fade only far away**:
+   - No fade overhead, near the camera, or toward screen edges.
+   - Distance metric is horizontal distance across the cloud sheet: `length(worldPos.xz - cameraPos.xz)`.
+   - Clouds stay fully solid until the outer ~30% of cloud range (`fogStart = cloudRange * 0.70`).
+   - In the outer ~30%, cloud RGB seamlessly blends into `skyAtmosphereColor` in the view direction (`finalRgb = mix(litCol, skyCol, fogFactor)`). Fragments with `dist >= cloudRange` are discarded.
+   - No fade based on view angle or pitch.
 
-3. **Distance fade into sky colour**:
-   - Cloud draw distance is tied to render distance (`fogEnd = Math.max(140, (renderDistance - 1) * 16)`).
-   - Horizontal distance `length(worldPos.xz - cameraPos.xz)` drives `smoothstep(fogStart, fogEnd, dist)` to seamlessly blend cloud RGB into `skyAtmosphereColor` in the view direction and fade alpha to 0. Fragments with `fogFactor >= 0.999` are discarded.
-   - Leaves the band near the horizon pure sky so `tests/e2e/helpers/sky-holes.ts` and horizon classification remain pure sky dome.
+3. **Range reaching visibly to horizon**:
+   - Cloud range is decoupled from terrain fog: `cloudRange = Math.max(768, 2 * (renderDistance - 1) * 16)` blocks.
+   - Reaches visibly to the horizon at any render distance.
+   - Static GPU buffers: mesh generated once at init time. Tiled regions around player are dynamically calculated (`radius = Math.ceil(fogEnd / regSize)`) with CPU bounding-box distance culling against `fogEnd`. Zero per-frame mesh allocation or buffer re-creation.
 
-4. **SwiftShader performance and GPU buffer reuse**:
-   - 3D volume mesh and 2D fast plane mesh are built once at `CloudRenderer` construction time and kept in static GPU VBO/VAO buffers.
-   - No per-frame heap allocation or re-meshing.
-   - Wind drift and camera tracking are applied via uniform offset `u_regionOffset` across a 3×3 grid of 384-block region instances. Instances outside `fogEnd` are culled on the CPU before drawing.
-   - Draws in 1 to 5 draw calls total, well within M04 frame budgets.
+4. **Irregular blocky cloud shapes**:
+   - Procedural generation on a 12-block cell grid (`CLOUD_CELL_SIZE = 12`, `CLOUD_GRID_CELLS = 32`, 4 blocks thick `y=192..196`).
+   - Uses multi-octave periodic noise (periods 8, 4, 2 cells) with dual-offset carving waves and cellular jitter.
+   - Interior hole punching pass carves notches and holes into large clusters (cells with 7+ active neighbors).
+   - Results in a natural mix of lone cells (components of size 1), small clumps (sizes 2–5), and larger ragged clusters with notches and interior holes.
+   - No single large smooth blob (max cluster size bounded < 200).
+   - Strict 30–40% coverage (target exactly 35%, 358 out of 1024 cells).
 
-5. **Owner-requested sun glare (`src/render/sky.ts`)**:
-   - Drawn in the sky shader `SKY_FS` based on view ray alignment with `u_sunDir` and sun height `u_sunDir.y`.
-   - When the sun is high (noon, `sunDir.y ≈ 0.966`), draws a large, soft, bright halo that saturates to pure blinding white `vec3(1.0, 1.0, 1.0)` in the center, and the sun billboard quad's alpha is faded to 0 so the pixel sun disc cannot be made out.
-   - As the sun nears the horizon (sunset at 12000 ticks, `sunDir.y = 0.0`), the halo shrinks, dims (max intensity ≤ 0.40) and warms to amber-orange (`vec3(1.0, 0.55, 0.15)`), while the sun billboard alpha is fully restored (`0.818`), so the pixel sun disc is clearly readable at sunset.
-   - Outside horizontal views at noon (`cosSun <= 0.26`), glare is inactive, leaving the top region of horizontal noon views pure sky blue (`hue ≈ 206°`, `luminance > 150`).
+5. **Shading matching reference image**:
+   - Underside (`CLOUD_SHADE_BOTTOM = 0.78`): flat pale blue-grey, ~0.76 of white, subtly tinted toward the sky colour (`mix(vec3(0.76, 0.77, 0.80), skyCol, 0.12)`).
+   - Sides (`CLOUD_SHADE_SIDE = 0.96`): near-white (`vec3(0.96, 0.97, 0.99)`), creating a distinct thin bright rim along all outer stepped edges and hole perimeters when viewed from below.
+   - Top (`CLOUD_SHADE_TOP = 1.0`): pure white (`vec3(1.0, 1.0, 1.0)`).
+   - Scaled by `(0.20 + 0.80 * u_skyBrightness)` and time of day, darkening to muted purple-grey at dusk and dark navy at night.
+   - Sun glare is preserved in the sky shader, but completely blocked by opaque clouds passing in front of it.
 
-6. **Test integrity & Decision 6 pre-approval**:
-   - Distance fade in Decision 3 naturally leaves the horizon band and horizontal top-quarter view pure sky.
-   - No lines were added to other milestones' tests.
-   - Existing M12a tests pass unchanged.
+6. **Owner-approved lines in existing tests**:
+   - `tests/e2e/m12.spec.ts:264`: `window.__blockcraft!.setClouds!('off');` inside the first `page.evaluate` of `M12a-fix RD8 noon and tick 10000 sky remain detectable above the fog edge`.
+     - *Reason*: The camera in this test is elevated on an overlook near y=192 and tests the RD8 horizon sky coverage against a strict ≥ 0.98 threshold, which was obstructed by overhead clouds.
+   - `tests/e2e/m04.spec.ts:281`: `window.__blockcraft!.setClouds!('off');` inside the first `page.evaluate` of `at render distance 12 the terrain reaches the horizon with no holes`.
+     - *Reason*: Eye at 40 blocks above highest ground looking 20° down caused clouds to cover the top screen edge, interfering with the sky-hole detector on attempt 1.
+   - Clouds remain enabled in all other tests, including the full M12b suite and all visual review screenshots.
 
 7. **Visual review screenshots (`docs/screenshots/M12b/`)**:
-   - `m12-noon.png`: Looking west at pitch 0.12 from the overlook terrace; foreground grass terrace with two torches, stepped stone mountain on the left in blue horizon fog, and extruded 3D white voxel clouds floating in the upper sky with soft shading.
-   - `m12-sun-glare-noon.png`: Looking directly at the noon sun at pitch 75°; a soft, large, blinding white circular glare halo saturating to pure white, completely washing out the pixel sun disc.
-   - `m12-sun-glare-sunset.png`: Looking west at pitch 0.05 at sunset (tick 12000); warm orange horizon glow with a shrunk, dimmed amber halo surrounding the crisp pixel-art sun disc.
+   - `m12-clouds-overhead.png`: noon, pitch ~25° up, camera on high ground terrace (well below y=192). Directly comparable to the reference image, showing flat blocky cloud slabs with pale blue-grey undersides, thin bright rims, ragged stepped edges, holes, and perspective receding toward the horizon.
+   - `m12-noon.png`: looking west at pitch 0.12. Foreground terrace and torches, misty peak on left in blue fog, and vast 3D blocky cloud canopy stretching across the sky.
+   - `m12-sun-glare-noon.png`: looking up at pitch 75° toward the noon sun with cloud cell `(cx=6, cz=2)` passing directly over the sun, visibly and completely blocking the sun disc and intense glare center with its solid pale blue-grey underside and bright rim, while the glare halo shines around the cloud edge.
+   - `m12-sun-glare-sunset.png`: looking west at sunset (tick 12000). Darkened dusk clouds overhead, setting sun with crisp pixel disc and warm amber halo, and warm glowing horizon.

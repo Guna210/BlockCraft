@@ -29,10 +29,10 @@ describe('M12b — Clouds & Sun Glare', () => {
       expect(CLOUD_REGION_SIZE).toBe(384);
     });
 
-    it('defines soft shading with lighter top, darker bottom and intermediate sides', () => {
+    it('defines shading with white top, near-white sides for bright rim, and pale blue-grey bottom', () => {
       expect(CLOUD_SHADE_TOP).toBe(1.0);
-      expect(CLOUD_SHADE_SIDE).toBe(0.85);
-      expect(CLOUD_SHADE_BOTTOM).toBe(0.7);
+      expect(CLOUD_SHADE_SIDE).toBe(0.96);
+      expect(CLOUD_SHADE_BOTTOM).toBe(0.78);
       expect(CLOUD_SHADE_TOP).toBeGreaterThan(CLOUD_SHADE_SIDE);
       expect(CLOUD_SHADE_SIDE).toBeGreaterThan(CLOUD_SHADE_BOTTOM);
     });
@@ -58,28 +58,75 @@ describe('M12b — Clouds & Sun Glare', () => {
       expect(gridA1).not.toEqual(gridB);
     });
 
-    it('forms contiguous cloud clusters rather than isolated single-cell noise', () => {
+    it('mixes lone cells, small clumps, and larger ragged clusters with notches and holes', () => {
       const active = generateCloudGrid(12006, 32, 32, 0.35);
-      let cellsWithActiveNeighbors = 0;
-      let totalActive = 0;
+      const visited = new Array<boolean>(32 * 32).fill(false);
+      const components: number[] = [];
 
-      for (let z = 0; z < 32; z++) {
+      for (let y = 0; y < 32; y++) {
         for (let x = 0; x < 32; x++) {
-          if (!active[z * 32 + x]) continue;
-          totalActive++;
-          const nN = active[((z - 1 + 32) % 32) * 32 + x];
-          const nS = active[((z + 1) % 32) * 32 + x];
-          const nW = active[z * 32 + ((x - 1 + 32) % 32)];
-          const nE = active[z * 32 + ((x + 1) % 32)];
-          if (nN || nS || nW || nE) {
-            cellsWithActiveNeighbors++;
+          const idx = y * 32 + x;
+          if (!active[idx] || visited[idx]) continue;
+          let size = 0;
+          const queue: [number, number][] = [[x, y]];
+          visited[idx] = true;
+          while (queue.length > 0) {
+            const [cx, cy] = queue.shift()!;
+            size++;
+            for (const [dx, dy] of [
+              [1, 0],
+              [-1, 0],
+              [0, 1],
+              [0, -1],
+            ] as const) {
+              const nx = (cx + dx + 32) % 32;
+              const ny = (cy + dy + 32) % 32;
+              const nidx = ny * 32 + nx;
+              if (active[nidx] && !visited[nidx]) {
+                visited[nidx] = true;
+                queue.push([nx, ny]);
+              }
+            }
           }
+          components.push(size);
         }
       }
 
-      // Vast majority of cloud cells (> 90%) are connected to neighbors in clusters
-      const clusteringFraction = cellsWithActiveNeighbors / totalActive;
-      expect(clusteringFraction).toBeGreaterThan(0.9);
+      const loneCells = components.filter((s) => s === 1).length;
+      const smallClumps = components.filter((s) => s >= 2 && s <= 5).length;
+      const mediumClusters = components.filter((s) => s >= 6 && s <= 30).length;
+      const largeClusters = components.filter((s) => s > 30).length;
+      const maxCluster = Math.max(...components);
+
+      // Verify mix of shapes per Requirement 4
+      expect(loneCells).toBeGreaterThan(0);
+      expect(smallClumps).toBeGreaterThan(0);
+      expect(mediumClusters).toBeGreaterThan(0);
+      expect(largeClusters).toBeGreaterThan(0);
+      // No single giant smooth blob dominating the grid
+      expect(maxCluster).toBeLessThan(200);
+
+      // Verify presence of notches/holes (inactive cells with 3+ active neighbors)
+      let holes = 0;
+      for (let y = 0; y < 32; y++) {
+        for (let x = 0; x < 32; x++) {
+          if (!active[y * 32 + x]) {
+            let activeNeighbors = 0;
+            for (const [dx, dy] of [
+              [1, 0],
+              [-1, 0],
+              [0, 1],
+              [0, -1],
+            ] as const) {
+              const nx = (x + dx + 32) % 32;
+              const ny = (y + dy + 32) % 32;
+              if (active[ny * 32 + nx]) activeNeighbors++;
+            }
+            if (activeNeighbors >= 3) holes++;
+          }
+        }
+      }
+      expect(holes).toBeGreaterThan(0);
     });
   });
 
