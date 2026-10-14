@@ -17,15 +17,15 @@ import { setClouds } from '../../src/debug/api/clouds';
 
 describe('M12b — Clouds & Sun Glare', () => {
   describe('Cloud field configuration and geometry constants', () => {
-    it('is placed at y=192 and has thickness of 4 blocks (y=192 to y=196)', () => {
+    it('is placed at y=192 and has thickness of 3 blocks (y=192 to y=195)', () => {
       expect(CLOUD_Y_BOTTOM).toBe(192);
-      expect(CLOUD_THICKNESS).toBe(4);
-      expect(CLOUD_Y_TOP).toBe(196);
+      expect(CLOUD_THICKNESS).toBe(3);
+      expect(CLOUD_Y_TOP).toBe(195);
     });
 
-    it('uses 12x12-block cells on a 32x32 grid (384-block region)', () => {
-      expect(CLOUD_CELL_SIZE).toBe(12);
-      expect(CLOUD_GRID_CELLS).toBe(32);
+    it('uses 8x8-block cells on a 48x48 grid (384-block region)', () => {
+      expect(CLOUD_CELL_SIZE).toBe(8);
+      expect(CLOUD_GRID_CELLS).toBe(48);
       expect(CLOUD_REGION_SIZE).toBe(384);
     });
 
@@ -40,33 +40,33 @@ describe('M12b — Clouds & Sun Glare', () => {
 
   describe('Procedural cloud noise grid and coverage', () => {
     it('generates coverage roughly 30–40 % (target ~35 %)', () => {
-      const active = generateCloudGrid(12006, 32, 32, 0.35);
+      const active = generateCloudGrid(12006, 48, 48, 0.35);
       const activeCount = active.filter(Boolean).length;
-      const coverage = activeCount / (32 * 32);
+      const coverage = activeCount / (48 * 48);
 
       expect(coverage).toBeGreaterThanOrEqual(0.3);
       expect(coverage).toBeLessThanOrEqual(0.4);
-      expect(activeCount).toBe(345); // 33.69 %
+      expect(activeCount).toBe(721); // 31.29 %
     });
 
     it('is deterministic for the same seed and produces different shapes for different seeds', () => {
-      const gridA1 = generateCloudGrid(12006, 32, 32, 0.35);
-      const gridA2 = generateCloudGrid(12006, 32, 32, 0.35);
-      const gridB = generateCloudGrid(99999, 32, 32, 0.35);
+      const gridA1 = generateCloudGrid(12006, 48, 48, 0.35);
+      const gridA2 = generateCloudGrid(12006, 48, 48, 0.35);
+      const gridB = generateCloudGrid(99999, 48, 48, 0.35);
 
       expect(gridA1).toEqual(gridA2);
       expect(gridA1).not.toEqual(gridB);
     });
 
     it('ensures no active cell belongs to a 1-cell-wide strand unless it is a lone cell or part of a 2–3 cell clump', () => {
-      const active = generateCloudGrid(12006, 32, 32, 0.35);
-      const visited = new Array<boolean>(32 * 32).fill(false);
-      const compId = new Int32Array(32 * 32).fill(-1);
+      const active = generateCloudGrid(12006, 48, 48, 0.35);
+      const visited = new Array<boolean>(48 * 48).fill(false);
+      const compId = new Int32Array(48 * 48).fill(-1);
       const compSizes: number[] = [];
 
-      for (let y = 0; y < 32; y++) {
-        for (let x = 0; x < 32; x++) {
-          const idx = y * 32 + x;
+      for (let y = 0; y < 48; y++) {
+        for (let x = 0; x < 48; x++) {
+          const idx = y * 48 + x;
           if (!active[idx] || visited[idx]) continue;
           const cid = compSizes.length;
           let size = 0;
@@ -82,9 +82,9 @@ describe('M12b — Clouds & Sun Glare', () => {
               [0, 1],
               [0, -1],
             ] as const) {
-              const nx = (cx + dx + 32) % 32;
-              const ny = (cy + dy + 32) % 32;
-              const nidx = ny * 32 + nx;
+              const nx = (cx + dx + 48) % 48;
+              const ny = (cy + dy + 48) % 48;
+              const nidx = ny * 48 + nx;
               if (active[nidx] && !visited[nidx]) {
                 visited[nidx] = true;
                 compId[nidx] = cid;
@@ -104,15 +104,15 @@ describe('M12b — Clouds & Sun Glare', () => {
           [0, -1],
           [-1, -1],
         ] as const) {
-          const x0 = (x + ox + 32) % 32;
-          const x1 = (x0 + 1) % 32;
-          const y0 = (y + oy + 32) % 32;
-          const y1 = (y0 + 1) % 32;
+          const x0 = (x + ox + 48) % 48;
+          const x1 = (x0 + 1) % 48;
+          const y0 = (y + oy + 48) % 48;
+          const y1 = (y0 + 1) % 48;
           if (
-            active[y0 * 32 + x0] &&
-            active[y0 * 32 + x1] &&
-            active[y1 * 32 + x0] &&
-            active[y1 * 32 + x1]
+            active[y0 * 48 + x0] &&
+            active[y0 * 48 + x1] &&
+            active[y1 * 48 + x0] &&
+            active[y1 * 48 + x1]
           ) {
             return true;
           }
@@ -121,9 +121,9 @@ describe('M12b — Clouds & Sun Glare', () => {
       };
 
       let strandViolations = 0;
-      for (let y = 0; y < 32; y++) {
-        for (let x = 0; x < 32; x++) {
-          const idx = y * 32 + x;
+      for (let y = 0; y < 48; y++) {
+        for (let x = 0; x < 48; x++) {
+          const idx = y * 48 + x;
           if (!active[idx]) continue;
           const size = compSizes[compId[idx]!]!;
           if (size >= 4) {

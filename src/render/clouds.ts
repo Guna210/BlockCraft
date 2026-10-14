@@ -11,11 +11,11 @@ import {
 import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { LCG } from './textures/noise';
 
-export const CLOUD_CELL_SIZE = 12; // 12x12-block cells per Decision 1
-export const CLOUD_GRID_CELLS = 32; // 32x32 cells = 384x384 blocks region
+export const CLOUD_CELL_SIZE = 8; // 8x8-block cells (M12b-fix: smaller cells so clouds look farther away)
+export const CLOUD_GRID_CELLS = 48; // 48x48 cells = 384x384 blocks region
 export const CLOUD_REGION_SIZE = CLOUD_CELL_SIZE * CLOUD_GRID_CELLS; // 384 blocks
 export const CLOUD_Y_BOTTOM = 192; // Cloud field at y=192 per Decision 1
-export const CLOUD_THICKNESS = 4; // Extruded 3D volumes ~4 blocks thick per Decision 1
+export const CLOUD_THICKNESS = 3; // Extruded 3D volumes 3 blocks thick (M12b-fix)
 export const CLOUD_Y_TOP = CLOUD_Y_BOTTOM + CLOUD_THICKNESS; // 196
 export const CLOUD_WIND_SPEED = 1.0; // 1 block/s along +X per Decision 1
 export const CLOUD_SHADE_TOP = 1.0; // Top face: white
@@ -79,11 +79,12 @@ export function generateCloudGrid(
   const rawValues = new Float32Array(width * height);
   for (let cz = 0; cz < height; cz++) {
     for (let cx = 0; cx < width; cx++) {
-      // Lower frequency periodic noise: period 8 (4-cell wavelength) + period 16 (2-cell wavelength)
+      // Lower frequency periodic noise: 4-cell wavelength + 2-cell wavelength octaves
+      // (period width/4 and width/2, i.e. 8 and 16 on the 32-cell grid)
       const gx = (cx + 8) % width;
       const gz = cz;
-      const v1 = perlin2DPeriodic(gx / 4, gz / 4, 8);
-      const v2 = perlin2DPeriodic(gx / 2, gz / 2, 16);
+      const v1 = perlin2DPeriodic(gx / 4, gz / 4, width / 4);
+      const v2 = perlin2DPeriodic(gx / 2, gz / 2, width / 2);
       rawValues[cz * width + cx] = v1 * 0.8 + v2 * 0.2;
     }
   }
@@ -387,37 +388,89 @@ export class CloudRenderer {
       fancyVertices.push(p3[0], p3[1], p3[2], shade, u1, v0);
     };
 
+    // Greedy-merge active cells into maximal rectangles for the top and bottom faces
+    // (built once; the merged quads cut the triangle count versus one quad per cell).
+    const merged = new Uint8Array(width * height);
+    for (let cz = 0; cz < height; cz++) {
+      for (let cx = 0; cx < width; cx++) {
+        if (merged[cz * width + cx] || !this.activeGrid[cz * width + cx]) continue;
+        let w = 1;
+        while (
+          cx + w < width &&
+          this.activeGrid[cz * width + cx + w] &&
+          !merged[cz * width + cx + w]
+        ) {
+          w++;
+        }
+        let h = 1;
+        for (; cz + h < height; h++) {
+          let rowOk = true;
+          for (let k = 0; k < w; k++) {
+            const idx = (cz + h) * width + cx + k;
+            if (!this.activeGrid[idx] || merged[idx]) {
+              rowOk = false;
+              break;
+            }
+          }
+          if (!rowOk) break;
+        }
+        for (let dz = 0; dz < h; dz++) {
+          for (let dx = 0; dx < w; dx++) merged[(cz + dz) * width + cx + dx] = 1;
+        }
+        const x0 = cx * cellSize;
+        const x1 = (cx + w) * cellSize;
+        const z0 = cz * cellSize;
+        const z1 = (cz + h) * cellSize;
+        addQuad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], CLOUD_SHADE_TOP);
+        addQuad([x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], CLOUD_SHADE_BOTTOM);
+      }
+    }
+
+    // Side faces: merge consecutive exposed cell edges into single long quads
     for (let cz = 0; cz < height; cz++) {
       for (let cx = 0; cx < width; cx++) {
         if (!isActive(cx, cz)) continue;
-
         const x0 = cx * cellSize;
         const x1 = (cx + 1) * cellSize;
         const z0 = cz * cellSize;
         const z1 = (cz + 1) * cellSize;
-
-        // Top face (y1, lighter shade 1.0)
-        addQuad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], CLOUD_SHADE_TOP);
-
-        // Bottom face (y0, darker shade 0.70)
-        addQuad([x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], CLOUD_SHADE_BOTTOM);
-
-        // Side faces: intermediate shade 0.85
-        // North (-Z)
-        if (!isActive(cx, cz - 1)) {
-          addQuad([x1, y1, z0], [x1, y0, z0], [x0, y0, z0], [x0, y1, z0], CLOUD_SHADE_SIDE);
+        // Runs along X (north/south faces) start where the previous cell is not an exposed edge
+        if (
+          !isActive(cx, cz - 1) &&
+          !(cx > 0 && isActive(cx - 1, cz) && !isActive(cx - 1, cz - 1))
+        ) {
+          let e = cx;
+          while (isActive(e + 1, cz) && !isActive(e + 1, cz - 1) && e + 1 < width) e++;
+          const xe = (e + 1) * cellSize;
+          addQuad([xe, y1, z0], [xe, y0, z0], [x0, y0, z0], [x0, y1, z0], CLOUD_SHADE_SIDE);
         }
-        // South (+Z)
-        if (!isActive(cx, cz + 1)) {
-          addQuad([x0, y1, z1], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], CLOUD_SHADE_SIDE);
+        if (
+          !isActive(cx, cz + 1) &&
+          !(cx > 0 && isActive(cx - 1, cz) && !isActive(cx - 1, cz + 1))
+        ) {
+          let e = cx;
+          while (isActive(e + 1, cz) && !isActive(e + 1, cz + 1) && e + 1 < width) e++;
+          const xe = (e + 1) * cellSize;
+          addQuad([x0, y1, z1], [x0, y0, z1], [xe, y0, z1], [xe, y1, z1], CLOUD_SHADE_SIDE);
         }
-        // West (-X)
-        if (!isActive(cx - 1, cz)) {
-          addQuad([x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1], CLOUD_SHADE_SIDE);
+        // Runs along Z (west/east faces)
+        if (
+          !isActive(cx - 1, cz) &&
+          !(cz > 0 && isActive(cx, cz - 1) && !isActive(cx - 1, cz - 1))
+        ) {
+          let e = cz;
+          while (isActive(cx, e + 1) && !isActive(cx - 1, e + 1) && e + 1 < height) e++;
+          const ze = (e + 1) * cellSize;
+          addQuad([x0, y1, z0], [x0, y0, z0], [x0, y0, ze], [x0, y1, ze], CLOUD_SHADE_SIDE);
         }
-        // East (+X)
-        if (!isActive(cx + 1, cz)) {
-          addQuad([x1, y1, z1], [x1, y0, z1], [x1, y0, z0], [x1, y1, z0], CLOUD_SHADE_SIDE);
+        if (
+          !isActive(cx + 1, cz) &&
+          !(cz > 0 && isActive(cx, cz - 1) && !isActive(cx + 1, cz - 1))
+        ) {
+          let e = cz;
+          while (isActive(cx, e + 1) && !isActive(cx + 1, e + 1) && e + 1 < height) e++;
+          const ze = (e + 1) * cellSize;
+          addQuad([x1, y1, ze], [x1, y0, ze], [x1, y0, z0], [x1, y1, z0], CLOUD_SHADE_SIDE);
         }
       }
     }

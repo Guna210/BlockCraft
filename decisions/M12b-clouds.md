@@ -51,3 +51,16 @@
    - Cloud range reduced to `cloudRange = Math.max(512, 2 * terrainFogEnd)` (512 blocks at RD8).
    - Smooth fade starts earlier at 50% of range (`fogStart = cloudRange * 0.50`), gently blending clouds into the sky dome before reaching `fogEnd`. Clouds never end in a visible line, eliminating flickery far cloud bands.
    - Reduces fancy mode triangle count from ~59,800 to 25,603 triangles.
+
+## Round 3 (M12b-fix): Apparent Cloud Distance
+
+1. **Honest sea-level shot.** The old `m12-clouds-overhead.png` was taken from the mountain terrace (`maxH + 3`, only ~20–40 blocks under the y=192 clouds) while claiming "near sea level". It is now taken from a real dry-land column near spawn (height 65–72, chosen where terrain within 16 blocks rises least; eye y = 69.6 with seed `blockcraft-test-seed-42`), noon, pitch 25° up, yaw 0 (looking along the +X wind). The test asserts the eye is within y 67–80. `m12-noon.png` stays on the terrace. New `m12-clouds-mountain.png` is the same view (pitch 25°, yaw 0) from the terrace.
+2. **Differences seen versus the reference at sea level (before tuning).** Cells looked about 1.5× too big (12-block cells read as large slabs), there were few, widely spaced clouds (large empty gaps), the 4-block thickness showed as a heavy bright rim, and the field visibly thinned out into few big clouds instead of many small ones receding to the horizon.
+3. **Tuning (allowed levers only; height stays y=192):**
+   - Cell size 12 → 8 blocks; grid 32 → 48 cells so the tile region stays 384 blocks. The noise octaves scale with the grid (periods `width/4` and `width/2`, i.e. 12 and 24; they were 8 and 16), so the blob wavelength in cells is unchanged (4 and 2 cells) and blobs are 1.5× smaller in blocks. The 2×2 morphological opening is unchanged, so there are still no 1-cell-wide strands and no interior holes.
+   - Thickness 4 → 3 blocks (`CLOUD_Y_TOP` 195).
+   - Coverage target stays 35 %; the generated grid has 721 / 2304 = 31.3 % active cells (within the 30–40 % band).
+   - Cloud range and fade unchanged (range `max(512, 2·fogEnd)`, fade from 50 %).
+4. **Triangle budget.** Smaller cells mean more cells and more edges, so the single-quad-per-cell mesh would have grown. The mesh is now greedy-merged once at construction: top and bottom faces become maximal rectangles, and straight runs of exposed side edges become single quads. Buffers are still static and nothing is re-meshed per frame. Fancy-mode triangles at the e2e camera went 25,603 → 12,643.
+5. **Glare test placement.** The M12b glare screenshot used a hard-coded x=-5 so a cloud cell sat over the sun. With a new grid that no longer holds, so the M12b test now aims the centre ray exactly at the noon sun from an open land column whose sun ray passes through the middle (3×3 cells) of a cloud, computed from the same seeded grid and wind offset. The assertions (luminance 150–235 at centre) are unchanged. This is inside the M12b test only; no other test changed and no extra `setClouds('off')` lines were added.
+6. **Not changed / owner decision.** Cloud height is fixed by SPEC at y=192. From peaks near y=170 clouds are inherently close (~20–25 blocks above). Raising the height would be an owner SPEC decision.

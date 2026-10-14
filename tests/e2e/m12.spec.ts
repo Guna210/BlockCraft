@@ -5,6 +5,15 @@ import { waitForStreamingIdle } from './helpers/flight';
 import { isSkyPixel } from './helpers/sky-holes';
 import { diffFraction } from '../harness/pixels';
 import { LCG } from '../../src/render/textures/noise';
+import {
+  generateCloudGrid,
+  CLOUD_CELL_SIZE,
+  CLOUD_GRID_CELLS,
+  CLOUD_Y_BOTTOM,
+  CLOUD_Y_TOP,
+  CLOUD_WIND_SPEED,
+} from '../../src/render/clouds';
+import { sunDirection } from '../../src/world/time';
 
 function pixelLuminance(png: PNG, x: number, y: number): number {
   const i = (y * png.width + x) * 4;
@@ -372,13 +381,51 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   console.log('m12b noon clouds cloudPixels:', cloudPixels);
   expect(cloudPixels).toBeGreaterThan(500);
 
-  // 2. Visual Review: m12-clouds-overhead.png at noon, pitch ~25° up, from near sea level (eye around y=70–80)
+  // 2a. Visual Review: m12-clouds-mountain.png, the same view from the mountain terrace
   await page.evaluate(async () => {
     const api = window.__blockcraft!;
     api.setTimeOfDay!(6000);
-    api.look!(Math.PI, (25 * Math.PI) / 180);
+    api.look!(0, (25 * Math.PI) / 180);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });
+  await assertAndSaveScreenshot({
+    name: 'm12-clouds-mountain',
+    milestone: 'M12b',
+  });
+  saveScreenshotToDocs('m12-clouds-mountain', 'M12b');
+
+  // 2b. Visual Review: m12-clouds-overhead.png at noon, pitch ~25° up, looking along the wind
+  // (+X), from a real low land column near spawn (eye around y=70-80)
+  const lowEyeY = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    // Open low land: dry land with eye at y~70-80, picking the column whose surroundings
+    // (within 16 blocks) rise least above it, so no cliff or canyon wall fills the shot.
+    let best: { x: number; z: number; h: number; rise: number } | null = null;
+    for (let x = -72; x <= 72; x += 4) {
+      for (let z = -72; z <= 72; z += 4) {
+        const h = api.getHeight!(x, z);
+        if (h < 65 || h > 72) continue;
+        let maxH = h;
+        for (let dx = -16; dx <= 16; dx += 4) {
+          for (let dz = -16; dz <= 16; dz += 4) {
+            maxH = Math.max(maxH, api.getHeight!(x + dx, z + dz));
+          }
+        }
+        const rise = maxH - h;
+        if (!best || rise < best.rise) best = { x, z, h, rise };
+      }
+    }
+    if (!best) throw new Error('no low land column found near spawn');
+    const eyeY = best.h + 2.6;
+    api.setTimeOfDay!(6000);
+    api.teleport!(best.x + 0.5, eyeY, best.z + 0.5, 0, (25 * Math.PI) / 180);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return eyeY;
+  });
+  console.log('m12b sea-level eye y:', lowEyeY);
+  expect(lowEyeY).toBeGreaterThanOrEqual(67);
+  expect(lowEyeY).toBeLessThanOrEqual(80);
+  await waitForStreamingIdle(page, 120_000);
   await assertAndSaveScreenshot({
     name: 'm12-clouds-overhead',
     milestone: 'M12b',
@@ -386,14 +433,87 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   saveScreenshotToDocs('m12-clouds-overhead', 'M12b');
 
   // 3. Visual Review: m12-sun-glare-noon.png looking up toward the sun at noon with a cloud passing over the sun visibly blocking glare
-  await page.evaluate(async () => {
-    const api = window.__blockcraft!;
-    api.setTimeOfDay!(6000);
-    // Position at x = -5 on terrace so cloud cell (cx=6, cz=2) is directly between camera and sun
-    const y = api.getHeight!(-5, 0) + 2;
-    api.teleport!(-5.0, y, 0.5, Math.PI / 2, (75 * Math.PI) / 180);
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  });
+  // Aim the centre ray exactly at the noon sun from a loaded land column whose ray passes
+  // through the middle of a cloud slab (same seeded grid and wind offset as the renderer).
+  const sun = sunDirection(6000);
+  const sunYaw = Math.atan2(sun[2], sun[0]);
+  const sunPitch = Math.asin(sun[1]);
+  const grid = generateCloudGrid(12006, CLOUD_GRID_CELLS, CLOUD_GRID_CELLS, 0.35);
+  const windOffset = (6000 / 20) * CLOUD_WIND_SPEED;
+  const cellAt = (wx: number, wz: number): boolean => {
+    const cx = Math.floor((wx - windOffset) / CLOUD_CELL_SIZE);
+    const cz = Math.floor(wz / CLOUD_CELL_SIZE);
+    const m = (n: number) => ((n % CLOUD_GRID_CELLS) + CLOUD_GRID_CELLS) % CLOUD_GRID_CELLS;
+    return grid[m(cz) * CLOUD_GRID_CELLS + m(cx)]!;
+  };
+  const glareSpot = await page.evaluate(
+    ({ sunDir, cands }) => {
+      const api = window.__blockcraft!;
+      const out: { x: number; z: number; eyeY: number }[] = [];
+      for (const c of cands) {
+        const h = api.getHeight!(c.x, c.z);
+        // Skip canyon floors: nothing within 8 blocks may rise above head height
+        let open = true;
+        for (let dx = -8; dx <= 8 && open; dx += 4) {
+          for (let dz = -8; dz <= 8; dz += 4) {
+            if (api.getHeight!(c.x + dx, c.z + dz) > h + 2) {
+              open = false;
+              break;
+            }
+          }
+        }
+        if (open) out.push({ x: c.x, z: c.z, eyeY: h + 2 });
+      }
+      void sunDir;
+      return out;
+    },
+    {
+      sunDir: sun,
+      cands: Array.from({ length: 33 * 33 }, (_, i) => ({
+        x: -64 + (i % 33) * 4,
+        z: -64 + Math.floor(i / 33) * 4,
+      })),
+    },
+  );
+  let spot: { x: number; z: number; eyeY: number } | null = null;
+  for (const c of glareSpot) {
+    // Ray from the camera along the sun direction; require the whole cross-section of the
+    // ray through the slab (bottom and top) to sit inside a 3x3 block of active cells.
+    const sample = (planeY: number) => {
+      const t = (planeY - c.eyeY) / sun[1];
+      return [c.x + sun[0] * t, c.z + sun[2] * t] as const;
+    };
+    const [bx, bz] = sample(CLOUD_Y_BOTTOM);
+    const [tx, tz] = sample(CLOUD_Y_TOP);
+    let all = true;
+    for (const [px, pz] of [
+      [bx, bz],
+      [tx, tz],
+    ] as const) {
+      for (let dx = -1; dx <= 1 && all; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (!cellAt(px + dx * CLOUD_CELL_SIZE, pz + dz * CLOUD_CELL_SIZE)) {
+            all = false;
+            break;
+          }
+        }
+      }
+    }
+    if (all) {
+      spot = c;
+      break;
+    }
+  }
+  expect(spot, 'a land column whose sun ray crosses the middle of a cloud').not.toBeNull();
+  await page.evaluate(
+    async ({ s, yaw, pitch }) => {
+      const api = window.__blockcraft!;
+      api.setTimeOfDay!(6000);
+      api.teleport!(s.x + 0.5, s.eyeY, s.z + 0.5, yaw, pitch);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    },
+    { s: spot!, yaw: sunYaw, pitch: sunPitch },
+  );
 
   const noonGlarePng = await assertAndSaveScreenshot({
     name: 'm12-sun-glare-noon',
