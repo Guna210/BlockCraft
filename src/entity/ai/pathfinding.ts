@@ -878,6 +878,8 @@ export class Pathfinder {
       return count;
     }
 
+    // Head clearance is shared by all four jump directions for this expansion.
+    const canJump = this.isOccupiable(x, y + height, z, 1);
     // On solid land
     for (let i = 0; i < 4; i++) {
       const dx = DIR_DX[i]!;
@@ -885,10 +887,11 @@ export class Pathfinder {
       const nx = x + dx;
       const nz = z + dz;
 
+      // Reuse the feet classification for jump, walking and water-entry checks.
+      const targetFeet = this.classify(nx, y, nz);
       // Case A: 1-block step up (jump)
-      // Check head clearance at current position to initiate jump
-      if (this.isOccupiable(x, y + height, z, 1)) {
-        if (this.classify(nx, y, nz) === 'solid' && this.isOccupiable(nx, y + 1, nz, height)) {
+      if (canJump) {
+        if (targetFeet === 'solid' && this.isOccupiable(nx, y + 1, nz, height)) {
           outX[count] = nx;
           outY[count] = y + 1;
           outZ[count] = nz;
@@ -899,10 +902,12 @@ export class Pathfinder {
         }
       }
 
-      // Case B: Same level move
-      if (this.isOccupiable(nx, y, nz, height)) {
-        const targetFeet = this.classify(nx, y, nz);
-
+      // Case B: Same level move. Feet are already checked; check the remaining body.
+      if (
+        targetFeet !== 'solid' &&
+        targetFeet !== 'forbidden' &&
+        this.isOccupiable(nx, y + 1, nz, height - 1)
+      ) {
         // Stepping into water
         if (targetFeet === 'water') {
           outX[count] = nx;

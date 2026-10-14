@@ -49,3 +49,9 @@ The background full run on `552038b` exits 1: typecheck/lint/placeholders/unit p
 ## Approved publication and CI direction
 
 The owner approved pushing `claude/m07b` and opening an incomplete draft with `progress/M07b.md` as the description and every local failure classified. Draft PR https://github.com/Guna210/BlockCraft/pull/43 was created through the connected GitHub integration after `gh` was blocked. The owner directs green CI to permit retitling “M07b: Drops, pickup & particles — verified”. If CI fails the M04a flight or any test passing on master, treat that failure as M07b’s, start with the GPU-poll change and why uploads stay deferred, fix on the same branch, and report back. Harness paths and other milestones’ tests remain read-only.
+
+## CI timing failure: limited game-code response
+
+Run 177 passes all 493 unit tests and 72 browser tests, but run 178 on documentation-only newer head fails the unchanged M13b benchmark at mean 2.572020279999979 ms (limit 2). Browser tests pass with one disclosed RD12 retry (79 px hole first, 13 px retry, limit 64). Flight/frame count, frustum and upload completion pass in both runs, so the requested GPU/upload investigation does not justify another GPU or streaming change. Master’s existing run is green; the in-memory-grid unit failure is not added to exceptions.
+
+Under the owner’s instruction to fix a CI failure passing on master on this same branch, reduce redundant queries in the existing pathfinding movement loop: reuse head clearance for four jump directions and target-feet classification for jump/occupancy/water checks. Preserve the exact graph, costs, limits, pools and caches. This is a limited verification follow-up, not another task’s feature work. Existing Dijkstra-reference and every prior test remain unchanged. Four focused files / 31 tests pass (15.23 s), including all 17 pathfinding tests. Complete full verification and CI remain required before promotion.
