@@ -1,0 +1,86 @@
+{
+  "tall_grass": [
+    {
+      "id": "tall_grass",
+      "count": 1
+    }
+  ],
+  "bluebell": [
+    {
+      "id": "bluebell",
+      "count": 1
+    }
+  ],
+  "buttercup": [
+    {
+      "id": "buttercup",
+      "count": 1
+    }
+  ],
+  "marigold": [
+    {
+      "id": "marigold",
+      "count": 1
+    }
+  ],
+  "violet": [
+    {
+      "id": "violet",
+      "count": 1
+    }
+  ],
+  "daisy": [
+    {
+      "id": "daisy",
+      "count": 1
+    }
+  ],
+  "wild_rose": [
+    {
+      "id": "wild_rose",
+      "count": 1
+    }
+  ],
+  "lupine": [
+    {
+      "id": "lupine",
+      "count": 1
+    }
+  ],
+  "heather": [
+    {
+      "id": "heather",
+      "count": 1
+    }
+  ],
+  "sugar_reeds": [
+    {
+      "id": "sugar_reeds",
+      "count": 1
+    }
+  ],
+  "brown_mushroom": [
+    {
+      "id": "brown_mushroom",
+      "count": 1
+    }
+  ],
+  "red_mushroom": [
+    {
+      "id": "red_mushroom",
+      "count": 1
+    }
+  ],
+  "cactus": [
+    {
+      "id": "cactus",
+      "count": 1
+    }
+  ],
+  "pumpkin": [
+    {
+      "id": "pumpkin",
+      "count": 1
+    }
+  ]
+}

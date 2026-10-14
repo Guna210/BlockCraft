@@ -1,0 +1,32 @@
+{
+  "coal_ore": {
+    "kind": "block",
+    "block": "coal_ore",
+    "maxStack": 64
+  },
+  "copper_ore": {
+    "kind": "block",
+    "block": "copper_ore",
+    "maxStack": 64
+  },
+  "iron_ore": {
+    "kind": "block",
+    "block": "iron_ore",
+    "maxStack": 64
+  },
+  "gold_ore": {
+    "kind": "block",
+    "block": "gold_ore",
+    "maxStack": 64
+  },
+  "lumite_ore": {
+    "kind": "block",
+    "block": "lumite_ore",
+    "maxStack": 64
+  },
+  "skyshard_ore": {
+    "kind": "block",
+    "block": "skyshard_ore",
+    "maxStack": 64
+  }
+}

@@ -1,4 +1,5 @@
 import { TICK_SECONDS } from '../engine/loop';
+import { Inventory } from '../gameplay/inventory';
 import type { Action } from '../engine/input';
 import { BlockCollision, EPSILON, type Position } from './physics';
 
@@ -30,7 +31,13 @@ export class Player {
   public saturation = 5;
   public air = 300;
   public dimension = 'overworld';
-  public selectedSlot = 0;
+  public readonly inventory = new Inventory();
+  get selectedSlot(): number {
+    return this.inventory.selectedSlot;
+  }
+  set selectedSlot(slot: number) {
+    this.inventory.selectedSlot = slot;
+  }
   public heldBlock: number | null = null;
   public onGround = false;
   public inFluid: string | null = null;

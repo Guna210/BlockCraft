@@ -1,0 +1,12 @@
+{
+  "water": {
+    "kind": "block",
+    "block": "water",
+    "maxStack": 64
+  },
+  "lava": {
+    "kind": "block",
+    "block": "lava",
+    "maxStack": 64
+  }
+}

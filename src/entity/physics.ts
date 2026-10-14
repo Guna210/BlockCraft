@@ -78,14 +78,20 @@ export class BlockCollision {
   }
 
   /** Sweeps the full distance, including every crossed voxel, along one axis. */
-  sweep(pos: Position, height: number, axis: number, distance: number): number {
+  sweep(
+    pos: Position,
+    height: number,
+    axis: number,
+    distance: number,
+    halfWidth = HALF_WIDTH,
+  ): number {
     if (distance === 0) return 0;
-    const minX = pos[0] - HALF_WIDTH,
-      maxX = pos[0] + HALF_WIDTH;
+    const minX = pos[0] - halfWidth,
+      maxX = pos[0] + halfWidth;
     const minY = pos[1],
       maxY = pos[1] + height;
-    const minZ = pos[2] - HALF_WIDTH,
-      maxZ = pos[2] + HALF_WIDTH;
+    const minZ = pos[2] - halfWidth,
+      maxZ = pos[2] + halfWidth;
     let result = distance;
     for (
       let y = Math.floor(minY + Math.min(axis === 1 ? distance : 0, 0) + EPSILON);

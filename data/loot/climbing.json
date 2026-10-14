@@ -1,0 +1,14 @@
+{
+  "ladder": [
+    {
+      "id": "ladder",
+      "count": 1
+    }
+  ],
+  "vine": [
+    {
+      "id": "vine",
+      "count": 1
+    }
+  ]
+}

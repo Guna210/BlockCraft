@@ -1,0 +1,12 @@
+{
+  "air": {
+    "kind": "block",
+    "block": "air",
+    "maxStack": 64
+  },
+  "glass": {
+    "kind": "block",
+    "block": "glass",
+    "maxStack": 64
+  }
+}
