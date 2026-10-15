@@ -70,10 +70,8 @@ function main() {
 
   const worldManager = WorldManager.getInstance();
   worldManager.initGL(glWrapper, camera);
-  const playerController = new PlayerController(
-    camera,
-    input,
-    (x, z) => worldManager.streamer.phaseOf(Math.floor(x / 16), Math.floor(z / 16)) === 'meshed',
+  const playerController = new PlayerController(camera, input, (x, z) =>
+    worldManager.streamer.canSimulate(Math.floor(x / 16), Math.floor(z / 16)),
   );
   worldManager.playerController = playerController;
   let frameDrain: FencedErrorDrain | null = null;
