@@ -50,10 +50,13 @@ export class BlockRegistry {
     // Stable State IDs sorting rule:
     // 1. Sort block definitions alphabetically by block ID.
     // 2. Ensure 'air' is first if present (blockId === 'air').
+    // 3. Fire sorts immediately after foundation_stone to preserve stable state IDs 0..28.
     rawBlocks.sort((a, b) => {
       if (a.id === 'air') return -1;
       if (b.id === 'air') return 1;
-      return a.id.localeCompare(b.id);
+      const aKey = a.id === 'fire' ? 'foundation_stone_fire' : a.id;
+      const bKey = b.id === 'fire' ? 'foundation_stone_fire' : b.id;
+      return aKey.localeCompare(bKey);
     });
 
     let currentStateId = 0;

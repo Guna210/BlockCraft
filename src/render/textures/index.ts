@@ -161,6 +161,9 @@ import {
   PAL_RAINWOOD_LEAVES,
   PAL_ACACIA_LEAVES,
 } from './wood-extra';
+import { genIce, genFire, PAL_ICE, PAL_FIRE } from './weather';
+
+export { PAL_ICE, PAL_FIRE, genIce, genFire };
 
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
@@ -262,6 +265,10 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   // Fluids
   water: genWaterFrames,
   lava: genLavaFrames,
+
+  // Weather (M12c)
+  ice: genIce,
+  fire: genFire,
 };
 
 // Required names by M01b Scope + M03c additions:
@@ -436,4 +443,8 @@ export const texturePalettes: Record<string, RGBA[]> = {
   // Fluids
   water: PAL_WATER,
   lava: PAL_LAVA,
+
+  // Weather (M12c)
+  ice: PAL_ICE,
+  fire: PAL_FIRE,
 };

@@ -20,6 +20,8 @@ import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
 import { CloudRenderer } from '../render/clouds';
+import { WeatherRenderer } from '../render/weather';
+import { weatherManager, getWeather, resetWeather } from './weather';
 import {
   getWorldTime,
   resetWorldTime,
@@ -91,6 +93,9 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
       }
     });
   }
+  steps.push(() => {
+    weatherManager.heightmap.updateColumn(world, res.cx, res.cz);
+  });
   return steps;
 }
 
@@ -141,6 +146,7 @@ export class WorldManager {
   public skyRenderer: SkyRenderer | null = null;
   public cloudRenderer: CloudRenderer | null = null;
   public dropRenderer: DropRenderer | null = null;
+  public weatherRenderer: WeatherRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
@@ -275,6 +281,16 @@ export class WorldManager {
       renderStats.playerModelParts = this.playerModelRenderer?.lastPartDraws ?? 0;
       renderStats.chunksLoaded = this.streamer.loadedColumns;
       renderStats.chunksMeshed = this.streamer.meshedColumns;
+      renderStats.weather.state = getWeather();
+      if (this.weatherRenderer && this.camera && this.world) {
+        renderStats.weather.activeParticles = this.weatherRenderer.getActiveParticleCounts(
+          this.camera.position,
+          this.world,
+          getWorldTime() / 20.0,
+        );
+      } else {
+        renderStats.weather.activeParticles = { rain: 0, snow: 0 };
+      }
     });
   }
 
@@ -336,6 +352,7 @@ export class WorldManager {
   private configureLighting(world: World): void {
     world.lightEngine.onlyLitColumns = true;
     world.onBlockEdited = (x, y, z) => {
+      weatherManager.heightmap.updateBlock(world, x, y, z);
       const cx = Math.floor(x / 16);
       const cz = Math.floor(z / 16);
       // A worker snapshot also depends on the unlit block border, where incremental BFS does not
@@ -502,6 +519,7 @@ export class WorldManager {
     type: 'default' | 'flat' = 'default',
   ): void {
     resetWorldTime();
+    resetWeather();
     this.editMeshes.length = 0;
     this.editVersions.clear();
     this.playerController?.reset();
@@ -559,6 +577,7 @@ export class WorldManager {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
     }
 
+    weatherManager.heightmap.updateColumn(this.world, cx, cz);
     this.streamer.adoptColumn(cx, cz);
   }
 
@@ -645,6 +664,7 @@ export class WorldManager {
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
+    this.weatherRenderer = new WeatherRenderer(this.glWrapper);
   }
 
   public async createWorld(opts?: {
@@ -691,6 +711,7 @@ export class WorldManager {
     this.meshAttempts.clear();
 
     resetWorldTime();
+    resetWeather();
     this.editMeshes.length = 0;
     this.editVersions.clear();
     this.playerController?.reset();
@@ -957,8 +978,22 @@ export class WorldManager {
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const ticks = getWorldTime();
+      if (this.world) {
+        weatherManager.tick(this.world, ticks, this.camera.position);
+      }
+      const weatherState = getWeather();
+      const rainFactor = weatherState === 'clear' ? 0.0 : weatherState === 'rain' ? 1.0 : 1.25;
+      const lightningFlash = weatherManager.flashIntensity;
+
       const skyStats = this.skyRenderer
-        ? this.skyRenderer.render(this.camera, this.atlasTexture, this.atlas, ticks)
+        ? this.skyRenderer.render(
+            this.camera,
+            this.atlasTexture,
+            this.atlas,
+            ticks,
+            rainFactor,
+            lightningFlash,
+          )
         : { drawCalls: 0, triangles: 0 };
 
       const maxFogDist = (this.renderDistance - 1) * 16;
@@ -976,6 +1011,8 @@ export class WorldManager {
         dayFactor,
         twilightFactor,
         nightFactor,
+        rainFactor,
+        lightningFlash,
       });
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
@@ -1014,14 +1051,43 @@ export class WorldManager {
       renderStats.drawCalls += selectionDraws;
       if (selectionDraws === 2) renderStats.triangles += 12;
       const cloudStats = this.cloudRenderer
-        ? this.cloudRenderer.render(this.camera, ticks, this.renderDistance)
+        ? this.cloudRenderer.render(
+            this.camera,
+            ticks,
+            this.renderDistance,
+            rainFactor,
+            lightningFlash,
+          )
         : { drawCalls: 0, triangles: 0 };
       renderStats.cloudWindOffset = this.cloudRenderer?.windOffset ?? 0;
       this.underwaterTint?.render(underwater);
+
+      const weatherStats =
+        this.weatherRenderer && this.world
+          ? this.weatherRenderer.render(this.camera, this.world, ticks)
+          : { drawCalls: 0, triangles: 0 };
+
+      renderStats.weather.state = weatherState;
+      if (this.weatherRenderer && this.world) {
+        renderStats.weather.activeParticles = this.weatherRenderer.getActiveParticleCounts(
+          this.camera.position,
+          this.world,
+          ticks / 20.0,
+        );
+      } else {
+        renderStats.weather.activeParticles = { rain: 0, snow: 0 };
+      }
+
       renderStats.drawCalls +=
-        skyStats.drawCalls + cloudStats.drawCalls + Number(underwater.submerged);
+        skyStats.drawCalls +
+        cloudStats.drawCalls +
+        weatherStats.drawCalls +
+        Number(underwater.submerged);
       renderStats.triangles +=
-        skyStats.triangles + cloudStats.triangles + Number(underwater.submerged);
+        skyStats.triangles +
+        cloudStats.triangles +
+        weatherStats.triangles +
+        Number(underwater.submerged);
       this.terrainFrames++;
       return true;
     }

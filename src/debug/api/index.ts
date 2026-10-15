@@ -8,6 +8,7 @@ import { locate } from './locate';
 import './ore-locate';
 import './time';
 import './clouds';
+import './weather';
 import './raycast';
 import './inventory';
 import './entities';

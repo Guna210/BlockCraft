@@ -9,6 +9,7 @@ import {
   skyAtmosphereFactors,
   sunDirection,
 } from '../world/time';
+import { getWeather, weatherManager } from '../world/weather';
 
 /**
  * Shared GLSL function that computes the sky atmosphere colour for any world-space ray `dir`.
@@ -82,6 +83,8 @@ uniform float u_dayFactor;
 uniform float u_twilightFactor;
 uniform float u_nightFactor;
 uniform float u_worldTime;
+uniform float u_rainFactor;
+uniform float u_lightningFlash;
 
 out vec4 fragColor;
 
@@ -140,6 +143,15 @@ void main() {
     }
   }
 
+  // Weather darkening and desaturation (Decision 3) & lightning flash (Decision 4)
+  if (u_rainFactor > 0.001) {
+    float lum = dot(sky, vec3(0.2126, 0.7152, 0.0722));
+    sky = mix(sky, vec3(lum), 0.55 * u_rainFactor) * mix(1.0, 0.45, u_rainFactor);
+  }
+  if (u_lightningFlash > 0.001) {
+    sky += vec3(u_lightningFlash * 0.9);
+  }
+
   fragColor = vec4(sky, 1.0);
 }
 `;
@@ -196,6 +208,8 @@ export class SkyRenderer {
   private readonly uTwilightFactor: WebGLUniformLocation | null;
   private readonly uNightFactor: WebGLUniformLocation | null;
   private readonly uWorldTime: WebGLUniformLocation | null;
+  private readonly uRainFactor: WebGLUniformLocation | null;
+  private readonly uLightningFlash: WebGLUniformLocation | null;
 
   private readonly billboardProgram: WebGLProgram;
   private readonly billboardVao: WebGLVertexArrayObject;
@@ -223,6 +237,8 @@ export class SkyRenderer {
     this.uTwilightFactor = gl.getUniformLocation(this.skyProgram, 'u_twilightFactor');
     this.uNightFactor = gl.getUniformLocation(this.skyProgram, 'u_nightFactor');
     this.uWorldTime = gl.getUniformLocation(this.skyProgram, 'u_worldTime');
+    this.uRainFactor = gl.getUniformLocation(this.skyProgram, 'u_rainFactor');
+    this.uLightningFlash = gl.getUniformLocation(this.skyProgram, 'u_lightningFlash');
 
     this.billboardProgram = glWrapper.createProgram(BILLBOARD_VS, BILLBOARD_FS);
     this.billboardVao = glWrapper.createVertexArray();
@@ -351,6 +367,8 @@ export class SkyRenderer {
     atlasTexture: WebGLTexture,
     atlas: TextureAtlas,
     ticks: number = getWorldTime(),
+    rainFactor = 0,
+    lightningFlash = 0,
   ): { drawCalls: number; triangles: number } {
     const gl = this.glWrapper.gl;
 
@@ -366,6 +384,11 @@ export class SkyRenderer {
     const phase = moonPhase(ticks);
     const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
 
+    const weather = getWeather();
+    const effectiveRain =
+      rainFactor > 0 ? rainFactor : weather === 'clear' ? 0.0 : weather === 'rain' ? 1.0 : 1.25;
+    const effectiveFlash = lightningFlash > 0 ? lightningFlash : weatherManager.flashIntensity;
+
     gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
@@ -379,6 +402,8 @@ export class SkyRenderer {
     gl.uniform1f(this.uTwilightFactor, twilightFactor);
     gl.uniform1f(this.uNightFactor, nightFactor);
     gl.uniform1f(this.uWorldTime, ticks);
+    gl.uniform1f(this.uRainFactor, effectiveRain);
+    gl.uniform1f(this.uLightningFlash, effectiveFlash);
 
     gl.bindVertexArray(this.skyVao);
     this.glWrapper.drawArrays(gl.TRIANGLES, 0, 3);
@@ -393,8 +418,11 @@ export class SkyRenderer {
       const sunAlphaBase = Math.max(0, Math.min(1, (sunDir[1] + 0.18) / 0.22));
       const sunHeight = Math.max(0, Math.min(1, sunDir[1]));
       const highFactor = Math.max(0, Math.min(1, (sunHeight - 0.05) / 0.6));
-      const sunAlpha = sunAlphaBase * (1.0 - highFactor * 1.0);
-      const moonAlpha = Math.max(0, Math.min(1, (moonDir[1] + 0.18) / 0.22));
+      const sunAlpha =
+        sunAlphaBase * (1.0 - highFactor * 1.0) * (1.0 - Math.min(1.0, effectiveRain * 0.9));
+      const moonAlpha =
+        Math.max(0, Math.min(1, (moonDir[1] + 0.18) / 0.22)) *
+        (1.0 - Math.min(1.0, effectiveRain * 0.9));
 
       this.writeBillboardQuad(
         0,
