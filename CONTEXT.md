@@ -60,6 +60,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Log (newest first)
 
+- 2026-10-15: M12b review round 2: VERDICT PASS on ad038a7 (CI green). Told the owner to merge PR #42. After merge, agy's laptop must fetch/pull before any new agy branch. Next candidates: M12c (weather) and M09a (with the M07b loot follow-ups), checking deps.
 - 2026-10-15: PR #42 round-1 fixes pushed (ad038a7); CI green (run 38710241571); not draft. Builder refreshing the PR body. Next: owner pastes round-2 message into reviewer session_01THdvdJBZtvd7HUcs3NUYKf.
 - 2026-10-15: M12b round-1 fixes gate (local commit): wind offset published via getRenderStats().cloudWindOffset, e2e asserts +3±0.05 over 60 ticks (fails when forced to 0, verified then reverted); glare e2e clouds-off centre 255 >250; docs/comments fixed. Local full verify: 504 unit, e2e 72 pass / 1 fail (m04:276 container timeout). Recommended the owner approve the push; then round 2 in reviewer session_01THdvdJBZtvd7HUcs3NUYKf.
 - 2026-10-15: M12b review round 1 (session_01THdvdJBZtvd7HUcs3NUYKf): CHANGES NEEDED. Blocking: wind-drift e2e passes without drift (tick advances time, so the sky changes). Also: glare untested in e2e, stale progress header and dependent-task notes, stale 32x32 comments. Sent fix instructions to the M12b-fix builder; owner approves the push; then round 2 in the same reviewer session.
