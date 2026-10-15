@@ -117,3 +117,10 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - world/ticks.ts holds scheduled ticks (priority, then time order) and a random-tick API. M12c's own weather tick is left alone; migrating it is a later follow-up.
   - Blackglass needs a texture, registry entry and drop. Its item icon comes with M09b.
   - Ticks don't run while paused and the debug tick() advances them.
+- 2026-10-15: Owner switched Codex to M09b (M08a dropped for now). Told the owner neither task is conflict-free with M12c, and that M08a wouldn't change water's look (that's M08b rendering, after M08a). M09b decisions:
+  - icon atlas built once at startup for every registry block and item; isometric 3 shaded faces for full cubes; 2D sprites reuse M09a's item sprites; cross/flat blocks use their texture
+  - DOM/canvas UI kit with integer scale
+  - wire M09a ops; drop via dropInventoryStack
+  - swap follow-up (same unstackable item → swap)
+  - fix the stale status line in progress/M09a? No: AGENTS §8 forbids editing another task's record, so note it in progress/M09b.md instead
+  - icons for blocks M12c adds are handled by whichever merges second
