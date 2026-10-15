@@ -110,6 +110,7 @@ test('M12a time of day, noon sky, sunset west horizon glow, and midnight stars',
     api.setRenderDistance!(4);
     await api.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' });
     api.pause!();
+    window.__blockcraft!.setClouds!('off');
     await api.waitForTerrain!(4);
   });
   await waitForStreamingIdle(page, 120_000);

@@ -64,3 +64,9 @@
 4. **Triangle budget.** Smaller cells mean more cells and more edges, so the single-quad-per-cell mesh would have grown. The mesh is now greedy-merged once at construction: top and bottom faces become maximal rectangles, and straight runs of exposed side edges become single quads. Buffers are still static and nothing is re-meshed per frame. Fancy-mode triangles at the e2e camera went 25,603 → 12,643.
 5. **Glare test placement.** The M12b glare screenshot used a hard-coded x=-5 so a cloud cell sat over the sun. With a new grid that no longer holds, so the M12b test now aims the centre ray exactly at the noon sun from an open land column whose sun ray passes through the middle (3×3 cells) of a cloud, computed from the same seeded grid and wind offset. The assertions (luminance 150–235 at centre) are unchanged. This is inside the M12b test only; no other test changed and no extra `setClouds('off')` lines were added.
 6. **Not changed / owner decision.** Cloud height is fixed by SPEC at y=192. From peaks near y=170 clouds are inherently close (~20–25 blocks above). Raising the height would be an owner SPEC decision.
+
+### Third owner-approved `setClouds('off')` line (M12b-fix)
+
+- `tests/e2e/m12.spec.ts`, first `page.evaluate` of `M12a time of day, noon sky, sunset west horizon glow, and midnight stars`: `window.__blockcraft!.setClouds!('off');`.
+  - *Reason*: that test checks the sky gradient, stars and moon phases, not clouds. With the new cell layout an opaque cloud covers the full moon at its camera and time (full-moon centre luminance 10.94 vs required > 150). No thresholds or other lines changed.
+- All three approved lines: `m12.spec.ts` (M12a time-of-day test), `m12.spec.ts` (RD8 sky test), `m04.spec.ts` (RD12 horizon test). No more may be added without asking the owner.
