@@ -1,0 +1,132 @@
+{
+  "coal": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "coal"
+  },
+  "raw_copper": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "raw_copper"
+  },
+  "raw_iron": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "raw_iron"
+  },
+  "raw_gold": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "raw_gold"
+  },
+  "lumite_shard": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "lumite_shard"
+  },
+  "skyshard_crystal": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "skyshard_crystal"
+  },
+  "copper_ingot": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "copper_ingot"
+  },
+  "iron_ingot": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "iron_ingot"
+  },
+  "flint": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "flint"
+  },
+  "bowl": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "bowl"
+  },
+  "wheat": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "wheat"
+  },
+  "clay_lump": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "clay_lump"
+  },
+  "stick": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "stick"
+  },
+  "wool": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "wool"
+  },
+  "tuber": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "tuber"
+  },
+  "egg": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "egg"
+  },
+  "feather": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "feather"
+  },
+  "shell_plate": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "shell_plate"
+  },
+  "bark_strips": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "bark_strips"
+  },
+  "thorn": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "thorn"
+  },
+  "silk": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "silk"
+  },
+  "carapace": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "carapace"
+  },
+  "spore_powder": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "spore_powder"
+  },
+  "luminous_membrane": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "luminous_membrane"
+  },
+  "emberite_scale": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "emberite_scale"
+  },
+  "seed": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "seed"
+  }
+}

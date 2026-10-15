@@ -9,36 +9,6 @@
       "speed": 2
     }
   },
-  "stone_pickaxe": {
-    "kind": "tool",
-    "maxStack": 1,
-    "texture": "stone_pickaxe",
-    "tool": {
-      "type": "pickaxe",
-      "tier": 1,
-      "speed": 4
-    }
-  },
-  "copper_pickaxe": {
-    "kind": "tool",
-    "maxStack": 1,
-    "texture": "copper_pickaxe",
-    "tool": {
-      "type": "pickaxe",
-      "tier": 2,
-      "speed": 5
-    }
-  },
-  "iron_pickaxe": {
-    "kind": "tool",
-    "maxStack": 1,
-    "texture": "iron_pickaxe",
-    "tool": {
-      "type": "pickaxe",
-      "tier": 3,
-      "speed": 6
-    }
-  },
   "wooden_axe": {
     "kind": "tool",
     "maxStack": 1,
@@ -69,6 +39,216 @@
       "speed": 2
     }
   },
+  "wooden_sword": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "wooden_sword",
+    "tool": {
+      "type": "sword",
+      "tier": 0,
+      "speed": 2
+    }
+  },
+  "stone_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "stone_axe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_axe",
+    "tool": {
+      "type": "axe",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "stone_shovel": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_shovel",
+    "tool": {
+      "type": "shovel",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "stone_hoe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_hoe",
+    "tool": {
+      "type": "hoe",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "stone_sword": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "stone_sword",
+    "tool": {
+      "type": "sword",
+      "tier": 1,
+      "speed": 4
+    }
+  },
+  "copper_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "copper_axe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_axe",
+    "tool": {
+      "type": "axe",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "copper_shovel": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_shovel",
+    "tool": {
+      "type": "shovel",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "copper_hoe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_hoe",
+    "tool": {
+      "type": "hoe",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "copper_sword": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "copper_sword",
+    "tool": {
+      "type": "sword",
+      "tier": 2,
+      "speed": 5
+    }
+  },
+  "iron_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "iron_axe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_axe",
+    "tool": {
+      "type": "axe",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "iron_shovel": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_shovel",
+    "tool": {
+      "type": "shovel",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "iron_hoe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_hoe",
+    "tool": {
+      "type": "hoe",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "iron_sword": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "iron_sword",
+    "tool": {
+      "type": "sword",
+      "tier": 3,
+      "speed": 6
+    }
+  },
+  "skyshard_pickaxe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "skyshard_pickaxe",
+    "tool": {
+      "type": "pickaxe",
+      "tier": 4,
+      "speed": 9
+    }
+  },
+  "skyshard_axe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "skyshard_axe",
+    "tool": {
+      "type": "axe",
+      "tier": 4,
+      "speed": 9
+    }
+  },
+  "skyshard_shovel": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "skyshard_shovel",
+    "tool": {
+      "type": "shovel",
+      "tier": 4,
+      "speed": 9
+    }
+  },
+  "skyshard_hoe": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "skyshard_hoe",
+    "tool": {
+      "type": "hoe",
+      "tier": 4,
+      "speed": 9
+    }
+  },
+  "skyshard_sword": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "skyshard_sword",
+    "tool": {
+      "type": "sword",
+      "tier": 4,
+      "speed": 9
+    }
+  },
   "iron_shears": {
     "kind": "tool",
     "maxStack": 1,
@@ -78,5 +258,20 @@
       "tier": 3,
       "speed": 6
     }
+  },
+  "bow": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "bow"
+  },
+  "shield": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "shield"
+  },
+  "ember_flint": {
+    "kind": "tool",
+    "maxStack": 1,
+    "texture": "ember_flint"
   }
 }

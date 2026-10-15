@@ -1,0 +1,50 @@
+{
+  "copper_helmet": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "copper_helmet",
+    "armorSlot": "head"
+  },
+  "copper_chestplate": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "copper_chestplate",
+    "armorSlot": "chest"
+  },
+  "copper_leggings": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "copper_leggings",
+    "armorSlot": "legs"
+  },
+  "copper_boots": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "copper_boots",
+    "armorSlot": "feet"
+  },
+  "iron_helmet": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "iron_helmet",
+    "armorSlot": "head"
+  },
+  "iron_chestplate": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "iron_chestplate",
+    "armorSlot": "chest"
+  },
+  "iron_leggings": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "iron_leggings",
+    "armorSlot": "legs"
+  },
+  "iron_boots": {
+    "kind": "armor",
+    "maxStack": 1,
+    "texture": "iron_boots",
+    "armorSlot": "feet"
+  }
+}
