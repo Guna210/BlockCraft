@@ -60,6 +60,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Log (newest first)
 
+- 2026-10-15: M12b review round 1 (session_01THdvdJBZtvd7HUcs3NUYKf): CHANGES NEEDED. Blocking: wind-drift e2e passes without drift (tick advances time, so the sky changes). Also: glare untested in e2e, stale progress header and dependent-task notes, stale 32x32 comments. Sent fix instructions to the M12b-fix builder; owner approves the push; then round 2 in the same reviewer session.
 - 2026-10-15: PR #42 head 438ae8e CI green (run 38699560878); retitled 'M12b: Clouds — verified'; still draft. M12b reviewer prompt given to owner (after the owner checks the clouds and marks it ready).
 - 2026-10-15: Owner approved; builder pushed agy/m12b 438ae8e (includes merge f30131e). PR #42 retitled '[INCOMPLETE] M12b: Clouds', body = progress/M12b.md. Verify run 38699560878 in progress; builder subscribed and will report.
 - 2026-10-15: M12b builder merged master into agy/m12b (f30131e; only conflict was the renderer field declarations in world-manager.ts, kept both). Local full verify x2: unit 504/504; e2e 70 pass, 3 fail, all known container-only (m02:54 mesh p95, m04:66 pump 90 ms, m04:221 heap timeout, m04:276 RD12 idle/65 px). M07 and M12 specs pass. Answered: push after owner approval, CI decides; builder to update PR #42 title/body from progress/M12b.md and report CI.
