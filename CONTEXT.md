@@ -110,3 +110,10 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 - 2026-10-12: M06a PR #36 ready (CI Verify green, 55 e2e, first attempt). Reviewer prompt written for a Claude Sonnet session. Owner deferred the Windows agy setup (notes: .gitattributes eol=lf; Git Bash terminal so grep is on PATH for lint-placeholders; middle PATH option).
 - 2026-10-15: M12c gate from agy (local commit 02b639b, not pushed). verify:quick: unit 519 passed; e2e M12a + M12c passed, m12:268 (RD8) and m12:326 (M12b) timed out on laptop. Base is stale: 519 unit vs 568 on master, and M09a (#44, 9cb5dec) is now merged. Overlapping files likely: registry.ts, debug api index/core, textures/index.ts. Asked the owner to have agy merge origin/master before the first push, re-run verify:quick, and map each SPEC scope item (splashes, puddles, lightning + fire chance, snow layers, freezing, snow by altitude) to code and test.
 - 2026-10-15: OWNER PREFERENCE (correction): agy does nothing with git at all; the owner handles all git for agy work. M12c plan: the owner pushes local 02b639b to agy/m12c without opening a PR. A new Sonnet builder branches claude/m12c from origin/agy/m12c, merges origin/master, builds any missing M12c scope, runs the gate, and opens the PR from claude/m12c.
+- 2026-10-15: M12c builder session: session_01JQ62XznmM2AD8JKHq9hFqh (Sonnet, claude/m12c from agy/m12c).
+- 2026-10-15: Owner chose M08a for Codex (not M09b). Prompt given, branch claude/m08a. Decisions:
+  - Fluid level/falling as enum block states (registry already supports states).
+  - Generated water/lava stay as still sources and don't schedule ticks at load; ticks are scheduled only by block changes next to fluid (performance).
+  - world/ticks.ts holds scheduled ticks (priority, then time order) and a random-tick API. M12c's own weather tick is left alone; migrating it is a later follow-up.
+  - Blackglass needs a texture, registry entry and drop. Its item icon comes with M09b.
+  - Ticks don't run while paused and the debug tick() advances them.
