@@ -9,6 +9,18 @@
       "top": "water",
       "side": "water",
       "bottom": "water"
+    },
+    "states": {
+      "level": {
+        "type": "enum",
+        "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+        "default": "0"
+      },
+      "falling": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
     }
   },
   "lava": {
@@ -21,6 +33,18 @@
       "top": "lava",
       "side": "lava",
       "bottom": "lava"
+    },
+    "states": {
+      "level": {
+        "type": "enum",
+        "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+        "default": "0"
+      },
+      "falling": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
     }
   }
 }
