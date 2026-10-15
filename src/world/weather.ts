@@ -1,5 +1,6 @@
 import { World } from './world';
 import { LCG } from '../render/textures/noise';
+import { BlockRegistry } from './blocks/registry';
 
 export type WeatherState = 'clear' | 'rain' | 'thunder';
 export type PrecipitationType = 'none' | 'rain' | 'snow';
@@ -98,6 +99,24 @@ export interface ActiveLightningStrike {
   end: [number, number, number];
 }
 
+/** Autonomous weather never changes before this many simulated ticks have elapsed (Decision 1). */
+export const NATURAL_WEATHER_START = 12000;
+/** Length in ticks of one natural-weather schedule slot. */
+export const WEATHER_SLOT_TICKS = 6000;
+/** Upper bound of simulated steps per call, so a time jump cannot stall a frame. */
+const MAX_STEPS_PER_CALL = 20;
+
+/**
+ * Deterministic natural weather for the schedule slot containing the elapsed tick count `ticks`:
+ * about 70 % clear, 20 % rain, 10 % thunder.
+ */
+export function scheduledWeather(ticks: number): WeatherState {
+  const slot = Math.floor(ticks / WEATHER_SLOT_TICKS);
+  const r = new LCG(slot * 7919 + 17).nextFloat();
+  if (r < 0.7) return 'clear';
+  return r < 0.9 ? 'rain' : 'thunder';
+}
+
 class WeatherManager {
   public weather: WeatherState = 'clear';
   public manualOverride = false;
@@ -106,6 +125,8 @@ class WeatherManager {
   public readonly heightmap = new WeatherHeightmap();
 
   private strikeCounter = 0;
+  private lastTick = -1;
+  private elapsed = 0;
 
   public reset(): void {
     this.weather = 'clear';
@@ -113,6 +134,8 @@ class WeatherManager {
     this.flashIntensity = 0;
     this.activeStrike = null;
     this.strikeCounter = 0;
+    this.lastTick = -1;
+    this.elapsed = 0;
     this.heightmap.clear();
   }
 
@@ -128,39 +151,50 @@ class WeatherManager {
   }
 
   public tick(world: World, ticks: number, playerPos?: ArrayLike<number>): void {
-    // 1. Natural weather changes only after 12000 ticks if not manually overridden
+    // Advance by the game ticks elapsed since the last call (this runs from the render loop, so
+    // a paused world must not advance and a debug tick(n) must advance exactly n steps).
+    const delta = this.lastTick < 0 ? 0 : ticks - this.lastTick;
+    this.lastTick = ticks;
+    const steps = Math.min(Math.max(delta, 0), MAX_STEPS_PER_CALL);
+
+    // 1. Natural weather: clear until NATURAL_WEATHER_START simulated ticks have elapsed, then a
+    // seeded schedule. Only simulated steps count, so setTimeOfDay jumps never start weather.
+    this.elapsed += steps;
     if (!this.manualOverride) {
-      if (ticks < 12000) {
-        this.weather = 'clear';
+      this.weather =
+        this.elapsed < NATURAL_WEATHER_START ? 'clear' : scheduledWeather(this.elapsed);
+      if (this.weather === 'clear') this.strikeCounter = 0;
+    }
+
+    for (let i = 0; i < steps; i++) {
+      const stepTick = ticks - steps + i + 1;
+
+      // 2. Fade lightning flash
+      if (this.flashIntensity > 0) {
+        this.flashIntensity = Math.max(0, this.flashIntensity - 0.15);
       }
-    }
 
-    // 2. Fade lightning flash
-    if (this.flashIntensity > 0) {
-      this.flashIntensity = Math.max(0, this.flashIntensity - 0.15);
-    }
-
-    // 3. Update active lightning strike
-    if (this.activeStrike) {
-      this.activeStrike.strikeTicks--;
-      if (this.activeStrike.strikeTicks <= 0) {
-        this.activeStrike = null;
+      // 3. Update active lightning strike
+      if (this.activeStrike) {
+        this.activeStrike.strikeTicks--;
+        if (this.activeStrike.strikeTicks <= 0) {
+          this.activeStrike = null;
+        }
       }
-    }
 
-    // 4. Thunder strikes
-    if (this.weather === 'thunder') {
-      this.strikeCounter++;
-      // Strike every ~160 ticks or trigger when counter reaches interval
-      if (this.strikeCounter >= 160) {
-        this.strikeCounter = 0;
-        this.triggerLightningStrike(world, ticks, playerPos);
+      // 4. Thunder strikes roughly every 160 ticks
+      if (this.weather === 'thunder') {
+        this.strikeCounter++;
+        if (this.strikeCounter >= 160) {
+          this.strikeCounter = 0;
+          this.triggerLightningStrike(world, stepTick, playerPos);
+        }
       }
-    }
 
-    // 5. Budgeted weather accumulation & water freezing over loaded columns (Decision 5)
-    if (this.weather !== 'clear') {
-      this.tickAccumulation(world, ticks, playerPos);
+      // 5. Budgeted weather accumulation & water freezing over loaded columns (Decision 5)
+      if (this.weather !== 'clear') {
+        this.tickAccumulation(world, stepTick, playerPos);
+      }
     }
   }
 
@@ -223,35 +257,38 @@ class WeatherManager {
 
       if (!world.hasColumn(cx, cz)) continue;
 
-      const topY = world.getHeight(x, z);
+      const topY = surfaceY(world, x, z);
+      if (topY < 0) continue;
       const biome = world.getBiome(x, z);
       const precip = getPrecipitationType(biome, topY);
+      if (precip !== 'snow') continue;
+      if (world.getLight(x, topY + 1, z).sky < 14) continue;
 
-      if (precip === 'snow') {
-        const topBlock = world.getBlock(x, topY, z);
-        const skyLight = world.getLight(x, topY + 1, z).sky;
-
-        if (skyLight >= 14) {
-          if (topBlock.id === 'water') {
-            // Still water freezes to ice
-            world.setBlock(x, topY, z, 'ice');
-          } else if (
-            topBlock.id !== 'air' &&
-            topBlock.id !== 'ice' &&
-            topBlock.id !== 'snow_layer' &&
-            topBlock.id !== 'water' &&
-            topBlock.id !== 'lava'
-          ) {
-            const above = world.getBlock(x, topY + 1, z);
-            if (above.id === 'air') {
-              // Accumulate snow layer
-              world.setBlock(x, topY + 1, z, 'snow_layer');
-            }
-          }
-        }
+      const topBlock = world.getBlock(x, topY, z);
+      if (topBlock.id === 'water') {
+        // Exposed water freezes to ice
+        world.setBlock(x, topY, z, 'ice');
+      } else if (
+        topBlock.id !== 'ice' &&
+        topBlock.id !== 'snow_layer' &&
+        topBlock.id !== 'lava' &&
+        topBlock.id !== 'fire' &&
+        BlockRegistry.getInstance().getBlockDefinition(topBlock.id)?.model !== 'cross' &&
+        world.getBlock(x, topY + 1, z).id === 'air'
+      ) {
+        // Accumulate snow layer
+        world.setBlock(x, topY + 1, z, 'snow_layer');
       }
     }
   }
+}
+
+/** Highest non-air block in the column, water included (unlike World.getHeight), or -1. */
+function surfaceY(world: World, x: number, z: number): number {
+  for (let y = 319; y >= 0; y--) {
+    if (world.getBlockStateId(x, y, z) !== 0) return y;
+  }
+  return -1;
 }
 
 export const weatherManager = new WeatherManager();

@@ -3,7 +3,8 @@
 ## 1. Weather State Machine & Determinism (Decision 1)
 
 - **States**: `clear`, `rain`, `thunder` managed in `src/world/weather.ts` (`WeatherManager`) and rendered in `src/render/weather.ts` (`WeatherRenderer`).
-- **Initial Determinism**: Every world starts in `clear` state. To guarantee full determinism for existing M12a/M12b sky and cloud tests, autonomous weather transitions are blocked before tick 12,000 unless manually set via debug API or test hooks.
+- **Initial Determinism**: Every world starts in `clear` state. Autonomous transitions are blocked until 12,000 *simulated* ticks have elapsed since world creation (`NATURAL_WEATHER_START`). Only ticks that actually advance (capped at 20 per call) count, so `setTimeOfDay` jumps used by the M12a/M12b sky and cloud tests can never start weather. After that, a deterministic schedule (`scheduledWeather`, 6000-tick slots, about 70 % clear / 20 % rain / 10 % thunder) applies until `setWeather` sets a manual override.
+- **Tick cadence**: `WeatherManager.tick` is called from the render loop but advances by the world-time delta since its last call: a paused world does not advance, `tick(n)` advances n steps, and a time jump simulates at most 20 steps.
 - **Debug API**: `setWeather('clear' | 'rain' | 'thunder')` implemented in `src/debug/api/weather.ts` and registered with one line in `src/debug/api/index.ts`.
 - **Render Stats**: `getRenderStats().weather` exports:
   - `state`: current weather state (`'clear' | 'rain' | 'thunder'`)
@@ -45,10 +46,15 @@
 ## 5. Weather Accumulation & Data-Driven Blocks (Decision 5 & ART.md)
 
 - **Budgeted Weather Tick**:
-  - Since random-tick block updates are not yet implemented in the engine, `WeatherManager.tick` inspects a deterministic budget of 2 loaded columns near the player per tick.
+  - Since random-tick block updates are not yet implemented in the engine, `WeatherManager.tick` inspects a deterministic budget of 2 loaded columns within 48 blocks of the player per simulated tick. No general random-tick system is added.
   - In cold biomes (`precip === 'snow'`), exposed ground top faces slowly accumulate `snow_layer`.
-  - Exposed still water with direct sky exposure (`skyLight >= 15`) freezes to `ice`.
+  - The surface is the highest non-air block, water included (`World.getHeight` skips water, so freezing used to be unreachable). Exposed water with `skyLight >= 14` freezes to `ice`; snow never lands on cross-model plants, fire, ice or lava.
+  - All changes go through `World.setBlock`, so `onBlockEdited` re-meshes and re-lights the affected chunks (the same path as player edits).
 - **New Block Definitions & Textures**:
   - `ice`: translucent block (`data/blocks/weather.json`), block item (`data/items/weather.json`), palette `PAL_ICE` with 5 distinct shades (contrast 4.09), registered in `src/world/blocks/registry.ts` and `src/render/textures/weather.ts`.
   - `snow_layer`: slab model using existing `"snow"` textures for all faces, avoiding duplicate atlas tiles and maintaining seamless tiling.
   - `fire`: cross cutout block (`data/blocks/weather.json`), palette `PAL_FIRE` with 6 flame colors (contrast 5.76), sorted as `'foundation_stone_fire'` in `BlockRegistry` to maintain stable IDs 0..28.
+
+## 6. Items and icons (M09a conventions)
+
+- `ice`, `snow_layer` and `fire` are block items in `data/items/weather.json`; they use the terrain atlas textures. The inventory icon atlas belongs to M09b, so no icon is added here.
