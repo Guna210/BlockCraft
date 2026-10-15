@@ -1,0 +1,86 @@
+{
+  "wild_berries": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "wild_berries",
+    "hunger": 2,
+    "saturation": 0.4
+  },
+  "apple": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "apple",
+    "hunger": 4,
+    "saturation": 2.4
+  },
+  "bread": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "bread",
+    "hunger": 5,
+    "saturation": 6
+  },
+  "raw_tuftbuck_shank": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "raw_tuftbuck_shank",
+    "hunger": 2,
+    "saturation": 1.2
+  },
+  "roast_tuftbuck_shank": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "roast_tuftbuck_shank",
+    "hunger": 6,
+    "saturation": 9.6
+  },
+  "raw_boar_chop": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "raw_boar_chop",
+    "hunger": 3,
+    "saturation": 1.8
+  },
+  "roast_boar_chop": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "roast_boar_chop",
+    "hunger": 8,
+    "saturation": 12.8
+  },
+  "raw_fowl": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "raw_fowl",
+    "hunger": 2,
+    "saturation": 1.2
+  },
+  "roast_fowl": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "roast_fowl",
+    "hunger": 6,
+    "saturation": 7.2
+  },
+  "baked_tuber": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "baked_tuber",
+    "hunger": 5,
+    "saturation": 6
+  },
+  "mushroom_broth": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "mushroom_broth",
+    "hunger": 6,
+    "saturation": 7.2
+  },
+  "glowcap_stew": {
+    "kind": "food",
+    "maxStack": 64,
+    "texture": "glowcap_stew",
+    "hunger": 7,
+    "saturation": 8
+  }
+}

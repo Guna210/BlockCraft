@@ -643,6 +643,7 @@ export class WorldManager {
     this.underwaterTint = new UnderwaterTint(this.glWrapper);
     this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
+    this.dropRenderer?.dispose();
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
