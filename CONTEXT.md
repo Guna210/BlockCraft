@@ -124,3 +124,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - swap follow-up (same unstackable item → swap)
   - fix the stale status line in progress/M09a? No: AGENTS §8 forbids editing another task's record, so note it in progress/M09b.md instead
   - icons for blocks M12c adds are handled by whichever merges second
+- 2026-10-15: FINAL: Codex does M08a (the prompt given earlier stands). M09b is next after it. The owner will send a water reference image before M08b; put it in the M08b prompt's look decisions, alongside SPEC's Visual Review (waterfall, lake depth gradient, lava cave).
