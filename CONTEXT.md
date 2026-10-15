@@ -125,6 +125,5 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - fix the stale status line in progress/M09a? No: AGENTS §8 forbids editing another task's record, so note it in progress/M09b.md instead
   - icons for blocks M12c adds are handled by whichever merges second
 - 2026-10-15: FINAL: Codex does M08a (the prompt given earlier stands). M09b is next after it. The owner will send a water reference image before M08b; put it in the M08b prompt's look decisions, alongside SPEC's Visual Review (waterfall, lake depth gradient, lava cave).
-- 2026-10-15: OWNER PREFERENCE: a prompt I've given is NOT a started task. Assume a task is in progress only when the owner says they launched it.
-  - M09b prompt was given but NOT used. M09b is not started.
+- 2026-10-15: M09b prompt was given, but the owner changed their mind and did NOT use it. M09b is not started. This is a one-off; there is no general rule.
   - Owner's order: M08a (Codex, full model; the owner is starting it now) → M08b (the owner's water reference image first) → then M09b. Regenerate the M09b prompt against master at that point.
