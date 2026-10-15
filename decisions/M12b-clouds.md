@@ -70,3 +70,8 @@
 - `tests/e2e/m12.spec.ts`, first `page.evaluate` of `M12a time of day, noon sky, sunset west horizon glow, and midnight stars`: `window.__blockcraft!.setClouds!('off');`.
   - *Reason*: that test checks the sky gradient, stars and moon phases, not clouds. With the new cell layout an opaque cloud covers the full moon at its camera and time (full-moon centre luminance 10.94 vs required > 150). No thresholds or other lines changed.
 - All three approved lines: `m12.spec.ts` (M12a time-of-day test), `m12.spec.ts` (RD8 sky test), `m04.spec.ts` (RD12 horizon test). No more may be added without asking the owner.
+
+### Review round 1 fixes (M12b-fix)
+
+- **Wind test.** `tick()` also advances world time, so a pixel diff cannot isolate wind. The renderer now exposes `windOffset` (from the exported `cloudWindOffset(ticks)`), published as `getRenderStats().cloudWindOffset`. The e2e test asserts it advances by 3 blocks (±0.05) over `tick(60)`. Forcing the offset to 0 makes the test fail at the `toBeCloseTo` assertion (checked locally, reverted). The unit drift test calls the real `cloudWindOffset`.
+- **Glare.** The M12b test now takes the same noon-sun view with `setClouds('off')` and asserts centre luminance > 250 (cloud-covered view stays 150–235). Part of the M12b test; no other test changed.

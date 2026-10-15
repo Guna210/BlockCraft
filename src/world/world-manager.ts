@@ -1016,6 +1016,7 @@ export class WorldManager {
       const cloudStats = this.cloudRenderer
         ? this.cloudRenderer.render(this.camera, ticks, this.renderDistance)
         : { drawCalls: 0, triangles: 0 };
+      renderStats.cloudWindOffset = this.cloudRenderer?.windOffset ?? 0;
       this.underwaterTint?.render(underwater);
       renderStats.drawCalls +=
         skyStats.drawCalls + cloudStats.drawCalls + Number(underwater.submerged);

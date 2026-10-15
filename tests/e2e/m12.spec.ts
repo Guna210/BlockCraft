@@ -534,6 +534,25 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   expect(noonGlareCenter.luminance).toBeLessThan(235);
   expect(noonGlareCenter.luminance).toBeGreaterThan(150);
 
+  // Comparison: the same view with clouds off shows the unobstructed sun disc and glare (near white)
+  await page.evaluate(async () => {
+    window.__blockcraft!.setClouds!('off');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+  const noonClearPng = await assertAndSaveScreenshot({
+    name: 'm12-sun-glare-noon-clear',
+    milestone: 'M12b',
+  });
+  const noonClearCenter = regionStats(noonClearPng, {
+    x: Math.floor(noonClearPng.width / 2) - 20,
+    y: Math.floor(noonClearPng.height / 2) - 20,
+    w: 40,
+    h: 40,
+  });
+  console.log('m12b noon glare center (clear sky):', JSON.stringify(noonClearCenter));
+  expect(noonClearCenter.luminance).toBeGreaterThan(250);
+  await page.evaluate(() => window.__blockcraft!.setClouds!('fancy'));
+
   // Reposition player back to overlooking west for sunset review
   await page.evaluate(() => {
     const y = window.__blockcraft!.getHeight!(2, 0) + 2;
@@ -615,20 +634,26 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
     window.__blockcraft!.setClouds!('fancy');
   });
 
-  // 5. Wind drift along +X
+  // 5. Wind drift along +X: read the renderer's actual wind offset from the render stats.
+  // tick() also advances world time (sky and sun change), so a pixel diff cannot isolate wind.
+  const windBefore = await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return window.__blockcraft!.getRenderStats().cloudWindOffset;
+  });
   const beforeDriftPng = await assertAndSaveScreenshot({
     name: 'm12-drift-before',
     milestone: 'M12b',
   });
-  await page.evaluate(async () => {
+  const windAfter = await page.evaluate(async () => {
     await window.__blockcraft!.tick!(60); // 3 seconds = 3 blocks drift along +X
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return window.__blockcraft!.getRenderStats().cloudWindOffset;
   });
   const afterDriftPng = await assertAndSaveScreenshot({
     name: 'm12-drift-after',
     milestone: 'M12b',
   });
-  const diff = diffFraction(beforeDriftPng, afterDriftPng);
-  console.log('m12b wind drift diff fraction:', diff);
-  expect(diff).toBeGreaterThan(0.005);
+  console.log('m12b wind offset before/after:', windBefore, windAfter);
+  expect(windAfter - windBefore).toBeCloseTo(3 * CLOUD_WIND_SPEED, 1);
+  expect(diffFraction(beforeDriftPng, afterDriftPng)).toBeGreaterThan(0.005);
 });

@@ -8,6 +8,7 @@ import {
   CLOUD_THICKNESS,
   CLOUD_Y_TOP,
   CLOUD_WIND_SPEED,
+  cloudWindOffset,
   CLOUD_SHADE_TOP,
   CLOUD_SHADE_SIDE,
   CLOUD_SHADE_BOTTOM,
@@ -144,7 +145,7 @@ describe('M12b — Clouds & Sun Glare', () => {
       expect(smallClumps).toBeGreaterThan(0);
       expect(chunkyBlobs).toBeGreaterThan(0);
 
-      // Verify compact clouds (most 2–6 cells across in both directions, no giant monolith dominating grid)
+      // Verify compact clouds (most blobs are compact, a few cells across in both directions, no giant monolith dominating grid)
       const maxCluster = Math.max(...compSizes);
       expect(maxCluster).toBeLessThan(100);
     });
@@ -154,7 +155,7 @@ describe('M12b — Clouds & Sun Glare', () => {
     it('drifts along +X at 1 block/s on the fixed tick (20 ticks/s)', () => {
       expect(CLOUD_WIND_SPEED).toBe(1.0);
 
-      const driftAt = (ticks: number) => (ticks / 20.0) * CLOUD_WIND_SPEED;
+      const driftAt = cloudWindOffset;
 
       expect(driftAt(0)).toBe(0);
       expect(driftAt(20)).toBe(1.0);

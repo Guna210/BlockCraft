@@ -18,12 +18,17 @@ export const CLOUD_Y_BOTTOM = 192; // Cloud field at y=192 per Decision 1
 export const CLOUD_THICKNESS = 3; // Extruded 3D volumes 3 blocks thick (M12b-fix)
 export const CLOUD_Y_TOP = CLOUD_Y_BOTTOM + CLOUD_THICKNESS; // 196
 export const CLOUD_WIND_SPEED = 1.0; // 1 block/s along +X per Decision 1
+
+/** Wind drift in blocks along +X at the given world time (ticks, 20 per second). */
+export function cloudWindOffset(ticks: number): number {
+  return (ticks / 20.0) * CLOUD_WIND_SPEED;
+}
 export const CLOUD_SHADE_TOP = 1.0; // Top face: white
 export const CLOUD_SHADE_SIDE = 0.96; // Sides: near-white (thin bright rim along edges)
 export const CLOUD_SHADE_BOTTOM = 0.78; // Underside: flat pale blue-grey tinted toward sky
 
 /**
- * Generates a deterministic, seamlessly periodic 2D boolean cloud grid of 32x32 cells.
+ * Generates a deterministic, seamlessly periodic 2D boolean cloud grid of width x height cells (48x48 by default).
  * Tuned to roughly 30–40% coverage (35% target).
  * Produces chunky, compact blobs (most clouds 2–6 cells across in both directions,
  * with stepped outlines), mixing lone single cells and small 2–3 cell clumps.
@@ -300,6 +305,8 @@ void main() {
 `;
 
 export class CloudRenderer {
+  /** Wind offset (blocks along +X) used by the most recent render call. */
+  public windOffset = 0;
   private readonly glWrapper: GLWrapper;
   private readonly program: WebGLProgram;
 
@@ -590,7 +597,7 @@ export class CloudRenderer {
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-    // 4. Create 32x32 2D texture for fast mode
+    // 4. Create the 2D texture for fast mode (one texel per grid cell)
     const texData = new Uint8Array(width * height * 4);
     for (let i = 0; i < width * height; i++) {
       if (this.activeGrid[i]) {
@@ -619,6 +626,10 @@ export class CloudRenderer {
     ticks: number = getWorldTime(),
     renderDistance = 8,
   ): { drawCalls: number; triangles: number } {
+    // Wind drift at 1 block/s along +X, advanced on fixed tick per Decision 1
+    const windOffset = cloudWindOffset(ticks);
+    this.windOffset = windOffset;
+
     const mode = settings.clouds;
     if (mode === 'off') {
       return { drawCalls: 0, triangles: 0 };
@@ -631,9 +642,6 @@ export class CloudRenderer {
     const cloudRange = Math.max(512, 2 * terrainFogEnd);
     const fogStart = cloudRange * 0.5;
     const fogEnd = cloudRange;
-
-    // Wind drift at 1 block/s along +X, advanced on fixed tick per Decision 1
-    const windOffset = (ticks / 20.0) * CLOUD_WIND_SPEED;
 
     const camX = camera.position[0];
     const camZ = camera.position[2];
