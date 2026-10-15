@@ -278,7 +278,10 @@ test.describe('M04b: fade-in and memory', () => {
     assertAndSaveScreenshot,
   }) => {
     await createWorld(page, 'm04-horizon');
-    await page.evaluate(() => window.__blockcraft!.setRenderDistance!(12));
+    await page.evaluate(() => {
+      window.__blockcraft!.setClouds!('off');
+      window.__blockcraft!.setRenderDistance!(12);
+    });
     await waitForStreamingIdle(page, 120_000);
     await waitForFadesDone(page, 10_000);
 

@@ -115,6 +115,31 @@ void main() {
     }
   }
 
+  // Sun glare halo around the sun (Decision 5)
+  if (u_sunDir.y > -0.08) {
+    float cosSun = dot(dir, normalize(u_sunDir));
+    if (cosSun > 0.70) {
+      float sunHeight = clamp(u_sunDir.y, 0.0, 1.0);
+      float highFactor = smoothstep(0.05, 0.65, sunHeight);
+
+      // Halo expands and softens as the sun rises
+      float haloStart = mix(0.965, 0.82, highFactor);
+      float halo = smoothstep(haloStart, 0.992, cosSun);
+
+      // Core saturates to near white when high so the pixel disc is washed out
+      float core = smoothstep(0.985, 0.998, cosSun) * highFactor;
+
+      // Color warms to orange near the horizon, bright white when high
+      vec3 warmColor = vec3(1.0, 0.55, 0.15);
+      vec3 whiteColor = vec3(1.0, 1.0, 1.0);
+      vec3 glareColor = mix(warmColor, whiteColor, highFactor);
+
+      // Intensity: soft warm glow at sunset, blinding white saturation at noon
+      float intensity = mix(0.40 * halo, min(1.0, halo * 0.75 + core * 1.5), highFactor);
+      sky = mix(sky, glareColor, clamp(intensity, 0.0, 1.0));
+    }
+  }
+
   fragColor = vec4(sky, 1.0);
 }
 `;
@@ -365,7 +390,10 @@ export class SkyRenderer {
     let triangles = 1;
 
     if (sunRect && moonRect) {
-      const sunAlpha = Math.max(0, Math.min(1, (sunDir[1] + 0.18) / 0.22));
+      const sunAlphaBase = Math.max(0, Math.min(1, (sunDir[1] + 0.18) / 0.22));
+      const sunHeight = Math.max(0, Math.min(1, sunDir[1]));
+      const highFactor = Math.max(0, Math.min(1, (sunHeight - 0.05) / 0.6));
+      const sunAlpha = sunAlphaBase * (1.0 - highFactor * 1.0);
       const moonAlpha = Math.max(0, Math.min(1, (moonDir[1] + 0.18) / 0.22));
 
       this.writeBillboardQuad(

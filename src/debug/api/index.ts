@@ -7,6 +7,7 @@ import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './worl
 import { locate } from './locate';
 import './ore-locate';
 import './time';
+import './clouds';
 import './raycast';
 import './inventory';
 import './entities';

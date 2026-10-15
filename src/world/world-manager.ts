@@ -19,6 +19,7 @@ import { hashString } from '../engine/rng';
 import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
+import { CloudRenderer } from '../render/clouds';
 import {
   getWorldTime,
   resetWorldTime,
@@ -138,6 +139,7 @@ export class WorldManager {
   private underwaterTint: UnderwaterTint | null = null;
   public playerModelRenderer: PlayerModelRenderer | null = null;
   public skyRenderer: SkyRenderer | null = null;
+  public cloudRenderer: CloudRenderer | null = null;
   public dropRenderer: DropRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
@@ -637,6 +639,7 @@ export class WorldManager {
 
     // 4. Sky & Chunk Renderers
     this.skyRenderer = new SkyRenderer(this.glWrapper);
+    this.cloudRenderer = new CloudRenderer(this.glWrapper);
     this.underwaterTint = new UnderwaterTint(this.glWrapper);
     this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
@@ -1010,9 +1013,15 @@ export class WorldManager {
         this.blockSelection?.render(this.playerController?.interaction ?? null, this.viewProj) ?? 0;
       renderStats.drawCalls += selectionDraws;
       if (selectionDraws === 2) renderStats.triangles += 12;
+      const cloudStats = this.cloudRenderer
+        ? this.cloudRenderer.render(this.camera, ticks, this.renderDistance)
+        : { drawCalls: 0, triangles: 0 };
+      renderStats.cloudWindOffset = this.cloudRenderer?.windOffset ?? 0;
       this.underwaterTint?.render(underwater);
-      renderStats.drawCalls += skyStats.drawCalls + Number(underwater.submerged);
-      renderStats.triangles += skyStats.triangles + Number(underwater.submerged);
+      renderStats.drawCalls +=
+        skyStats.drawCalls + cloudStats.drawCalls + Number(underwater.submerged);
+      renderStats.triangles +=
+        skyStats.triangles + cloudStats.triangles + Number(underwater.submerged);
       this.terrainFrames++;
       return true;
     }

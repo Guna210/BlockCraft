@@ -37,6 +37,7 @@ export interface BlockCraftDebugAPI {
   tick?: (n: number) => Promise<void>;
   setGameMode?: (mode: 'survival' | 'creative') => void;
   setTimeOfDay?: (ticks: number) => void;
+  setClouds?: (mode: 'fancy' | 'fast' | 'off') => void;
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
@@ -110,6 +111,7 @@ export interface BlockCraftDebugAPI {
     underwaterFog: [number, number];
     underwaterBrightnessFloor: number;
     playerModelParts: number;
+    cloudWindOffset: number;
   };
 }
 
@@ -140,6 +142,7 @@ export const renderStats = {
   underwaterFog: [0, 0] as [number, number],
   underwaterBrightnessFloor: 0,
   playerModelParts: 0,
+  cloudWindOffset: 0,
 };
 
 // Set by main.ts in debug mode: reads pending WebGL errors into renderStats.glErrors.
