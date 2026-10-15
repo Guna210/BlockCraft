@@ -1,3 +1,4 @@
+import { toolGenerators, toolPalettes, TERRAIN_TOOL_IDS } from './tools';
 import { items } from '../../gameplay/items';
 import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from './noise';
 
@@ -157,9 +158,23 @@ for (const item of items.items.values()) {
         const shade = !mask[n - 16] || !mask[n - 1] ? 3 : !mask[n + 16] || !mask[n + 1] ? 0 : 2;
         setPixel(data, x, y, palette[shade]!);
       }
-    // A small inset cluster supplies deterministic material variation.
-    const y = 7 + ((seed >>> 0) % 2);
-    for (const x of [7, 8]) if (mask[y * 16 + x]) setPixel(data, x, y, palette[1]!);
+    // Pick an actual two-pixel span so hollow shapes also vary with the seed.
+    const spans: number[] = [];
+    for (let y = 1; y < 15; y++)
+      for (let x = 1; x < 14; x++) {
+        const n = y * 16 + x;
+        if (mask[n] && mask[n + 1]) spans.push(n);
+      }
+    const anchor = spans[Math.floor((((seed >>> 0) % 4) * spans.length) / 4)]!;
+    setPixel(data, anchor % 16, Math.floor(anchor / 16), palette[1]!);
+    setPixel(data, (anchor % 16) + 1, Math.floor(anchor / 16), palette[1]!);
     return data;
   };
 }
+
+// Additional world sprites have their own atlas; M07b's original tools stay in terrain.
+for (const [id, generate] of Object.entries(toolGenerators))
+  if (!TERRAIN_TOOL_IDS.includes(id)) {
+    inventoryItemGenerators[id] = generate;
+    inventoryItemPalettes[id] = toolPalettes[id]!;
+  }

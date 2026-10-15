@@ -64,3 +64,29 @@ These are the owner's required decisions. M07b is present on latest fetched
 - New nonblock entries have world-drop sprite generators because the existing
   M07b renderer requires them. These are atlas textures, with declared palettes
   and deterministic shapes; no inventory icon atlas, UI or HUD is added.
+
+
+## World-drop texture ownership
+
+The additional item registry does not enlarge the terrain atlas. M07b's eight
+original tool sprites remain there, preserving their shared renderer contract.
+The 67 new world sprites have a separate generator/palette registry and a
+256×256 atlas created on first use by a dropped item. This avoids eager terrain
+startup/memory work for data-only items. It is a world-drop texture resource;
+M09b still owns the UI icon atlas.
+
+DropRenderer retains its persistent vertex buffer and batches terrain-atlas
+items, additional-atlas items, then particles with the correct texture bindings.
+There are at most three draws when all three groups are present; the legacy
+M07b scene retains two. CPU and GPU storage are reused. Renderer replacement
+frees the optional texture and its original GPU resources through GLWrapper.
+Only the dispose call is added to WorldManager; sky/cloud/weather code is not
+changed. Owned unit and clay-drop browser regressions validate the new path.
+
+New sprites are tested for palette, contrast and seed variation across both
+registries. Their colors are checked under the scalar lighting actually applied
+by the world-item shader, which has no biome tint or fog. The unchanged terrain
+color sweep still covers the existing terrain atlas; its timeout also reproduces
+on unmodified master under Node 22, and is disclosed as unlisted rather than
+silently added to the owner's exceptions. Full verification and the owner gate
+remain mandatory.

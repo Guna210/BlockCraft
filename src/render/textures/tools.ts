@@ -16,6 +16,7 @@ const TOOL_DATA: Record<string, readonly [string, RGBA[]]> = {
   wooden_hoe: ['hoe', WOOD],
   iron_shears: ['shears', IRON],
 };
+export const TERRAIN_TOOL_IDS: readonly string[] = Object.keys(TOOL_DATA);
 for (const [tier, palette] of Object.entries({
   wooden: WOOD,
   stone: STONE,
@@ -87,3 +88,10 @@ for (const [id, [kind, palette]] of Object.entries(TOOL_DATA)) {
     return data;
   };
 }
+
+export const terrainToolGenerators = Object.fromEntries(
+  TERRAIN_TOOL_IDS.map((id) => [id, toolGenerators[id]!]),
+);
+export const terrainToolPalettes = Object.fromEntries(
+  TERRAIN_TOOL_IDS.map((id) => [id, toolPalettes[id]!]),
+);

@@ -1,3 +1,7 @@
+import {
+  inventoryItemGenerators,
+  inventoryItemPalettes,
+} from '../../src/render/textures/inventory-items';
 import { expect, it } from 'vitest';
 import { items } from '../../src/gameplay/items';
 import { blockLoot } from '../../src/gameplay/loot';
@@ -80,11 +84,13 @@ it('M09a wall torch drops torch, clay four lumps; snow and packed ice self-drop;
 it('M09a every nonblock resolves to a deterministic world sprite with a limited declared palette', () => {
   for (const item of items.items.values())
     if (!item.block) {
-      const generate = textureGenerators[item.texture!];
+      const generate = textureGenerators[item.texture!] ?? inventoryItemGenerators[item.texture!];
       expect(generate, item.id).toBeDefined();
       const pixels = generate!() as Uint8Array;
       expect(generate!()).toEqual(pixels);
-      const palette = texturePalettes[item.texture!]!;
+      expect(generate!(42), item.id).not.toEqual(generate!(1337));
+      expect(generate!(12345), item.id).not.toEqual(generate!(99999));
+      const palette = (texturePalettes[item.texture!] ?? inventoryItemPalettes[item.texture!])!;
       expect(palette.length).toBeLessThanOrEqual(12);
       const colors = new Set(palette.map((c) => c.join(',')));
       let min = 255,
@@ -116,7 +122,8 @@ it('M09a saves the world-sprite art review sheet in registry order', async () =>
     png.data[n + 3] = 255;
   }
   for (let i = 0; i < entries.length; i++) {
-    const pixels = textureGenerators[entries[i]!.texture!]!() as Uint8Array;
+    const pixels = (textureGenerators[entries[i]!.texture!] ??
+      inventoryItemGenerators[entries[i]!.texture!])!() as Uint8Array;
     for (let y = 0; y < 192; y++)
       for (let x = 0; x < 192; x++) {
         const src = ((Math.floor(y / 4) % 16) * 16 + (Math.floor(x / 4) % 16)) * 4;
@@ -127,4 +134,27 @@ it('M09a saves the world-sprite art review sheet in registry order', async () =>
   fs.mkdirSync('artifacts/M09a', { recursive: true });
   fs.writeFileSync('artifacts/M09a/m09a-world-sprites.png', PNG.sync.write(png));
   fs.writeFileSync('artifacts/M09a/sprite-order.txt', entries.map((i) => i.id).join('\n') + '\n');
+});
+
+it('M09a world-item colors stay distinct from noon sky under their actual untinted and unfogged lighting', async () => {
+  const { PNG } = await import('pngjs');
+  const { isSkyPixel } = await import('../e2e/helpers/sky-holes');
+  const colors = new Set<string>();
+  for (const generate of Object.values(inventoryItemGenerators)) {
+    const data = generate(42);
+    for (let i = 0; i < data.length; i += 4)
+      if (data[i + 3]) colors.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+  }
+  const png = new PNG({ width: 1, height: 1 });
+  png.data[3] = 255;
+  const collisions: string[] = [];
+  for (const color of colors) {
+    const rgb = color.split(',').map(Number);
+    for (let light = 0; light <= 255; light++) {
+      for (let channel = 0; channel < 3; channel++)
+        png.data[channel] = Math.round((rgb[channel]! * light) / 255);
+      if (isSkyPixel(png, 0, 0)) collisions.push(`${color} at light ${light}`);
+    }
+  }
+  expect(collisions).toEqual([]);
 });

@@ -268,15 +268,15 @@ describe('seeded sequences preserve independent count totals', () => {
       const inv = new Inventory();
       const rng = new PRNG(seed);
       const random = (n: number) => Math.floor(rng.next() * n);
-      for (const [id, count] of [
+      const initial = [
         ['dirt', 191],
         ['stone', 130],
         ['iron_helmet', 2],
         ['copper_boots', 2],
         ['shield', 1],
-      ] as const)
-        inv.insert(id, count);
-      const baseline = inv.counts();
+      ] as const;
+      for (const [id, count] of initial) inv.insert(id, count);
+      const baseline = new Map<string, number>(initial);
       const dropped = new Map<string, number>();
       for (let i = 0; i < 3000; i++) {
         const slot = random(41);
@@ -311,10 +311,15 @@ describe('seeded sequences preserve independent count totals', () => {
           }
         }
         inv.assertInvariant();
-        const actual = inv.counts();
-        for (const [id, count] of baseline)
-          expect((actual.get(id) ?? 0) + (dropped.get(id) ?? 0)).toBe(count);
-        expect([...actual.keys()].every((id) => baseline.has(id))).toBe(true);
+        const actual = [...inv.snapshot(true), inv.cursorSnapshot()];
+        for (const [id, count] of baseline) {
+          const remaining = actual.reduce(
+            (sum, stack) => sum + (stack?.id === id ? stack.count : 0),
+            0,
+          );
+          expect(remaining + (dropped.get(id) ?? 0)).toBe(count);
+        }
+        expect(actual.every((stack) => !stack || baseline.has(stack.id))).toBe(true);
       }
     });
 });
@@ -372,4 +377,15 @@ it('the operation engine also respects a declared 16-stack maximum', () => {
   } finally {
     item.maxStack = previous;
   }
+});
+
+it('placing a cursor copied from a slot record binds the destination slot correctly', () => {
+  const inv = new Inventory();
+  const fromStorage = { slot: 0, id: 'dirt', count: 5 };
+  inv.cursor = fromStorage;
+  expect(inv.cursorSnapshot()).toEqual({ id: 'dirt', count: 5 });
+  checked(inv, () => inv.leftClick(9));
+  expect(inv.slots[9]).toEqual({ slot: 9, id: 'dirt', count: 5 });
+  expect(fromStorage.slot).toBe(0);
+  expect(inv.cursor).toBeNull();
 });

@@ -88,7 +88,7 @@ export class Inventory {
       .map((stack) => (stack ? { ...stack } : null));
   }
   cursorSnapshot(): CursorStack | null {
-    return this.cursor ? { ...this.cursor } : null;
+    return this.cursor ? { id: this.cursor.id, count: this.cursor.count } : null;
   }
   private checkSlot(slot: number): void {
     if (!Number.isInteger(slot) || slot < 0 || slot >= 41)
@@ -130,7 +130,7 @@ export class Inventory {
     this.assertInvariant(before);
   }
   private put(slot: number, stack: CursorStack | null): void {
-    this.slots[slot] = stack ? { slot, ...stack } : null;
+    this.slots[slot] = stack ? { ...stack, slot } : null;
   }
   private cleanCursor(): void {
     if (this.cursor?.count === 0) this.cursor = null;

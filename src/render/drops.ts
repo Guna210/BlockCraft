@@ -1,6 +1,7 @@
 import type { mat4 } from 'gl-matrix';
 import type { GLWrapper } from './gl';
-import type { TextureAtlas, AtlasRect as TileRect } from './atlas';
+import { TextureAtlas, ATLAS_MAX_MIP, type AtlasRect as TileRect } from './atlas';
+import { inventoryItemGenerators } from './textures/inventory-items';
 import type { PlayerController } from '../engine/player-controller';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { BlockFaceDirection } from '../world/blocks/types';
@@ -60,7 +61,7 @@ const CORNERS = [
 ] as const;
 const INDICES = [0, 1, 2, 0, 2, 3];
 
-/** Two batched submissions, persistent CPU/GPU buffers, and cached per-state atlas faces. */
+/** Persistent batches; additional world sprites allocate their atlas only on first use. */
 export class DropRenderer {
   private readonly program: WebGLProgram;
   private readonly vao: WebGLVertexArrayObject;
@@ -70,6 +71,9 @@ export class DropRenderer {
   private readonly faces: Array<readonly TileRect[]> = [];
   private readonly sprites = new Map<string, TileRect>();
   private cursor = 0;
+  private itemAtlas: TextureAtlas | null = null;
+  private itemTexture: WebGLTexture | null = null;
+  private disposed = false;
   itemDraws = 0;
   particleDraws = 0;
   triangles = 0;
@@ -109,9 +113,52 @@ export class DropRenderer {
     for (const item of items.items.values())
       if (item.texture) {
         const rect = atlas.rects.get(item.texture);
-        if (!rect) throw new Error(`Missing item sprite: ${item.id}`);
-        this.sprites.set(item.id, rect);
+        if (!rect && !inventoryItemGenerators[item.texture])
+          throw new Error(`Missing item sprite: ${item.id}`);
+        if (rect) this.sprites.set(item.id, rect);
       }
+  }
+  private ensureItemAtlas(): TextureAtlas {
+    if (this.itemAtlas) return this.itemAtlas;
+    const tiles = new Map<string, Uint8Array>();
+    for (const [id, generate] of Object.entries(inventoryItemGenerators))
+      tiles.set(id, generate(42));
+    const atlas = new TextureAtlas(tiles, { width: 256 });
+    const gl = this.wrapper.gl;
+    const texture = this.wrapper.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    for (let level = 0; level <= ATLAS_MAX_MIP; level++)
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        level,
+        gl.RGBA,
+        atlas.width >> level,
+        atlas.height >> level,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        atlas.mips[level]!,
+      );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, ATLAS_MAX_MIP);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    this.itemAtlas = atlas;
+    this.itemTexture = texture;
+    return atlas;
+  }
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    if (this.itemTexture) this.wrapper.deleteTexture(this.itemTexture);
+    this.itemTexture = null;
+    this.itemAtlas = null;
+    this.wrapper.deleteBuffer(this.buffer);
+    this.wrapper.deleteVertexArray(this.vao);
+    this.wrapper.deleteProgram(this.program);
   }
   private light(world: World, x: number, y: number, z: number, skyBrightness: number): number {
     x = Math.floor(x);
@@ -136,14 +183,15 @@ export class DropRenderer {
     v: number,
     light: number,
     cutoff = 0.1,
+    atlas: TextureAtlas = this.atlas,
   ): void {
     const d = this.data;
     let n = this.cursor;
     d[n++] = x;
     d[n++] = y;
     d[n++] = z;
-    d[n++] = u / this.atlas.width;
-    d[n++] = v / this.atlas.height;
+    d[n++] = u / atlas.width;
+    d[n++] = v / atlas.height;
     d[n++] = light;
     d[n++] = cutoff;
     this.cursor = n;
@@ -156,65 +204,79 @@ export class DropRenderer {
   ): number {
     this.cursor = 0;
     this.itemDraws = this.particleDraws = this.triangles = 0;
-    if (!c?.player || !c.itemEntities || !c.particles) return 0;
+    if (this.disposed || !c?.player || !c.itemEntities || !c.particles) return 0;
     const alpha = c.renderAlpha,
       world = c.player.collision.world,
       registry = BlockRegistry.getInstance();
-    for (let n = 0; n < ITEM_CAPACITY; n++) {
-      const e = c.itemEntities.pool[n]!;
-      if (!e.active) continue;
-      const time = e.age - 1 + alpha;
-      const x = e.previous[0] + (e.pos[0] - e.previous[0]) * alpha,
-        y =
-          e.previous[1] +
-          (e.pos[1] - e.previous[1]) * alpha +
-          0.22 +
-          Math.sin(time * 0.15 + e.phase) * 0.1,
-        z = e.previous[2] + (e.pos[2] - e.previous[2]) * alpha;
-      const angle = time * 0.1 + e.phase,
-        cos = Math.cos(angle),
-        sin = Math.sin(angle);
-      const light = this.light(world, x, y, z, skyBrightness);
-      if (e.item.block) {
-        const state = registry.getDefaultStateId(e.item.block)!;
-        const faces = this.faces[state]!;
-        const cutoff =
-          registry.getResolvedState(state)!.definition.renderLayer === 'opaque' ? 0 : 0.1;
-        for (let face = 0; face < 6; face++) {
-          const rect = faces[face]!,
-            shade = face === 2 ? 1 : face === 3 ? 0.55 : 0.82;
+    let terrainVertices = 0;
+    let hasAdditionalItems = false;
+    for (let pass = 0; pass < 2; pass++) {
+      if (pass === 1 && !hasAdditionalItems) break;
+      for (let n = 0; n < ITEM_CAPACITY; n++) {
+        const e = c.itemEntities.pool[n]!;
+        if (!e.active) continue;
+        const additional = !e.item.block && !this.sprites.has(e.item.id);
+        if (pass === 0 && additional) hasAdditionalItems = true;
+        if (additional !== (pass === 1)) continue;
+        const spriteAtlas = additional ? this.ensureItemAtlas() : this.atlas;
+        const time = e.age - 1 + alpha;
+        const x = e.previous[0] + (e.pos[0] - e.previous[0]) * alpha,
+          y =
+            e.previous[1] +
+            (e.pos[1] - e.previous[1]) * alpha +
+            0.22 +
+            Math.sin(time * 0.15 + e.phase) * 0.1,
+          z = e.previous[2] + (e.pos[2] - e.previous[2]) * alpha;
+        const angle = time * 0.1 + e.phase,
+          cos = Math.cos(angle),
+          sin = Math.sin(angle);
+        const light = this.light(world, x, y, z, skyBrightness);
+        if (e.item.block) {
+          const state = registry.getDefaultStateId(e.item.block)!;
+          const faces = this.faces[state]!;
+          const cutoff =
+            registry.getResolvedState(state)!.definition.renderLayer === 'opaque' ? 0 : 0.1;
+          for (let face = 0; face < 6; face++) {
+            const rect = faces[face]!,
+              shade = face === 2 ? 1 : face === 3 ? 0.55 : 0.82;
+            for (let t = 0; t < 6; t++) {
+              const corner = INDICES[t]!,
+                p = CORNERS[face]![corner]!;
+              const px = (p[0] - 0.5) * 0.3,
+                pz = (p[2] - 0.5) * 0.3;
+              this.vertex(
+                x + px * cos + pz * sin,
+                y + (p[1] - 0.5) * 0.3,
+                z - px * sin + pz * cos,
+                rect.x + (corner < 2 ? 0.5 : 15.5),
+                rect.y + (corner === 0 || corner === 3 ? 15.5 : 0.5),
+                light * shade,
+                cutoff,
+              );
+            }
+          }
+        } else {
+          const rect = additional
+            ? spriteAtlas.rects.get(e.item.texture!)!
+            : this.sprites.get(e.item.id)!;
           for (let t = 0; t < 6; t++) {
             const corner = INDICES[t]!,
-              p = CORNERS[face]![corner]!;
-            const px = (p[0] - 0.5) * 0.3,
-              pz = (p[2] - 0.5) * 0.3;
+              px = corner < 2 ? -0.18 : 0.18,
+              py = corner === 0 || corner === 3 ? -0.18 : 0.18;
             this.vertex(
-              x + px * cos + pz * sin,
-              y + (p[1] - 0.5) * 0.3,
-              z - px * sin + pz * cos,
+              x + px * cos,
+              y + py,
+              z - px * sin,
               rect.x + (corner < 2 ? 0.5 : 15.5),
               rect.y + (corner === 0 || corner === 3 ? 15.5 : 0.5),
-              light * shade,
-              cutoff,
+              light,
+              0.1,
+              spriteAtlas,
             );
           }
         }
-      } else {
-        const rect = this.sprites.get(e.item.id)!;
-        for (let t = 0; t < 6; t++) {
-          const corner = INDICES[t]!,
-            px = corner < 2 ? -0.18 : 0.18,
-            py = corner === 0 || corner === 3 ? -0.18 : 0.18;
-          this.vertex(
-            x + px * cos,
-            y + py,
-            z - px * sin,
-            rect.x + (corner < 2 ? 0.5 : 15.5),
-            rect.y + (corner === 0 || corner === 3 ? 15.5 : 0.5),
-            light,
-          );
-        }
       }
+      if (pass === 0) terrainVertices = this.cursor / 7;
     }
     const itemVertices = this.cursor / 7;
     const yaw = c.camera.yaw,
@@ -265,9 +327,16 @@ export class DropRenderer {
     gl.disable(gl.CULL_FACE);
     gl.depthMask(true);
     gl.disable(gl.BLEND);
-    if (itemVertices) {
-      this.wrapper.drawArrays(gl.TRIANGLES, 0, itemVertices);
-      this.itemDraws = 1;
+    if (terrainVertices) {
+      this.wrapper.drawArrays(gl.TRIANGLES, 0, terrainVertices);
+      this.itemDraws++;
+    }
+    const additionalVertices = itemVertices - terrainVertices;
+    if (additionalVertices) {
+      gl.bindTexture(gl.TEXTURE_2D, this.itemTexture);
+      this.wrapper.drawArrays(gl.TRIANGLES, terrainVertices, additionalVertices);
+      this.itemDraws++;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
     }
     gl.depthMask(false);
     if (particleVertices) {
