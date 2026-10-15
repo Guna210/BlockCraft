@@ -60,6 +60,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 
 ## Log (newest first)
 
+- 2026-10-15: Prompts given: M09a to Codex (branch claude/m09a; slots 0-8 hotbar, 9-35 main, 36-39 armor, 40 offhand, cursor stack; pure ops; registry incl. A.2 tools, A.5 food, A.4 drops; armor items data-only with armorSlot, no defense (M10a); M07b loot follow-ups) and M12c to agy (branch agy/m12c; src/render/weather.ts; weather starts clear, no random change before 12000 ticks; setWeather; instanced particles; biome/altitude precip; snow_layer/ice/fire blocks don't exist yet, add what M12c needs per AGENTS §2; no random-tick system exists, add a minimal weather tick).
 - 2026-10-15: PR #42 (M12b) merged. Minor doc gap: the round-1 fix notes (wind-offset assertion, clear-sky glare check) are only in decisions/M12b-clouds.md, not in progress/M12b.md. Not worth a PR alone; mention to M12c's builder.
 - 2026-10-15: M12b review round 2: VERDICT PASS on ad038a7 (CI green). Told the owner to merge PR #42. After merge, agy's laptop must fetch/pull before any new agy branch. Next candidates: M12c (weather) and M09a (with the M07b loot follow-ups), checking deps.
 - 2026-10-15: PR #42 round-1 fixes pushed (ad038a7); CI green (run 38710241571); not draft. Builder refreshing the PR body. Next: owner pastes round-2 message into reviewer session_01THdvdJBZtvd7HUcs3NUYKf.
