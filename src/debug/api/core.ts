@@ -2,6 +2,7 @@ export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
   giveItem?: (id: string, count: number) => void;
   getInventory?: () => Array<import('../../gameplay/inventory').ItemStack | null>;
+  getInventoryCursor?: () => import('../../gameplay/inventory').CursorStack | null;
   selectHotbarSlot?: (slot: number) => void;
   getEntities?: (filter?: {
     type?: string;

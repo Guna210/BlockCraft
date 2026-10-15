@@ -4,8 +4,9 @@ const WOOD = ['#30271e', '#65503b', '#9b7948', '#d8b978'].map((c) => hexToRgb(c)
 const STONE = ['#303342', '#646779', '#989ea9', '#d9d3bd'].map((c) => hexToRgb(c));
 const COPPER = ['#392b38', '#935037', '#cb8850', '#f0cf8d'].map((c) => hexToRgb(c));
 const IRON = ['#343340', '#727f90', '#adb6bd', '#eee1ca'].map((c) => hexToRgb(c));
+const SKYSHARD = ['#302047', '#644188', '#9d6ecc', '#edccfa'].map((c) => hexToRgb(c));
 const TRANSPARENT: RGBA = [0, 0, 0, 0];
-const TOOL_DATA = {
+const TOOL_DATA: Record<string, readonly [string, RGBA[]]> = {
   wooden_pickaxe: ['pickaxe', WOOD],
   stone_pickaxe: ['pickaxe', STONE],
   copper_pickaxe: ['pickaxe', COPPER],
@@ -14,7 +15,17 @@ const TOOL_DATA = {
   wooden_shovel: ['shovel', WOOD],
   wooden_hoe: ['hoe', WOOD],
   iron_shears: ['shears', IRON],
-} as const;
+};
+export const TERRAIN_TOOL_IDS: readonly string[] = Object.keys(TOOL_DATA);
+for (const [tier, palette] of Object.entries({
+  wooden: WOOD,
+  stone: STONE,
+  copper: COPPER,
+  iron: IRON,
+  skyshard: SKYSHARD,
+}))
+  for (const kind of ['pickaxe', 'axe', 'shovel', 'hoe', 'sword'])
+    TOOL_DATA[`${tier}_${kind}`] = [kind, palette];
 export const toolGenerators: Record<string, (seed?: number) => Uint8Array> = {};
 export const toolPalettes: Record<string, RGBA[]> = {};
 for (const [id, [kind, palette]] of Object.entries(TOOL_DATA)) {
@@ -52,6 +63,10 @@ for (const [id, [kind, palette]] of Object.entries(TOOL_DATA)) {
         rect(5, 2, 10, 5);
         rect(6, 6, 9, 6);
       }
+      if (kind === 'sword') {
+        rect(7, 2, 8, 8);
+        rect(5, 9, 10, 10);
+      }
       if (kind === 'hoe') {
         rect(3, 3, 9, 4);
         rect(3, 4, 4, 6);
@@ -73,3 +88,10 @@ for (const [id, [kind, palette]] of Object.entries(TOOL_DATA)) {
     return data;
   };
 }
+
+export const terrainToolGenerators = Object.fromEntries(
+  TERRAIN_TOOL_IDS.map((id) => [id, toolGenerators[id]!]),
+);
+export const terrainToolPalettes = Object.fromEntries(
+  TERRAIN_TOOL_IDS.map((id) => [id, toolPalettes[id]!]),
+);

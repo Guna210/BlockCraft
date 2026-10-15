@@ -8,7 +8,9 @@ function controller() {
 api.giveItem = (id, count) => {
   if (!controller().player!.inventory.insert(id, count)) throw new Error('Inventory is full');
 };
-api.getInventory = () => controller().player!.inventory.snapshot();
+api.getInventory = () => controller().player!.inventory.snapshot(true);
 api.selectHotbarSlot = (slot) => {
   controller().player!.selectedSlot = slot;
 };
+
+api.getInventoryCursor = () => controller().player!.inventory.cursorSnapshot();
