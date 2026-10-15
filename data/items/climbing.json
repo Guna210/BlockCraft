@@ -1,0 +1,12 @@
+{
+  "ladder": {
+    "kind": "block",
+    "block": "ladder",
+    "maxStack": 64
+  },
+  "vine": {
+    "kind": "block",
+    "block": "vine",
+    "maxStack": 64
+  }
+}

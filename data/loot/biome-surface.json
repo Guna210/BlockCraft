@@ -1,0 +1,74 @@
+{
+  "red_sand": [
+    {
+      "id": "red_sand",
+      "count": 1
+    }
+  ],
+  "clay": [
+    {
+      "id": "clay",
+      "count": 1
+    }
+  ],
+  "snow": [
+    {
+      "id": "snow",
+      "count": 1
+    }
+  ],
+  "mire": [
+    {
+      "id": "mire",
+      "count": 1
+    }
+  ],
+  "clayrock_white": [
+    {
+      "id": "clayrock_white",
+      "count": 1
+    }
+  ],
+  "clayrock_light_gray": [
+    {
+      "id": "clayrock_light_gray",
+      "count": 1
+    }
+  ],
+  "clayrock_yellow": [
+    {
+      "id": "clayrock_yellow",
+      "count": 1
+    }
+  ],
+  "clayrock_orange": [
+    {
+      "id": "clayrock_orange",
+      "count": 1
+    }
+  ],
+  "clayrock_terracotta": [
+    {
+      "id": "clayrock_terracotta",
+      "count": 1
+    }
+  ],
+  "clayrock_red": [
+    {
+      "id": "clayrock_red",
+      "count": 1
+    }
+  ],
+  "clayrock_brown": [
+    {
+      "id": "clayrock_brown",
+      "count": 1
+    }
+  ],
+  "clayrock_dark_brown": [
+    {
+      "id": "clayrock_dark_brown",
+      "count": 1
+    }
+  ]
+}

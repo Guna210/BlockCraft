@@ -1,0 +1,38 @@
+{
+  "grass_block": [
+    {
+      "id": "dirt",
+      "count": 1
+    }
+  ],
+  "dirt": [
+    {
+      "id": "dirt",
+      "count": 1
+    }
+  ],
+  "stone": [
+    {
+      "id": "cobblestone",
+      "count": 1
+    }
+  ],
+  "cobblestone": [
+    {
+      "id": "cobblestone",
+      "count": 1
+    }
+  ],
+  "sand": [
+    {
+      "id": "sand",
+      "count": 1
+    }
+  ],
+  "gravel": [
+    {
+      "id": "gravel",
+      "count": 1
+    }
+  ]
+}

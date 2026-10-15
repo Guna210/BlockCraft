@@ -78,7 +78,14 @@ function main() {
   worldManager.playerController = playerController;
   let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
-    frameDrain = new FencedErrorDrain(gl, () => glWrapper.drainErrors());
+    frameDrain = new FencedErrorDrain(
+      gl,
+      () => glWrapper.drainErrors(),
+      (fence) => {
+        const status = gl.clientWaitSync(fence, 0, 0);
+        return status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED;
+      },
+    );
     const drainNow = () => frameDrain!.drainNow();
     worldManager.drainGlErrors = drainNow;
     setGlErrorDrain(drainNow);

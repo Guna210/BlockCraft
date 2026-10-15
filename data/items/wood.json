@@ -1,0 +1,47 @@
+{
+  "oak_log": {
+    "kind": "block",
+    "block": "oak_log",
+    "maxStack": 64
+  },
+  "birch_log": {
+    "kind": "block",
+    "block": "birch_log",
+    "maxStack": 64
+  },
+  "pine_log": {
+    "kind": "block",
+    "block": "pine_log",
+    "maxStack": 64
+  },
+  "oak_planks": {
+    "kind": "block",
+    "block": "oak_planks",
+    "maxStack": 64
+  },
+  "birch_planks": {
+    "kind": "block",
+    "block": "birch_planks",
+    "maxStack": 64
+  },
+  "pine_planks": {
+    "kind": "block",
+    "block": "pine_planks",
+    "maxStack": 64
+  },
+  "oak_leaves": {
+    "kind": "block",
+    "block": "oak_leaves",
+    "maxStack": 64
+  },
+  "birch_leaves": {
+    "kind": "block",
+    "block": "birch_leaves",
+    "maxStack": 64
+  },
+  "pine_leaves": {
+    "kind": "block",
+    "block": "pine_leaves",
+    "maxStack": 64
+  }
+}

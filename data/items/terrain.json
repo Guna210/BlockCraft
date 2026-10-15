@@ -1,0 +1,37 @@
+{
+  "grass_block": {
+    "kind": "block",
+    "block": "grass_block",
+    "maxStack": 64
+  },
+  "dirt": {
+    "kind": "block",
+    "block": "dirt",
+    "maxStack": 64
+  },
+  "foundation_stone": {
+    "kind": "block",
+    "block": "foundation_stone",
+    "maxStack": 64
+  },
+  "stone": {
+    "kind": "block",
+    "block": "stone",
+    "maxStack": 64
+  },
+  "cobblestone": {
+    "kind": "block",
+    "block": "cobblestone",
+    "maxStack": 64
+  },
+  "sand": {
+    "kind": "block",
+    "block": "sand",
+    "maxStack": 64
+  },
+  "gravel": {
+    "kind": "block",
+    "block": "gravel",
+    "maxStack": 64
+  }
+}

@@ -9,6 +9,8 @@ import './ore-locate';
 import './time';
 import './clouds';
 import './raycast';
+import './inventory';
+import './entities';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';

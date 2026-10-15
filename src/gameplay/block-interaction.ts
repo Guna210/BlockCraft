@@ -4,6 +4,7 @@ import { BlockRegistry } from '../world/blocks/registry';
 import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { breakSeconds, BARE_HAND, type MiningTool } from './mining';
 import { HALF_WIDTH } from '../entity/physics';
+import { items } from './items';
 const NORMALS = {
   top: [0, 1, 0],
   bottom: [0, -1, 0],
@@ -17,6 +18,7 @@ export class BlockInteraction {
   readonly target = createRayHit();
   progress = 0;
   tool: MiningTool = BARE_HAND;
+  onBreak?: (state: number, x: number, y: number, z: number, tool: MiningTool) => void;
   private attack = false;
   private use = false;
   private pick = false;
@@ -81,9 +83,12 @@ export class BlockInteraction {
     this.updateTarget();
     const t = this.target,
       p = this.player;
+    const selected = p.inventory.held;
+    this.tool = selected ? (items.get(selected.id).tool ?? BARE_HAND) : BARE_HAND;
     if (this.pickPressed && t.hit && p.mode === 'creative') {
       const id = this.registry.getResolvedState(t.stateId)!.blockId;
       p.heldBlock = this.registry.getDefaultStateId(id)!;
+      p.inventory.pickBlock(id);
     }
     this.pickPressed = false;
     if (this.usePressed && t.hit) this.place();
@@ -104,6 +109,7 @@ export class BlockInteraction {
     if (this.progress >= 1 - 1e-10) {
       p.collision.world.setBlockStateId(t.x, t.y, t.z, 0);
       this.edited(t.x, t.y, t.z);
+      this.onBreak?.(t.stateId, t.x, t.y, t.z, this.tool);
       this.reset();
       t.hit = false;
     }
@@ -114,6 +120,12 @@ export class BlockInteraction {
       world = p.collision.world,
       shapes = this.raycaster.shapes;
     let held = p.heldBlock;
+    const selected = p.inventory.held;
+    if (selected) {
+      const block = items.get(selected.id).block;
+      if (!block) return false;
+      held = this.registry.getDefaultStateId(block)!;
+    }
     if (held === null) return false;
     const normal = NORMALS[t.face];
     const replace = shapes.replaceable[t.stateId] === 1;
@@ -151,6 +163,7 @@ export class BlockInteraction {
     )
       return false;
     world.setBlockStateId(x, y, z, held);
+    if (selected && p.mode === 'survival') p.inventory.consumeSelected();
     this.edited(x, y, z);
     return true;
   }

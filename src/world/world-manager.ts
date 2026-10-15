@@ -1,3 +1,4 @@
+import { DropRenderer } from '../render/drops';
 import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
 import type { PlayerController } from '../engine/player-controller';
@@ -139,6 +140,7 @@ export class WorldManager {
   public playerModelRenderer: PlayerModelRenderer | null = null;
   public skyRenderer: SkyRenderer | null = null;
   public cloudRenderer: CloudRenderer | null = null;
+  public dropRenderer: DropRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
@@ -641,6 +643,7 @@ export class WorldManager {
     this.underwaterTint = new UnderwaterTint(this.glWrapper);
     this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
+    this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
   }
 
@@ -976,12 +979,8 @@ export class WorldManager {
       });
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
-      this.chunkRenderer.render(
-        this.viewProj,
-        this.atlasTexture,
-        this.atlas,
-        this.world,
-        () =>
+      this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world, () => {
+        const playerDraws =
           this.playerModelRenderer?.render(
             this.playerController,
             this.viewProj,
@@ -995,8 +994,21 @@ export class WorldManager {
             nightFactor,
             underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
             underwater.submerged ? underwater.fogEnd : maxFogDist,
-          ) ?? 0,
-      );
+          ) ?? 0;
+        return (
+          playerDraws +
+          (this.dropRenderer?.render(
+            this.playerController,
+            this.viewProj,
+            this.atlasTexture!,
+            skyBrightness,
+          ) ?? 0)
+        );
+      });
+      if (this.dropRenderer)
+        renderStats.triangles +=
+          this.dropRenderer.triangles -
+          12 * (this.dropRenderer.itemDraws + this.dropRenderer.particleDraws);
       const selectionDraws =
         this.blockSelection?.render(this.playerController?.interaction ?? null, this.viewProj) ?? 0;
       renderStats.drawCalls += selectionDraws;

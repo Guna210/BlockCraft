@@ -1,0 +1,7 @@
+{
+  "hay_bale": {
+    "kind": "block",
+    "block": "hay_bale",
+    "maxStack": 64
+  }
+}

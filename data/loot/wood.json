@@ -1,0 +1,38 @@
+{
+  "oak_log": [
+    {
+      "id": "oak_log",
+      "count": 1
+    }
+  ],
+  "birch_log": [
+    {
+      "id": "birch_log",
+      "count": 1
+    }
+  ],
+  "pine_log": [
+    {
+      "id": "pine_log",
+      "count": 1
+    }
+  ],
+  "oak_planks": [
+    {
+      "id": "oak_planks",
+      "count": 1
+    }
+  ],
+  "birch_planks": [
+    {
+      "id": "birch_planks",
+      "count": 1
+    }
+  ],
+  "pine_planks": [
+    {
+      "id": "pine_planks",
+      "count": 1
+    }
+  ]
+}

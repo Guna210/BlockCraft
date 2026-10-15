@@ -1,5 +1,19 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  giveItem?: (id: string, count: number) => void;
+  getInventory?: () => Array<import('../../gameplay/inventory').ItemStack | null>;
+  selectHotbarSlot?: (slot: number) => void;
+  getEntities?: (filter?: {
+    type?: string;
+    radius?: number;
+  }) => import('../../entity/item-entity').EntitySnapshot[];
+  getDropStats?: () => {
+    items: number;
+    particles: number;
+    itemDraws: number;
+    particleDraws: number;
+    triangles: number;
+  };
   raycast?: () => {
     hit: boolean;
     block?: [number, number, number];

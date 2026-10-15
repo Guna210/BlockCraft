@@ -39,6 +39,8 @@ export class FencedErrorDrain {
     private readonly gl: FenceGL,
     /** Reads gl.getError() until NO_ERROR and counts the errors. */
     private readonly drain: () => void,
+    /** Optional zero-timeout native poll. An idle latest fence makes the error read nonblocking. */
+    private readonly pollLatest?: (fence: WebGLSync) => boolean,
   ) {}
 
   /** Fences of frames still waiting for their drain. */
@@ -46,11 +48,18 @@ export class FencedErrorDrain {
     return this.pending.length;
   }
 
-  /** Call at the start of a frame callback, before any GL call: drains if an earlier frame's fence signalled. */
+  /** Before frame GL work: native polling waits for the latest fence; query adapters retain prefix polling. */
   beginFrame(): void {
     let signalled = 0;
-    while (signalled < this.pending.length && this.isSignalled(this.pending[signalled]!))
-      signalled++;
+    if (this.pollLatest) {
+      const latest = this.pending[this.pending.length - 1];
+      // A synchronous error read also waits for newer commands, even if an older fence finished.
+      // Poll the latest frame instead, retaining the same mandatory bounded drain below.
+      if (latest && this.pollLatest(latest)) signalled = this.pending.length;
+    } else {
+      while (signalled < this.pending.length && this.isSignalled(this.pending[signalled]!))
+        signalled++;
+    }
     if (signalled === 0) {
       if (this.pending.length >= MAX_FRAMES_IN_FLIGHT) this.drainNow();
       return;

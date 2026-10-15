@@ -1,0 +1,22 @@
+{
+  "rainwood_log": {
+    "kind": "block",
+    "block": "rainwood_log",
+    "maxStack": 64
+  },
+  "acacia_log": {
+    "kind": "block",
+    "block": "acacia_log",
+    "maxStack": 64
+  },
+  "rainwood_leaves": {
+    "kind": "block",
+    "block": "rainwood_leaves",
+    "maxStack": 64
+  },
+  "acacia_leaves": {
+    "kind": "block",
+    "block": "acacia_leaves",
+    "maxStack": 64
+  }
+}
