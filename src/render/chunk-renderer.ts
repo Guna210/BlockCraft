@@ -114,7 +114,7 @@ void main() {
     fogCol = mix(fogCol, vec3(lum), 0.55 * u_rainFactor) * mix(1.0, 0.45, u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
-    fogCol += vec3(u_lightningFlash * 0.9);
+    fogCol += vec3(u_lightningFlash * 0.35);
   }
   v_fogColor = fogCol;
   gl_Position = u_viewProj * vec4(worldPos, 1.0);

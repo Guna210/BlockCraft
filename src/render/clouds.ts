@@ -275,7 +275,7 @@ void main() {
     skyCol = mix(skyCol, vec3(lum), 0.55 * u_rainFactor) * mix(1.0, 0.45, u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
-    skyCol += vec3(u_lightningFlash * 0.9);
+    skyCol += vec3(u_lightningFlash * 0.35);
   }
 
   // Shading per Owner Requirements:
@@ -310,7 +310,7 @@ void main() {
     litCol = mix(litCol, vec3(lum), 0.60 * u_rainFactor) * mix(1.0, 0.40, u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
-    litCol += vec3(u_lightningFlash * 0.9);
+    litCol += vec3(u_lightningFlash * 0.35);
   }
 
   // Fade only far away: smooth gentle fade into sky/horizon color
