@@ -135,3 +135,10 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - The claude/m12c PR includes agy's commit; agy/m12c then needs no PR.
 - 2026-10-16: M12c screenshot redone after the owner approved the test edit: it waits for terrain and aims at the strike; the bolt is visible over a rock summit with rain. I couldn't view the PNG; I'll judge it once pushed. Full verify was not re-run after the test-only edit, so CI is the evidence. Told the owner to approve the push/PR in the builder's chat.
 - 2026-10-16: The owner rejected the M12c storm screenshot: the bolt is a tiny squiggle on the summit, the sky is light grey, there's a huge near-camera rain streak, and the builder's "top hidden by clouds" description was false. Sent fixes to the builder: full-length bolt from y=192 to the ground (find out why it's truncated); thicker core plus glow plus branches; darker storm sky; clamp near particles; correct the description. Not pushed yet.
+- 2026-10-16: M08a gate (Codex, claude/m08a e688695, not pushed)
+  - Full verify exit 0: unit 588; e2e 76/76; no known failures.
+  - All four unit criteria covered; waterfall reaches the ground at tick 55; ocean schedules 0 ticks at load.
+  - New data/block-state-ids.json: the reviewer must check its purpose (state-ID stability/saves).
+  - It touches player-controller/main/streamer (M06 fall/swim regressions fixed).
+  - Told the owner the gate is OK to approve.
+  - Overlaps with M12c on registry.ts and textures/index.ts; the second to merge resolves them.
