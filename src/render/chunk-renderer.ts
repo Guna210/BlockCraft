@@ -902,10 +902,9 @@ export class ChunkRenderer {
     if (meshes.some((mesh) => mesh.translucent)) {
       gl.activeTexture(gl.TEXTURE4);
       this.activeUnit = 4;
-      this.depth.capture(() => {
-        this.drawLightingPass(0, viewProjMatrix, atlas);
-        this.drawLightingPass(1, viewProjMatrix, atlas);
-      });
+      const depthStats = this.depth.render(viewProjMatrix, atlas, this.visColumns, this.visFade);
+      this.passDraws += depthStats.draws;
+      this.passTriangles += depthStats.triangles;
       this.activeUnit = 4;
     }
     // 3. Translucent Pass
