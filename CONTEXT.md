@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-10-16
+Last updated: 2026-10-16 (before compaction)
 
 ## Setup
 
@@ -38,24 +38,21 @@ Last updated: 2026-10-16
 - Owner-approved test edits so far:
   - setClouds('off') ×3: m12 RD8, m12 M12a time-of-day, m04:276
   - M12c screenshot step aimed at the lightning strike
-  - pending owner reply: M08b setFluidAnimationPaused(true) in m02c-fix.spec:52 and :74 (I recommended approve)
+  - M08b setFluidAnimationPaused(true) in m02c-fix.spec:52 and :74 (approved, in PR #50)
 - Prompt ≠ launch: a prompt can be given and not used (the owner changed their mind on M09b once). Trust the owner's word about what is running.
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M08b water rendering | PR #50, CI green, review 1 (prompt given) | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
-| M09b inventory screen | MERGED (#47, 0bb369f) | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
-| M10a recipes/tools | MERGED (#48) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
+| M08b water rendering | PR open, CI green on 40581bd; review 1 prompt given to the owner (reviewer not started yet) | Codex (full model), claude/m08b | — | #50 | Contains master (M09b + M10a merged in). The owner judges the look; the water may read too grey, so a bluer tweak can join the fix round. Owner-approved m02c pause lines are in. |
+| M17a serialization | fixing 1 (agy has the fix prompt) | agy, agy/m17a b51b116 | session_01DLa6aEZcGeoci97ppP3gPU | #49 | Round 1 fixes: save grass/foliage tints; save player health/hunger/saturation/air/flying/dimension; scheduled ticks; weather timers; reject bad indices and trailing bytes; world bounds checks; compaction/refCount/edit tests; real generated-column size. After the push: send round 2 to the same reviewer (I can send it). |
 
-| M17a serialization | fixing 1 (agy) | agy, agy/m17a b51b116 | — | #49 | Code checked: solid. Gaps: pending scheduled block ticks (fluids mid-flow) not saved; weather schedule counters not saved. Reviewer prompt given. |
-
-Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M17a (after M10a), M10b/M10c (after M09c + M10a).
+Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10b/M10c need M09c, M08c after M08b merges (ice from M12c already exists), M17b needs M15b (SPEC order) or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -66,7 +63,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
 - Owner idea (2026-10-16): export/import a .save file in the browser (proposed M17d, after M17b) and a desktop app (Tauri recommended over Electron) that saves to disk. Neither is in SPEC; the owner decides whether to add them.
   - Desktop: needs a SPEC edit (§2.1/2.2 browser-only stack) plus an owner-run packaging and signing step; best after M22.
   - .save file: cheap once M17a/M17b exist (format + Blob download + file picker).
-  - Gave the owner exact SPEC wording on request.
+  - SPEC wording offered, not yet written (the owner hasn't asked).
 - Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
 - CI retries 2 can hide flaky tests; decide later.
 - npm ci reports 1 high-severity vulnerability; not investigated.
