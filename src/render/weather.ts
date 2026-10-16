@@ -12,60 +12,65 @@ export interface LightningSegment {
   intensity: number;
 }
 
+type Vec3 = [number, number, number];
+
 /**
  * Procedural branching lightning bolt generator (Decision 4).
- * Subdivides the path with midpoint displacement and seeded branching.
- * Completely deterministic for the same seed and endpoints.
+ * A jagged trunk from `start` to `end` (midpoint displacement) plus 2 to 4 seeded side branches
+ * that leave the trunk and fork downward. Completely deterministic for the same seed and
+ * endpoints. The first segment starts at `start` and the last one ends at `end`.
  */
-export function generateLightningBolt(
-  seed: number,
-  start: [number, number, number],
-  end: [number, number, number],
-): LightningSegment[] {
+export function generateLightningBolt(seed: number, start: Vec3, end: Vec3): LightningSegment[] {
   const rng = new LCG(seed);
-  const segments: LightningSegment[] = [];
 
-  function subdivide(
-    p0: [number, number, number],
-    p1: [number, number, number],
+  function jagged(
+    out: LightningSegment[],
+    p0: Vec3,
+    p1: Vec3,
     depth: number,
     thickness: number,
     intensity: number,
-  ) {
-    const dx = p1[0] - p0[0];
-    const dy = p1[1] - p0[1];
-    const dz = p1[2] - p0[2];
-    const len = Math.hypot(dx, dy, dz);
-
+  ): void {
+    const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
     if (depth <= 0 || len < 3.0) {
-      segments.push({ p0, p1, thickness, intensity });
+      out.push({ p0, p1, thickness, intensity });
       return;
     }
-
-    const midX = (p0[0] + p1[0]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28;
-    const midY = (p0[1] + p1[1]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.08;
-    const midZ = (p0[2] + p1[2]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28;
-    const mid: [number, number, number] = [midX, midY, midZ];
-
-    // Branching chance
-    if (depth >= 2 && rng.nextFloat() < 0.35) {
-      const branchDirX = dx * 0.6 + (rng.nextFloat() - 0.5) * len * 0.5;
-      const branchDirY = dy * 0.6 - rng.nextFloat() * len * 0.2;
-      const branchDirZ = dz * 0.6 + (rng.nextFloat() - 0.5) * len * 0.5;
-      const branchEnd: [number, number, number] = [
-        midX + branchDirX,
-        midY + branchDirY,
-        midZ + branchDirZ,
-      ];
-      subdivide(mid, branchEnd, depth - 2, thickness * 0.6, intensity * 0.7);
-    }
-
-    subdivide(p0, mid, depth - 1, thickness, intensity);
-    subdivide(mid, p1, depth - 1, thickness, intensity);
+    const mid: Vec3 = [
+      (p0[0] + p1[0]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28,
+      (p0[1] + p1[1]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.08,
+      (p0[2] + p1[2]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28,
+    ];
+    jagged(out, p0, mid, depth - 1, thickness, intensity);
+    jagged(out, mid, p1, depth - 1, thickness, intensity);
   }
 
-  subdivide(start, end, 5, 0.45, 1.0);
-  return segments;
+  const trunk: LightningSegment[] = [];
+  jagged(trunk, start, end, 5, 0.45, 1.0);
+
+  const branchCount = 2 + Math.floor(rng.nextFloat() * 3); // 2..4
+  const branches: LightningSegment[] = [];
+  const n = trunk.length;
+  for (let i = 0; i < branchCount; i++) {
+    // Spread the forks along the trunk, away from both ends
+    const t = (i + 0.5) / branchCount;
+    const idx = Math.min(
+      n - 2,
+      Math.max(1, Math.floor((0.1 + 0.8 * t) * n + (rng.nextFloat() - 0.5) * 2)),
+    );
+    const from = trunk[idx]!.p1;
+    const angle = rng.nextFloat() * Math.PI * 2;
+    const length = 12 + rng.nextFloat() * 14;
+    const to: Vec3 = [
+      from[0] + Math.cos(angle) * length * 0.6,
+      from[1] - length * (0.5 + rng.nextFloat() * 0.3),
+      from[2] + Math.sin(angle) * length * 0.6,
+    ];
+    jagged(branches, from, to, 3, 0.26, 0.8);
+  }
+
+  // Keep the trunk's first and last segments at the ends of the array
+  return [trunk[0]!, ...branches, ...trunk.slice(1)];
 }
 
 const WEATHER_VS = `#version 300 es
@@ -118,7 +123,12 @@ void main() {
   }
 
   float dist = length(worldPos - u_cameraPos);
-  float alpha = smoothstep(16.0, 12.0, dist) * u_rainFactor;
+  // Skip particles close to the camera: their perspective-scaled quads read as huge streaks
+  if (dist < 3.5) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  float alpha = smoothstep(16.0, 12.0, dist) * smoothstep(3.5, 5.5, dist) * u_rainFactor;
 
   if (precipType > 0.75) {
     // Snow: fluttering drift
@@ -519,7 +529,7 @@ export class WeatherRenderer {
       const dz = wz - camZ;
       const distSq = dx * dx + dy * dy + dz * dz;
 
-      if (distSq <= 16.0 * 16.0) {
+      if (distSq <= 16.0 * 16.0 && distSq >= 3.5 * 3.5) {
         const topY = weatherManager.heightmap.getTopSolidY(world, Math.floor(wx), Math.floor(wz));
         if (wy > topY) {
           const biome = world.getBiome(Math.floor(wx), Math.floor(wz));
@@ -611,49 +621,61 @@ export class WeatherRenderer {
       const segments = generateLightningBolt(strike.seed, strike.start, strike.end);
       const boltVerts: number[] = [];
 
-      // Camera-facing ribbons
       const camPos = camera.position;
       const viewProj = mat4.create();
       mat4.multiply(viewProj, camera.projectionMatrix, camera.viewMatrix);
 
-      for (const seg of segments) {
-        const p0 = seg.p0;
-        const p1 = seg.p1;
-        const midX = (p0[0] + p1[0]) * 0.5;
-        const midY = (p0[1] + p1[1]) * 0.5;
-        const midZ = (p0[2] + p1[2]) * 0.5;
-
-        const toCamX = camPos[0] - midX;
-        const toCamY = camPos[1] - midY;
-        const toCamZ = camPos[2] - midZ;
-
+      const pushRibbon = (
+        p0: Vec3,
+        p1: Vec3,
+        half: number,
+        r: number,
+        g: number,
+        b: number,
+        a: number,
+      ): void => {
+        const toCamX = camPos[0] - (p0[0] + p1[0]) * 0.5;
+        const toCamY = camPos[1] - (p0[1] + p1[1]) * 0.5;
+        const toCamZ = camPos[2] - (p0[2] + p1[2]) * 0.5;
         const dirX = p1[0] - p0[0];
         const dirY = p1[1] - p0[1];
         const dirZ = p1[2] - p0[2];
-
-        // Cross product: dir x toCam
+        // Camera-facing ribbon: dir x toCam
         let rx = dirY * toCamZ - dirZ * toCamY;
         let ry = dirZ * toCamX - dirX * toCamZ;
         let rz = dirX * toCamY - dirY * toCamX;
         const rLen = Math.hypot(rx, ry, rz) || 1.0;
-        rx = (rx / rLen) * seg.thickness;
-        ry = (ry / rLen) * seg.thickness;
-        rz = (rz / rLen) * seg.thickness;
-
-        const r = 0.95;
-        const g = 0.98;
-        const b = 1.0;
-        const a = seg.intensity;
-
-        // Quad: 2 triangles
-        // Triangle 1: p0 - r, p0 + r, p1 + r
+        rx = (rx / rLen) * half;
+        ry = (ry / rLen) * half;
+        rz = (rz / rLen) * half;
         boltVerts.push(p0[0] - rx, p0[1] - ry, p0[2] - rz, r, g, b, a);
         boltVerts.push(p0[0] + rx, p0[1] + ry, p0[2] + rz, r, g, b, a);
         boltVerts.push(p1[0] + rx, p1[1] + ry, p1[2] + rz, r, g, b, a);
-        // Triangle 2: p0 - r, p1 + r, p1 - r
         boltVerts.push(p0[0] - rx, p0[1] - ry, p0[2] - rz, r, g, b, a);
         boltVerts.push(p1[0] + rx, p1[1] + ry, p1[2] + rz, r, g, b, a);
         boltVerts.push(p1[0] - rx, p1[1] - ry, p1[2] - rz, r, g, b, a);
+      };
+
+      // Glow pass first (wide, soft blue-white), then the bright white core on top. The core
+      // half-width grows with distance so it stays a few pixels wide far from the camera.
+      for (const seg of segments) {
+        const dist = Math.hypot(
+          camPos[0] - (seg.p0[0] + seg.p1[0]) * 0.5,
+          camPos[1] - (seg.p0[1] + seg.p1[1]) * 0.5,
+          camPos[2] - (seg.p0[2] + seg.p1[2]) * 0.5,
+        );
+        const core = Math.max(seg.thickness * 0.45, 0.006 * dist);
+        pushRibbon(seg.p0, seg.p1, core * 4.0, 0.45, 0.62, 1.0, 0.16 * seg.intensity);
+        pushRibbon(seg.p0, seg.p1, core * 2.2, 0.6, 0.75, 1.0, 0.28 * seg.intensity);
+      }
+      for (const seg of segments) {
+        const dist = Math.hypot(
+          camPos[0] - (seg.p0[0] + seg.p1[0]) * 0.5,
+          camPos[1] - (seg.p0[1] + seg.p1[1]) * 0.5,
+          camPos[2] - (seg.p0[2] + seg.p1[2]) * 0.5,
+        );
+        const core = Math.max(seg.thickness * 0.45, 0.006 * dist);
+        pushRibbon(seg.p0, seg.p1, core, 0.97, 0.99, 1.0, seg.intensity);
       }
 
       this.lightningVertexCount = boltVerts.length / 7;

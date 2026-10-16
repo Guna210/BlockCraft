@@ -738,15 +738,15 @@ test('M12c weather, rain streaks animation, desert climate check, and thundersto
     const pos = api.locate!('biome', 'plains', [0, 64, 0]) ?? [0, 80, 0];
     api.setWeather!('thunder');
     api.setTimeOfDay!(6000);
-    api.teleport!(pos[0] + 0.5, pos[1] + 1.6, pos[2] + 0.5);
+    // Hover 25 blocks up so a nearer ridge does not hide the strike point behind it.
+    api.teleport!(pos[0] + 0.5, pos[1] + 26.6, pos[2] + 0.5);
     await api.waitForTerrain!(4);
     // The first thunder step strikes with seed = the tick it runs on (6001), at the angle of the
     // seeded generator's first value around the player; face that direction, slightly up.
     const strikeSeed = 6001;
     const firstValue = ((Math.imul(strikeSeed, 1664525) + 1013904223) >>> 0) / 4294967296;
-    // The bolt runs from cloud height down to terrain ~30 blocks away; tilt up so its upper part
-    // clears the nearer rock while terrain stays in the lower frame.
-    api.look!(firstValue * Math.PI * 2, 0.85);
+    // The bolt spans cloud height (y=192) down to terrain ~30 blocks away.
+    api.look!(firstValue * Math.PI * 2, 0.28);
     await api.tick!(1);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });

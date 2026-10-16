@@ -146,7 +146,7 @@ void main() {
   // Weather darkening and desaturation (Decision 3) & lightning flash (Decision 4)
   if (u_rainFactor > 0.001) {
     float lum = dot(sky, vec3(0.2126, 0.7152, 0.0722));
-    sky = mix(sky, vec3(lum), 0.55 * u_rainFactor) * mix(1.0, 0.45, u_rainFactor);
+    sky = mix(sky, vec3(lum), min(0.8, 0.55 * u_rainFactor)) * vec3(0.9, 0.97, 1.08) * max(0.12, 1.0 - 0.8 * u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
     sky += vec3(u_lightningFlash * 0.35);

@@ -272,7 +272,7 @@ void main() {
   vec3 skyCol = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
   if (u_rainFactor > 0.001) {
     float lum = dot(skyCol, vec3(0.2126, 0.7152, 0.0722));
-    skyCol = mix(skyCol, vec3(lum), 0.55 * u_rainFactor) * mix(1.0, 0.45, u_rainFactor);
+    skyCol = mix(skyCol, vec3(lum), min(0.8, 0.55 * u_rainFactor)) * vec3(0.9, 0.97, 1.08) * max(0.12, 1.0 - 0.8 * u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
     skyCol += vec3(u_lightningFlash * 0.35);
@@ -307,7 +307,7 @@ void main() {
 
   if (u_rainFactor > 0.001) {
     float lum = dot(litCol, vec3(0.2126, 0.7152, 0.0722));
-    litCol = mix(litCol, vec3(lum), 0.60 * u_rainFactor) * mix(1.0, 0.40, u_rainFactor);
+    litCol = mix(litCol, vec3(lum), min(0.8, 0.60 * u_rainFactor)) * max(0.2, 1.0 - 0.7 * u_rainFactor);
   }
   if (u_lightningFlash > 0.001) {
     litCol += vec3(u_lightningFlash * 0.35);
