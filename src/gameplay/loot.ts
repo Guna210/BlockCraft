@@ -14,6 +14,13 @@ export interface RolledLoot {
   count: number;
 }
 
+export interface BlockLootTable {
+  exclusive?: boolean;
+  entries: readonly LootEntry[];
+}
+
+export type RawLootDefinition = LootEntry[] | { exclusive?: boolean; entries: LootEntry[] };
+
 export function validateLootEntry(block: string, entry: LootEntry): void {
   const item = items.get(entry.id);
   const baseCount = entry.count ?? entry.min;
@@ -37,24 +44,33 @@ export function validateLootEntry(block: string, entry: LootEntry): void {
   }
 }
 
-const tables = new Map<string, readonly LootEntry[]>();
-const files = import.meta.glob<Record<string, LootEntry[]>>('../../data/loot/*.json', {
+const tables = new Map<string, BlockLootTable>();
+const files = import.meta.glob<Record<string, RawLootDefinition>>('../../data/loot/*.json', {
   eager: true,
   import: 'default',
 });
 for (const path of Object.keys(files).sort())
-  for (const [block, entries] of Object.entries(files[path]!)) {
+  for (const [block, def] of Object.entries(files[path]!)) {
     if (tables.has(block)) throw new Error(`Duplicate block loot: ${block}`);
+    const exclusive = Array.isArray(def) ? false : Boolean(def.exclusive);
+    const entries = Array.isArray(def) ? def : def.entries;
+    if (!Array.isArray(entries)) {
+      throw new Error(`Invalid block loot entries for: ${block}`);
+    }
     for (const entry of entries) {
       validateLootEntry(block, entry);
     }
-    tables.set(block, entries);
+    tables.set(block, { exclusive, entries });
   }
 
 const EMPTY: readonly LootEntry[] = [];
 
+export function blockLootTable(block: string): BlockLootTable | undefined {
+  return tables.get(block);
+}
+
 export function blockLoot(block: string): readonly LootEntry[] {
-  return tables.get(block) ?? EMPTY;
+  return tables.get(block)?.entries ?? EMPTY;
 }
 
 function rollEntryCount(entry: LootEntry, rng: PRNG): number {
@@ -70,29 +86,24 @@ export function rollBlockLoot(
   x: number,
   y: number,
   z: number,
+  breakCount: number = 0,
 ): RolledLoot[] {
-  const entries = blockLoot(block);
-  if (entries.length === 0) return [];
-  const rng = new PRNG(deriveSeed(worldSeed, `loot:${x | 0},${y | 0},${z | 0}`));
+  const table = tables.get(block);
+  if (!table || table.entries.length === 0) return [];
+  const entries = table.entries;
+  const rng = new PRNG(deriveSeed(worldSeed, `loot:${x | 0},${y | 0},${z | 0}:${breakCount | 0}`));
 
-  // If all entries have fractional chances partitioning 1 (e.g. gravel: 0.1 flint / 0.9 gravel),
-  // roll once so the drops are mutually exclusive (one or the other, never both).
-  if (
-    entries.length > 1 &&
-    entries.every((e) => e.chance !== undefined && e.chance > 0 && e.chance < 1) &&
-    Math.abs(entries.reduce((sum, e) => sum + (e.chance ?? 1), 0) - 1) < 1e-9
-  ) {
+  if (table.exclusive) {
     const roll = rng.next();
     let cumulative = 0;
-    let chosen = entries[entries.length - 1]!;
     for (const entry of entries) {
-      cumulative += entry.chance!;
+      const chance = entry.chance ?? 1;
+      cumulative += chance;
       if (roll < cumulative) {
-        chosen = entry;
-        break;
+        return [{ id: entry.id, count: rollEntryCount(entry, rng) }];
       }
     }
-    return [{ id: chosen.id, count: rollEntryCount(chosen, rng) }];
+    return [];
   }
 
   const results: RolledLoot[] = [];

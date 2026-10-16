@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { items } from '../../src/gameplay/items';
-import { blockLoot, rollBlockLoot, validateLootEntry } from '../../src/gameplay/loot';
+import {
+  blockLoot,
+  blockLootTable,
+  rollBlockLoot,
+  validateLootEntry,
+} from '../../src/gameplay/loot';
 import { BARE_HAND, canHarvest, type MiningTool } from '../../src/gameplay/mining';
 import { crafting } from '../../src/gameplay/crafting';
 import { smelting } from '../../src/gameplay/smelting';
@@ -88,7 +93,7 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
   // M11 / M13 passive & hostile creature drops and items crafted/smelted exclusively from them
   wild_berries: {
     task: 'M13e',
-    reason: 'Harvested from berry bushes not placed in M03f worldgen',
+    reason: 'no task adds berry bushes yet (open SPEC gap)',
   },
   wool: { task: 'M13e', reason: 'Dropped or sheared from Tuftbuck passive creature' },
   raw_tuftbuck_shank: {
@@ -127,44 +132,44 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
 
   // M20 Hollowdeep dimension ores, creatures, and items
   skyshard_ore: {
-    task: 'M20a',
-    reason: 'Generates only in the Hollowdeep dimension (Appendix A.4)',
+    task: 'M20b',
+    reason: 'Generates only in the Hollowdeep dimension (Hollowdeep generator)',
   },
   skyshard_crystal: {
-    task: 'M20a',
-    reason: 'Mined from Hollowdeep skyshard_ore',
+    task: 'M20b',
+    reason: 'Mined from Hollowdeep skyshard_ore (Hollowdeep generator)',
   },
   skyshard_pickaxe: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep skyshard_crystal',
+    task: 'M20b',
+    reason: 'Crafted from Hollowdeep skyshard_crystal (Hollowdeep generator)',
   },
   skyshard_axe: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep skyshard_crystal',
+    task: 'M20b',
+    reason: 'Crafted from Hollowdeep skyshard_crystal (Hollowdeep generator)',
   },
   skyshard_shovel: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep skyshard_crystal',
+    task: 'M20b',
+    reason: 'Crafted from Hollowdeep skyshard_crystal (Hollowdeep generator)',
   },
   skyshard_hoe: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep skyshard_crystal',
+    task: 'M20b',
+    reason: 'Crafted from Hollowdeep skyshard_crystal (Hollowdeep generator)',
   },
   skyshard_sword: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep skyshard_crystal',
+    task: 'M20b',
+    reason: 'Crafted from Hollowdeep skyshard_crystal (Hollowdeep generator)',
   },
   glowcap_stew: {
-    task: 'M20a',
-    reason: 'Crafted from Hollowdeep Glowcap fungus',
+    task: 'M20c',
+    reason: 'Crafted from Hollowdeep Glowcap fungus (M20c)',
   },
   luminous_membrane: {
-    task: 'M20b',
-    reason: 'Dropped by Hollowdeep Glowwing creature',
+    task: 'M20c',
+    reason: 'Dropped by Hollowdeep Glowwing creature (M20c)',
   },
   emberite_scale: {
-    task: 'M20b',
-    reason: 'Dropped by Hollowdeep Magmaw creature',
+    task: 'M20c',
+    reason: 'Dropped by Hollowdeep Magmaw creature (M20c)',
   },
 };
 
@@ -402,23 +407,25 @@ describe('M10a survival reachability graph', () => {
     );
   });
 
-  it('keeps rolled loot counts within min-max and gives identical results for the same seed and position', () => {
+  it('keeps rolled loot counts within min-max and gives identical results for the same seed, position, and counter', () => {
+    // (a) The same seed, position and counter give the same result
     for (let i = 0; i < 200; i++) {
       const seed = 1000 + i;
       const x = i * 3 - 50;
       const y = 16 + (i % 40);
       const z = -i * 5 + 20;
+      const counter = i * 7;
 
-      const copperA = rollBlockLoot('copper_ore', seed, x, y, z);
-      const copperB = rollBlockLoot('copper_ore', seed, x, y, z);
+      const copperA = rollBlockLoot('copper_ore', seed, x, y, z, counter);
+      const copperB = rollBlockLoot('copper_ore', seed, x, y, z, counter);
       expect(copperA).toEqual(copperB);
       expect(copperA).toHaveLength(1);
       expect(copperA[0]!.id).toBe('raw_copper');
       expect(copperA[0]!.count).toBeGreaterThanOrEqual(2);
       expect(copperA[0]!.count).toBeLessThanOrEqual(5);
 
-      const lumiteA = rollBlockLoot('lumite_ore', seed, x, y, z);
-      const lumiteB = rollBlockLoot('lumite_ore', seed, x, y, z);
+      const lumiteA = rollBlockLoot('lumite_ore', seed, x, y, z, counter);
+      const lumiteB = rollBlockLoot('lumite_ore', seed, x, y, z, counter);
       expect(lumiteA).toEqual(lumiteB);
       expect(lumiteA).toHaveLength(1);
       expect(lumiteA[0]!.id).toBe('lumite_shard');
@@ -431,7 +438,7 @@ describe('M10a survival reachability graph', () => {
         ['gold_ore', 'raw_gold'],
         ['skyshard_ore', 'skyshard_crystal'],
       ] as const) {
-        expect(rollBlockLoot(oreId, seed, x, y, z)).toEqual([{ id: dropId, count: 1 }]);
+        expect(rollBlockLoot(oreId, seed, x, y, z, counter)).toEqual([{ id: dropId, count: 1 }]);
       }
     }
 
@@ -439,6 +446,7 @@ describe('M10a survival reachability graph', () => {
     const runBreak = (worldSeed: number) => {
       const world = new World(false);
       world.worldSeed = worldSeed;
+      expect(world.breakCount).toBe(0);
       world.fill(-2, 64, -2, 6, 64, 2, 'stone');
       world.setBlock(3, 66, 0, 'copper_ore');
       const controller = new PlayerController(
@@ -450,6 +458,7 @@ describe('M10a survival reachability graph', () => {
       controller.player!.inventory.insert('stone_pickaxe', 1);
       controller.interaction!.input('attack', true);
       for (let t = 0; t < 40; t++) controller.interaction!.tick();
+      expect(world.breakCount).toBe(1);
       return controller
         .itemEntities!.pool.filter((e) => e.active)
         .map((e) => ({ id: e.item.id, count: e.count }));
@@ -458,7 +467,36 @@ describe('M10a survival reachability graph', () => {
     const broken1 = runBreak(424242);
     const broken2 = runBreak(424242);
     expect(broken1).toEqual(broken2);
-    expect(broken1).toEqual(rollBlockLoot('copper_ore', 424242, 3, 66, 0));
+    expect(broken1).toEqual(rollBlockLoot('copper_ore', 424242, 3, 66, 0, 0));
+
+    // (b) The same position with different counters gives varied results
+    // (e.g. over 1,000 breaks of one gravel position, flint appears between 5% and 15%)
+    let flintsAtSamePos = 0;
+    const TOTAL_BREAKS = 1000;
+    for (let counter = 0; counter < TOTAL_BREAKS; counter++) {
+      const roll = rollBlockLoot('gravel', 424242, 3, 66, 0, counter);
+      expect(roll).toHaveLength(1);
+      if (roll[0]!.id === 'flint') {
+        flintsAtSamePos++;
+      }
+    }
+    const flintFraction = flintsAtSamePos / TOTAL_BREAKS;
+    expect(flintFraction).toBeGreaterThanOrEqual(0.05);
+    expect(flintFraction).toBeLessThanOrEqual(0.15);
+  });
+
+  it('rolls exclusive loot tables to select at most one entry based on chances', () => {
+    const table = blockLootTable('gravel');
+    expect(table).toBeDefined();
+    expect(table!.exclusive).toBe(true);
+    expect(table!.entries).toHaveLength(2);
+
+    for (let c = 0; c < 500; c++) {
+      const roll = rollBlockLoot('gravel', 9999, 10, 64, -20, c);
+      expect(roll).toHaveLength(1);
+      expect(['flint', 'gravel']).toContain(roll[0]!.id);
+      expect(roll[0]!.count).toBe(1);
+    }
   });
 
   it('matches expected loot drop frequencies over 20,000 rolls and drops either flint or gravel (never both)', () => {

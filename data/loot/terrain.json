@@ -29,18 +29,21 @@
       "count": 1
     }
   ],
-  "gravel": [
-    {
-      "id": "flint",
-      "count": 1,
-      "chance": 0.1
-    },
-    {
-      "id": "gravel",
-      "count": 1,
-      "chance": 0.9
-    }
-  ],
+  "gravel": {
+    "exclusive": true,
+    "entries": [
+      {
+        "id": "flint",
+        "count": 1,
+        "chance": 0.1
+      },
+      {
+        "id": "gravel",
+        "count": 1,
+        "chance": 0.9
+      }
+    ]
+  },
   "coarse_dirt": [
     {
       "id": "coarse_dirt",

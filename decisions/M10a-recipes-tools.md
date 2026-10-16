@@ -12,8 +12,9 @@
 ## 2. Crafting matcher (`src/gameplay/crafting.ts`)
 
 - Built once at startup and exported as a singleton `crafting` (`CraftingRegistry`).
-- **Shaped recipes**: Trimmed to their minimal bounding box (up to 3×3) and indexed under both the trimmed pattern and its horizontal mirror. Tag symbols expand into concrete candidate patterns and verify against any collision with another distinct recipe ID.
-- **Shapeless recipes**: Indexed by sorted ingredient combinations (expanding tag ingredients across all member items) and verified against ambiguity with other shapeless recipes or 1×1 shaped recipes.
+- **Shaped recipes**: Trimmed to their minimal bounding box (up to 3×3) and indexed under both the trimmed pattern and its horizontal mirror.
+- **Shapeless recipes**: Indexed by sorted ingredient combinations and ingredient count for tag matching.
+- **Ambiguity handling**: Ambiguity is not checked at startup; instead, if multiple recipes match the given grid at runtime, `match()` throws an error detailing the colliding recipe IDs. Zero recipe ambiguity across registered recipes is asserted by the unit test suite (`tests/unit/m10a-recipes.test.ts`).
 - **Pure API**:
   - `match(grid)`: Accepts a 2×2 or 3×3 grid of item IDs (`string | null | undefined`, or `{ id, count }` slots) and returns the matched `CraftingRecipe` or `null`.
   - `maxCrafts(grid)`: Accepts a 2×2 or 3×3 grid of `{ id, count }` slots (or item ID strings, treated as count 1) and returns the maximum number of crafts possible from the current stack counts.
@@ -40,15 +41,17 @@
   - `dirt_from_mud`: `mud` → `dirt` (count 1, xp 0.1)
 - `src/gameplay/smelting.ts` validates all inputs/outputs against `itemRegistry` and exposes `getByInput(itemId)` and `isFuel(itemId)`. Kiln block-entity logic and UI belong to M10c.
 
-## 4. Loot rolls & survival reachability graph
+## 4. Loot rolls, break counter & survival reachability graph
 
 - `src/gameplay/loot.ts` extends `LootEntry` with optional `chance` (`0..1`, default `1`) and optional `min`/`max` counts (default `count`), validated on load via `validateLootEntry`.
-- `rollBlockLoot(block, worldSeed, x, y, z)` rolls drops using a seeded `PRNG` derived from `worldSeed` and block position `(x, y, z)`, called from `PlayerController` when a block is broken in survival. When a table's entries partition probability `1.0` (`gravel`: `flint` `0.1`, `gravel` `0.9`), a single roll selects one or the other (never both).
+- Supports explicit table format `RawLootDefinition = LootEntry[] | { exclusive?: boolean; entries: LootEntry[] }`. When `exclusive: true` is set (e.g. for `gravel`), a single roll selects at most one entry based on cumulative chances.
+- `rollBlockLoot(block, worldSeed, x, y, z, breakCount)` derives PRNG seed via `deriveSeed(worldSeed, `loot:${x},${y},${z}:${breakCount}`)`, where `world.breakCount` increments on every block break in survival (`PlayerController`), so breaking a block at the same location multiple times yields varied, reproducible drops.
 - Loot table values (per SPEC Appendix A.4/A.5):
   - `data/loot/ores.json`: `coal_ore` → `coal` (1), `copper_ore` → `raw_copper` (`min: 2, max: 5`), `iron_ore` → `raw_iron` (1), `gold_ore` → `raw_gold` (1), `lumite_ore` → `lumite_shard` (`min: 2, max: 4`), `skyshard_ore` → `skyshard_crystal` (1).
-  - `data/loot/wood.json`: `oak_leaves` keeps self-drop (`count: 1`) + `apple` (`count: 1, chance: 0.005`); `birch_leaves` and `pine_leaves` keep self-drop (`count: 1`).
-  - `data/loot/wood-extra.json`: `rainwood_leaves` keeps self-drop (`count: 1`) + `vine` (`count: 1, chance: 0.05`); `acacia_leaves` keeps self-drop (`count: 1`).
-  - `data/loot/terrain.json`: `gravel` drops `flint` (`count: 1, chance: 0.1`) instead of `gravel` (`count: 1, chance: 0.9`) — one or the other, never both.
+  - All 5 leaf types (`oak_leaves`, `birch_leaves`, `pine_leaves`, `rainwood_leaves`, `acacia_leaves`) drop themselves when broken by hand (shears/hoe gating is M10c). In addition:
+    - `oak_leaves`: self-drop (`count: 1`) + `apple` (`count: 1, chance: 0.005`).
+    - `rainwood_leaves`: self-drop (`count: 1`) + `vine` (`count: 1, chance: 0.05`).
+  - `data/loot/terrain.json`: `gravel` has `"exclusive": true`, dropping `flint` (`count: 1, chance: 0.1`) instead of `gravel` (`count: 1, chance: 0.9`) — one or the other, never both.
   - `data/loot/vegetation.json`: `tall_grass` keeps self-drop (`count: 1`) + `seed` (`count: 1, chance: 0.125`); `wheat` does not drop from grass.
 - Reachability treats `chance > 0` as obtainable and iterates drops, loot, crafting, and smelting to a fixed point from overworld worldgen blocks. Unreachable items are listed in `REACHABILITY_EXEMPTIONS` in `tests/unit/m10a-reachability.test.ts` with their owning task ID and reason.
 
