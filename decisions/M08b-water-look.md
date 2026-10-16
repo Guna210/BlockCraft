@@ -31,3 +31,10 @@ M06's `src/render/underwater.ts`, fog distances, brightness floor and final tint
 ## M12c weather merge
 
 Merged `origin/master` at `fe346bf` (PR #46) in `4151e34`. The chunk-shader conflicts retain both fluid uniforms/varyings and rain/lightning uniforms; puddle darkening runs after fluid shading, and the existing rain-darkened/flash-tinted sky fog color also supplies water's Fresnel tint. Weather's `sky.ts` and its simulation/render modules are retained from master. Focused browser verification passes all three M08b cases, unchanged underwater behavior, and the unchanged M12c weather test (clear control 0, rain difference 0.04198676215277778, desert rain/snow counts both 0). No weather test is edited.
+
+## M09b and M10a merge
+
+After owner approval of publication, merged `origin/master` at `bf34ade` (PRs #47 and #48) with a merge commit, without rebasing. M09b's deferred icon setup, UI frame/input wiring and UI debug domain remain alongside the fluid animation API and stencil context setting. The M10a block/state/texture additions are retained from master. A new integration unit suite checks five new full cubes and both halves of all eight slab types, alone and beside water, for six faces, correct bounds, normals and texture payloads. A production-browser capture shows the five new cubes and both halves of the seven new slab types beside water; the screenshot was opened and passes nonblank/missing-texture checks. No existing test is edited for this merge.
+
+
+The merged M09b registry-icon test exposed a water thumbnail regression: variance 7.96 versus the unchanged minimum of 10. The world palette and alpha remain unchanged. `src/ui/icons.ts` now composites the water thumbnail's shaded faces opaquely, since the UI has no scene depth for transmission. Other translucent icons keep their existing compositing. The unchanged first icon-batch browser test passes (7.7 s); the icon and block-integration unit suites pass 30 tests (2.34 s). The fixed inventory capture was opened and saved as `m08-water-inventory.png`. No M09b test or threshold is edited.
