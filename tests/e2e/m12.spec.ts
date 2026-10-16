@@ -657,3 +657,120 @@ test('M12b clouds: extruded 3D volumes, fast 2D plane, wind drift, and sun glare
   expect(windAfter - windBefore).toBeCloseTo(3 * CLOUD_WIND_SPEED, 1);
   expect(diffFraction(beforeDriftPng, afterDriftPng)).toBeGreaterThan(0.005);
 });
+
+test('M12c weather, rain streaks animation, desert climate check, and thunderstorm lightning', async ({
+  page,
+  assertAndSaveScreenshot,
+}) => {
+  test.setTimeout(300_000);
+
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setRenderDistance!(4);
+    await api.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' });
+    api.pause!();
+    const pos = api.locate!('biome', 'plains', [0, 64, 0]) ?? [0, 80, 0];
+    api.teleport!(pos[0] + 0.5, pos[1] + 1.6, pos[2] + 0.5);
+    await api.waitForTerrain!(4);
+  });
+  await waitForStreamingIdle(page, 120_000);
+
+  // Clouds off and the time of day fixed: the only thing that may change between the two frames
+  // is the precipitation. A clear-weather control taken the same way proves that.
+  const stand = await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.setClouds!('off');
+    api.look!(0, 0.2); // Look up slightly into falling rain streaks
+    const p = api.getPlayer!().pos;
+    return [p[0], p[1], p[2]] as [number, number, number];
+  });
+
+  // Each frame is taken from the same camera pose: ticking also runs player physics, which would
+  // move the camera and change every pixel of the terrain.
+  const framePair = async (state: 'clear' | 'rain', name: string) => {
+    const place = async (): Promise<void> => {
+      await page.evaluate(async (pos) => {
+        const api = window.__blockcraft!;
+        api.teleport!(pos[0], pos[1], pos[2], 0, 0.2);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      }, stand);
+    };
+    await page.evaluate((weather) => {
+      const api = window.__blockcraft!;
+      api.setWeather!(weather);
+      api.setTimeOfDay!(6000);
+    }, state);
+    await place();
+    const first = await assertAndSaveScreenshot({ name: `${name}-1`, milestone: 'M12c' });
+    // Advance 4 ticks (0.2s of falling rain streaks)
+    await page.evaluate(async () => {
+      await window.__blockcraft!.tick!(4);
+    });
+    await place();
+    const second = await assertAndSaveScreenshot({ name: `${name}-2`, milestone: 'M12c' });
+    return diffFraction(first, second);
+  };
+
+  const clearDiff = await framePair('clear', 'm12-clear-control');
+  console.log('m12c plains clear-weather control frame diff fraction:', clearDiff);
+  expect(clearDiff).toBeLessThan(0.005); // nothing but rain may move between frames
+
+  const rainDiff = await framePair('rain', 'm12-rain-frame');
+  console.log('m12c plains rain frame diff fraction:', rainDiff);
+  expect(rainDiff).toBeGreaterThan(0.02); // consecutive frames differ by > 2%
+
+  const plainsStats = await page.evaluate(() => window.__blockcraft!.getRenderStats());
+  console.log('m12c plains weather stats:', JSON.stringify(plainsStats.weather));
+  expect(plainsStats.weather.state).toBe('rain');
+  expect(plainsStats.weather.activeParticles.rain).toBeGreaterThan(0);
+
+  // 2. Desert biome: zero precipitation particles near player (use the stat)
+  const desertBiome = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    const pos = api.locate!('biome', 'desert', [0, 64, 0]);
+    if (!pos) throw new Error('no desert biome found near the origin');
+    // Step into the interior of the located dry biome (desert/badlands) to avoid border particles
+    const destX = pos[0];
+    const destZ = pos[2] - 50;
+    const groundY = (api.getHeight ? api.getHeight(destX, destZ) : pos[1]) || 70;
+    api.teleport!(destX + 0.5, groundY + 1.6, destZ + 0.5);
+    await api.waitForTerrain!(1);
+    return api.getBiome!(destX, destZ);
+  });
+  expect(desertBiome).toBe('desert');
+  await waitForStreamingIdle(page, 120_000);
+
+  const desertStats = await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return window.__blockcraft!.getRenderStats();
+  });
+  console.log('m12c desert weather stats:', JSON.stringify(desertStats.weather));
+  expect(desertStats.weather.activeParticles.rain).toBe(0);
+  expect(desertStats.weather.activeParticles.snow).toBe(0);
+
+  // 3. Thunderstorm visual review: docs/screenshots/M12c/m12-storm.png
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    const pos = api.locate!('biome', 'plains', [0, 64, 0]) ?? [0, 80, 0];
+    api.setClouds!('fancy'); // the rain step above turned them off
+    api.setWeather!('thunder');
+    api.setTimeOfDay!(6000);
+    // Hover 25 blocks up so a nearer ridge does not hide the strike point behind it.
+    api.teleport!(pos[0] + 0.5, pos[1] + 26.6, pos[2] + 0.5);
+    await api.waitForTerrain!(4);
+    // The first thunder step strikes with seed = the tick it runs on (6001), at the angle of the
+    // seeded generator's first value around the player; face that direction, slightly up.
+    const strikeSeed = 6001;
+    const firstValue = ((Math.imul(strikeSeed, 1664525) + 1013904223) >>> 0) / 4294967296;
+    // The bolt spans cloud height (y=192) down to terrain ~30 blocks away.
+    api.look!(firstValue * Math.PI * 2, 0.28);
+    await api.tick!(1);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  });
+
+  await assertAndSaveScreenshot({
+    name: 'm12-storm',
+    milestone: 'M12c',
+  });
+  saveScreenshotToDocs('m12-storm', 'M12c');
+});

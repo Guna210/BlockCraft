@@ -9,6 +9,7 @@ import './ore-locate';
 import './time';
 import './fluids';
 import './clouds';
+import './weather';
 import './raycast';
 import './inventory';
 import './entities';

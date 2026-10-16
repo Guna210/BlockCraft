@@ -56,6 +56,8 @@ uniform int u_lavaTile;
 flat out float v_fluid;
 flat out float v_flow;
 out vec3 v_normal;
+uniform float u_rainFactor;
+uniform float u_lightningFlash;
 out vec2 v_unwrappedUV;
 flat out vec2 v_tileOrigin;
 out vec3 v_light;
@@ -63,6 +65,7 @@ out vec3 v_tint;
 flat out float v_grassSide;
 out vec3 v_worldPos;
 out vec3 v_fogColor;
+out float v_puddle;
 const vec3 NORMALS[6] = vec3[6](
   vec3(1.0, 0.0, 0.0), vec3(-1.0, 0.0, 0.0),
   vec3(0.0, 1.0, 0.0), vec3(0.0, -1.0, 0.0),
@@ -120,11 +123,24 @@ void main() {
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
+  // Puddle darkening on outdoor top faces while raining (Decision 3)
+  float isTopFace = normal.y > 0.5 ? 1.0 : 0.0;
+  float isOutdoor = ((a_word0 >> 20u) & 15u) >= 14u ? 1.0 : 0.0;
+  v_puddle = isTopFace * isOutdoor * u_rainFactor;
+
   vec3 toVertex = worldPos - u_cameraPos;
   v_worldPos = worldPos;
   // Always supply the colour: a large quad can cross fogStart between vertices.
   vec3 viewDir = normalize(toVertex + vec3(0.0, 1e-5, 0.0));
-  v_fogColor = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
+  vec3 fogCol = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
+  if (u_rainFactor > 0.001) {
+    float lum = dot(fogCol, vec3(0.2126, 0.7152, 0.0722));
+    fogCol = mix(fogCol, vec3(lum), min(0.8, 0.55 * u_rainFactor)) * vec3(0.9, 0.97, 1.08) * max(0.12, 1.0 - 0.8 * u_rainFactor);
+  }
+  if (u_lightningFlash > 0.001) {
+    fogCol += vec3(u_lightningFlash * 0.35);
+  }
+  v_fogColor = fogCol;
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
 `;
@@ -145,6 +161,7 @@ in vec3 v_tint;
 flat in float v_grassSide;
 in vec3 v_worldPos;
 in vec3 v_fogColor;
+in float v_puddle;
 uniform vec3 u_cameraPos;
 uniform float u_fogStart;
 uniform float u_fogEnd;
@@ -199,6 +216,9 @@ void main() {
     float fresnel = 0.02 + 0.30 * pow(1.0-abs(dot(view,surfaceNormal)),5.0);
     litColor = mix(litColor, v_fogColor, fresnel);
     alpha = mix(0.26,0.96,absorption) + fresnel * 0.12;
+  }
+  if (v_puddle > 0.001) {
+    litColor *= (1.0 - 0.22 * v_puddle);
   }
   float horizDist = u_underwater ? length(v_worldPos - u_cameraPos) : length((v_worldPos - u_cameraPos).xz);
   float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
@@ -278,6 +298,10 @@ export class ChunkRenderer {
   private locWaterFogColor: WebGLUniformLocation;
   private underwater: UnderwaterView | null = null;
   private locNightFactor: WebGLUniformLocation;
+  private locRainFactor: WebGLUniformLocation;
+  private locLightningFlash: WebGLUniformLocation;
+  private rainFactor = 0;
+  private lightningFlash = 0;
   private skyBrightness = 1;
   private debugLight = false;
   private cameraPos: [number, number, number] = [0, 0, 0];
@@ -362,6 +386,8 @@ export class ChunkRenderer {
     this.locUnderwater = gl.getUniformLocation(this.program, 'u_underwater')!;
     this.locUnderwaterFloor = gl.getUniformLocation(this.program, 'u_underwaterFloor')!;
     this.locWaterFogColor = gl.getUniformLocation(this.program, 'u_waterFogColor')!;
+    this.locRainFactor = gl.getUniformLocation(this.program, 'u_rainFactor')!;
+    this.locLightningFlash = gl.getUniformLocation(this.program, 'u_lightningFlash')!;
     const fields = [
       'locFluidTime',
       'locWaterTile',
@@ -391,6 +417,8 @@ export class ChunkRenderer {
       'locUnderwater',
       'locUnderwaterFloor',
       'locWaterFogColor',
+      'locRainFactor',
+      'locLightningFlash',
     ];
     this.programLocations = this.programs.map((program) =>
       Object.fromEntries(
@@ -416,6 +444,8 @@ export class ChunkRenderer {
     twilightFactor: number;
     nightFactor: number;
     underwater?: UnderwaterView;
+    rainFactor?: number;
+    lightningFlash?: number;
   }): void {
     this.cameraPos[0] = params.cameraPos[0] ?? 0;
     this.cameraPos[1] = params.cameraPos[1] ?? 0;
@@ -429,6 +459,8 @@ export class ChunkRenderer {
     this.twilightFactor = params.twilightFactor;
     this.nightFactor = params.nightFactor;
     this.underwater = params.underwater ?? null;
+    this.rainFactor = params.rainFactor ?? 0;
+    this.lightningFlash = params.lightningFlash ?? 0;
   }
   public setDebugLight(on: boolean): void {
     this.debugLight = on;
@@ -751,6 +783,8 @@ export class ChunkRenderer {
     gl.uniform1f(this.locUnderwaterFloor, this.underwater?.brightnessFloor ?? 0);
     const color = this.underwater?.fogColor;
     gl.uniform3f(this.locWaterFogColor, color?.[0] ?? 0, color?.[1] ?? 0, color?.[2] ?? 0);
+    gl.uniform1f(this.locRainFactor, this.rainFactor);
+    gl.uniform1f(this.locLightningFlash, this.lightningFlash);
     this.fadeUniform.forget();
   }
 

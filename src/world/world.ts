@@ -235,6 +235,10 @@ export class World {
     this.fluids.changed(x, y, z);
   }
 
+  public getBlockDefinition(blockId: string) {
+    return this.registry.getBlockDefinition(blockId);
+  }
+
   public getBlock(
     x: number,
     y: number,

@@ -247,6 +247,8 @@ uniform float u_dayFactor;
 uniform float u_twilightFactor;
 uniform float u_nightFactor;
 uniform float u_skyBrightness;
+uniform float u_rainFactor;
+uniform float u_lightningFlash;
 uniform int u_isFast;
 uniform sampler2D u_cloudTexture;
 
@@ -268,6 +270,13 @@ void main() {
 
   vec3 viewDir = normalize(v_worldPos - u_cameraPos);
   vec3 skyCol = skyAtmosphereColor(viewDir, u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
+  if (u_rainFactor > 0.001) {
+    float lum = dot(skyCol, vec3(0.2126, 0.7152, 0.0722));
+    skyCol = mix(skyCol, vec3(lum), min(0.8, 0.55 * u_rainFactor)) * vec3(0.9, 0.97, 1.08) * max(0.12, 1.0 - 0.8 * u_rainFactor);
+  }
+  if (u_lightningFlash > 0.001) {
+    skyCol += vec3(u_lightningFlash * 0.35);
+  }
 
   // Shading per Owner Requirements:
   // - underside: lavender-blue tint toward sky colour roughly mix(underside, skyCol, 0.30)
@@ -295,6 +304,14 @@ void main() {
 
   vec3 litCol = mix(mix(nightCol, dayCol, u_dayFactor), sunsetCol, u_twilightFactor * 0.85);
   litCol *= (0.20 + 0.80 * u_skyBrightness);
+
+  if (u_rainFactor > 0.001) {
+    float lum = dot(litCol, vec3(0.2126, 0.7152, 0.0722));
+    litCol = mix(litCol, vec3(lum), min(0.8, 0.60 * u_rainFactor)) * max(0.2, 1.0 - 0.7 * u_rainFactor);
+  }
+  if (u_lightningFlash > 0.001) {
+    litCol += vec3(u_lightningFlash * 0.35);
+  }
 
   // Fade only far away: smooth gentle fade into sky/horizon color
   vec3 finalRgb = mix(litCol, skyCol, v_fogFactor);
@@ -334,6 +351,8 @@ export class CloudRenderer {
   private readonly uTwilightFactor: WebGLUniformLocation | null;
   private readonly uNightFactor: WebGLUniformLocation | null;
   private readonly uSkyBrightness: WebGLUniformLocation | null;
+  private readonly uRainFactor: WebGLUniformLocation | null;
+  private readonly uLightningFlash: WebGLUniformLocation | null;
   private readonly uIsFast: WebGLUniformLocation | null;
   private readonly uCloudTexture: WebGLUniformLocation | null;
 
@@ -354,6 +373,8 @@ export class CloudRenderer {
     this.uTwilightFactor = gl.getUniformLocation(this.program, 'u_twilightFactor');
     this.uNightFactor = gl.getUniformLocation(this.program, 'u_nightFactor');
     this.uSkyBrightness = gl.getUniformLocation(this.program, 'u_skyBrightness');
+    this.uRainFactor = gl.getUniformLocation(this.program, 'u_rainFactor');
+    this.uLightningFlash = gl.getUniformLocation(this.program, 'u_lightningFlash');
     this.uIsFast = gl.getUniformLocation(this.program, 'u_isFast');
     this.uCloudTexture = gl.getUniformLocation(this.program, 'u_cloudTexture');
 
@@ -625,6 +646,8 @@ export class CloudRenderer {
     camera: Camera,
     ticks: number = getWorldTime(),
     renderDistance = 8,
+    rainFactor = 0,
+    lightningFlash = 0,
   ): { drawCalls: number; triangles: number } {
     // Wind drift at 1 block/s along +X, advanced on fixed tick per Decision 1
     const windOffset = cloudWindOffset(ticks);
@@ -669,6 +692,8 @@ export class CloudRenderer {
     gl.uniform1f(this.uTwilightFactor, twilightFactor);
     gl.uniform1f(this.uNightFactor, nightFactor);
     gl.uniform1f(this.uSkyBrightness, skyBrightness);
+    gl.uniform1f(this.uRainFactor, rainFactor);
+    gl.uniform1f(this.uLightningFlash, lightningFlash);
 
     // Opaque clouds: fully solid (alpha 1), depth-tested, writing depth, no translucency
     gl.enable(gl.DEPTH_TEST);

@@ -41,6 +41,7 @@ export interface BlockCraftDebugAPI {
   setGameMode?: (mode: 'survival' | 'creative') => void;
   setTimeOfDay?: (ticks: number) => void;
   setClouds?: (mode: 'fancy' | 'fast' | 'off') => void;
+  setWeather?: (state: 'clear' | 'rain' | 'thunder') => void;
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
@@ -115,6 +116,13 @@ export interface BlockCraftDebugAPI {
     underwaterBrightnessFloor: number;
     playerModelParts: number;
     cloudWindOffset: number;
+    weather: {
+      state: 'clear' | 'rain' | 'thunder';
+      activeParticles: {
+        rain: number;
+        snow: number;
+      };
+    };
   };
 }
 
@@ -146,6 +154,13 @@ export const renderStats = {
   underwaterBrightnessFloor: 0,
   playerModelParts: 0,
   cloudWindOffset: 0,
+  weather: {
+    state: 'clear' as 'clear' | 'rain' | 'thunder',
+    activeParticles: {
+      rain: 0,
+      snow: 0,
+    },
+  },
 };
 
 // Set by main.ts in debug mode: reads pending WebGL errors into renderStats.glErrors.
@@ -173,6 +188,10 @@ export const api: BlockCraftDebugAPI = {
       ...renderStats,
       cameraPosition: [...renderStats.cameraPosition],
       underwaterFog: [...renderStats.underwaterFog],
+      weather: {
+        state: renderStats.weather.state,
+        activeParticles: { ...renderStats.weather.activeParticles },
+      },
     };
   },
 };

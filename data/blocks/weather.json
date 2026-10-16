@@ -1,0 +1,50 @@
+{
+  "ice": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "translucent",
+    "fullOpaqueCube": false,
+    "tool": "none",
+    "textures": {
+      "top": "ice",
+      "side": "ice",
+      "bottom": "ice"
+    }
+  },
+  "snow_layer": {
+    "hardness": 0.1,
+    "blastResistance": 0.1,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "shovel",
+    "states": {
+      "half": {
+        "type": "enum",
+        "values": ["bottom"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "snow",
+      "side": "snow",
+      "bottom": "snow"
+    }
+  },
+  "fire": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 15,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "textures": {
+      "top": "fire",
+      "side": "fire",
+      "bottom": "fire"
+    }
+  }
+}
