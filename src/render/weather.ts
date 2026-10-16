@@ -14,42 +14,52 @@ export interface LightningSegment {
 
 type Vec3 = [number, number, number];
 
+/** One continuous branch (trunk or fork) of a bolt: a polyline whose width tapers along its length. */
+export interface LightningPolyline {
+  points: Vec3[];
+  /** Base half-width in blocks before tapering. */
+  thickness: number;
+  /** Width multiplier at the first and at the last point; it falls linearly in between. */
+  taper: [number, number];
+  intensity: number;
+}
+
 /**
  * Procedural branching lightning bolt generator (Decision 4).
- * A jagged trunk from `start` to `end` (midpoint displacement) plus 2 to 4 seeded side branches
- * that leave the trunk and fork downward. Completely deterministic for the same seed and
- * endpoints. The first segment starts at `start` and the last one ends at `end`.
+ * A trunk from `start` to `end` (midpoint displacement down to roughly one block, so it is
+ * jagged at small scale) plus 2 to 4 seeded forks that leave the trunk at one of its points and
+ * head downward. Each branch is one continuous polyline. Completely deterministic for the same
+ * seed and endpoints; the trunk's first point is `start` and its last point is `end`.
  */
-export function generateLightningBolt(seed: number, start: Vec3, end: Vec3): LightningSegment[] {
+export function generateLightningPolylines(
+  seed: number,
+  start: Vec3,
+  end: Vec3,
+): LightningPolyline[] {
   const rng = new LCG(seed);
 
-  function jagged(
-    out: LightningSegment[],
-    p0: Vec3,
-    p1: Vec3,
-    depth: number,
-    thickness: number,
-    intensity: number,
-  ): void {
+  function jagged(p0: Vec3, p1: Vec3, depth: number, out: Vec3[]): void {
     const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
-    if (depth <= 0 || len < 3.0) {
-      out.push({ p0, p1, thickness, intensity });
+    if (depth <= 0 || len < 0.9) {
+      out.push(p1);
       return;
     }
     const mid: Vec3 = [
-      (p0[0] + p1[0]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28,
-      (p0[1] + p1[1]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.08,
-      (p0[2] + p1[2]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.28,
+      (p0[0] + p1[0]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.12,
+      (p0[1] + p1[1]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.03,
+      (p0[2] + p1[2]) * 0.5 + (rng.nextFloat() - 0.5) * len * 0.12,
     ];
-    jagged(out, p0, mid, depth - 1, thickness, intensity);
-    jagged(out, mid, p1, depth - 1, thickness, intensity);
+    jagged(p0, mid, depth - 1, out);
+    jagged(mid, p1, depth - 1, out);
   }
 
-  const trunk: LightningSegment[] = [];
-  jagged(trunk, start, end, 5, 0.45, 1.0);
+  const trunk: Vec3[] = [start];
+  jagged(start, end, 8, trunk);
+  const polylines: LightningPolyline[] = [
+    { points: trunk, thickness: 0.45, taper: [1.0, 0.45], intensity: 1.0 },
+  ];
 
   const branchCount = 2 + Math.floor(rng.nextFloat() * 3); // 2..4
-  const branches: LightningSegment[] = [];
   const n = trunk.length;
   for (let i = 0; i < branchCount; i++) {
     // Spread the forks along the trunk, away from both ends
@@ -58,7 +68,7 @@ export function generateLightningBolt(seed: number, start: Vec3, end: Vec3): Lig
       n - 2,
       Math.max(1, Math.floor((0.1 + 0.8 * t) * n + (rng.nextFloat() - 0.5) * 2)),
     );
-    const from = trunk[idx]!.p1;
+    const from = trunk[idx]!;
     const angle = rng.nextFloat() * Math.PI * 2;
     const length = 12 + rng.nextFloat() * 14;
     const to: Vec3 = [
@@ -66,11 +76,122 @@ export function generateLightningBolt(seed: number, start: Vec3, end: Vec3): Lig
       from[1] - length * (0.5 + rng.nextFloat() * 0.3),
       from[2] + Math.sin(angle) * length * 0.6,
     ];
-    jagged(branches, from, to, 3, 0.26, 0.8);
+    const pts: Vec3[] = [from];
+    jagged(from, to, 6, pts);
+    polylines.push({ points: pts, thickness: 0.26, taper: [0.8, 0.12], intensity: 0.8 });
   }
+  return polylines;
+}
 
-  // Keep the trunk's first and last segments at the ends of the array
-  return [trunk[0]!, ...branches, ...trunk.slice(1)];
+/**
+ * The same bolt as flat segments. The trunk's first segment is first and its last segment is
+ * last, so the array runs from `start` to `end`.
+ */
+export function generateLightningBolt(seed: number, start: Vec3, end: Vec3): LightningSegment[] {
+  const toSegments = (line: LightningPolyline): LightningSegment[] =>
+    line.points.slice(1).map((p1, i) => ({
+      p0: line.points[i]!,
+      p1,
+      thickness: line.thickness,
+      intensity: line.intensity,
+    }));
+  const [trunk, ...forks] = generateLightningPolylines(seed, start, end).map(toSegments);
+  return [trunk![0]!, ...forks.flat(), ...trunk!.slice(1)];
+}
+
+export const BOLT_FLOATS_PER_VERTEX = 8; // x y z u r g b a
+
+/**
+ * Builds one pass of the bolt as triangles (6 vertices per segment). Every joint of a polyline
+ * has a single pair of vertices, offset along the mitred perpendicular of its two neighbouring
+ * segments (miter length clamped at 2x), so adjacent quads share their edge exactly. `u` runs
+ * from -1 to 1 across the ribbon for the fragment shader's falloff.
+ */
+export function buildBoltPass(
+  lines: LightningPolyline[],
+  camPos: Vec3,
+  pass: 'glow' | 'core',
+  out: number[],
+): void {
+  const [r, g, b] = pass === 'glow' ? [0.55, 0.7, 1.0] : [0.97, 0.99, 1.0];
+  for (const line of lines) {
+    const pts = line.points;
+    const count = pts.length;
+    if (count < 2) continue;
+
+    // Camera-facing unit perpendicular of every segment
+    const perps: Vec3[] = [];
+    const dirs: Vec3[] = [];
+    for (let i = 0; i < count - 1; i++) {
+      const a = pts[i]!;
+      const c = pts[i + 1]!;
+      const dx = c[0] - a[0];
+      const dy = c[1] - a[1];
+      const dz = c[2] - a[2];
+      const dl = Math.hypot(dx, dy, dz) || 1;
+      const tx = camPos[0] - (a[0] + c[0]) * 0.5;
+      const ty = camPos[1] - (a[1] + c[1]) * 0.5;
+      const tz = camPos[2] - (a[2] + c[2]) * 0.5;
+      const rx = dy * tz - dz * ty;
+      const ry = dz * tx - dx * tz;
+      const rz = dx * ty - dy * tx;
+      const rl = Math.hypot(rx, ry, rz) || 1;
+      perps.push([rx / rl, ry / rl, rz / rl]);
+      dirs.push([dx / dl, dy / dl, dz / dl]);
+    }
+
+    // Arc length for the taper
+    const arc: number[] = [0];
+    for (let i = 1; i < count; i++) {
+      const a = pts[i - 1]!;
+      const c = pts[i]!;
+      arc.push(arc[i - 1]! + Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]));
+    }
+    const total = arc[count - 1]! || 1;
+
+    const left: Vec3[] = [];
+    const right: Vec3[] = [];
+    for (let i = 0; i < count; i++) {
+      const p = pts[i]!;
+      const n0 = perps[Math.max(0, i - 1)]!;
+      const n1 = perps[Math.min(count - 2, i)]!;
+      let mx = n0[0] + n1[0];
+      let my = n0[1] + n1[1];
+      let mz = n0[2] + n1[2];
+      let ml = Math.hypot(mx, my, mz);
+      if (ml < 1e-6) {
+        mx = n0[0];
+        my = n0[1];
+        mz = n0[2];
+        ml = 1;
+      }
+      mx /= ml;
+      my /= ml;
+      mz /= ml;
+      const cosHalf = Math.max(0.5, mx * n0[0] + my * n0[1] + mz * n0[2]);
+      const dist = Math.hypot(camPos[0] - p[0], camPos[1] - p[1], camPos[2] - p[2]);
+      const w = line.taper[0] + (line.taper[1] - line.taper[0]) * (arc[i]! / total);
+      // The core keeps a few pixels of width at any distance
+      const core = Math.max(line.thickness * w * 0.45, 0.006 * dist);
+      const half = (pass === 'glow' ? core * 4.5 : core) / cosHalf;
+      left.push([p[0] - mx * half, p[1] - my * half, p[2] - mz * half]);
+      right.push([p[0] + mx * half, p[1] + my * half, p[2] + mz * half]);
+    }
+
+    // Glow is soft and faint; the core is drawn last with a fixed opaque centre
+    const alpha = pass === 'glow' ? 0.3 * line.intensity : line.intensity;
+    const v = (q: Vec3, u: number): void => {
+      out.push(q[0], q[1], q[2], u, r, g, b, alpha);
+    };
+    for (let i = 0; i < count - 1; i++) {
+      v(left[i]!, -1);
+      v(right[i]!, 1);
+      v(right[i + 1]!, 1);
+      v(left[i]!, -1);
+      v(right[i + 1]!, 1);
+      v(left[i + 1]!, -1);
+    }
+  }
 }
 
 const WEATHER_VS = `#version 300 es
@@ -223,13 +344,16 @@ const LIGHTNING_VS = `#version 300 es
 precision highp float;
 
 layout(location = 0) in vec3 a_pos;
-layout(location = 1) in vec4 a_color;
+layout(location = 1) in float a_u;
+layout(location = 2) in vec4 a_color;
 
 uniform mat4 u_viewProj;
 out vec4 v_color;
+out float v_u;
 
 void main() {
   v_color = a_color;
+  v_u = a_u;
   gl_Position = u_viewProj * vec4(a_pos, 1.0);
 }
 `;
@@ -238,10 +362,15 @@ const LIGHTNING_FS = `#version 300 es
 precision highp float;
 
 in vec4 v_color;
+in float v_u;
+uniform float u_soft;
 out vec4 fragColor;
 
 void main() {
-  fragColor = v_color;
+  float e = abs(v_u);
+  // Glow fades smoothly to nothing; the core is solid with a thin anti-aliased rim
+  float falloff = u_soft > 0.5 ? pow(1.0 - e, 2.0) : 1.0 - smoothstep(0.6, 1.0, e);
+  fragColor = vec4(v_color.rgb, v_color.a * falloff);
 }
 `;
 
@@ -282,6 +411,7 @@ export class WeatherRenderer {
   private readonly lightningVao: WebGLVertexArrayObject;
   private readonly lightningVbo: WebGLBuffer;
   private readonly uLightningViewProj: WebGLUniformLocation | null;
+  private readonly uLightningSoft: WebGLUniformLocation | null;
   private lightningVertexCount = 0;
 
   // Heightmap texture for vertex texture fetch
@@ -411,15 +541,19 @@ export class WeatherRenderer {
     // 3. Lightning program & buffers
     this.lightningProgram = glWrapper.createProgram(LIGHTNING_VS, LIGHTNING_FS);
     this.uLightningViewProj = gl.getUniformLocation(this.lightningProgram, 'u_viewProj');
+    this.uLightningSoft = gl.getUniformLocation(this.lightningProgram, 'u_soft');
 
     this.lightningVao = glWrapper.createVertexArray();
     this.lightningVbo = glWrapper.createBuffer();
     gl.bindVertexArray(this.lightningVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.lightningVbo);
+    const stride = BOLT_FLOATS_PER_VERTEX * 4;
     gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 7 * 4, 0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
     gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 7 * 4, 3 * 4);
+    gl.vertexAttribPointer(1, 1, gl.FLOAT, false, stride, 3 * 4);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 4, gl.FLOAT, false, stride, 4 * 4);
     gl.bindVertexArray(null);
 
     // 4. Heightmap texture
@@ -615,83 +749,44 @@ export class WeatherRenderer {
       gl.disable(gl.BLEND);
     }
 
-    // 4. Render lightning bolt if active
+    // 4. Render lightning bolt if active: one continuous ribbon per branch, a soft additive glow
+    // first, then the opaque core last so overlapping branches never add up to extra brightness.
     const strike = weatherManager.activeStrike;
     if (strike) {
-      const segments = generateLightningBolt(strike.seed, strike.start, strike.end);
-      const boltVerts: number[] = [];
-
+      const lines = generateLightningPolylines(strike.seed, strike.start, strike.end);
       const camPos = camera.position;
+      const camVec: Vec3 = [camPos[0], camPos[1], camPos[2]];
       const viewProj = mat4.create();
       mat4.multiply(viewProj, camera.projectionMatrix, camera.viewMatrix);
 
-      const pushRibbon = (
-        p0: Vec3,
-        p1: Vec3,
-        half: number,
-        r: number,
-        g: number,
-        b: number,
-        a: number,
-      ): void => {
-        const toCamX = camPos[0] - (p0[0] + p1[0]) * 0.5;
-        const toCamY = camPos[1] - (p0[1] + p1[1]) * 0.5;
-        const toCamZ = camPos[2] - (p0[2] + p1[2]) * 0.5;
-        const dirX = p1[0] - p0[0];
-        const dirY = p1[1] - p0[1];
-        const dirZ = p1[2] - p0[2];
-        // Camera-facing ribbon: dir x toCam
-        let rx = dirY * toCamZ - dirZ * toCamY;
-        let ry = dirZ * toCamX - dirX * toCamZ;
-        let rz = dirX * toCamY - dirY * toCamX;
-        const rLen = Math.hypot(rx, ry, rz) || 1.0;
-        rx = (rx / rLen) * half;
-        ry = (ry / rLen) * half;
-        rz = (rz / rLen) * half;
-        boltVerts.push(p0[0] - rx, p0[1] - ry, p0[2] - rz, r, g, b, a);
-        boltVerts.push(p0[0] + rx, p0[1] + ry, p0[2] + rz, r, g, b, a);
-        boltVerts.push(p1[0] + rx, p1[1] + ry, p1[2] + rz, r, g, b, a);
-        boltVerts.push(p0[0] - rx, p0[1] - ry, p0[2] - rz, r, g, b, a);
-        boltVerts.push(p1[0] + rx, p1[1] + ry, p1[2] + rz, r, g, b, a);
-        boltVerts.push(p1[0] - rx, p1[1] - ry, p1[2] - rz, r, g, b, a);
-      };
+      const glowVerts: number[] = [];
+      buildBoltPass(lines, camVec, 'glow', glowVerts);
+      const coreVerts: number[] = [];
+      buildBoltPass(lines, camVec, 'core', coreVerts);
+      const glowCount = glowVerts.length / BOLT_FLOATS_PER_VERTEX;
+      this.lightningVertexCount = glowCount + coreVerts.length / BOLT_FLOATS_PER_VERTEX;
 
-      // Glow pass first (wide, soft blue-white), then the bright white core on top. The core
-      // half-width grows with distance so it stays a few pixels wide far from the camera.
-      for (const seg of segments) {
-        const dist = Math.hypot(
-          camPos[0] - (seg.p0[0] + seg.p1[0]) * 0.5,
-          camPos[1] - (seg.p0[1] + seg.p1[1]) * 0.5,
-          camPos[2] - (seg.p0[2] + seg.p1[2]) * 0.5,
-        );
-        const core = Math.max(seg.thickness * 0.45, 0.006 * dist);
-        pushRibbon(seg.p0, seg.p1, core * 4.0, 0.45, 0.62, 1.0, 0.16 * seg.intensity);
-        pushRibbon(seg.p0, seg.p1, core * 2.2, 0.6, 0.75, 1.0, 0.28 * seg.intensity);
-      }
-      for (const seg of segments) {
-        const dist = Math.hypot(
-          camPos[0] - (seg.p0[0] + seg.p1[0]) * 0.5,
-          camPos[1] - (seg.p0[1] + seg.p1[1]) * 0.5,
-          camPos[2] - (seg.p0[2] + seg.p1[2]) * 0.5,
-        );
-        const core = Math.max(seg.thickness * 0.45, 0.006 * dist);
-        pushRibbon(seg.p0, seg.p1, core, 0.97, 0.99, 1.0, seg.intensity);
-      }
-
-      this.lightningVertexCount = boltVerts.length / 7;
       gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive glowing core
       gl.depthMask(false);
-
       gl.useProgram(this.lightningProgram);
       gl.uniformMatrix4fv(this.uLightningViewProj, false, viewProj);
 
       gl.bindVertexArray(this.lightningVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.lightningVbo);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(boltVerts), gl.DYNAMIC_DRAW);
-      this.glWrapper.drawArrays(gl.TRIANGLES, 0, this.lightningVertexCount);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([...glowVerts, ...coreVerts]),
+        gl.DYNAMIC_DRAW,
+      );
 
-      drawCalls++;
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.uniform1f(this.uLightningSoft, 1.0);
+      this.glWrapper.drawArrays(gl.TRIANGLES, 0, glowCount);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniform1f(this.uLightningSoft, 0.0);
+      this.glWrapper.drawArrays(gl.TRIANGLES, glowCount, this.lightningVertexCount - glowCount);
+
+      drawCalls += 2;
       triangles += this.lightningVertexCount / 3;
 
       gl.bindVertexArray(null);

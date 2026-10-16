@@ -10,7 +10,13 @@ import {
   DRY_BIOMES,
   COLD_BIOMES,
 } from '../../src/world/weather';
-import { generateLightningBolt } from '../../src/render/weather';
+import savedStateIds from '../../data/block-state-ids.json';
+import {
+  generateLightningBolt,
+  generateLightningPolylines,
+  buildBoltPass,
+  BOLT_FLOATS_PER_VERTEX,
+} from '../../src/render/weather';
 import { World } from '../../src/world/world';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { textureGenerators } from '../../src/render/textures/index';
@@ -124,6 +130,55 @@ describe('M12c — Weather', () => {
     });
   });
 
+  describe('Continuous lightning ribbons', () => {
+    const start: [number, number, number] = [0, 192, 0];
+    const end: [number, number, number] = [6, 64, -4];
+
+    it('builds branches as fine, tapering polylines that start on the trunk', () => {
+      const lines = generateLightningPolylines(777, start, end);
+      expect(lines.length).toBeGreaterThanOrEqual(3);
+      expect(lines.length).toBeLessThanOrEqual(5);
+      const trunk = lines[0]!;
+      expect(trunk.points[0]).toEqual(start);
+      expect(trunk.points[trunk.points.length - 1]).toEqual(end);
+      expect(trunk.points.length).toBeGreaterThan(100);
+      for (let i = 1; i < trunk.points.length; i++) {
+        const a = trunk.points[i - 1]!;
+        const b = trunk.points[i]!;
+        expect(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])).toBeLessThan(3);
+      }
+      for (const fork of lines.slice(1)) {
+        expect(trunk.points).toContainEqual(fork.points[0]);
+        expect(fork.taper[1]).toBeLessThan(fork.taper[0]);
+      }
+      expect(trunk.taper[1]).toBeLessThan(trunk.taper[0]);
+    });
+
+    it('shares exactly one vertex pair at every joint, so quads leave no gaps', () => {
+      const lines = generateLightningPolylines(777, start, end);
+      for (const pass of ['glow', 'core'] as const) {
+        const out: number[] = [];
+        buildBoltPass(lines, [20, 120, 30], pass, out);
+        const stride = BOLT_FLOATS_PER_VERTEX;
+        expect(out.every(Number.isFinite)).toBe(true);
+        const vertex = (i: number) => out.slice(i * stride, i * stride + 3).join(',');
+        let base = 0;
+        for (const line of lines) {
+          const segs = line.points.length - 1;
+          for (let s = 0; s + 1 < segs; s++) {
+            const cur = base + s * 6;
+            const next = cur + 6;
+            // quad = (L0,R0,R1) (L0,R1,L1): its end edge R1/L1 is the next quad's start edge L0/R0
+            expect(vertex(cur + 2)).toBe(vertex(next + 1));
+            expect(vertex(cur + 5)).toBe(vertex(next));
+          }
+          base += segs * 6;
+        }
+        expect(base * stride).toBe(out.length);
+      }
+    });
+  });
+
   describe('Weather state transitions and world initial determinism (Decision 1)', () => {
     it('starts in clear state', () => {
       expect(getWeather()).toBe('clear');
@@ -226,6 +281,30 @@ describe('M12c — Weather', () => {
           expect(getPrecipitationType(b, 80)).toBe('none');
         }
       }
+    });
+  });
+
+  describe('Stable block state IDs', () => {
+    it('records every ice, snow_layer and fire state in the append-only table', () => {
+      const registry = BlockRegistry.getInstance();
+      const table = savedStateIds as Record<string, number>;
+      const max = Math.max(...Object.values(table));
+      let checked = 0;
+      for (const block of ['ice', 'snow_layer', 'fire']) {
+        for (const stateId of registry.getAllStateIds()) {
+          const s = registry.getResolvedState(stateId)!;
+          if (s.blockId !== block) continue;
+          const keys = Object.keys(s.properties).sort();
+          const key =
+            block +
+            (keys.length ? '[' + keys.map((k) => k + '=' + s.properties[k]).join(',') + ']' : '');
+          expect(table[key], key).toBe(stateId);
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThanOrEqual(3);
+      expect(table['fire']).toBeGreaterThan(114);
+      expect(max).toBeGreaterThanOrEqual(117);
     });
   });
 });

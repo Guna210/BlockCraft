@@ -113,5 +113,8 @@
   "water[falling=true,level=4]": 111,
   "water[falling=true,level=5]": 112,
   "water[falling=true,level=6]": 113,
-  "water[falling=true,level=7]": 114
+  "water[falling=true,level=7]": 114,
+  "fire": 115,
+  "ice": 116,
+  "snow_layer[half=bottom]": 117
 }

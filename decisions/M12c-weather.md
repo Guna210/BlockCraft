@@ -36,7 +36,7 @@
 ## 4. Thunderstorms & Lightning (Decision 4)
 
 - **Procedural Branching Lightning Bolt**:
-  - `generateLightningBolt` recursively subdivides midpoint displacements with seeded fork branches, generating billboard ribbon quads.
+  - `generateLightningBolt` recursively subdivides midpoint displacements with seeded fork branches, generating one continuous camera-facing ribbon per branch (shared mitred vertices at every joint, tapering width), drawn as a soft additive glow then an opaque core.
   - Fully deterministic per seed and start/end coordinates.
 - **Sky Flash**:
   - Lightning strikes set `flashIntensity = 1.0`, fading over ticks, which adds bright additive illumination to sky, fog, and cloud shaders.
