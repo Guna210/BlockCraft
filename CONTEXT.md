@@ -60,6 +60,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
 - New task to add to SPEC: stairs, fences, doors and trapdoors (multi-box block shapes in block-shapes.ts, collision, placement facing, plus recipes). The owner accepted it 2026-10-16 as the fix for M10a's 106 < 120 recipe shortfall.
 - Worldgen tuning (later): bigger biomes (needs a SPEC edit to the M03c ≥ 10 biomes in 2048² test) plus fewer Mire patches (surface.ts patchNoise > 0.25).
 - Per-biome fog colour: listed in the SPEC biome appendix, owned by no task.
+- Berry bushes (wild_berries source) are owned by no task (M10a review).
 - Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
 - CI retries 2 can hide flaky tests; decide later.
 - npm ci reports 1 high-severity vulnerability; not investigated.
@@ -74,6 +75,10 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-16: M10a review round 1 (session_015kFuFMUwR216caRJiSojps) on 0ad85e1 (CI green): CHANGES NEEDED.
+  - Blocking: loot seed is position-only, and its own test asserts that.
+  - Non-blocking, bundled into the fix: docs falsely claim a startup ambiguity check; stale status line; exemption tags (skyshard → M20b, glowcap_stew/membrane/emberite → M20c); implicit exclusive roll should be an explicit flag; leaf self-drop to be noted; mud palette same as dirt.
+  - The reviewer's own pairwise probe found 0 ambiguous recipes, matcher ~1 ms. Wild berries: no task adds berry bushes (new SPEC gap). Gave the owner an agy fix prompt.
 - 2026-10-16: M09b figure rework done locally (src/ui/preview-figure.ts; player palettes; face; armor drawn). Its own new test m09b-ui.test.ts "at most 8 colors from the shared palette" fails (the figure uses player colours). Builder asks: A) check the figure against player plus armor palettes and everything else against the UI palette, or B) redraw in 8 UI colours. I recommended A (the test is new in this PR, not on master, and still checks an explicit allowed set). The owner decides and approves the screenshot in the builder chat.
 - 2026-10-16: agy M10a fix 0ad85e1 checked: rollBlockLoot (chance, min/max, exclusive roll when chances sum to 1) wired into player-controller; data per A.4/A.5; no wheat from grass; progress accurate (106 = 89 crafting + 17 smelting); 3 new loot tests; unit 633 locally. Issue caused by MY instruction: the seed is world + position only, so the same spot always gives the same drop (place/break gravel at one spot never yields flint); fix by adding a per-world break counter or tick. Flagged for the reviewer. The owner must open a PR from agy/m10a so CI runs; reviewer prompt given.
 - 2026-10-16: The owner disliked the M09b inventory character (lavender block, yellow shirt, no face). Sent to the builder: skin tones and outfit from src/render/textures/player.ts (match the F5 player model); face with hair, eyes, brows, nose and mouth; ART.md shading; new screenshot shown to the owner before the push to #47.
