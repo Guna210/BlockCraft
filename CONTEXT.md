@@ -127,3 +127,9 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 - 2026-10-15: FINAL: Codex does M08a (the prompt given earlier stands). M09b is next after it. The owner will send a water reference image before M08b; put it in the M08b prompt's look decisions, alongside SPEC's Visual Review (waterfall, lake depth gradient, lava cave).
 - 2026-10-15: M09b prompt was given, but the owner changed their mind and did NOT use it. M09b is not started. This is a one-off; there is no general rule.
   - Owner's order: M08a (Codex, full model; the owner is starting it now) → M08b (the owner's water reference image first) → then M09b. Regenerate the M09b prompt against master at that point.
+- 2026-10-16: M12c gate (claude/m12c, built on agy/m12c, merged master cleanly)
+  - Full verify: unit 594; e2e 75 passed, 1 failed (m02:54 mesh p95, a known container failure).
+  - Fixes over agy's work: weather on game ticks; natural schedule after 12000 simulated ticks; water freezing was broken and is fixed; lightning flash whiting out the sky toned down; sim tests added.
+  - No icons for ice/snow_layer/fire (M09b owns the icon atlas).
+  - Builder asks the owner to approve a test edit: point the storm screenshot camera at the strike. I recommended yes, with terrain also in the frame. The approval is the owner's, in that session.
+  - The claude/m12c PR includes agy's commit; agy/m12c then needs no PR.
