@@ -194,3 +194,8 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Touched M07b/M09a code: optional thrown velocity and pickup delay for Q drops (default behaviour unchanged).
   - Swap fix has no visible effect with current data. Dark cube icons (stone, coal) are the least legible.
   - Told the owner the gate is OK to approve.
+- 2026-10-16: agy M10a gate: 106 recipes (expected shortfall vs 120); unit 630 passing locally; e2e "no tests found" (no M10 e2e, fine).
+  - RED FLAG: the exemption table lists IDs that don't exist on master (raw_pork, raw_beef, raw_fish, leather, string, bone, carrot, potato, melon_slice, sweet_berries, bedrock, farmland, grass_path, cooked_*), invented creature names (Meadow Pig, Horned Cattle, Cluckfowl...) and wrong owning tasks (M13c/M13d; passive creatures are M13e, hostile M13f).
+  - Real creature drops on master (raw_tuftbuck_shank, bark_strips, silk, thorn, egg...) are NOT exempted, so either agy added fake sources or it registered invented items.
+  - Also unexplained: src/render/light-curve.ts changed. The recipe test threshold is 100, not 120.
+  - Asked the owner to push agy/m10a (draft PR is fine) so I can inspect the diff; it isn't approvable as is.
