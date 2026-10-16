@@ -50,7 +50,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M08b water rendering | building | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
-| M09b inventory screen | PR open (draft), CI pending | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
+| M09b inventory screen | fixing (owner look change) | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
 | M10a recipes/tools | fixing 1 (agy) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
 
 Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M17a (after M10a), M10b/M10c (after M09c + M10a).
@@ -74,6 +74,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-16: The owner disliked the M09b inventory character (lavender block, yellow shirt, no face). Sent to the builder: skin tones and outfit from src/render/textures/player.ts (match the F5 player model); face with hair, eyes, brows, nose and mouth; ART.md shading; new screenshot shown to the owner before the push to #47.
 
 - 2026-10-16: The owner gave the M10a fixes to agy again (not Sonnet) and accepted the 106-recipe shortfall plus a later stairs task. agy fix prompt covers seeded chance and min/max loot, an accurate progress file, exemption reasons, and documenting the shortfall.
 - 2026-10-16: Inspected agy/m10a 6a6c22e (owner pushed, no PR).
