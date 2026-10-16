@@ -61,6 +61,10 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
 - Worldgen tuning (later): bigger biomes (needs a SPEC edit to the M03c ≥ 10 biomes in 2048² test) plus fewer Mire patches (surface.ts patchNoise > 0.25).
 - Per-biome fog colour: listed in the SPEC biome appendix, owned by no task.
 - Berry bushes (wild_berries source) are owned by no task (M10a review).
+- Owner idea (2026-10-16): export/import a .save file in the browser (proposed M17d, after M17b) and a desktop app (Tauri recommended over Electron) that saves to disk. Neither is in SPEC; the owner decides whether to add them.
+  - Desktop: needs a SPEC edit (§2.1/2.2 browser-only stack) plus an owner-run packaging and signing step; best after M22.
+  - .save file: cheap once M17a/M17b exist (format + Blob download + file picker).
+  - Gave the owner exact SPEC wording on request.
 - Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
 - CI retries 2 can hide flaky tests; decide later.
 - npm ci reports 1 high-severity vulnerability; not investigated.
