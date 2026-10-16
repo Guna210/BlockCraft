@@ -4,5 +4,11 @@
       "id": "torch",
       "count": 1
     }
+  ],
+  "lumite_block": [
+    {
+      "id": "lumite_block",
+      "count": 1
+    }
   ]
 }

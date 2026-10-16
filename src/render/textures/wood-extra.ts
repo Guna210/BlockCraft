@@ -192,3 +192,44 @@ export function genRainwoodLeaves(seed: number = 7101): TextureData {
 export function genAcaciaLeaves(seed: number = 7202): TextureData {
   return genLeaves(PAL_ACACIA_LEAVES, seed, 12, 99, 0.4);
 }
+
+function genSeamlessPlanks(woodPal: RGBA[], seed: number): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(seed);
+  const joints = [
+    3 + lcg.nextInt(0, 4),
+    8 + lcg.nextInt(0, 4),
+    2 + lcg.nextInt(0, 4),
+    9 + lcg.nextInt(0, 4),
+  ];
+  const grainOffset = lcg.nextInt(1, 6);
+  for (let y = 0; y < 16; y++) {
+    const row = y >> 2;
+    const ry = y & 3;
+    const jointX = joints[row]!;
+    for (let x = 0; x < 16; x++) {
+      let idx: number;
+      if (ry === 1) {
+        idx = 0;
+      } else if (x === jointX) {
+        idx = 0;
+      } else if (ry === 2) {
+        idx = x === (jointX + 1) % 16 ? 3 : 2;
+      } else if (ry === 3) {
+        idx = (x + row * 3 + grainOffset) % 5 === 0 && x > 0 && x < 15 ? 2 : 1;
+      } else {
+        idx = 1;
+      }
+      setPixel(data, x, y, woodPal[idx]!);
+    }
+  }
+  return data;
+}
+
+export function genRainwoodPlanks(seed: number = 7301): TextureData {
+  return genSeamlessPlanks(PAL_RAINWOOD_WOOD, seed);
+}
+
+export function genAcaciaPlanks(seed: number = 7302): TextureData {
+  return genSeamlessPlanks(PAL_ACACIA_WOOD, seed);
+}

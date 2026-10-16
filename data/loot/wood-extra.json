@@ -10,5 +10,34 @@
       "id": "acacia_log",
       "count": 1
     }
+  ],
+  "rainwood_planks": [
+    {
+      "id": "rainwood_planks",
+      "count": 1
+    }
+  ],
+  "acacia_planks": [
+    {
+      "id": "acacia_planks",
+      "count": 1
+    }
+  ],
+  "rainwood_leaves": [
+    {
+      "id": "rainwood_leaves",
+      "count": 1
+    },
+    {
+      "id": "vine",
+      "count": 1,
+      "chance": 0.05
+    }
+  ],
+  "acacia_leaves": [
+    {
+      "id": "acacia_leaves",
+      "count": 1
+    }
   ]
 }

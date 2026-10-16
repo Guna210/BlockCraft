@@ -16,5 +16,6 @@ export function tintOffset(level: number, tint: number): number {
 export const EMITTER_TINTS: Readonly<Record<string, readonly [number, number, number]>> = {
   torch: [1, 0.8, 0.55],
   lumite_ore: [0.45, 0.85, 1],
+  lumite_block: [0.45, 0.85, 1],
   lava: [1, 0.45, 0.15],
 };

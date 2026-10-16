@@ -29,9 +29,30 @@
       "count": 1
     }
   ],
-  "gravel": [
+  "gravel": {
+    "exclusive": true,
+    "entries": [
+      {
+        "id": "flint",
+        "count": 1,
+        "chance": 0.1
+      },
+      {
+        "id": "gravel",
+        "count": 1,
+        "chance": 0.9
+      }
+    ]
+  },
+  "coarse_dirt": [
     {
-      "id": "gravel",
+      "id": "coarse_dirt",
+      "count": 1
+    }
+  ],
+  "mud": [
+    {
+      "id": "mud",
       "count": 1
     }
   ]

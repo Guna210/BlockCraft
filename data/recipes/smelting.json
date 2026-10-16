@@ -1,0 +1,104 @@
+{
+  "copper_ingot": {
+    "input": "raw_copper",
+    "output": "copper_ingot",
+    "count": 1,
+    "xp": 0.7
+  },
+  "iron_ingot": {
+    "input": "raw_iron",
+    "output": "iron_ingot",
+    "count": 1,
+    "xp": 0.7
+  },
+  "gold_ingot": {
+    "input": "raw_gold",
+    "output": "gold_ingot",
+    "count": 1,
+    "xp": 1.0
+  },
+  "stone": {
+    "input": "cobblestone",
+    "output": "stone",
+    "count": 1,
+    "xp": 0.1
+  },
+  "glass_from_sand": {
+    "input": "sand",
+    "output": "glass",
+    "count": 1,
+    "xp": 0.1
+  },
+  "glass_from_red_sand": {
+    "input": "red_sand",
+    "output": "glass",
+    "count": 1,
+    "xp": 0.1
+  },
+  "clayrock_terracotta": {
+    "input": "clay",
+    "output": "clayrock_terracotta",
+    "count": 1,
+    "xp": 0.35
+  },
+  "coal_from_oak_log": {
+    "input": "oak_log",
+    "output": "coal",
+    "count": 1,
+    "xp": 0.15
+  },
+  "coal_from_birch_log": {
+    "input": "birch_log",
+    "output": "coal",
+    "count": 1,
+    "xp": 0.15
+  },
+  "coal_from_pine_log": {
+    "input": "pine_log",
+    "output": "coal",
+    "count": 1,
+    "xp": 0.15
+  },
+  "coal_from_rainwood_log": {
+    "input": "rainwood_log",
+    "output": "coal",
+    "count": 1,
+    "xp": 0.15
+  },
+  "coal_from_acacia_log": {
+    "input": "acacia_log",
+    "output": "coal",
+    "count": 1,
+    "xp": 0.15
+  },
+  "roast_tuftbuck_shank": {
+    "input": "raw_tuftbuck_shank",
+    "output": "roast_tuftbuck_shank",
+    "count": 1,
+    "xp": 0.35
+  },
+  "roast_boar_chop": {
+    "input": "raw_boar_chop",
+    "output": "roast_boar_chop",
+    "count": 1,
+    "xp": 0.35
+  },
+  "roast_fowl": {
+    "input": "raw_fowl",
+    "output": "roast_fowl",
+    "count": 1,
+    "xp": 0.35
+  },
+  "baked_tuber": {
+    "input": "tuber",
+    "output": "baked_tuber",
+    "count": 1,
+    "xp": 0.35
+  },
+  "dirt_from_mud": {
+    "input": "mud",
+    "output": "dirt",
+    "count": 1,
+    "xp": 0.1
+  }
+}

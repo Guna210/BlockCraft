@@ -18,5 +18,15 @@
     "kind": "block",
     "block": "acacia_leaves",
     "maxStack": 64
+  },
+  "rainwood_planks": {
+    "kind": "block",
+    "block": "rainwood_planks",
+    "maxStack": 64
+  },
+  "acacia_planks": {
+    "kind": "block",
+    "block": "acacia_planks",
+    "maxStack": 64
   }
 }

@@ -12,6 +12,7 @@ import './clouds';
 import './weather';
 import './raycast';
 import './inventory';
+import './ui';
 import './entities';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
