@@ -128,6 +128,8 @@ interface Column {
   serial: number;
   /** GPU meshes (or a part of them) exist for this column. */
   hasMesh: boolean;
+  /** First complete presentation exists; refreshes do not invalidate collision readiness. */
+  simulationReady: boolean;
   /** Section results of the current attempt that were dropped or are still to come. */
   jobsLeft: number;
   uploadsPending: number;
@@ -248,6 +250,12 @@ export class Streamer<G, M> {
   /** Phase of a column, or undefined when the streamer knows nothing about it. */
   public phaseOf(cx: number, cz: number): ColumnPhase | undefined {
     return this.cols.get(columnKey(cx, cz))?.phase;
+  }
+
+  /** Existing collision data stays usable while edits refresh lighting and meshes. */
+  public canSimulate(cx: number, cz: number): boolean {
+    const col = this.cols.get(columnKey(cx, cz));
+    return !!col && col.simulationReady && hasData(col.phase);
   }
 
   /** Columns that hold block data. */
@@ -607,6 +615,7 @@ export class Streamer<G, M> {
       phase,
       serial: 0,
       hasMesh: false,
+      simulationReady: false,
       jobsLeft: 0,
       uploadsPending: 0,
       stale: false,
@@ -861,6 +870,7 @@ export class Streamer<G, M> {
 
   /** Deletes a column's GPU meshes and invalidates all of its mesh jobs. */
   private freeMeshOf(col: Column, incremental = false): void {
+    col.simulationReady = false;
     if (col.hasMesh && incremental && this.host.freeMeshStep) {
       if (!this.host.freeMeshStep(col.cx, col.cz)) return;
     } else if (col.hasMesh) this.host.freeMesh(col.cx, col.cz);
@@ -1169,6 +1179,7 @@ export class Streamer<G, M> {
       // Nothing to mesh: the section meshes of an earlier attempt, if any, are freed now.
       col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
       col.phase = 'meshed';
+      col.simulationReady = true;
       this.chainDirty = true;
       this.completed.meshed++;
       this.completed.uploaded++;
@@ -1273,6 +1284,7 @@ export class Streamer<G, M> {
       // Part of the result was dropped: the column is not complete, so it is not meshed.
       if (col.hasMesh) this.host.freeMesh(col.cx, col.cz);
       col.hasMesh = false;
+      col.simulationReady = false;
       this.discardAttempt(col);
       col.phase = this.host.requestLight ? 'lit' : 'generated';
       if (!col.failed) this.tryQueueMesh(col);
@@ -1282,6 +1294,7 @@ export class Streamer<G, M> {
       // The section meshes of an earlier attempt that this one did not produce are freed now.
       col.hasMesh = this.host.endMeshAttempt(col.cx, col.cz);
       col.phase = 'meshed';
+      col.simulationReady = true;
       this.chainDirty = true;
       this.completed.uploaded++;
     }

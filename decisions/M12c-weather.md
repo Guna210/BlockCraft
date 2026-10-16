@@ -48,13 +48,17 @@
 - **Budgeted Weather Tick**:
   - Since random-tick block updates are not yet implemented in the engine, `WeatherManager.tick` inspects a deterministic budget of 2 loaded columns within 48 blocks of the player per simulated tick. No general random-tick system is added.
   - In cold biomes (`precip === 'snow'`), exposed ground top faces slowly accumulate `snow_layer`.
-  - The surface is the highest non-air block, water included (`World.getHeight` skips water, so freezing used to be unreachable). Exposed water with `skyLight >= 14` freezes to `ice`; snow never lands on cross-model plants, fire, ice or lava.
+  - The surface is the highest non-air block, water included (`World.getHeight` skips water, so freezing used to be unreachable). Exposed still water (a source block: `level` 0, not `falling`; flowing water is left alone after M08a) with `skyLight >= 14` freezes to `ice`; snow never lands on cross-model plants, fire, ice or lava.
   - All changes go through `World.setBlock`, so `onBlockEdited` re-meshes and re-lights the affected chunks (the same path as player edits).
 - **New Block Definitions & Textures**:
   - `ice`: translucent block (`data/blocks/weather.json`), block item (`data/items/weather.json`), palette `PAL_ICE` with 5 distinct shades (contrast 4.09), registered in `src/world/blocks/registry.ts` and `src/render/textures/weather.ts`.
   - `snow_layer`: slab model using existing `"snow"` textures for all faces, avoiding duplicate atlas tiles and maintaining seamless tiling.
-  - `fire`: cross cutout block (`data/blocks/weather.json`), palette `PAL_FIRE` with 6 flame colors (contrast 5.76), sorted as `'foundation_stone_fire'` in `BlockRegistry` to maintain stable IDs 0..28.
+  - `fire`: cross cutout block (`data/blocks/weather.json`), palette `PAL_FIRE` with 6 flame colors (contrast 5.76). State IDs: `ice`, `snow_layer` and `fire` are not recorded in `data/block-state-ids.json` (kept append-only and not edited here to avoid conflicts with in-flight tasks), so they receive deterministic IDs after the recorded maximum, as M08a documents. The earlier `foundation_stone_fire` sort workaround was removed when merging M08a.
 
 ## 6. Items and icons (M09a conventions)
 
 - `ice`, `snow_layer` and `fire` are block items in `data/items/weather.json`; they use the terrain atlas textures. The inventory icon atlas belongs to M09b, so no icon is added here.
+
+## 7. M08a integration
+
+M08a added a random-tick system (`BlockTicks.setRandomTicks`). By the owner's decision for this task, M12c keeps its own small budgeted weather tick instead of building on it. Migrating it is a later follow-up, as M08a's decisions note. Weather writes go through `World.setBlock`, so fluid neighbours are notified.

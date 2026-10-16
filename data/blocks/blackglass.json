@@ -1,0 +1,15 @@
+{
+  "blackglass": {
+    "hardness": 50,
+    "blastResistance": 1200,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 3,
+    "textures": {
+      "top": "blackglass",
+      "side": "blackglass"
+    }
+  }
+}

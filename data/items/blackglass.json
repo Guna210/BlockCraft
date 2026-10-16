@@ -1,0 +1,7 @@
+{
+  "blackglass": {
+    "kind": "block",
+    "block": "blackglass",
+    "maxStack": 64
+  }
+}

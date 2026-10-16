@@ -148,6 +148,24 @@ describe('M12c — weather simulation', () => {
       expect(count(world, 'snow_layer', 65, 48)).toBe(0);
     });
 
+    it('freezes only still water sources, not flowing water', () => {
+      const world = buildWorld('frozen_ocean');
+      for (let x = -48; x <= 48; x++)
+        for (let z = -48; z <= 48; z++) {
+          world.setBlock(x, 64, z, 'water');
+        }
+      const registry = BlockRegistry.getInstance();
+      const flowing = registry.getStateId('water', { level: '3', falling: 'false' })!;
+      for (let x = -48; x <= 48; x++)
+        for (let z = -48; z <= 48; z++) world.setBlockStateId(x, 64, z, flowing);
+      fullSky(world);
+      setWeather('rain');
+      weatherManager.tick(world, 0, [0, 64, 0]);
+      for (let t = 1; t <= 2000; t++) weatherManager.tick(world, t, [0, 64, 0]);
+      expect(count(world, 'ice', 64, 48)).toBe(0);
+      expect(count(world, 'snow_layer', 65, 48)).toBe(0);
+    });
+
     it('does nothing in temperate or dry biomes, or when the weather is clear', () => {
       for (const [biome, state] of [
         ['plains', 'rain'],

@@ -266,8 +266,10 @@ class WeatherManager {
 
       const topBlock = world.getBlock(x, topY, z);
       if (topBlock.id === 'water') {
-        // Exposed water freezes to ice
-        world.setBlock(x, topY, z, 'ice');
+        // Only still water (a source block) freezes to ice; flowing water is left alone
+        if (String(topBlock.state.level) === '0' && String(topBlock.state.falling) === 'false') {
+          world.setBlock(x, topY, z, 'ice');
+        }
       } else if (
         topBlock.id !== 'ice' &&
         topBlock.id !== 'snow_layer' &&

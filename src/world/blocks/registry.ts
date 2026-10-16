@@ -1,3 +1,4 @@
+import savedStateIds from '../../../data/block-state-ids.json';
 import { BlockDefinition, BlockFaceDirection, ResolvedBlockState, StateDefinition } from './types';
 
 export class BlockRegistry {
@@ -47,19 +48,17 @@ export class BlockRegistry {
       }
     }
 
-    // Stable State IDs sorting rule:
-    // 1. Sort block definitions alphabetically by block ID.
-    // 2. Ensure 'air' is first if present (blockId === 'air').
-    // 3. Fire sorts immediately after foundation_stone to preserve stable state IDs 0..28.
+    // Enumerate definitions alphabetically, with air first. IDs come from the append-only
+    // table; unrecorded additions receive deterministic IDs after its last entry.
     rawBlocks.sort((a, b) => {
       if (a.id === 'air') return -1;
       if (b.id === 'air') return 1;
-      const aKey = a.id === 'fire' ? 'foundation_stone_fire' : a.id;
-      const bKey = b.id === 'fire' ? 'foundation_stone_fire' : b.id;
-      return aKey.localeCompare(bKey);
+      return a.id.localeCompare(b.id);
     });
 
-    let currentStateId = 0;
+    // Append-only IDs preserve existing chunk palettes when a block gains states.
+    const stableIds: Record<string, number> = savedStateIds;
+    let currentStateId = Math.max(...Object.values(stableIds)) + 1;
 
     for (const def of rawBlocks) {
       this.blocks.set(def.id, def);
@@ -69,8 +68,8 @@ export class BlockRegistry {
       let defaultStateIdForBlock: number | null = null;
 
       for (const props of statePermutations) {
-        const stateId = currentStateId++;
         const key = this.getLookupKey(def.id, props);
+        const stateId = stableIds[key] ?? currentStateId++;
 
         const resolvedState: ResolvedBlockState = {
           stateId,
