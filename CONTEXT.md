@@ -51,7 +51,7 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 | M08b water rendering | building | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
 | M09b inventory screen | MERGED (#47, 0bb369f) | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
-| M10a recipes/tools | review 2 (sent) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
+| M10a recipes/tools | PASS (#48), owner to merge | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
 
 Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M17a (after M10a), M10b/M10c (after M09c + M10a).
 
@@ -67,6 +67,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
 
 ## Decisions not yet on master
 
+- M17a prompt: persist world.breakCount (M10a loot seed) and block-entity state.
 - M13c prompt: call PathSearch.dispose() on abandoned searches; adapter.invalidate() or a chunk-load hook (M13b review).
 - Weather migrated onto ticks.ts random ticks: later follow-up (M12c kept its own tick).
 - Leftovers:
@@ -75,6 +76,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-16: M10a review round 2: VERDICT PASS on 1b45e66 (PR #48, CI green). The loot seed includes world.breakCount (10.2% flint over 20k breaks); gravel uses an explicit exclusive table; tags fixed; PAL_MUD added. Clean merge with master (M09b only added an optional spawn arg). Non-blocking: progress status line says incomplete; breakCount isn't persisted (M17a should save it); exclusive tables don't validate their sum. Told the owner to merge #48. Next ready: M09c (after M09b), M17a (after M10a), M10b/M10c after M09c.
 - 2026-10-16: M09b merged (#47, 0bb369f). M10a fix 02 (1b45e66) pushed, CI green per the owner; it merges cleanly with the new master. I sent round 2 to reviewer session_015kFuFMUwR216caRJiSojps myself.
 - 2026-10-16: M09b review (session_01DP1LpKF6t9vDwU2kRwvHFK): VERDICT PASS on 7d41a11 (CI green). Non-blocking: the main screenshot variance crop includes count digits and the tooltip covers 2 slots (the count-1 batch tests do cover icons); a quick second click within 400 ms on the same slot while holding a stack counts as a double-click collect; trousers show tan + slate. Told the owner to merge #47. After the merge, M09c becomes ready.
 - 2026-10-16: M09b figure rework pushed (7d41a11, owner approved option A: the figure colours are checked against FIGURE_COLORS, everything else against UI). CI green. Screenshot viewed by me: skin-tone face, iron cap, copper jacket with sash, slate trousers. Reviewer prompt given for #47.
