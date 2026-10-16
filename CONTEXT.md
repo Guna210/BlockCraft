@@ -153,3 +153,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Also: append ice/snow_layer/fire states to data/block-state-ids.json, with a unit check.
   - The M12c reviewer prompt waits until this is done.
 - 2026-10-16: M12c head 70877c0 (continuous lightning ribbons; state IDs recorded). CI green and the owner likes the lightning. Gave the reviewer prompt for #46.
+- 2026-10-16: M12c review round 1 (session_01XoNjGgzgbuNekNeGSPxJQv): CHANGES NEEDED on 70877c0 (CI green).
+  - Blocking: the rain e2e diff (m12.spec:703) passes with clear weather (0.2859 clear vs 0.2838 rain).
+  - Sent the builder: rain-only diff with a clear control (< 0.005 clear, > 0.02 rain); assert the desert biome. Also fix the per-frame heightmap rebuild and the removeColumn leak.
+  - Other non-blocking items left: double particle count, per-frame Float32Array during strikes, rain factor copied 3×, fire doesn't spread, snow lands on leaves/glass.
