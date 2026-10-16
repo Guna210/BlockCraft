@@ -90,6 +90,8 @@ it('sorts only translucent near geometry after meaningful camera movement and fr
   render(1);
   expect(calls.get('createFramebuffer')).toHaveBeenCalledTimes(framebufferCreates);
   expect(calls.get('bufferSubData')).toHaveBeenCalledTimes(2);
+  expect(calls.get('blitFramebuffer')).toHaveBeenCalledTimes(4);
+  expect(drawVaos).toHaveLength(12); // One opaque and two translucent submissions per frame.
   renderer.clearAllMeshes();
   expect(buffers.size).toBe(0);
   // The renderer retains its two plains tint fallback textures across world resets.

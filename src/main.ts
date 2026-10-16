@@ -44,7 +44,7 @@ function main() {
 
   if (!canvas) return;
 
-  const gl = canvas.getContext('webgl2');
+  const gl = canvas.getContext('webgl2', { stencil: true });
 
   if (!gl) {
     canvas.style.display = 'none';

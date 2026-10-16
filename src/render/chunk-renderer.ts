@@ -135,7 +135,7 @@ flat in float v_fluid;
 flat in float v_flow;
 in vec3 v_normal;
 uniform float u_fluidTime;
-uniform sampler2D u_sceneDepth;
+uniform highp sampler2D u_sceneDepth;
 uniform mat4 u_inverseViewProj;
 uniform vec2 u_viewport;
 in vec2 v_unwrappedUV;
@@ -902,9 +902,7 @@ export class ChunkRenderer {
     if (meshes.some((mesh) => mesh.translucent)) {
       gl.activeTexture(gl.TEXTURE4);
       this.activeUnit = 4;
-      const depthStats = this.depth.render(viewProjMatrix, atlas, this.visColumns, this.visFade);
-      this.passDraws += depthStats.draws;
-      this.passTriangles += depthStats.triangles;
+      this.depth.capture();
       this.activeUnit = 4;
     }
     // 3. Translucent Pass
