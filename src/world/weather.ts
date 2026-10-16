@@ -1,6 +1,5 @@
-import { World } from './world';
+import type { World } from './world';
 import { LCG } from '../render/textures/noise';
-import { BlockRegistry } from './blocks/registry';
 
 export type WeatherState = 'clear' | 'rain' | 'thunder';
 export type PrecipitationType = 'none' | 'rain' | 'snow';
@@ -275,7 +274,7 @@ class WeatherManager {
         topBlock.id !== 'snow_layer' &&
         topBlock.id !== 'lava' &&
         topBlock.id !== 'fire' &&
-        BlockRegistry.getInstance().getBlockDefinition(topBlock.id)?.model !== 'cross' &&
+        world.getBlockDefinition(topBlock.id)?.model !== 'cross' &&
         world.getBlock(x, topY + 1, z).id === 'air'
       ) {
         // Accumulate snow layer
