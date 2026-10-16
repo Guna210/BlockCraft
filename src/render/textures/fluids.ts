@@ -12,28 +12,32 @@ export const PAL_LAVA = [...PAL_LAVA_CRUST, ...PAL_LAVA_MOLTEN];
 
 // Water: animated 32 frames, seamless loop
 export function genWaterFrames(): TextureData[] {
-  const frames: TextureData[] = [];
-  for (let f = 0; f < 32; f++) {
+  const strokes: ReadonlyArray<readonly [number, number, number, number]> = [
+    [3, 3, 4, 0.2],
+    [10, 6, 3, 1.5],
+    [3, 9, 3, 2.9],
+    [10, 12, 3, 4.3],
+  ];
+  return Array.from({ length: 32 }, (_, frame) => {
     const data = createEmptyTexture();
-    const phase = (f / 32) * Math.PI * 2;
-    for (let y = 0; y < 16; y++)
-      for (let x = 0; x < 16; x++) {
-        const nx = ((x + 0.5) / 16) * Math.PI * 2;
-        const ny = ((y + 0.5) / 16) * Math.PI * 2;
-        // Broad dark water with short, gently bent ripple crests; no noise blobs.
-        const base =
-          Math.cos(nx) * Math.cos(ny) * Math.cos(phase) +
-          Math.sin(phase) * (0.2 + Math.cos(nx) * 0.25);
-        const crest = Math.sin(Math.cos(ny) * 3 + 0.45 * Math.cos(nx) + phase);
-        const envelope = Math.cos(nx) * Math.cos(phase);
-        let idx = base > 0.55 ? 2 : base < -0.35 ? 0 : 1;
-        if (crest > 0.96 && envelope > 0.2) idx = 3;
-        if (crest > 0.995 && envelope > 0.65) idx = 4;
-        setPixel(data, x, y, PAL_WATER[idx]!);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) setPixel(data, x, y, PAL_WATER[1]!);
+    const angle = (frame / 32) * Math.PI * 2;
+    strokes.forEach(([x, y, length, phase], stroke) => {
+      const dx = Math.round(Math.sin(angle + phase) * 1.8);
+      const dy = Math.round(Math.sin(angle * (stroke % 2 ? 3 : 2) + phase) * 0.8);
+      // Short connected crests drift by only a few pixels. A cool lower edge gives depth.
+      for (let pixel = 0; pixel < length; pixel++) {
+        const px = x + dx + pixel,
+          py = y + dy;
+        setPixel(data, px, py + 1, PAL_WATER[0]!);
+        const bright = stroke % 2 === 0 && pixel > 0 && pixel < length - 1;
+        setPixel(data, px, py, PAL_WATER[bright ? 3 : 2]!);
       }
-    frames.push(data);
-  }
-  return frames;
+      if (Math.sin(angle + phase) > 0.8 && stroke % 2 === 0)
+        setPixel(data, x + dx + 1, y + dy, PAL_WATER[4]!);
+    });
+    return data;
+  });
 }
 
 // Lava: animated 32 frames, seamless loop
