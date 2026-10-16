@@ -53,7 +53,7 @@ In flight:
 | M09b inventory screen | MERGED (#47, 0bb369f) | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
 | M10a recipes/tools | MERGED (#48) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
 
-| M17a serialization | PR #49 (draft), CI running | agy, agy/m17a b51b116 | — | #49 | Code checked: solid. Gaps: pending scheduled block ticks (fluids mid-flow) not saved; weather schedule counters not saved. Reviewer prompt given. |
+| M17a serialization | fixing 1 (agy) | agy, agy/m17a b51b116 | — | #49 | Code checked: solid. Gaps: pending scheduled block ticks (fluids mid-flow) not saved; weather schedule counters not saved. Reviewer prompt given. |
 
 Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M17a (after M10a), M10b/M10c (after M09c + M10a).
 
@@ -82,6 +82,15 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-16: M17a review round 1 (session_01DLa6aEZcGeoci97ppP3gPU) on b51b116 (CI green): CHANGES NEEDED.
+  - grassTints/foliageTints not saved (blended, not derivable from biome indices), so reloaded columns would turn plains-green.
+  - Tests are missing compaction, refCounts, edit-after-load and corruption cases.
+  - An out-of-range packed index and trailing bytes are accepted silently.
+  - Player: health/hunger/saturation/air/flying/dimension exist in player.ts and must be saved (MY prompt wrongly said they did not exist).
+  - "Typical column 51 bytes" came from a toy column.
+  - deserializeWorld lacks bounds checks.
+  - Fix now: (a) scheduled ticks; (b) weather timers (manualOverride, strikeCounter, lastTick, elapsed).
+  - Gave the owner an agy fix prompt.
 - 2026-10-16: Checked agy M17a (b51b116, PR #49). Good: BCCF column format with a fixed header, palette and indices matching chunk.ts (compaction re-packs bits, so it stays consistent); unknown ID throws; migration registry; deflate via CompressionStream; inventory (41 + cursor + selected), item entities, player, world meta incl. breakCount; serializeWorld with BCWD; light recomputed on load (documented). Gaps for the reviewer: pending scheduled ticks (M08a fluids) not serialized, so mid-flow water would freeze after a reload; weather schedule/strike counters not saved. Reviewer prompt given.
 - 2026-10-16: The owner asked for an agy task while Codex merges master into M08b. Recommended M17a (serialization; needs only M10a, merged; unit round-trips only, no screenshots), branch agy/m17a. Decisions: src/persist/; the section format reuses the chunk palette + packed indices; deflate via CompressionStream (Node 22 CI and Node 24 laptop have it); serialize only what exists (columns, block entities, inventory incl. cursor/armor/offhand, item entities, player pos/rot/mode, world meta incl. breakCount and seed); format version plus migration registry; no IndexedDB (M17b). M09c stays for a Claude/Codex session (visual).
 - 2026-10-16: The owner merged #48 (M10a). The M08b master-merge message was updated to mention both #47 and #48.
