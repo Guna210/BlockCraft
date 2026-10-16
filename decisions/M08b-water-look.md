@@ -27,3 +27,7 @@ M06's `src/render/underwater.ts`, fog distances, brightness floor and final tint
 ## Evidence
 
 `tests/unit/m08b-render.test.ts` covers shared slopes, section boundaries, falling joins, internal water/lava culling, sparse highlights, deterministic frame variation, clock pause/resume and quad order. `tests/unit/m08b-gpu.test.ts` exercises sorted draw order, movement thresholds, near-only index updates, opaque shared buffers and resource cleanup through the renderer. `tests/e2e/m08b.spec.ts` owns consecutive-frame stability with animation paused, visible runtime water/lava animation, shallow-bottom/deep-blue checks and the four review captures. With explicit owner approval, only the two M02c static-image tests call `setFluidAnimationPaused(true)` so they continue to measure stale-frame/tint behavior. Their assertions and 1% thresholds are unchanged. Other existing tests and all harness files remain unchanged.
+
+## M12c weather merge
+
+Merged `origin/master` at `fe346bf` (PR #46) in `4151e34`. The chunk-shader conflicts retain both fluid uniforms/varyings and rain/lightning uniforms; puddle darkening runs after fluid shading, and the existing rain-darkened/flash-tinted sky fog color also supplies water's Fresnel tint. Weather's `sky.ts` and its simulation/render modules are retained from master. Focused browser verification passes all three M08b cases, unchanged underwater behavior, and the unchanged M12c weather test (clear control 0, rain difference 0.04198676215277778, desert rain/snow counts both 0). No weather test is edited.
