@@ -42,7 +42,8 @@
     },
     {
       "id": "apple",
-      "count": 1
+      "count": 1,
+      "chance": 0.005
     }
   ],
   "birch_leaves": [

@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { items } from '../../src/gameplay/items';
-import { blockLoot } from '../../src/gameplay/loot';
+import { blockLoot, rollBlockLoot, validateLootEntry } from '../../src/gameplay/loot';
 import { BARE_HAND, canHarvest, type MiningTool } from '../../src/gameplay/mining';
 import { crafting } from '../../src/gameplay/crafting';
 import { smelting } from '../../src/gameplay/smelting';
 import { OVERWORLD_ORE_IDS } from '../../src/gen/ores';
 import { FLOWER_IDS } from '../../src/gen/features';
 import { BIOME_DEFINITIONS } from '../../src/gen/biomes';
+import { World } from '../../src/world/world';
+import { PlayerController } from '../../src/engine/player-controller';
+import { Camera } from '../../src/render/camera';
+import { InputEngine } from '../../src/engine/input';
 
 export type AcquisitionSource = 'drop' | 'loot' | 'crafting' | 'smelting';
 
@@ -35,30 +39,50 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
   },
   fire: { task: 'M12c', reason: 'Transient hazard/weather block; drops nothing' },
 
-  // Blocks that drop other items unless harvested with the Silk Touch affix (M19b)
+  // Blocks that drop materials/dirt and are never obtainable as items
   grass_block: {
     task: 'M19b',
-    reason: 'Drops dirt unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
   },
   coal_ore: {
     task: 'M19b',
-    reason: 'Drops coal unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
   },
   copper_ore: {
     task: 'M19b',
-    reason: 'Drops raw_copper unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
   },
   iron_ore: {
     task: 'M19b',
-    reason: 'Drops raw_iron unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
   },
   gold_ore: {
     task: 'M19b',
-    reason: 'Drops raw_gold unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
   },
   lumite_ore: {
     task: 'M19b',
-    reason: 'Drops lumite_shard unless mined with a Silk Touch affixed tool',
+    reason:
+      'never obtainable as an item: ores drop materials and grass drops dirt; SPEC has no silk-touch',
+  },
+
+  // Crop farming / hamlet farm items (wheat never drops from tall_grass)
+  wheat: {
+    task: 'M19b',
+    reason: 'Harvested from wheat crops in Wayfarer Hamlet farms (never drops from tall_grass)',
+  },
+  bread: {
+    task: 'M19b',
+    reason: 'Crafted from 3 wheat (requires wheat crops in M19b)',
+  },
+  hay_bale: {
+    task: 'M19b',
+    reason: 'Crafted from 9 wheat (requires wheat crops in M19b)',
   },
 
   // M11 / M13 passive & hostile creature drops and items crafted/smelted exclusively from them
@@ -243,6 +267,7 @@ export function computeSurvivalReachability(
 
       const loot = blockLoot(blockId);
       for (const entry of loot) {
+        if ((entry.chance ?? 1) <= 0) continue;
         if (!reached.has(entry.id)) {
           const source: AcquisitionSource = entry.id === blockId ? 'drop' : 'loot';
           reached.set(entry.id, source);
@@ -328,11 +353,12 @@ describe('M10a survival reachability graph', () => {
     }
   });
 
-  it('reaches all downstream M13 and M20 crafted/smelted items once their base creature drops and Hollowdeep ore are available', () => {
+  it('reaches all downstream M13, M19b and M20 crafted/smelted items once their base drops and Hollowdeep ore are available', () => {
     const worldBlocks = getOverworldWorldgenBlocks();
     worldBlocks.add('skyshard_ore');
 
     const baseDrops = [
+      'wheat',
       'raw_tuftbuck_shank',
       'raw_boar_chop',
       'raw_fowl',
@@ -342,6 +368,8 @@ describe('M10a survival reachability graph', () => {
     ];
     const reached = computeSurvivalReachability(worldBlocks, baseDrops);
 
+    expect(reached.get('bread')).toBe('crafting');
+    expect(reached.get('hay_bale')).toBe('crafting');
     expect(reached.get('roast_tuftbuck_shank')).toBe('smelting');
     expect(reached.get('roast_boar_chop')).toBe('smelting');
     expect(reached.get('roast_fowl')).toBe('smelting');
@@ -354,5 +382,157 @@ describe('M10a survival reachability graph', () => {
     expect(reached.get('skyshard_shovel')).toBe('crafting');
     expect(reached.get('skyshard_hoe')).toBe('crafting');
     expect(reached.get('skyshard_sword')).toBe('crafting');
+  });
+
+  it('validates loot entry chance and min/max bounds on load', () => {
+    expect(() => validateLootEntry('test', { id: 'coal', count: 1, chance: -0.1 })).toThrow(
+      /chance/,
+    );
+    expect(() => validateLootEntry('test', { id: 'coal', count: 1, chance: 1.5 })).toThrow(
+      /chance/,
+    );
+    expect(() => validateLootEntry('test', { id: 'coal', count: 2, min: 4, max: 2 })).toThrow(
+      /min\/max/,
+    );
+    expect(() => validateLootEntry('test', { id: 'coal', count: 1, min: 0, max: 2 })).toThrow(
+      /min\/max/,
+    );
+    expect(() => validateLootEntry('test', { id: 'coal', count: 1, min: 1, max: 99 })).toThrow(
+      /min\/max/,
+    );
+  });
+
+  it('keeps rolled loot counts within min-max and gives identical results for the same seed and position', () => {
+    for (let i = 0; i < 200; i++) {
+      const seed = 1000 + i;
+      const x = i * 3 - 50;
+      const y = 16 + (i % 40);
+      const z = -i * 5 + 20;
+
+      const copperA = rollBlockLoot('copper_ore', seed, x, y, z);
+      const copperB = rollBlockLoot('copper_ore', seed, x, y, z);
+      expect(copperA).toEqual(copperB);
+      expect(copperA).toHaveLength(1);
+      expect(copperA[0]!.id).toBe('raw_copper');
+      expect(copperA[0]!.count).toBeGreaterThanOrEqual(2);
+      expect(copperA[0]!.count).toBeLessThanOrEqual(5);
+
+      const lumiteA = rollBlockLoot('lumite_ore', seed, x, y, z);
+      const lumiteB = rollBlockLoot('lumite_ore', seed, x, y, z);
+      expect(lumiteA).toEqual(lumiteB);
+      expect(lumiteA).toHaveLength(1);
+      expect(lumiteA[0]!.id).toBe('lumite_shard');
+      expect(lumiteA[0]!.count).toBeGreaterThanOrEqual(2);
+      expect(lumiteA[0]!.count).toBeLessThanOrEqual(4);
+
+      for (const [oreId, dropId] of [
+        ['coal_ore', 'coal'],
+        ['iron_ore', 'raw_iron'],
+        ['gold_ore', 'raw_gold'],
+        ['skyshard_ore', 'skyshard_crystal'],
+      ] as const) {
+        expect(rollBlockLoot(oreId, seed, x, y, z)).toEqual([{ id: dropId, count: 1 }]);
+      }
+    }
+
+    // Breaking the same block at the same position in two worlds with the same seed spawns identical drops
+    const runBreak = (worldSeed: number) => {
+      const world = new World(false);
+      world.worldSeed = worldSeed;
+      world.fill(-2, 64, -2, 6, 64, 2, 'stone');
+      world.setBlock(3, 66, 0, 'copper_ore');
+      const controller = new PlayerController(
+        new Camera(1),
+        new InputEngine(document.createElement('canvas')),
+        () => true,
+      );
+      controller.spawn(world, 0.5, 65, 0.5, 'survival');
+      controller.player!.inventory.insert('stone_pickaxe', 1);
+      controller.interaction!.input('attack', true);
+      for (let t = 0; t < 40; t++) controller.interaction!.tick();
+      return controller
+        .itemEntities!.pool.filter((e) => e.active)
+        .map((e) => ({ id: e.item.id, count: e.count }));
+    };
+
+    const broken1 = runBreak(424242);
+    const broken2 = runBreak(424242);
+    expect(broken1).toEqual(broken2);
+    expect(broken1).toEqual(rollBlockLoot('copper_ore', 424242, 3, 66, 0));
+  });
+
+  it('matches expected loot drop frequencies over 20,000 rolls and drops either flint or gravel (never both)', () => {
+    const N = 20000;
+    let apples = 0;
+    let vines = 0;
+    let seeds = 0;
+    let flints = 0;
+    let gravels = 0;
+    const copperCounts = new Set<number>();
+    const lumiteCounts = new Set<number>();
+
+    for (let seed = 1; seed <= N; seed++) {
+      // oak_leaves: self-drop + 0.005 apple
+      const oak = rollBlockLoot('oak_leaves', seed, 10, 70, -15);
+      expect(oak[0]).toEqual({ id: 'oak_leaves', count: 1 });
+      if (oak.some((e) => e.id === 'apple' && e.count === 1)) {
+        apples++;
+      }
+
+      // rainwood_leaves: self-drop + 0.05 vine
+      const rainwood = rollBlockLoot('rainwood_leaves', seed, 10, 70, -15);
+      expect(rainwood[0]).toEqual({ id: 'rainwood_leaves', count: 1 });
+      if (rainwood.some((e) => e.id === 'vine' && e.count === 1)) {
+        vines++;
+      }
+
+      // tall_grass: self-drop + 0.125 seed; never wheat
+      const grass = rollBlockLoot('tall_grass', seed, 10, 70, -15);
+      expect(grass[0]).toEqual({ id: 'tall_grass', count: 1 });
+      expect(grass.some((e) => e.id === 'wheat')).toBe(false);
+      if (grass.some((e) => e.id === 'seed' && e.count === 1)) {
+        seeds++;
+      }
+
+      // gravel: 0.1 flint OR 0.9 gravel, never both
+      const gravelRoll = rollBlockLoot('gravel', seed, 10, 70, -15);
+      expect(gravelRoll).toHaveLength(1);
+      expect(gravelRoll[0]!.count).toBe(1);
+      if (gravelRoll[0]!.id === 'flint') {
+        flints++;
+      } else if (gravelRoll[0]!.id === 'gravel') {
+        gravels++;
+      } else {
+        throw new Error(`Unexpected gravel drop: ${gravelRoll[0]!.id}`);
+      }
+
+      // copper_ore (2..5) & lumite_ore (2..4)
+      copperCounts.add(rollBlockLoot('copper_ore', seed, 10, 30, -15)[0]!.count);
+      lumiteCounts.add(rollBlockLoot('lumite_ore', seed, 10, 20, -15)[0]!.count);
+    }
+
+    // Apple rate: 0.5% target -> between 0.2% and 1.0% over 20,000 rolls
+    const appleRate = apples / N;
+    expect(appleRate).toBeGreaterThanOrEqual(0.002);
+    expect(appleRate).toBeLessThanOrEqual(0.01);
+
+    // Vine rate: 5% target -> between 4% and 6%
+    const vineRate = vines / N;
+    expect(vineRate).toBeGreaterThanOrEqual(0.04);
+    expect(vineRate).toBeLessThanOrEqual(0.06);
+
+    // Seed rate: 12.5% target -> between 11% and 14%
+    const seedRate = seeds / N;
+    expect(seedRate).toBeGreaterThanOrEqual(0.11);
+    expect(seedRate).toBeLessThanOrEqual(0.14);
+
+    // Gravel / flint: mutually exclusive (flints + gravels === N), flint rate ~10% (between 8.5% and 11.5%)
+    expect(flints + gravels).toBe(N);
+    const flintRate = flints / N;
+    expect(flintRate).toBeGreaterThanOrEqual(0.085);
+    expect(flintRate).toBeLessThanOrEqual(0.115);
+
+    expect([...copperCounts].sort()).toEqual([2, 3, 4, 5]);
+    expect([...lumiteCounts].sort()).toEqual([2, 3, 4]);
   });
 });

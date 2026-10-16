@@ -31,12 +31,14 @@
   ],
   "gravel": [
     {
-      "id": "gravel",
-      "count": 1
+      "id": "flint",
+      "count": 1,
+      "chance": 0.1
     },
     {
-      "id": "flint",
-      "count": 1
+      "id": "gravel",
+      "count": 1,
+      "chance": 0.9
     }
   ],
   "coarse_dirt": [

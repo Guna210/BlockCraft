@@ -8,7 +8,9 @@
   "copper_ore": [
     {
       "id": "raw_copper",
-      "count": 2
+      "count": 2,
+      "min": 2,
+      "max": 5
     }
   ],
   "iron_ore": [
@@ -26,7 +28,9 @@
   "lumite_ore": [
     {
       "id": "lumite_shard",
-      "count": 2
+      "count": 2,
+      "min": 2,
+      "max": 4
     }
   ],
   "skyshard_ore": [

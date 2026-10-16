@@ -6,11 +6,8 @@
     },
     {
       "id": "seed",
-      "count": 1
-    },
-    {
-      "id": "wheat",
-      "count": 1
+      "count": 1,
+      "chance": 0.125
     }
   ],
   "bluebell": [
