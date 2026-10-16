@@ -161,3 +161,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - M08b (water look) can start now. Overlap with M12c is only ~36 lines in chunk-renderer.ts (puddle and flash uniforms) plus the sky.ts uniforms. M12c merges first, then Codex merges master.
   - M08c must wait: M12c adds the ice block that M08c defines.
   - Waiting on the owner's water reference image before writing the M08b prompt.
+- 2026-10-16: The owner gave a water reference (from an existing game; only described in words to builders, per AGENTS §10). Notes:
+  - The top surface is too light, with too many light-blue patches. The owner wants it darker and translucent, with subtle ripples and animated sides. Underwater view is fine.
+  - Code facts: PAL_WATER's brightest #8ec0f0 is forced on for v > 0.3 and the second-brightest for v > 0.15, so there are lots of highlights. Pixels are alpha 255 (opaque). I couldn't find runtime frame cycling, so water probably isn't animated in game.
+  - Gave the M08b prompt to Codex (claude/m08b; the owner launches it).
