@@ -1,0 +1,29 @@
+# M08b — Water appearance and rendering
+
+## Owner's look targets
+
+The owner's highest priority is water viewed from above. Water should have a medium-to-deep blue base dominated by mid and dark tones. Bright accents should cover roughly ten percent or less, appearing as thin, soft ripple streaks rather than bright blobs. Shallow water must transmit the bottom; increasing depth must darken it to blue, without a pale or opaque-looking surface. Both the surface texture and small vertex waves should animate gently. Side faces must animate, with downward movement on waterfalls and movement downhill on slopes. Fresnel sky tint should strengthen at grazing angles and remain subtle from above. Preserve M06's underwater tint and fog. Lava must animate, retain emission 15 and omit lava-to-lava internal faces. All imagery is procedural and original under ART.md.
+
+## Palette and animation
+
+`src/render/textures/fluids.ts` declares a five-color blue ramp: `#12345e`, `#194572`, `#245987`, `#3c719b`, `#6696b9`. The first three shades cover at least 90% of every generated frame. The upper two require narrow crest thresholds (0.96 / 0.995) plus an envelope gate; the old noise > 0.3 / > 0.15 overrides are removed. Wrapped contour shapes establish the ripples before palette quantization; no external art is used. The 32-frame water and existing lava loops occupy contiguous atlas cells and cycle at eight frames per second. World-space UVs keep neighboring faces continuous; flow moves downhill at 0.22 tiles/s and side faces down at 0.35 tiles/s. Palette alpha is 92; the above-water shader computes absorption-dependent alpha.
+
+`src/render/fluid-animation.ts` owns a monotonic render clock independent of simulation ticks. `src/debug/api/fluids.ts` registers `setFluidAnimationPaused(boolean)` and `getFluidAnimation()`. Pause freezes waves, frame selection and UV motion at their current phase; resume continues without a jump. Neither the renderer nor the clock checks test conditions. Waves displace exposed water corners by at most 0.018 blocks, using identical world coordinates at shared edges.
+
+## Geometry and packed vertices
+
+The mesher lookup tables read M08a's enum strings `level` and `falling`. Exposed source height is 56/64; each level removes 7/64. Falling cells and corners touching a same-fluid cell above reach full height. A corner averages its four horizontal cells, giving source cells fourfold weight, ignoring opaque neighbors and including air as zero. Every cell sharing a corner computes the same value from the existing padded snapshot, including section borders. Fluid faces are individual quads so waves can deform the surface. Same-kind fluid internal faces are omitted for all levels of water and lava. Lava stays in its existing opaque bucket; registry emission is unchanged.
+
+The two-word vertex stride remains eight bytes. Tint tag 4 denotes water and 5 lava. For these tags only, word 1 bits 12–17 encode top depression /64 (subtracted from the enclosing integer lattice Y), bits 18–21 the flow octant (0 still, 1–8 horizontal, 9 falling), and bits 30–31 the unit UV corner. Word 0 still carries enclosing integer coordinates, face normal and light; tile and RGB light lanes are unchanged. `decodeVertex` returns actual fractional geometry and logical unit UVs. Other materials retain their existing half-height/inset layout. The fluid shader derives wave eligibility from fractional height and samples world-space UVs. Worker quad normalization and transfers remain unchanged.
+
+## Transparency and depth
+
+Only translucent sections enter the distance-sorted list. Section order refreshes on mesh changes or at least 0.5 block of camera translation. Within-section quad centers and private index buffers are retained only for translucent buckets. Quad indices are updated only within 48 blocks of the camera and after 0.5 block of movement (or first entry). Opaque/cutout buckets retain the shared index buffer. Program selection follows the sorted sections so lighting variants cannot regroup and break blend order. Indices, depth textures and framebuffer resources are released on eviction/reset as appropriate.
+
+When translucent geometry is visible, an explicit depth-only pre-pass renders opaque/cutout geometry into a lazily allocated, viewport-sized depth texture. This avoids relying on default-framebuffer depth formats, which cannot be portably blitted on SwiftShader. The shader reconstructs the opaque point with inverse view-projection and estimates submerged optical path behind the water fragment. Exponential absorption (`1-exp(-0.16*distance)`) shifts the surface toward dark blue while reducing bottom transmission. Shallow alpha starts at 0.26, tending toward 0.96 in deep water. Fresnel mixes sky color with weight `0.02+0.30*(1-|N·V|)^5`; the surface normal includes slopes and waves. This is a sky tint, not scene reflection or screen-space refraction.
+
+M06's `src/render/underwater.ts`, fog distances, brightness floor and final tint pass are unchanged. Above-water absorption and Fresnel are bypassed when submerged.
+
+## Evidence
+
+`tests/unit/m08b-render.test.ts` covers shared slopes, section boundaries, falling joins, internal water/lava culling, sparse highlights, deterministic frame variation, clock pause/resume and quad order. `tests/unit/m08b-gpu.test.ts` exercises sorted draw order, movement thresholds, near-only index updates, opaque shared buffers and resource cleanup through the renderer. `tests/e2e/m08b.spec.ts` owns consecutive-frame stability with animation paused, visible runtime water/lava animation, shallow-bottom/deep-blue checks and the four review captures. No existing tests or harness files are changed.

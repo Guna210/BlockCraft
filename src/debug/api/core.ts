@@ -1,5 +1,7 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  setFluidAnimationPaused?: (paused: boolean) => void;
+  getFluidAnimation?: () => { paused: boolean; seconds: number; frame: number };
   giveItem?: (id: string, count: number) => void;
   getInventory?: () => Array<import('../../gameplay/inventory').ItemStack | null>;
   getInventoryCursor?: () => import('../../gameplay/inventory').CursorStack | null;
