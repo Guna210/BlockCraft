@@ -759,9 +759,10 @@ export class ChunkRenderer {
     const camera = this.cameraPos;
     const moved = distanceSquared(camera, this.sortedCamera) >= TRANSLUCENT_SORT_STEP ** 2;
     if (moved || this.sortDirty) {
-      this.translucentMeshes = Array.from(this.sectionMeshes.values()).filter(
-        (mesh) => mesh.translucent,
-      );
+      if (this.sortDirty)
+        this.translucentMeshes = Array.from(this.sectionMeshes.values()).filter(
+          (mesh) => mesh.translucent,
+        );
       const distance = (mesh: GPUSectionMesh) =>
         (mesh.sx * 16 + 8 - camera[0]) ** 2 +
         (mesh.sy * 16 + 8 - camera[1]) ** 2 +

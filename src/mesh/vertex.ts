@@ -15,7 +15,7 @@ export function vertexHasBlockLight(word0: number, word1: number): boolean {
   return ((word0 >>> 24) & 15) !== 0 || ((word1 >>> VERTEX_LAYOUT.greenShift) & 255) !== 0;
 }
 
-export function decodeVertex(word0: number, word1: number) {
+export function writeVertexPosition(word0: number, word1: number, target: Float64Array): void {
   const normal = (word0 >>> 15) & 7;
   const fluid = word0 >>> 28 === 4 || word0 >>> 28 === 5;
   const inset = fluid ? 0 : ((word1 >>> VERTEX_LAYOUT.wallInsetShift) & 1) / 32;
@@ -28,16 +28,24 @@ export function decodeVertex(word0: number, word1: number) {
           word0 >>> 28,
         )
       : null;
+  target[0] = (word0 & 31) + (torch?.[0] ?? 0) + (normal === 0 ? inset : normal === 1 ? -inset : 0);
+  target[1] =
+    ((word0 >>> 5) & 31) +
+    (torch?.[1] ?? 0) +
+    (fluid ? -((word1 >>> 12) & 63) / 64 : ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5);
+  target[2] =
+    ((word0 >>> 10) & 31) + (torch?.[2] ?? 0) + (normal === 4 ? inset : normal === 5 ? -inset : 0);
+}
+
+const decodedPosition = new Float64Array(3);
+
+export function decodeVertex(word0: number, word1: number) {
+  writeVertexPosition(word0, word1, decodedPosition);
+  const fluid = word0 >>> 28 === 4 || word0 >>> 28 === 5;
   return {
-    x: (word0 & 31) + (torch?.[0] ?? 0) + (normal === 0 ? inset : normal === 1 ? -inset : 0),
-    y:
-      ((word0 >>> 5) & 31) +
-      (torch?.[1] ?? 0) +
-      (fluid ? -((word1 >>> 12) & 63) / 64 : ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5),
-    z:
-      ((word0 >>> 10) & 31) +
-      (torch?.[2] ?? 0) +
-      (normal === 4 ? inset : normal === 5 ? -inset : 0),
+    x: decodedPosition[0]!,
+    y: decodedPosition[1]!,
+    z: decodedPosition[2]!,
     normalIndex: (word0 >>> 15) & 7,
     ao: (word0 >>> 18) & 3,
     skyLight: (word0 >>> 20) & 15,
