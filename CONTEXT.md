@@ -189,3 +189,8 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Q2: option 1 (copper 2/4/3/1 = 10, iron 2/6/5/2 = 15).
   - Q3: custom: option 1's damage derivation (axe = sword − 1, pick − 2, shovel − 3, hoe 1); durability shears 250 (iron tier), bow 384, shield 336, ember flint 64.
   - Q4: option 1 (add ore/gravel/grass/leaf loot data per A.4/A.5 with count ranges and chances; harvest-level gating stays M10c).
+- 2026-10-16: M09b gate (Sonnet, session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b, base fe346bf)
+  - Full verify exit 0: unit 640, e2e 87, no failures. Startup median 187.8 ms vs 191 on master (icon sheet built after the first frame). Bundle +15 kB.
+  - Touched M07b/M09a code: optional thrown velocity and pickup delay for Q drops (default behaviour unchanged).
+  - Swap fix has no visible effect with current data. Dark cube icons (stone, coal) are the least legible.
+  - Told the owner the gate is OK to approve.
