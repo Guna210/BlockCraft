@@ -22,7 +22,9 @@ export class PlayerController {
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
   private perspectiveDown = false;
+  private world: World | null = null;
   public readonly loop = new TickLoop(() => {
+    this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
     if (this.player) this.itemEntities?.tick(this.player);
@@ -69,6 +71,7 @@ export class PlayerController {
     this.camera.roll = 0;
     this.camera.fov = (settings.fov * Math.PI) / 180;
     this.camera.updateProjection();
+    this.world = world;
     this.player = new Player(new BlockCollision(world), this.ready);
     this.itemEntities = new ItemEntityManager(world);
     this.particles = new BreakParticles(world);
@@ -97,6 +100,7 @@ export class PlayerController {
     else this.render(1);
   }
   reset(): void {
+    this.world = null;
     this.player = null;
     this.interaction = null;
     this.itemEntities = null;

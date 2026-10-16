@@ -1,9 +1,26 @@
+import { BlockTicks, type TickSection } from './ticks';
+import { FluidSimulation } from './fluids';
 import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
 
 export class World {
+  public readonly ticks = new BlockTicks();
+  public readonly fluids: FluidSimulation;
+
+  public *getTickSections(): Iterable<TickSection> {
+    for (const col of this.columns.values()) {
+      for (let y = 0; y < ChunkColumn.SECTION_COUNT; y++) {
+        if (col.getSection(y)) yield { x: col.cx, y, z: col.cz };
+      }
+    }
+  }
+
+  public tick(): void {
+    this.ticks.advance((block) => this.fluids.tick(block));
+  }
+
   private columns: Map<string, ChunkColumn> = new Map();
   private registry: BlockRegistry;
   public lightEngine: LightEngine;
@@ -17,6 +34,7 @@ export class World {
 
   constructor(initLightEngine: boolean = true) {
     this.registry = BlockRegistry.getInstance();
+    this.fluids = new FluidSimulation(this);
     this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
   }
 
@@ -82,6 +100,7 @@ export class World {
       this.lastCol = null;
     }
     if (this.lightEngine) this.lightEngine.removeColumn(cx, cz);
+    this.ticks.removeColumn(cx, cz);
     return removed;
   }
 
@@ -213,6 +232,7 @@ export class World {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
     }
     this.onBlockEdited?.(x, y, z, stateId);
+    this.fluids.changed(x, y, z);
   }
 
   public getBlock(
