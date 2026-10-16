@@ -184,3 +184,8 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - agy policy restated: verify:quick only, CI is the standard, no git at all (the owner commits and pushes to agy/<id>).
   - Laptop failures: timeouts in untouched areas are likely the machine; assertion failures (wrong values) are likely real even in untouched tests. CI decides.
   - Gave an agy M10a prompt (no git; reports changed files at the gate).
+- 2026-10-16: agy M10a questions answered:
+  - Q1: option 3 plus a custom note: non-block items, simple cubes and slabs only (block-shapes.ts holds one box per state, so stairs/fences/doors/trapdoors would need multi-box shapes and no task owns them). Smelting recipes count toward 120; no filler or alternate patterns. If short of 120, report the exact count. Then raise a SPEC gap with the owner: a later task for stairs/fences/doors/trapdoors with their recipes.
+  - Q2: option 1 (copper 2/4/3/1 = 10, iron 2/6/5/2 = 15).
+  - Q3: custom: option 1's damage derivation (axe = sword − 1, pick − 2, shovel − 3, hoe 1); durability shears 250 (iron tier), bow 384, shield 336, ember flint 64.
+  - Q4: option 1 (add ore/gravel/grass/leaf loot data per A.4/A.5 with count ranges and chances; harvest-level gating stays M10c).
