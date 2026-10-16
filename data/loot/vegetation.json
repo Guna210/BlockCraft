@@ -3,6 +3,14 @@
     {
       "id": "tall_grass",
       "count": 1
+    },
+    {
+      "id": "seed",
+      "count": 1
+    },
+    {
+      "id": "wheat",
+      "count": 1
     }
   ],
   "bluebell": [

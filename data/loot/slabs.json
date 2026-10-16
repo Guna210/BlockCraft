@@ -4,5 +4,47 @@
       "id": "stone_slab",
       "count": 1
     }
+  ],
+  "cobblestone_slab": [
+    {
+      "id": "cobblestone_slab",
+      "count": 1
+    }
+  ],
+  "mossy_cobblestone_slab": [
+    {
+      "id": "mossy_cobblestone_slab",
+      "count": 1
+    }
+  ],
+  "oak_slab": [
+    {
+      "id": "oak_slab",
+      "count": 1
+    }
+  ],
+  "birch_slab": [
+    {
+      "id": "birch_slab",
+      "count": 1
+    }
+  ],
+  "pine_slab": [
+    {
+      "id": "pine_slab",
+      "count": 1
+    }
+  ],
+  "rainwood_slab": [
+    {
+      "id": "rainwood_slab",
+      "count": 1
+    }
+  ],
+  "acacia_slab": [
+    {
+      "id": "acacia_slab",
+      "count": 1
+    }
   ]
 }

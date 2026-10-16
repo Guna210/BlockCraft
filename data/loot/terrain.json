@@ -33,6 +33,22 @@
     {
       "id": "gravel",
       "count": 1
+    },
+    {
+      "id": "flint",
+      "count": 1
+    }
+  ],
+  "coarse_dirt": [
+    {
+      "id": "coarse_dirt",
+      "count": 1
+    }
+  ],
+  "mud": [
+    {
+      "id": "mud",
+      "count": 1
     }
   ]
 }

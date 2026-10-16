@@ -33,5 +33,15 @@
     "kind": "block",
     "block": "gravel",
     "maxStack": 64
+  },
+  "coarse_dirt": {
+    "kind": "block",
+    "block": "coarse_dirt",
+    "maxStack": 64
+  },
+  "mud": {
+    "kind": "block",
+    "block": "mud",
+    "maxStack": 64
   }
 }

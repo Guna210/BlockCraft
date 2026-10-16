@@ -1,4 +1,7 @@
 import { LCG, createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import { PAL_LUMITE } from './ores';
+
+export { PAL_LUMITE };
 
 export const PAL_TORCH: RGBA[] = [
   [0, 0, 0, 0],
@@ -29,6 +32,27 @@ export function genTorch(seed = 31791): TextureData {
         y,
         PAL_TORCH[x <= 8 && y <= 6 ? 6 : x === right ? 4 : 5]!,
       );
+  }
+  return tile;
+}
+
+/** Wrap-seamless crystalline block of four Lumite shards with faceted highlights. */
+export function genLumiteBlock(seed = 31792): TextureData {
+  const tile = createEmptyTexture();
+  const rng = new LCG(seed);
+  const glintX = 2 + rng.nextInt(0, 3);
+  const glintY = 2 + rng.nextInt(0, 3);
+  for (let y = 0; y < 16; y++) {
+    const fy = y & 7;
+    for (let x = 0; x < 16; x++) {
+      const fx = x & 7;
+      let idx = 1;
+      if (fx === 0 || fx === 7 || fy === 0 || fy === 7) idx = 0;
+      else if (fx === 1 || fy === 1) idx = 2;
+      else if ((fx === glintX && fy === glintY) || (fx === glintX + 1 && fy === glintY)) idx = 3;
+      else if (fx + fy < 7) idx = 2;
+      setPixel(tile, x, y, PAL_LUMITE[idx]!);
+    }
   }
   return tile;
 }

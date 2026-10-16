@@ -4,10 +4,16 @@ import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
+import {
+  BlockEntityManager,
+  BLOCK_ENTITY_TICK_TYPE,
+  type BlockEntityState,
+} from './block-entities';
 
 export class World {
   public readonly ticks = new BlockTicks();
   public readonly fluids: FluidSimulation;
+  public readonly blockEntities: BlockEntityManager;
 
   public *getTickSections(): Iterable<TickSection> {
     for (const col of this.columns.values()) {
@@ -18,7 +24,13 @@ export class World {
   }
 
   public tick(): void {
-    this.ticks.advance((block) => this.fluids.tick(block));
+    this.ticks.advance((block) => {
+      if (block.type === BLOCK_ENTITY_TICK_TYPE) {
+        this.blockEntities.tickBlockEntity(block.x, block.y, block.z);
+      } else {
+        this.fluids.tick(block);
+      }
+    });
   }
 
   private columns: Map<string, ChunkColumn> = new Map();
@@ -35,6 +47,7 @@ export class World {
   constructor(initLightEngine: boolean = true) {
     this.registry = BlockRegistry.getInstance();
     this.fluids = new FluidSimulation(this);
+    this.blockEntities = new BlockEntityManager(this);
     this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
   }
 
@@ -101,7 +114,16 @@ export class World {
     }
     if (this.lightEngine) this.lightEngine.removeColumn(cx, cz);
     this.ticks.removeColumn(cx, cz);
+    this.blockEntities.removeColumn(cx, cz);
     return removed;
+  }
+
+  public getBlockEntity<TState extends BlockEntityState = BlockEntityState>(
+    x: number,
+    y: number,
+    z: number,
+  ): TState | undefined {
+    return this.blockEntities.getState<TState>(x, y, z);
   }
 
   public getHeight(x: number, z: number): number {
@@ -227,6 +249,10 @@ export class World {
 
     const col = this.getColumn(cx, cz, true)!;
     col.setBlockStateId(localX, y, localZ, stateId);
+
+    const oldBlockId = this.registry.getResolvedState(oldStateId)?.blockId ?? 'air';
+    const newBlockId = this.registry.getResolvedState(stateId)?.blockId ?? 'air';
+    this.blockEntities.onBlockChanged(x, y, z, oldBlockId, newBlockId, stateId);
 
     if (this.lightEngine) {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);

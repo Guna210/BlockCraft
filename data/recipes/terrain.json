@@ -1,0 +1,80 @@
+{
+  "coarse_dirt": {
+    "type": "shaped",
+    "pattern": ["DG", "GD"],
+    "key": { "D": "dirt", "G": "gravel" },
+    "result": { "id": "coarse_dirt", "count": 4 }
+  },
+  "mud": {
+    "type": "shapeless",
+    "ingredients": ["dirt", "clay_lump"],
+    "result": { "id": "mud", "count": 2 }
+  },
+  "clay": {
+    "type": "shaped",
+    "pattern": ["CC", "CC"],
+    "key": { "C": "clay_lump" },
+    "result": { "id": "clay", "count": 1 }
+  },
+  "clay_lump_from_clay": {
+    "type": "shapeless",
+    "ingredients": ["clay"],
+    "result": { "id": "clay_lump", "count": 4 }
+  },
+  "mossy_cobblestone": {
+    "type": "shapeless",
+    "ingredients": ["cobblestone", "vine"],
+    "result": { "id": "mossy_cobblestone", "count": 1 }
+  },
+  "snow": {
+    "type": "shaped",
+    "pattern": ["SS", "SS"],
+    "key": { "S": "snow_layer" },
+    "result": { "id": "snow", "count": 1 }
+  },
+  "packed_ice": {
+    "type": "shaped",
+    "pattern": ["III", "III", "III"],
+    "key": { "I": "ice" },
+    "result": { "id": "packed_ice", "count": 1 }
+  },
+  "ice_from_packed_ice": {
+    "type": "shapeless",
+    "ingredients": ["packed_ice"],
+    "result": { "id": "ice", "count": 9 }
+  },
+  "stone_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "stone_slab" },
+    "result": { "id": "stone", "count": 1 }
+  },
+  "cobblestone_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "cobblestone_slab" },
+    "result": { "id": "cobblestone", "count": 1 }
+  },
+  "mossy_cobblestone_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "mossy_cobblestone_slab" },
+    "result": { "id": "mossy_cobblestone", "count": 1 }
+  },
+  "mire": {
+    "type": "shapeless",
+    "ingredients": ["mud", "tall_grass"],
+    "result": { "id": "mire", "count": 1 }
+  },
+  "gravel_from_flint": {
+    "type": "shaped",
+    "pattern": ["FF", "FF"],
+    "key": { "F": "flint" },
+    "result": { "id": "gravel", "count": 1 }
+  },
+  "red_sand": {
+    "type": "shapeless",
+    "ingredients": ["sand", "clayrock_red"],
+    "result": { "id": "red_sand", "count": 2 }
+  }
+}

@@ -90,5 +90,31 @@
       "bottom": "gravel"
     },
     "tool": "shovel"
+  },
+  "coarse_dirt": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "coarse_dirt",
+      "side": "coarse_dirt",
+      "bottom": "coarse_dirt"
+    },
+    "tool": "shovel"
+  },
+  "mud": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "textures": {
+      "top": "mud",
+      "side": "mud",
+      "bottom": "mud"
+    },
+    "tool": "shovel"
   }
 }

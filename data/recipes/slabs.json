@@ -1,0 +1,56 @@
+{
+  "oak_slab": {
+    "type": "shaped",
+    "pattern": ["PPP"],
+    "key": { "P": "oak_planks" },
+    "result": { "id": "oak_slab", "count": 6 }
+  },
+  "birch_slab": {
+    "type": "shaped",
+    "pattern": ["PPP"],
+    "key": { "P": "birch_planks" },
+    "result": { "id": "birch_slab", "count": 6 }
+  },
+  "pine_slab": {
+    "type": "shaped",
+    "pattern": ["PPP"],
+    "key": { "P": "pine_planks" },
+    "result": { "id": "pine_slab", "count": 6 }
+  },
+  "rainwood_slab": {
+    "type": "shaped",
+    "pattern": ["PPP"],
+    "key": { "P": "rainwood_planks" },
+    "result": { "id": "rainwood_slab", "count": 6 }
+  },
+  "acacia_slab": {
+    "type": "shaped",
+    "pattern": ["PPP"],
+    "key": { "P": "acacia_planks" },
+    "result": { "id": "acacia_slab", "count": 6 }
+  },
+  "stone_slab": {
+    "type": "shaped",
+    "pattern": ["SSS"],
+    "key": { "S": "stone" },
+    "result": { "id": "stone_slab", "count": 6 }
+  },
+  "cobblestone_slab": {
+    "type": "shaped",
+    "pattern": ["CCC"],
+    "key": { "C": "cobblestone" },
+    "result": { "id": "cobblestone_slab", "count": 6 }
+  },
+  "mossy_cobblestone_slab": {
+    "type": "shaped",
+    "pattern": ["MMM"],
+    "key": { "M": "mossy_cobblestone" },
+    "result": { "id": "mossy_cobblestone_slab", "count": 6 }
+  },
+  "snow_layer": {
+    "type": "shaped",
+    "pattern": ["SSS"],
+    "key": { "S": "snow" },
+    "result": { "id": "snow_layer", "count": 6 }
+  }
+}

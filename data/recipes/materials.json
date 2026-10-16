@@ -1,0 +1,49 @@
+{
+  "clayrock_white": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "daisy" },
+    "result": { "id": "clayrock_white", "count": 8 }
+  },
+  "clayrock_light_gray": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "heather" },
+    "result": { "id": "clayrock_light_gray", "count": 8 }
+  },
+  "clayrock_yellow": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "buttercup" },
+    "result": { "id": "clayrock_yellow", "count": 8 }
+  },
+  "clayrock_orange": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "marigold" },
+    "result": { "id": "clayrock_orange", "count": 8 }
+  },
+  "clayrock_red": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "wild_rose" },
+    "result": { "id": "clayrock_red", "count": 8 }
+  },
+  "clayrock_brown": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "brown_mushroom" },
+    "result": { "id": "clayrock_brown", "count": 8 }
+  },
+  "clayrock_dark_brown": {
+    "type": "shaped",
+    "pattern": ["CCC", "CFC", "CCC"],
+    "key": { "C": "clayrock_terracotta", "F": "coal" },
+    "result": { "id": "clayrock_dark_brown", "count": 8 }
+  },
+  "seed_from_pumpkin": {
+    "type": "shapeless",
+    "ingredients": ["pumpkin"],
+    "result": { "id": "seed", "count": 4 }
+  }
+}

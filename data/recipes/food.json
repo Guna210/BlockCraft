@@ -1,0 +1,24 @@
+{
+  "bread": {
+    "type": "shaped",
+    "pattern": ["WWW"],
+    "key": { "W": "wheat" },
+    "result": { "id": "bread", "count": 1 }
+  },
+  "mushroom_broth": {
+    "type": "shapeless",
+    "ingredients": ["#any_mushroom", "#any_mushroom", "bowl"],
+    "result": { "id": "mushroom_broth", "count": 1 }
+  },
+  "hay_bale": {
+    "type": "shaped",
+    "pattern": ["WWW", "WWW", "WWW"],
+    "key": { "W": "wheat" },
+    "result": { "id": "hay_bale", "count": 1 }
+  },
+  "wheat_from_hay_bale": {
+    "type": "shapeless",
+    "ingredients": ["hay_bale"],
+    "result": { "id": "wheat", "count": 9 }
+  }
+}

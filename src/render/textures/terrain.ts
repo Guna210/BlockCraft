@@ -305,3 +305,48 @@ export function genGlass(_seed: number = 0): TextureData {
 
   return data;
 }
+
+export const PAL_COARSE_DIRT = [...PAL_DIRT, PAL_GRAVEL[0]!, PAL_GRAVEL[2]!, PAL_GRAVEL[3]!];
+
+export function genCoarseDirt(seed: number = 24680): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(seed);
+  fillSolid(data, PAL_DIRT[2]!);
+  for (let i = 0; i < 14; i++) {
+    const cx = lcg.nextInt(1, 13);
+    const cy = lcg.nextInt(1, 13);
+    const col = i % 2 === 0 ? PAL_DIRT[1]! : PAL_DIRT[3]!;
+    setPixel(data, cx, cy, col);
+    setPixel(data, cx + 1, cy, PAL_DIRT[4]!);
+  }
+  for (let i = 0; i < 10; i++) {
+    const cx = lcg.nextInt(1, 13);
+    const cy = lcg.nextInt(1, 13);
+    setPixel(data, cx, cy, PAL_GRAVEL[0]!);
+    setPixel(data, cx + 1, cy, PAL_GRAVEL[3]!);
+    setPixel(data, cx, cy + 1, PAL_GRAVEL[2]!);
+    setPixel(data, cx + 1, cy + 1, PAL_DIRT[0]!);
+  }
+  return data;
+}
+
+export function genMud(seed: number = 24681): TextureData {
+  const data = createEmptyTexture();
+  const lcg = new LCG(seed);
+  fillSolid(data, PAL_DIRT[1]!);
+  for (let i = 0; i < 18; i++) {
+    const cx = lcg.nextInt(1, 13);
+    const cy = lcg.nextInt(1, 13);
+    const col = i % 3 === 0 ? PAL_DIRT[0]! : PAL_DIRT[2]!;
+    setPixel(data, cx, cy, col);
+    setPixel(data, cx + 1, cy, col);
+    if (i % 2 === 0) setPixel(data, cx, cy + 1, PAL_DIRT[0]!);
+  }
+  for (let i = 0; i < 4; i++) {
+    const cx = lcg.nextInt(1, 13);
+    const cy = lcg.nextInt(1, 13);
+    setPixel(data, cx, cy, PAL_DIRT[4]!);
+    setPixel(data, cx + 1, cy, PAL_DIRT[3]!);
+  }
+  return data;
+}

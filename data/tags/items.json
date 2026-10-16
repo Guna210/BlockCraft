@@ -1,0 +1,8 @@
+{
+  "any_planks": ["oak_planks", "birch_planks", "pine_planks", "rainwood_planks", "acacia_planks"],
+  "any_log": ["oak_log", "birch_log", "pine_log", "rainwood_log", "acacia_log"],
+  "any_sand": ["sand", "red_sand"],
+  "any_mushroom": ["brown_mushroom", "red_mushroom"],
+  "any_wood_slab": ["oak_slab", "birch_slab", "pine_slab", "rainwood_slab", "acacia_slab"],
+  "any_leaves": ["oak_leaves", "birch_leaves", "pine_leaves", "rainwood_leaves", "acacia_leaves"]
+}

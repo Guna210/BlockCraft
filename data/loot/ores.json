@@ -1,0 +1,38 @@
+{
+  "coal_ore": [
+    {
+      "id": "coal",
+      "count": 1
+    }
+  ],
+  "copper_ore": [
+    {
+      "id": "raw_copper",
+      "count": 2
+    }
+  ],
+  "iron_ore": [
+    {
+      "id": "raw_iron",
+      "count": 1
+    }
+  ],
+  "gold_ore": [
+    {
+      "id": "raw_gold",
+      "count": 1
+    }
+  ],
+  "lumite_ore": [
+    {
+      "id": "lumite_shard",
+      "count": 2
+    }
+  ],
+  "skyshard_ore": [
+    {
+      "id": "skyshard_crystal",
+      "count": 1
+    }
+  ]
+}

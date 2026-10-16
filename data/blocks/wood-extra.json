@@ -64,5 +64,31 @@
       "side": "acacia_leaves",
       "bottom": "acacia_leaves"
     }
+  },
+  "rainwood_planks": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "textures": {
+      "top": "rainwood_planks",
+      "side": "rainwood_planks",
+      "bottom": "rainwood_planks"
+    }
+  },
+  "acacia_planks": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "textures": {
+      "top": "acacia_planks",
+      "side": "acacia_planks",
+      "bottom": "acacia_planks"
+    }
   }
 }

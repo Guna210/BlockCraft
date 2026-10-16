@@ -1,0 +1,50 @@
+{
+  "copper_helmet": {
+    "type": "shaped",
+    "pattern": ["CCC", "C C"],
+    "key": { "C": "copper_ingot" },
+    "result": { "id": "copper_helmet", "count": 1 }
+  },
+  "copper_chestplate": {
+    "type": "shaped",
+    "pattern": ["C C", "CCC", "CCC"],
+    "key": { "C": "copper_ingot" },
+    "result": { "id": "copper_chestplate", "count": 1 }
+  },
+  "copper_leggings": {
+    "type": "shaped",
+    "pattern": ["CCC", "C C", "C C"],
+    "key": { "C": "copper_ingot" },
+    "result": { "id": "copper_leggings", "count": 1 }
+  },
+  "copper_boots": {
+    "type": "shaped",
+    "pattern": ["C C", "C C"],
+    "key": { "C": "copper_ingot" },
+    "result": { "id": "copper_boots", "count": 1 }
+  },
+  "iron_helmet": {
+    "type": "shaped",
+    "pattern": ["III", "I I"],
+    "key": { "I": "iron_ingot" },
+    "result": { "id": "iron_helmet", "count": 1 }
+  },
+  "iron_chestplate": {
+    "type": "shaped",
+    "pattern": ["I I", "III", "III"],
+    "key": { "I": "iron_ingot" },
+    "result": { "id": "iron_chestplate", "count": 1 }
+  },
+  "iron_leggings": {
+    "type": "shaped",
+    "pattern": ["III", "I I", "I I"],
+    "key": { "I": "iron_ingot" },
+    "result": { "id": "iron_leggings", "count": 1 }
+  },
+  "iron_boots": {
+    "type": "shaped",
+    "pattern": ["I I", "I I"],
+    "key": { "I": "iron_ingot" },
+    "result": { "id": "iron_boots", "count": 1 }
+  }
+}
