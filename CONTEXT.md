@@ -180,3 +180,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
     - Tool data per A.2, armor defense; no durability loss or harvest drops (M10c).
     - Block-entity framework on ticks.ts with a test-only type; no chest/kiln/workbench types.
 - 2026-10-16: The owner asked whether M09b can run now instead. Yes: low overlap with M08b (M09b is UI, input, the icon atlas and inventory.ts; M08b is the chunk renderer and fluids texture). Icons are auto-generated from the block atlas, so they pick up M08b's water texture after a rebuild. Gave a refreshed M09b prompt for a Claude Sonnet session (claude/m09b); it includes icons for M12c's ice, snow_layer and fire. M10a's prompt stays available for later. Neither is launched until the owner says so.
+- 2026-10-16: The owner proposed agy=M09b and Claude=M10a. I recommended swapping: agy=M10a (unit-test heavy, fast on the laptop, no screenshots) and Claude=M09b (browser e2e, screenshots, visual judgement; agy's M12c screenshot description was wrong and parts of its scope were missing).
+  - agy policy restated: verify:quick only, CI is the standard, no git at all (the owner commits and pushes to agy/<id>).
+  - Laptop failures: timeouts in untouched areas are likely the machine; assertion failures (wrong values) are likely real even in untouched tests. CI decides.
+  - Gave an agy M10a prompt (no git; reports changed files at the gate).
