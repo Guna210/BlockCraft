@@ -157,3 +157,7 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Blocking: the rain e2e diff (m12.spec:703) passes with clear weather (0.2859 clear vs 0.2838 rain).
   - Sent the builder: rain-only diff with a clear control (< 0.005 clear, > 0.02 rain); assert the desert biome. Also fix the per-frame heightmap rebuild and the removeColumn leak.
   - Other non-blocking items left: double particle count, per-frame Float32Array during strikes, rain factor copied 3×, fire doesn't spread, snow lands on leaves/glass.
+- 2026-10-16: The owner asked what Codex can do during the M12c fixes. Advice:
+  - M08b (water look) can start now. Overlap with M12c is only ~36 lines in chunk-renderer.ts (puddle and flash uniforms) plus the sky.ts uniforms. M12c merges first, then Codex merges master.
+  - M08c must wait: M12c adds the ice block that M08c defines.
+  - Waiting on the owner's water reference image before writing the M08b prompt.
