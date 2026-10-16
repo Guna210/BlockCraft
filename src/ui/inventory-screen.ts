@@ -1,4 +1,5 @@
 import type { Inventory } from '../gameplay/inventory';
+import { drawPreviewFigure } from './preview-figure';
 import { displayName, drawText } from './pixel-font';
 import type { IconSheet } from './icons';
 import {
@@ -19,7 +20,6 @@ import {
   drawSlot,
   drawSlotHighlight,
   drawTooltip,
-  fillRect,
 } from './ui-kit';
 
 export interface InventoryView {
@@ -45,28 +45,6 @@ function drawIcon(
   if (rect) ctx.drawImage(sheet, rect.x, rect.y, 16, 16, x, y, size, size);
 }
 
-/** A blocky figure in the shared palette, standing in the preview box. */
-function drawPreviewFigure(ctx: CanvasRenderingContext2D, s: number): void {
-  const cx = PREVIEW_BOX.x + PREVIEW_BOX.w / 2;
-  const y = PREVIEW_BOX.y + 10;
-  const parts: Array<[number, number, number, number, string]> = [
-    [-9, 0, 18, 18, UI.outline],
-    [-8, 1, 16, 16, UI.light],
-    [-5, 7, 3, 3, UI.outline],
-    [2, 7, 3, 3, UI.outline],
-    [-9, 19, 18, 22, UI.outline],
-    [-8, 20, 16, 20, UI.accent],
-    [-14, 20, 5, 18, UI.outline],
-    [9, 20, 5, 18, UI.outline],
-    [-13, 21, 3, 16, UI.light],
-    [10, 21, 3, 16, UI.light],
-    [-8, 41, 16, 18, UI.outline],
-    [-7, 41, 6, 17, UI.shade],
-    [1, 41, 6, 17, UI.shade],
-  ];
-  for (const [dx, dy, w, h, color] of parts) fillRect(ctx, cx + dx, y + dy, w, h, color, s);
-}
-
 export function drawInventoryScreen(
   ctx: CanvasRenderingContext2D,
   view: InventoryView,
@@ -90,7 +68,7 @@ export function drawInventoryScreen(
   drawText(ctx, 'OFFHAND', (170 - 41) * s, 64 * s, s, UI.text, UI.outline);
   drawButton(ctx, CLOSE_BUTTON, 'X', s, view.hoverClose);
   drawInset(ctx, PREVIEW_BOX, s);
-  drawPreviewFigure(ctx, s);
+  drawPreviewFigure(ctx, inventory, s);
 
   for (let slot = 0; slot < SLOT_COUNT; slot++) {
     const [x, y] = SLOT_POSITIONS[slot]!;

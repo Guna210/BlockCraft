@@ -5,6 +5,7 @@ import { displayName, hasGlyph } from '../../src/ui/pixel-font';
 import { UI, uiScaleFor } from '../../src/ui/ui-kit';
 import { computeLayout, slotAt, PANEL_W, PANEL_H, SLOT_COUNT } from '../../src/ui/inventory-layout';
 import { drawInventoryScreen } from '../../src/ui/inventory-screen';
+import { FIGURE_COLORS } from '../../src/ui/preview-figure';
 import type { IconSheet } from '../../src/ui/icons';
 
 describe('M09b UI scale', () => {
@@ -107,7 +108,8 @@ describe('M09b pixel font and palette', () => {
       sheet,
       {} as CanvasImageSource,
     );
-    const palette = new Set<string>(Object.values(UI));
+    // The preview figure draws in the in-game player and armor palettes; everything else is UI.
+    const palette = new Set<string>([...Object.values(UI), ...FIGURE_COLORS]);
     for (const color of colors) expect(palette.has(color), color).toBe(true);
     expect(ctx.imageSmoothingEnabled).toBe(false);
     for (const r of rects) for (const v of r) expect(Number.isInteger(v)).toBe(true);
