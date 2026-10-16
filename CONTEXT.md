@@ -49,7 +49,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M08b water rendering | gate (merge master first) | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
+| M08b water rendering | PR #50, CI green, review 1 (prompt given) | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
 | M09b inventory screen | MERGED (#47, 0bb369f) | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
 | M10a recipes/tools | MERGED (#48) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
 
@@ -82,6 +82,7 @@ Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-16: M08b PR #50 (claude/m08b 40581bd) contains master (M09b and M10a merged in); CI green (verify, harness guard, Cloudflare). Not yet reviewed; reviewer prompt given.
 - 2026-10-16: M17a review round 1 (session_01DLa6aEZcGeoci97ppP3gPU) on b51b116 (CI green): CHANGES NEEDED.
   - grassTints/foliageTints not saved (blended, not derivable from biome indices), so reloaded columns would turn plains-green.
   - Tests are missing compaction, refCounts, edit-after-load and corruption cases.
