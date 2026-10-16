@@ -9,201 +9,94 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-10-13
+Last updated: 2026-10-16
 
 ## Setup
 
-- The owner starts every builder and reviewer session by hand, pasting the prompt the orchestrator writes. The owner approves every publish gate and merges every PR. Only the owner writes to `master`: PR merges, plus direct commits for owner-file and harness edits (below). Sessions never push to it.
-- Environments: the orchestrator runs in `BlockCraft`. Builders and reviewers run in `BlockCraft(350K)` (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000`, so long sessions compact themselves at about 350k tokens) or `BlockCraft(750K)` (the M04b builder).
-- Models: orchestrator on Opus. Owner (2026-10-09): Haiku with ultracode for builders and reviewers, to save cost, relying on the orchestrator to check. Orchestrator advised Sonnet for core-system builds (lighting, physics, fluids, networking) and tracking fix rounds per task. No automatic pre-merge check by the orchestrator: the owner asks explicitly when wanted (owner, 2026-10-09). Reported costs so far: orchestrator ~$36, M04a builder (Sonnet) ~$22, M04a reviewer (Haiku + ultracode) ~$0.82.
-- Builder questions: the owner points the orchestrator at the session (URL, ID or title), and the orchestrator replies with `send_message`, prefixed `[Orchestrator]` (CLAUDE.md, "Talking to other sessions directly"). Builders and reviewers also message the orchestrator directly; their messages arrive as queued notifications (read with ReadNotifications). Find a session by title with `list_sessions`.
-- Branches: builders push to `claude/<task-id>` as CLAUDE.md says (worked for #32 `claude/m01a-fix` and #33 `claude/m04a`). Gate approval comes only from the owner in the builder's session; the orchestrator gives the owner a paste-ready approval line.
-- The owner edits owner files and harness files directly on master: SPEC `2be70f2` (§3.2 GL errors once per frame, `&glcheck=draw`), `6411d94` (column-level frustum culling moved into M04a), `d37918d` (M04 flight p95 reported, enforced at RD 8 by M22a), playwright.config.ts `60590f8` (`workers: 1`), and `90c809b` + SPEC `67381df` (`--enable-precise-memory-info` for the M04b heap test).
-- Codex (owner, 2026-10-11, updated 10-13): Codex cloud builds most tasks (full model for core work). Prompts carry the CLAUDE.md rules and the known container-only failure list. Branch `claude/<id>`; publish gate in chat, owner approves; Codex opens the PR via its connected GitHub integration when `gh` is blocked. Container has a 2-core quota, so local timing failures go to a draft PR and CI decides.
-- Reviewers: Claude Sonnet sessions (new session per task; rounds 2–3 in the same session). The orchestrator reads verdicts via list_events (kinds: result).
-- agy / Antigravity (owner, 2026-10-13): runs on the owner's old Windows laptop (PowerShell, Node 24, git from GitHub Desktop at C:\Users\Akbho\AppData\Local\GitHubDesktop\app-3.6.6\resources\app\git\cmd). Workflow: owner creates `agy/<id>` on GitHub from master, checks it out in GitHub Desktop; agy may only commit (no checkout/switch/branch/push/pull/merge/rebase/reset, never amend); owner pushes via Desktop and opens a draft PR. agy runs only `verify:quick`; GitHub CI is the full-verify evidence (owner decision). For unit-only tasks, 'no tests found' in quick e2e is expected (agy once added a placeholder spec; prompts must say this). Laptop too slow for full verify; a Ryzen 5700U laptop may be used later (low disk).
-- Master is branch-protected (owner ruleset, 2026-10-13) after agy pushed M12a straight to master. Owner keeps it on while agy works.
-- Merge conflicts between parallel PRs: a fresh Sonnet session merges origin/master into the later PR's branch (merge commit, no rebase), resolves, verifies, pushes; orchestrator writes the prompt.
-- Review cycle: at most 3 rounds per task, then ask the owner (CLAUDE.md, Orchestrator).
-- CI: `Verify` runs the full suite on every PR and every push to master (job timeout 90 min). Reviewers use it as the full-verify evidence.
+- The owner starts every builder and reviewer session by hand from prompts the orchestrator writes, approves every publish gate in the builder's own chat, and merges every PR. Master is branch-protected. The owner edits owner and harness files directly on master.
+- Orchestrator: Opus. It may read builder and reviewer sessions (list_sessions, list_events with kinds result) and message them with send_message prefixed `[Orchestrator]`. It never relays approvals: builders correctly refuse approval that comes from the orchestrator. Builders and reviewers also message the orchestrator; read those with ReadNotifications.
+- Builders:
+  - Codex cloud (full model) for core work; branch `claude/<id>`; it opens its own PR.
+  - Claude Code cloud sessions on Sonnet; branch `claude/<id>`.
+  - agy (Antigravity) on the owner's old Windows laptop:
+    - agy does NOTHING with git; the owner creates `agy/<id>` on GitHub, then commits and pushes via GitHub Desktop.
+    - agy runs only `verify:quick` (PowerShell `$env:MILESTONE=...`); GitHub CI is the standard.
+    - On the laptop, a timeout in untouched code is likely the machine; an assertion failure is likely real. CI decides.
+    - Its chat reports have been inaccurate (M12c screenshot, M10a exemption table), so the orchestrator checks the pushed code itself.
+- Reviewers: new Sonnet session per task; rounds 2–3 in the same session; at most 3 rounds, then ask the owner.
+- Known 2-core container-only failures (list them in every builder prompt; CI decides):
+  - m02:54 mesh p95
+  - m04:66 pump > 50 ms
+  - m04:221 heap timeout
+  - m04:276 RD12
+  - M04b mid-flight blank
+  - m05-streaming timeout
+  - M01a GL count
+  - pathfinding 2 ms benchmark
+  - general timeouts when the container is starved
+- CI: `Verify` (pull_request) is skipped on conflicted PRs; the harness guard (pull_request_target) still runs. Retries are 2 on CI.
+- Owner-approved test edits so far:
+  - setClouds('off') ×3: m12 RD8, m12 M12a time-of-day, m04:276
+  - M12c screenshot step aimed at the lightning strike
+  - pending owner reply: M08b setFluidAnimationPaused(true) in m02c-fix.spec:52 and :74 (I recommended approve)
+- Prompt ≠ launch: a prompt can be given and not used (the owner changed their mind on M09b once). Trust the owner's word about what is running.
 
 ## Task status
 
-Done (merged to master; handoff notes in `progress/`): M00a, M00b, M01a, M01b, M01c, M02a, M02b, M02c, M03a, M03b, M03c, M03d, M03e, M03f, M03g, M05a, M16a, M16c. M04a (#33, b80294e). M04b (#34, 427660a). M06a (#36, b18882b), M12a (5a73d9a, agy direct push) + M12a-fix (#38, 58dfc07), M06b (#39), M13b (#41, 6e3cd8f; agy), M07a (#40, 3addcbc), INFRA-win (#37, 43d8fe5), M05b (#35, 431e5d5; built in Codex). Fix tasks also merged: M01a-fix (#32, 68ef7c7), M02b-fix, M02c-fix, M03b-fix, M03b-fix2, M03b-fix3, M03c-fix2, M03d-fix, M05a-fix.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
-| Task | State | Builder session | Reviewer session | PR | Round | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| M07b | prompt given (Codex full model), branch claude/m07b | Codex | — | — | — | Item registry + inventory core (36 slots, hotbar 0–8), loot JSON in data/loot/, wooden_pickaxe etc. for tests, dedicated item-entity manager (not ECS; M13a owns ECS), placement uses selected hotbar block and consumes in survival. |
-| M12b | prompt given (agy, old laptop), branch agy/m12b (owner creates on GitHub) | agy | — | — | — | Clouds y=192 fancy/fast/off in settings.ts, fade to sky by distance; sun glare (owner extra). Pre-approved (owner may veto): if clouds break M12a-fix coverage test or M04 hole tests, those tests may call a new debug setClouds('off') before measuring, no threshold/flow change otherwise. Local failures → CI decides. |
+| Task | State | Builder | Reviewer | PR | Notes |
+| --- | --- | --- | --- | --- | --- |
+| M08b water rendering | building | Codex (full model), claude/m08b | — | — | Owner's water look targets (darker, fewer highlights, translucent, ripples, animated sides; underwater unchanged). Asked to approve the m02c pause-hook edit. Must merge master (chunk-renderer overlap with M12c). Owner gave a water reference image (existing game: describe only). |
+| M09b inventory screen | PR open (draft), CI pending | Sonnet session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b | — | #47 | Gate OK: unit 640, e2e 87, startup unchanged. Changed M07b/M09a: optional thrown velocity and pickup delay for Q. Next: the owner checks the screenshot, then the reviewer prompt. |
+| M10a recipes/tools | fixing 1 (agy) | agy, agy/m10a (6a6c22e, base fe346bf) | — | none yet | Blocking: loot always drops every entry (leaves → apple 100 %, grass → seed + wheat, gravel → both, fixed ore counts). progress line 24 lists nonexistent smelting items. Ore/grass exemption reasons. 106 recipes accepted by the owner. After the fixes: push, open a PR from agy/m10a, I re-check the code, then the reviewer. |
 
-States: building · gate (waiting for owner) · PR open · review n · fixing n · blocked.
-
-Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
+Ready after these: M08c (after M08b; ice exists from M12c), M09c (after M09b), M17a (after M10a), M10b/M10c (after M09c + M10a).
 
 ## Open items for the owner
 
-- Before M22a: two-tier speed budgets in SPEC §2.3 (real-hardware targets checked by `npm run bench`; SwiftShader CI bounds set from measured CI values plus a margin), like the existing 3 s / 20 s createWorld budget. Offered to draft; owner has not asked yet.
-- `retries: process.env.CI ? 2 : 0` (playwright.config.ts line 8) lets CI pass a flaky test on retry, so a green CI run doesn't prove a test is stable. Suggest a later decision on retries 0, after checking recent CI runs for flaky counts.
-- Planned worldgen-tuning task (owner, later): increase biome size AND reduce Mire patch coverage in Swampland (src/gen/surface.ts, patchNoise > 0.25 threshold) at the same time. Biome size needs an owner SPEC edit first: the M03c unit test requires ≥ 10 biomes in 2048×2048 with 20–50 % ocean (e.g. widen the sample to 4096×4096). Biome climate noise is at 0.0012 in src/gen/biomes.ts.
-- Per-biome fog colour: SPEC biome appendix lists it, but no task row owns it and biomes.ts has no fog field. Owner to assign (e.g. M12c) or drop.
-- Owner views builds with a bookmarklet that adds ?debug=1 and calls createWorld (no code change). A dev URL auto-create param would need a tiny task; deferred to M18a's menu unless asked.
-- `npm ci` reports 1 high-severity vulnerability in the current dependencies (environment check, 2026-10-07). Not investigated.
+- New task to add to SPEC: stairs, fences, doors and trapdoors (multi-box block shapes in block-shapes.ts, collision, placement facing, plus recipes). The owner accepted it 2026-10-16 as the fix for M10a's 106 < 120 recipe shortfall.
+- Worldgen tuning (later): bigger biomes (needs a SPEC edit to the M03c ≥ 10 biomes in 2048² test) plus fewer Mire patches (surface.ts patchNoise > 0.25).
+- Per-biome fog colour: listed in the SPEC biome appendix, owned by no task.
+- Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
+- CI retries 2 can hide flaky tests; decide later.
+- npm ci reports 1 high-severity vulnerability; not investigated.
 
 ## Decisions not yet on master
 
-- Codex prompts list the known container-only failures (M04b heap and RD12 timeouts, M04b mid-flight blank, M01a GL-check count, occasional M02 mesh p95, M04a pump max over 50 ms, seen up to 84.8 ms in M07a and passing on CI; an M05 streaming timeout that also fails on unchanged master, seen in M07b): don't investigate or re-run master; draft PR, CI decides. Owner may add this to AGENTS.md §9.
-- For the M13c prompt (from M13b review, PR #41): callers must call PathSearch.dispose() on abandoned searches; WorldAdapter caches stay valid across chunk loads (unloaded = solid), so call adapter.invalidate() or hook chunk-load events.
-- For the M12c prompt: per-biome fog colour is an open owner item; weather must keep the M12a-fix sky classifier and M04 hole tests valid (same issue as M12b clouds).
-- M06b non-blocking leftovers: bob curve not pinned by a test; limb swing unasserted. M07a: water not replaceable for placement (revisit with buckets, M08).
+- M13c prompt: call PathSearch.dispose() on abandoned searches; adapter.invalidate() or a chunk-load hook (M13b review).
+- Weather migrated onto ticks.ts random ticks: later follow-up (M12c kept its own tick).
+- Leftovers:
+  - M12c: precipitation stat vs shader mismatch on mountains; lightning buffer re-allocated per frame during a strike; rain factor formula copied 3×; fire doesn't spread or burn out; snow lands on leaves and glass.
+  - M08a: no test forces every registry state into data/block-state-ids.json; BlockTicks.removeColumn is O(n).
+  - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
 
-- 2026-10-15: M09a review (session_01FW4W953qLyw17A6nW8LNHP): VERDICT PASS on 3df9883 (CI green, 568 unit / 75 e2e). Fuzz probe found no loss or duplication; item sprites live in a separate lazy 256x256 atlas; startup not slower. Non-blocking, for M09b: left-click with the same unstackable item on cursor and slot should swap (currently no-op); progress/M09a.md status line is stale. Owner can merge #44. Owner asked how to open the inventory: there is no UI until M09b (E key) and M09c (hotbar keys); console only for now.
-- 2026-10-15: PR #44 (M09a) CI green. Owner to mark ready; Sonnet reviewer prompt given.
-- 2026-10-15: M09a gate aa7e8cc (tested fa1b080): owned 64 unit + 2 e2e pass; full verify took 1.3 h (normally ~45 min) with 3 unit timeouts and 12 e2e failures, all timeouts (M02/M03/M04/M05/M12, mostly untouched code; sky-holes timeout reproduces on master). Looks like a starved container. Recommended: approve the draft push, CI decides; if CI fails, suspect the startup texture/atlas work (textures/index.ts, inventory-items.ts) first.
-- 2026-10-15: Prompts given: M09a to Codex (branch claude/m09a; slots 0-8 hotbar, 9-35 main, 36-39 armor, 40 offhand, cursor stack; pure ops; registry incl. A.2 tools, A.5 food, A.4 drops; armor items data-only with armorSlot, no defense (M10a); M07b loot follow-ups) and M12c to agy (branch agy/m12c; src/render/weather.ts; weather starts clear, no random change before 12000 ticks; setWeather; instanced particles; biome/altitude precip; snow_layer/ice/fire blocks don't exist yet, add what M12c needs per AGENTS §2; no random-tick system exists, add a minimal weather tick).
-- 2026-10-15: PR #42 (M12b) merged. Minor doc gap: the round-1 fix notes (wind-offset assertion, clear-sky glare check) are only in decisions/M12b-clouds.md, not in progress/M12b.md. Not worth a PR alone; mention to M12c's builder.
-- 2026-10-15: M12b review round 2: VERDICT PASS on ad038a7 (CI green). Told the owner to merge PR #42. After merge, agy's laptop must fetch/pull before any new agy branch. Next candidates: M12c (weather) and M09a (with the M07b loot follow-ups), checking deps.
-- 2026-10-15: PR #42 round-1 fixes pushed (ad038a7); CI green (run 38710241571); not draft. Builder refreshing the PR body. Next: owner pastes round-2 message into reviewer session_01THdvdJBZtvd7HUcs3NUYKf.
-- 2026-10-15: M12b round-1 fixes gate (local commit): wind offset published via getRenderStats().cloudWindOffset, e2e asserts +3±0.05 over 60 ticks (fails when forced to 0, verified then reverted); glare e2e clouds-off centre 255 >250; docs/comments fixed. Local full verify: 504 unit, e2e 72 pass / 1 fail (m04:276 container timeout). Recommended the owner approve the push; then round 2 in reviewer session_01THdvdJBZtvd7HUcs3NUYKf.
-- 2026-10-15: M12b review round 1 (session_01THdvdJBZtvd7HUcs3NUYKf): CHANGES NEEDED. Blocking: wind-drift e2e passes without drift (tick advances time, so the sky changes). Also: glare untested in e2e, stale progress header and dependent-task notes, stale 32x32 comments. Sent fix instructions to the M12b-fix builder; owner approves the push; then round 2 in the same reviewer session.
-- 2026-10-15: PR #42 head 438ae8e CI green (run 38699560878); retitled 'M12b: Clouds — verified'; still draft. M12b reviewer prompt given to owner (after the owner checks the clouds and marks it ready).
-- 2026-10-15: Owner approved; builder pushed agy/m12b 438ae8e (includes merge f30131e). PR #42 retitled '[INCOMPLETE] M12b: Clouds', body = progress/M12b.md. Verify run 38699560878 in progress; builder subscribed and will report.
-- 2026-10-15: M12b builder merged master into agy/m12b (f30131e; only conflict was the renderer field declarations in world-manager.ts, kept both). Local full verify x2: unit 504/504; e2e 70 pass, 3 fail, all known container-only (m02:54 mesh p95, m04:66 pump 90 ms, m04:221 heap timeout, m04:276 RD12 idle/65 px). M07 and M12 specs pass. Answered: push after owner approval, CI decides; builder to update PR #42 title/body from progress/M12b.md and report CI.
-- 2026-10-15: PR #43 (M07b) merged as f029367. PR #42 head effbaf6 (screenshots restored) is conflicted (world-manager.ts), so the Verify workflow (pull_request) didn't run; the harness guard (pull_request_target) did. Sent the M12b-fix builder merge instructions (merge origin/master, keep both sides, full verify, gate to owner + me). PR #42 title/body are still agy's stale round-0 text; update before review.
-- 2026-10-15: M12b-fix gate (f7d4857, 30b4ef6): full verify exit 0 (490 unit, 69 e2e; one earlier m02:54 mesh p95 6.10 flake, rerun green); triangles 25603 to 12643; 8-block cells, 3 thick, y=192; three approved setClouds('off') lines. Issue: the PR diff modifies other milestones' screenshots (M02b-fix, M03d, M05b from agy's earlier commits; M12a regenerated). Recommended the owner approve on condition that the builder first restores those to origin/master in a new commit, then pushes to PR #42.
-- 2026-10-14: M12b-fix Sonnet builder (session_01Smd8eqm1xr5HNTjq8BBkLx, on agy/m12b, local commit f7d4857): 8-block cells on a 48x48 grid, 3 thick, 31 % coverage, greedy mesh (triangles 25603 to 12643), honest sea-level overhead shot and a mountain shot. Full verify: only M12a moon-phase test m12.spec:241 fails (a cloud covers the moon). Answered: a third setClouds('off') line in the M12a time-of-day test, same rule; stop on any further one. Owner asked me to handle this builder's questions; builder reports the gate to me, but gate approval stays the owner's reply in the builder session. Push updates PR #42, no new PR.
-- 2026-10-14: M07b review round 1 (session_01VDTTFacvC9hLSr4bqZi1UF): VERDICT PASS, no blocking. Fence change correct; pathfinding change behaviour-identical (recommend keep). Non-blocking follow-ups for M09a (item registry owner): wall torch drops 'wall_torch' item, should drop torch; clay should drop 4 clay lumps once the lump item exists (SPEC A.3); check packed_ice/snow drops; DropRenderer leaves BLEND disabled. Recommended: owner merges PR #43 now; PR #42 then merges master (world-manager.ts conflict likely).
-- 2026-10-14: PR #42 fix round 2 (d9631d1): shapes now chunky. Owner: clouds still look too close. Found: m12-clouds-overhead.png is NOT from sea level as instructed and as its code comment claims; it is shot from the test terrace at maxH+3 over x -64..16 (mountain height, ~20-40 below y=192). SPEC fixes y=192 (raising it needs an owner SPEC edit). Gave owner a Claude Sonnet cloud builder prompt (M12b-fix, pushes to agy/m12b): real sea-level shot, compare with reference, tune cell size/thickness/range for apparent scale; no SPEC/height change unless owner edits SPEC.
-- 2026-10-14: PR #43 (M07b) draft, retitled '— verified', CI green on head 4138801 (run 180 on 9c81110: 493 unit, 72 e2e). Codex also changed src/entity/ai/pathfinding.ts (M13b code, behaviour-preserving speedup) after a one-off CI fail of the 2 ms pathfinding benchmark (2.57 ms), citing my 'any test that passes on master is M07b's' line. Reviewer must judge it plus the fenced-error-drain change. Owner to mark ready; Sonnet reviewer prompt given. PR #42 and #43 both touch world-manager.ts, so expect a conflict for the second to merge.
-- 2026-10-14: PR #42 CI green after fix round 1. Owner: clouds 'fine but not the right spot'. My diagnosis vs reference: (1) shapes are thin 1-cell maze/corridor strands, reference is chunky compact blobs; (2) screenshots shot from high ground ~20 blocks under the clouds, reference from ~120 below, so cells look huge; (3) underside neutral grey, reference lavender-blue sky-tinted; (4) sunset clouds charcoal, should pick up the warm sunset colour; (5) hard aliased band at the horizon instead of a gentle fade. Fix round 2 prompt given for agy; review after.
-- 2026-10-14: M12b fix round 1 gate 89d05bb: opaque clouds, far fade only, range max(768, 2×fogEnd), irregular grid with holes, setClouds('off') at m12.spec:264 and m04.spec:281 only; unit 490/490; local fails m12:258 and m04:276 are laptop timeouts. Watch: fancy cloud triangles 4067→59827 (range 768 > the 256 asked), possible frame-budget cost; stale unit test name '(sides 0.85, bottom 0.70)'; check the M12b e2e still asserts glare now that a cloud covers the sun in the noon shot. Recommended: push to PR #42, CI decides, owner judges the look from the screenshots.
-- 2026-10-14: M07b gate 701b5af (tested 552038b): unit 493/493; e2e 68 pass, 4 fail, all idle timeouts: M04a flight m04:66 (NEW, 102 deferred uploads), M04b heap, M04b RD12, M05 streaming (known). M07 8/8 pass, frustum passes. Codex recommended staying unpublished; I recommended a draft push so CI (4 cores) decides; if CI reproduces m04:66, suspect M07b's GPU-poll change (src/render/fenced-error-drain.ts, main.ts) and deferred uploads. The reviewer must check that change is justified and in scope.
-- 2026-10-14: Owner approved one setClouds('off') line each in m12.spec:258 and m04.spec:276 (no other test edits; stop and report any further cloud-caused failure). Full M12b fix prompt (cloud redesign + CI fix) given to owner for agy, with the reference image attached.
-- 2026-10-14: PR #42 (M12b) CI red: m12.spec:258 RD8 sky coverage 0.030 (<0.98, 3/3 attempts) and m04.spec:276 RD12 horizon flaky (1st attempt top edge not sky). Cause: both tests put the eye near/above y=192 (top+12 with max terrain ~170; top+40), so the cloud layer fills the top of the view. Glare ruled out (only within ~35° of the sun). Fix: setClouds('off') in m12.spec:258 (pre-approved) and, if owner approves, m04.spec:276 (other milestone's spec). Folded into the M12b redesign message.
-- 2026-10-14: Owner was in creative (instant break correct). Owner set the M12b cloud look from a reference image: opaque flat blocky clouds, pale blue-grey underside, bright edges, scattered irregular shapes, reaching to the horizon, no fade overhead or at screen edges. M12b fix block given to owner to send to agy after CI (opaque, occlude glare, far-distance fade only, scattered cells, longer range, setClouds('off') fallback in sky-classifier tests, new overhead screenshot).
-- 2026-10-14: Owner on M12b clouds (looking up at noon): 'look like shit', fix later, wait for CI first. Seen: sun glare halo shows through the cloud underside, flat lavender-grey underside with no shading variation, huge jagged staircase edges overhead. Suggested fixing in the M12b PR via the review cycle rather than merging and doing M12b-fix.
-- 2026-10-14: M12b agy gate 56082af (14 files, 0 setClouds lines; unit 490/490; M12b + M12a time-of-day e2e pass; m12.spec:258 RD8 sky test timed out locally at waitForTerrain, so the clouds-vs-sky-classifier risk is unverified). Recommended: push, draft PR '[INCOMPLETE] M12b: Clouds'; on CI watch m12.spec:258 — a coverage (not timeout) failure means clouds break the classifier → use the pre-approved setClouds('off') fallback unless owner vetoed.
-- 2026-10-14: M07b Codex QUESTION: M05 timeout reproduces on unchanged master. Answered: add it to the container exceptions, remove blockers/M07b.md (not M07b's problem), finish full verify with the M04 polling fix, post gate; CI decides.
-- 2026-10-13: Owner merged M07a (#40). M07b → Codex, M12b (clouds + owner sun-glare request) → agy on agy/m12b. Owner confirmed: laptop test failures → GitHub CI is the standard. CONTEXT tidied before compaction.
-- 2026-10-13: M13b merged (#41). M13c prompt must include: call PathSearch.dispose() for abandoned searches; adapter.invalidate() (or hook) on chunk load. M07a review PASS.
-- 2026-10-13: Owner merged M06b (#39). Owner wants parallel builds: Codex + agy. Recommended Codex = M07a (core, critical path, touches world/input/mesh), agy = M13b (pure A* module, unit tests only, suits old laptop; verify:quick + CI as evidence; agy prompt must use --no-track branch + explicit push; owner to add master branch protection). M12b/M12c next after. Merge conflicts: fresh Sonnet session merges origin/master into the later PR's branch (no rebase), re-runs verify, pushes.
-- 2026-10-13: Owner decision: will increase biome size later and reduce Mire spawning in the same worldgen-tuning task (open item added).
-- 2026-10-13: Owner asked about brown slowing blocks on grass: Mire patches in Swampland (surface.ts patchNoise>0.25), slowdown by SPEC design ('soul-sand-style'); 0.4 multiplier was orchestrator's choice. Offered: soften to 0.6 in the same M06b tweak (owner's call); patch coverage is M03 territory (later tuning).
-- 2026-10-13: Owner merged #38 (58dfc07). M06b prompt given for Codex full model (branch claude/m06b). Decisions: swim/ladder/vine/Mire numbers, ladder+vine as thin face models with 4 facings, no worldgen placement, F5 via input action (no new debug API), settings.ts in-memory viewBobbing default on, water opacity 2→1 + underwater min brightness floor, underwater fog 2–24 blocks overriding M12 fog.
-- 2026-10-13: M12a-fix round 2 PASS. Owner request: sun should be a blinding glare at midday with the disc only readable near sunrise/sunset. Plan: add to the M12b prompt as an owner extra (elevation-scaled additive halo in sky shader + sun billboard saturating to white; disc dims/reddens near horizon; no HDR/bloom pass; must keep M12 noon/sunset tests and M04 tests unchanged).
-- 2026-10-13: M12a-fix gate c873ccd: radius 1.73, closest terrain 3.735 (2.005 margin), real sky coverage 100 % at 6000/10000; unit 433/433; e2e 55 pass, 2 container-only fails (M01a GL count 1446<1449, M04a pump 57.1 ms); RD12, fast-flight, M12 pass. Recommended approve → draft PR, CI decides.
-- 2026-10-13: M12a-fix Codex QUESTION: legacy SKY_RGB±16 check accepts fogged lumite (117,206,252). Answered Option B: drop legacy check, curve-only match, radius = largest rejecting full sweep with ≥2 margin; plus m12.spec assertion ≥98 % of top-quarter noon pixels are isSkyPixel at 6000 and 10000 ticks (guards against silent hole loss).
-- 2026-10-13: Owner asked about fog in deserts. Found gap: SPEC Appendix (line ~1459) says each biome defines a fog color, but biomes.ts has no fog field and no task row owns it. Not added to M12a-fix (keeps classifier simple). Open item for owner: assign per-biome fog tint to a task (e.g. M12c) via SPEC.
-- 2026-10-13: M12a review CHANGES NEEDED. M12a-fix decisions: classifier = tight distance to the sky pass's own noon colour curve (tolerance ≤ ~8), permanent unit test sweeping all texture generators × light × tints at fog ≤ 0.6 → false; fog factor per fragment, fog colour 100 % sky, fogEnd = (RD−1)×16, fogStart 0.6–0.75 of that; RD12 test must still pass (accepted trade-off: last chunk ring is fully fogged so holes there are invisible to players and test alike); fix progress notes/status. Stars absent below horizon: intended, no change.
-- 2026-10-13: agy gate looked good (unit 430/430; 5 laptop-only streaming-idle timeouts reproduced on master). Owner approved; agy pushed 5a73d9a directly to master (19 files, +1469). No harness paths touched. Recommended: keep, wait for CI #161, post-hoc review on the commit, stop Codex M12a, add branch protection on master.
-- 2026-10-13: Owner: old laptop struggles with full verify; agy postponed (maybe Ryzen 5700U laptop later, low disk). Back to Codex cloud + Claude Code cloud. M12a reassigned to Codex (agy work stays local, unpushed). Option noted for future local builders: verify:quick locally + CI as full-verify evidence (owner's call).
-- 2026-10-12: Windows laptop set up: npm ci, typecheck, lint (2 existing any-warnings), placeholders, unit 425/425, MILESTONE=M06 verify:quick all pass in PowerShell. WezTerm defaulted to cmd; told owner to use powershell. Owner asked for the smaller ready task for agy: M12a (self-contained render/time) over M06b (blocks, model, physics, camera). agy prompt: branch agy/m12a, PowerShell syntax, full verify to log, laptop timing failures checked against master on the same laptop then draft PR, CI decides; push via git, owner creates PR in browser.
-- 2026-10-12: Owner merged M06a (#36, b18882b) and INFRA-win (#37, 43d8fe5). Ready next: M06b, M12a (owner picks).
-- 2026-10-12: INFRA-win round 2 (fc2fef7, 716b36a): test now uses os.tmpdir() fixtures and runs the script with cwd=fixture; no writes to repo src/server, retry loop gone, missing-server case added. VERDICT PASS; owner to merge. After merge: Windows clone works with PowerShell (`$env:MILESTONE=...`).
-- 2026-10-12: INFRA-win PR #37 review (orchestrator, round 1): script and .gitattributes OK. Blocking: lint-placeholders.test.ts plants forbidden files in real src/ and server/ while lint.test.ts (unchanged harness-adjacent test) expects a clean pass in parallel, so it can flake; the 2 s retry loop only shields the new test. Fix: run `node scripts/lint-placeholders.mjs` with cwd set to a temp fixture dir (the script uses process.cwd()) and drop the retry loop. Fix prompt given to owner for Codex.
-- 2026-10-12: INFRA-win gate (11cc5aa): renormalize staged nothing unrelated; old/new lint equivalent; unit 424/424; e2e 4 fails (M02 mesh p95, M04a pump 62.8 ms also on master archive, M04b heap, mid-flight blank), all container-only. Recommended: approve push as draft PR, owner adds harness-change label, Codex retitles '— verified' once CI is green. M04a pump added to known container failures.
-- 2026-10-12: Owner wants to build on a Windows laptop with agy (PowerShell only, no Git Bash; Node 24). Only blockers found: lint-placeholders.mjs shells out to grep (silently passes on Windows) and no .gitattributes (CRLF breaks prettier). INFRA-win task prompt written. agy prompts must use PowerShell env syntax for MILESTONE.
-- 2026-10-12: M06a review PASS, no blockers. Next after merge: M06b (include deep-water light tuning) or M12a (swap decision 1 to M06a's tick); owner picks order.
-- 2026-10-12: M06a PR #36 ready (CI Verify green, 55 e2e, first attempt). Reviewer prompt written for a Claude Sonnet session. Owner deferred the Windows agy setup (notes: .gitattributes eol=lf; Git Bash terminal so grep is on PATH for lint-placeholders; middle PATH option).
-- 2026-10-15: M12c gate from agy (local commit 02b639b, not pushed). verify:quick: unit 519 passed; e2e M12a + M12c passed, m12:268 (RD8) and m12:326 (M12b) timed out on laptop. Base is stale: 519 unit vs 568 on master, and M09a (#44, 9cb5dec) is now merged. Overlapping files likely: registry.ts, debug api index/core, textures/index.ts. Asked the owner to have agy merge origin/master before the first push, re-run verify:quick, and map each SPEC scope item (splashes, puddles, lightning + fire chance, snow layers, freezing, snow by altitude) to code and test.
-- 2026-10-15: OWNER PREFERENCE (correction): agy does nothing with git at all; the owner handles all git for agy work. M12c plan: the owner pushes local 02b639b to agy/m12c without opening a PR. A new Sonnet builder branches claude/m12c from origin/agy/m12c, merges origin/master, builds any missing M12c scope, runs the gate, and opens the PR from claude/m12c.
-- 2026-10-15: M12c builder session: session_01JQ62XznmM2AD8JKHq9hFqh (Sonnet, claude/m12c from agy/m12c).
-- 2026-10-15: Owner chose M08a for Codex (not M09b). Prompt given, branch claude/m08a. Decisions:
-  - Fluid level/falling as enum block states (registry already supports states).
-  - Generated water/lava stay as still sources and don't schedule ticks at load; ticks are scheduled only by block changes next to fluid (performance).
-  - world/ticks.ts holds scheduled ticks (priority, then time order) and a random-tick API. M12c's own weather tick is left alone; migrating it is a later follow-up.
-  - Blackglass needs a texture, registry entry and drop. Its item icon comes with M09b.
-  - Ticks don't run while paused and the debug tick() advances them.
-- 2026-10-15: Owner switched Codex to M09b (M08a dropped for now). Told the owner neither task is conflict-free with M12c, and that M08a wouldn't change water's look (that's M08b rendering, after M08a). M09b decisions:
-  - icon atlas built once at startup for every registry block and item; isometric 3 shaded faces for full cubes; 2D sprites reuse M09a's item sprites; cross/flat blocks use their texture
-  - DOM/canvas UI kit with integer scale
-  - wire M09a ops; drop via dropInventoryStack
-  - swap follow-up (same unstackable item → swap)
-  - fix the stale status line in progress/M09a? No: AGENTS §8 forbids editing another task's record, so note it in progress/M09b.md instead
-  - icons for blocks M12c adds are handled by whichever merges second
-- 2026-10-15: FINAL: Codex does M08a (the prompt given earlier stands). M09b is next after it. The owner will send a water reference image before M08b; put it in the M08b prompt's look decisions, alongside SPEC's Visual Review (waterfall, lake depth gradient, lava cave).
-- 2026-10-15: M09b prompt was given, but the owner changed their mind and did NOT use it. M09b is not started. This is a one-off; there is no general rule.
-  - Owner's order: M08a (Codex, full model; the owner is starting it now) → M08b (the owner's water reference image first) → then M09b. Regenerate the M09b prompt against master at that point.
-- 2026-10-16: M12c gate (claude/m12c, built on agy/m12c, merged master cleanly)
-  - Full verify: unit 594; e2e 75 passed, 1 failed (m02:54 mesh p95, a known container failure).
-  - Fixes over agy's work: weather on game ticks; natural schedule after 12000 simulated ticks; water freezing was broken and is fixed; lightning flash whiting out the sky toned down; sim tests added.
-  - No icons for ice/snow_layer/fire (M09b owns the icon atlas).
-  - Builder asks the owner to approve a test edit: point the storm screenshot camera at the strike. I recommended yes, with terrain also in the frame. The approval is the owner's, in that session.
-  - The claude/m12c PR includes agy's commit; agy/m12c then needs no PR.
-- 2026-10-16: M12c screenshot redone after the owner approved the test edit: it waits for terrain and aims at the strike; the bolt is visible over a rock summit with rain. I couldn't view the PNG; I'll judge it once pushed. Full verify was not re-run after the test-only edit, so CI is the evidence. Told the owner to approve the push/PR in the builder's chat.
-- 2026-10-16: The owner rejected the M12c storm screenshot: the bolt is a tiny squiggle on the summit, the sky is light grey, there's a huge near-camera rain streak, and the builder's "top hidden by clouds" description was false. Sent fixes to the builder: full-length bolt from y=192 to the ground (find out why it's truncated); thicker core plus glow plus branches; darker storm sky; clamp near particles; correct the description. Not pushed yet.
-- 2026-10-16: M08a gate (Codex, claude/m08a e688695, not pushed)
-  - Full verify exit 0: unit 588; e2e 76/76; no known failures.
-  - All four unit criteria covered; waterfall reaches the ground at tick 55; ocean schedules 0 ticks at load.
-  - New data/block-state-ids.json: the reviewer must check its purpose (state-ID stability/saves).
-  - It touches player-controller/main/streamer (M06 fall/swim regressions fixed).
-  - Told the owner the gate is OK to approve.
-  - Overlaps with M12c on registry.ts and textures/index.ts; the second to merge resolves them.
-- 2026-10-16: M12c builder update: the short bolt was hidden by a nearer ridge (not a render bug), so the camera was raised 25 blocks in the approved screenshot step. Also added glow, a distance-scaled core, 2–4 forks, a slate storm sky, and near-camera rain skipped within 3.5 blocks. Running the M12a/M12b specs and verify:quick next; the new screenshot goes to the owner.
-- 2026-10-16: M08a PR #45 (claude/m08a e688695) CI green; reviewer prompt given. M12c PR #46 (claude/m12c 98bfdd7) is open as a draft.
-- 2026-10-16: M08a review (session_01MJsmZ7jGqiURDkfykCzczR): VERDICT PASS on e688695, CI green. Told the owner to merge #45.
-  - Non-blocking: nothing enforces that every registry state is in data/block-state-ids.json (append-only table); add a test later. HOLLOWDEEP constant unused until M20. removeColumn heap rebuild is O(n). Lava-lava faces are an M08b matter.
-  - After #45 merges, the M12c builder must merge master and append ice/snow_layer/fire states to block-state-ids.json.
-- 2026-10-16: The owner merged #45 (M08a) to master as d72f329. The M12c builder merged master into claude/m12c (acd14f4, f4cd7df: fixed the registry import, added World.getBlockDefinition, freezes still sources only); CI green, mergeable.
-  - The owner rejected the new lightning: stitched per-segment quads with gaps.
-  - Sent fixes to the builder: continuous mitred triangle-strip ribbons per branch, a glow ribbon, no additive double-up, finer subdivision and taper.
-  - Also: append ice/snow_layer/fire states to data/block-state-ids.json, with a unit check.
-  - The M12c reviewer prompt waits until this is done.
-- 2026-10-16: M12c head 70877c0 (continuous lightning ribbons; state IDs recorded). CI green and the owner likes the lightning. Gave the reviewer prompt for #46.
-- 2026-10-16: M12c review round 1 (session_01XoNjGgzgbuNekNeGSPxJQv): CHANGES NEEDED on 70877c0 (CI green).
-  - Blocking: the rain e2e diff (m12.spec:703) passes with clear weather (0.2859 clear vs 0.2838 rain).
-  - Sent the builder: rain-only diff with a clear control (< 0.005 clear, > 0.02 rain); assert the desert biome. Also fix the per-frame heightmap rebuild and the removeColumn leak.
-  - Other non-blocking items left: double particle count, per-frame Float32Array during strikes, rain factor copied 3×, fire doesn't spread, snow lands on leaves/glass.
-- 2026-10-16: The owner asked what Codex can do during the M12c fixes. Advice:
-  - M08b (water look) can start now. Overlap with M12c is only ~36 lines in chunk-renderer.ts (puddle and flash uniforms) plus the sky.ts uniforms. M12c merges first, then Codex merges master.
-  - M08c must wait: M12c adds the ice block that M08c defines.
-  - Waiting on the owner's water reference image before writing the M08b prompt.
-- 2026-10-16: The owner gave a water reference (from an existing game; only described in words to builders, per AGENTS §10). Notes:
-  - The top surface is too light, with too many light-blue patches. The owner wants it darker and translucent, with subtle ripples and animated sides. Underwater view is fine.
-  - Code facts: PAL_WATER's brightest #8ec0f0 is forced on for v > 0.3 and the second-brightest for v > 0.15, so there are lots of highlights. Pixels are alpha 255 (opaque). I couldn't find runtime frame cycling, so water probably isn't animated in game.
-  - Gave the M08b prompt to Codex (claude/m08b; the owner launches it).
-- 2026-10-16: M08b (Codex) asked to add setFluidAnimationPaused(true) to two m02c-fix.spec tests (:52 stall first frame vs third; :74 tint-rebuild frame vs settled). Animated water gives 1.66% / 1.70% diffs, all inside the water area. I recommended option 1 (same as the setClouds('off') precedent: those tests check static-render correctness, and animation is intended motion); thresholds unchanged. The owner decides in Codex's chat.
-- 2026-10-16: M12c round-1 fixes in c8ccf0d: rain e2e 4.20% vs 0% clear control; desert assertion; heightmap cache and eviction; rain particles 1024→2048. CI green. Sent round 2 to the same reviewer session (session_01XoNjGgzgbuNekNeGSPxJQv) myself.
-- 2026-10-16: M12c round 2: VERDICT PASS on c8ccf0d (CI green). The rain test now has a clear control (0 against 0.042 for rain) and a desert assertion; the heightmap cache is versioned; eviction is wired; the 2048 particles use a static VBO. Told the owner to merge #46.
-  - Non-blocking leftovers: stat-vs-shader precipitation mismatch on mountains; lightning buffer re-allocated per frame during a strike; rain-factor formula duplicated 3×.
-  - After the merge: M08b (Codex) must merge master (chunk-renderer/sky overlap). M08c becomes possible later.
-- 2026-10-16: The owner merged #46 (M12c). Asked for a task for a Claude cloud session while Codex does M08b.
-  - Ready now: M08c (wait, it overlaps M08b's translucent pass), M09b (the owner wants it after water), M10a.
-  - Recommended M10a (Sonnet builder, branch claude/m10a); prompt given. Decisions:
-    - data/recipes/*.json by category; tags in data/tags/items.json.
-    - Indexed matcher keyed on trimmed shape (with mirror); shapeless uses a sorted key; tags handled by candidate verification.
-    - Smelting recipes are data only (reachability needs them; the kiln is M10c).
-    - Reachability exemptions only with the owning future task named; later tasks shrink the list.
-    - Tool data per A.2, armor defense; no durability loss or harvest drops (M10c).
-    - Block-entity framework on ticks.ts with a test-only type; no chest/kiln/workbench types.
-- 2026-10-16: The owner asked whether M09b can run now instead. Yes: low overlap with M08b (M09b is UI, input, the icon atlas and inventory.ts; M08b is the chunk renderer and fluids texture). Icons are auto-generated from the block atlas, so they pick up M08b's water texture after a rebuild. Gave a refreshed M09b prompt for a Claude Sonnet session (claude/m09b); it includes icons for M12c's ice, snow_layer and fire. M10a's prompt stays available for later. Neither is launched until the owner says so.
-- 2026-10-16: The owner proposed agy=M09b and Claude=M10a. I recommended swapping: agy=M10a (unit-test heavy, fast on the laptop, no screenshots) and Claude=M09b (browser e2e, screenshots, visual judgement; agy's M12c screenshot description was wrong and parts of its scope were missing).
-  - agy policy restated: verify:quick only, CI is the standard, no git at all (the owner commits and pushes to agy/<id>).
-  - Laptop failures: timeouts in untouched areas are likely the machine; assertion failures (wrong values) are likely real even in untouched tests. CI decides.
-  - Gave an agy M10a prompt (no git; reports changed files at the gate).
+- 2026-10-16: The owner gave the M10a fixes to agy again (not Sonnet) and accepted the 106-recipe shortfall plus a later stairs task. agy fix prompt covers seeded chance and min/max loot, an accurate progress file, exemption reasons, and documenting the shortfall.
+- 2026-10-16: Inspected agy/m10a 6a6c22e (owner pushed, no PR).
+  - The code is better than agy's report: exemptions are real registered items (M13e/M13f/M20a); smelting is 17 real recipes; the light-curve change is only a lumite_block cool tint.
+  - Blocking: deterministic loot (see table); progress line 24 is wrong.
 - 2026-10-16: agy M10a questions answered:
-  - Q1: option 3 plus a custom note: non-block items, simple cubes and slabs only (block-shapes.ts holds one box per state, so stairs/fences/doors/trapdoors would need multi-box shapes and no task owns them). Smelting recipes count toward 120; no filler or alternate patterns. If short of 120, report the exact count. Then raise a SPEC gap with the owner: a later task for stairs/fences/doors/trapdoors with their recipes.
-  - Q2: option 1 (copper 2/4/3/1 = 10, iron 2/6/5/2 = 15).
-  - Q3: custom: option 1's damage derivation (axe = sword − 1, pick − 2, shovel − 3, hoe 1); durability shears 250 (iron tier), bow 384, shield 336, ember flint 64.
-  - Q4: option 1 (add ore/gravel/grass/leaf loot data per A.4/A.5 with count ranges and chances; harvest-level gating stays M10c).
-- 2026-10-16: M09b gate (Sonnet, session_01HomrBqg9TBAxWGTi8WLfMd, claude/m09b, base fe346bf)
-  - Full verify exit 0: unit 640, e2e 87, no failures. Startup median 187.8 ms vs 191 on master (icon sheet built after the first frame). Bundle +15 kB.
-  - Touched M07b/M09a code: optional thrown velocity and pickup delay for Q drops (default behaviour unchanged).
-  - Swap fix has no visible effect with current data. Dark cube icons (stone, coal) are the least legible.
-  - Told the owner the gate is OK to approve.
-- 2026-10-16: agy M10a gate: 106 recipes (expected shortfall vs 120); unit 630 passing locally; e2e "no tests found" (no M10 e2e, fine).
-  - RED FLAG: the exemption table lists IDs that don't exist on master (raw_pork, raw_beef, raw_fish, leather, string, bone, carrot, potato, melon_slice, sweet_berries, bedrock, farmland, grass_path, cooked_*), invented creature names (Meadow Pig, Horned Cattle, Cluckfowl...) and wrong owning tasks (M13c/M13d; passive creatures are M13e, hostile M13f).
-  - Real creature drops on master (raw_tuftbuck_shank, bark_strips, silk, thorn, egg...) are NOT exempted, so either agy added fake sources or it registered invented items.
-  - Also unexplained: src/render/light-curve.ts changed. The recipe test threshold is 100, not 120.
-  - Asked the owner to push agy/m10a (draft PR is fine) so I can inspect the diff; it isn't approvable as is.
-- 2026-10-16: Inspected agy/m10a (6a6c22e, no PR). The code is much better than agy's gate report.
-  - Fine: exemptions are real registered items with mostly correct tasks (M13e/M13f/M20a), and the test asserts each exemption is registered. Smelting uses real items. The light-curve change is only a lumite_block cool tint (OK).
-  - BLOCKING:
-    1. Loot is deterministic (all entries always drop), so oak leaves always drop an apple, tall grass drops seed + wheat every time, gravel drops gravel + flint, rainwood leaves drop vine, and ore counts are fixed (no 2–5 or 2–4 ranges). Needs chance and min/max with a seeded roll; no wheat from grass.
-    2. progress/M10a.md line 24 lists nonexistent smelting items (pork, beef, fish, potato, charcoal), and the gate's exemption table didn't match the code.
-  - Owner decision: 106 recipes (smelting included) against SPEC's 120; the test threshold is 100.
-  - Recommended a Sonnet takeover: claude/m10a from origin/agy/m10a. Prompt given.
-- 2026-10-16: The owner ACCEPTED the M10a recipe shortfall (106 < 120). Add a later "stairs/fences/doors/trapdoors" task (multi-box block shapes plus their recipes); it isn't in SPEC, so the owner will add it. The owner is giving the M10a fixes to agy again (not Sonnet); I gave an agy-format fix prompt.
+  - simple cubes plus slabs only; smelting counts toward 120; no filler
+  - armor: copper 10, iron 15
+  - damage: axe = sword − 1, pick − 2, shovel − 3, hoe 1; shears 250, bow 384, shield 336, ember flint 64
+  - add ore/plant loot data
+- 2026-10-16: M09b gate OK and the owner approved the push; PR #47 is a draft.
+- 2026-10-16: The owner proposed agy=M09b, Claude=M10a. I advised swapping (agy=M10a unit-only, Claude=M09b visual); the owner did that.
+- 2026-10-16: M08b (Codex) asked to add setFluidAnimationPaused(true) to two m02c-fix static-frame tests (1.66 % / 1.70 % diffs, all inside the water). Recommended approve; the owner decides in Codex's chat.
+- 2026-10-16: M08b prompt given (Codex, claude/m08b) with the owner's water-look targets.
+  - Code facts: PAL_WATER forces the lightest colour for noise > 0.3 and the second-lightest for > 0.15; water alpha is 255; animation frames are generated but not played.
+- 2026-10-16: The owner merged #46 (M12c) as fe346bf.
+  - M12c round 2 PASS (session_01XoNjGgzgbuNekNeGSPxJQv): rain e2e uses a clear control (0 vs 0.042); desert asserted; heightmap cache versioned; eviction wired.
+  - Round 1 had found the rain diff passing with clear weather.
+- 2026-10-16: M12c lightning reworked into continuous mitred ribbons (the owner disliked the stitched pieces); weather block states appended to block-state-ids.json; the owner liked the result.
+- 2026-10-16: M08a merged (#45, d72f329). Review PASS (session_01MJsmZ7jGqiURDkfykCzczR): state-ID table keeps the 84 old IDs; oceans schedule 0 ticks.
+- 2026-10-16: The owner rejected two M12c storm screenshots (tiny squiggle bolt, then stitched pieces) before the ribbon fix.
+- 2026-10-15: M12c moved from agy to a Sonnet builder (session_01JQ62XznmM2AD8JKHq9hFqh) on claude/m12c, built from agy/m12c; it fixed freezing, ticking and flash, and added a natural weather schedule.
+- 2026-10-15: Owner order: M08a → M08b (water look) → M09b. The owner later approved running M09b in parallel with M08b (low overlap).
+- 2026-10-15: M09a merged (#44). Review PASS (session_01FW4W953qLyw17A6nW8LNHP).
+- 2026-10-15: M12b merged (#42); round-1 notes only in decisions/M12b-clouds.md (minor doc gap).
+- 2026-10-14: M07b merged (#43). Its pathfinding speedup was reviewed as behaviour-identical.
