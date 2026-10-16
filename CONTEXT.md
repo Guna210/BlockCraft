@@ -170,3 +170,12 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 - 2026-10-16: M12c round 2: VERDICT PASS on c8ccf0d (CI green). The rain test now has a clear control (0 against 0.042 for rain) and a desert assertion; the heightmap cache is versioned; eviction is wired; the 2048 particles use a static VBO. Told the owner to merge #46.
   - Non-blocking leftovers: stat-vs-shader precipitation mismatch on mountains; lightning buffer re-allocated per frame during a strike; rain-factor formula duplicated 3×.
   - After the merge: M08b (Codex) must merge master (chunk-renderer/sky overlap). M08c becomes possible later.
+- 2026-10-16: The owner merged #46 (M12c). Asked for a task for a Claude cloud session while Codex does M08b.
+  - Ready now: M08c (wait, it overlaps M08b's translucent pass), M09b (the owner wants it after water), M10a.
+  - Recommended M10a (Sonnet builder, branch claude/m10a); prompt given. Decisions:
+    - data/recipes/*.json by category; tags in data/tags/items.json.
+    - Indexed matcher keyed on trimmed shape (with mirror); shapeless uses a sorted key; tags handled by candidate verification.
+    - Smelting recipes are data only (reachability needs them; the kiln is M10c).
+    - Reachability exemptions only with the owning future task named; later tasks shrink the list.
+    - Tool data per A.2, armor defense; no durability loss or harvest drops (M10c).
+    - Block-entity framework on ticks.ts with a test-only type; no chest/kiln/workbench types.
