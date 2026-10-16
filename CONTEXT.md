@@ -144,3 +144,6 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Overlaps with M12c on registry.ts and textures/index.ts; the second to merge resolves them.
 - 2026-10-16: M12c builder update: the short bolt was hidden by a nearer ridge (not a render bug), so the camera was raised 25 blocks in the approved screenshot step. Also added glow, a distance-scaled core, 2–4 forks, a slate storm sky, and near-camera rain skipped within 3.5 blocks. Running the M12a/M12b specs and verify:quick next; the new screenshot goes to the owner.
 - 2026-10-16: M08a PR #45 (claude/m08a e688695) CI green; reviewer prompt given. M12c PR #46 (claude/m12c 98bfdd7) is open as a draft.
+- 2026-10-16: M08a review (session_01MJsmZ7jGqiURDkfykCzczR): VERDICT PASS on e688695, CI green. Told the owner to merge #45.
+  - Non-blocking: nothing enforces that every registry state is in data/block-state-ids.json (append-only table); add a test later. HOLLOWDEEP constant unused until M20. removeColumn heap rebuild is O(n). Lava-lava faces are an M08b matter.
+  - After #45 merges, the M12c builder must merge master and append ice/snow_layer/fire states to block-state-ids.json.
