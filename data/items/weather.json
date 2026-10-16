@@ -1,0 +1,17 @@
+{
+  "ice": {
+    "kind": "block",
+    "block": "ice",
+    "maxStack": 64
+  },
+  "snow_layer": {
+    "kind": "block",
+    "block": "snow_layer",
+    "maxStack": 64
+  },
+  "fire": {
+    "kind": "block",
+    "block": "fire",
+    "maxStack": 64
+  }
+}
