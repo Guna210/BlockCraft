@@ -142,3 +142,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - It touches player-controller/main/streamer (M06 fall/swim regressions fixed).
   - Told the owner the gate is OK to approve.
   - Overlaps with M12c on registry.ts and textures/index.ts; the second to merge resolves them.
+- 2026-10-16: M12c builder update: the short bolt was hidden by a nearer ridge (not a render bug), so the camera was raised 25 blocks in the approved screenshot step. Also added glow, a distance-scaled core, 2–4 forks, a slate storm sky, and near-camera rain skipped within 3.5 blocks. Running the M12a/M12b specs and verify:quick next; the new screenshot goes to the owner.
