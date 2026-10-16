@@ -35,6 +35,8 @@ export function getPrecipitationType(biome: string, y: number): PrecipitationTyp
  */
 export class WeatherHeightmap {
   private readonly columns = new Map<string, Int16Array>();
+  /** Bumped on every change, so a consumer can tell whether its copy of the heights is stale. */
+  public version = 0;
 
   private columnKey(cx: number, cz: number): string {
     return `${cx},${cz}`;
@@ -42,10 +44,11 @@ export class WeatherHeightmap {
 
   public clear(): void {
     this.columns.clear();
+    this.version++;
   }
 
   public removeColumn(cx: number, cz: number): void {
-    this.columns.delete(this.columnKey(cx, cz));
+    if (this.columns.delete(this.columnKey(cx, cz))) this.version++;
   }
 
   public updateColumn(world: World, cx: number, cz: number): void {
@@ -54,6 +57,7 @@ export class WeatherHeightmap {
       heights = new Int16Array(256);
       this.columns.set(this.columnKey(cx, cz), heights);
     }
+    this.version++;
     const baseX = cx * 16;
     const baseZ = cz * 16;
     for (let lz = 0; lz < 16; lz++) {
@@ -71,6 +75,7 @@ export class WeatherHeightmap {
       const lx = ((x % 16) + 16) % 16;
       const lz = ((z % 16) + 16) % 16;
       heights[lz * 16 + lx] = world.getHeight(x, z);
+      this.version++;
     }
   }
 

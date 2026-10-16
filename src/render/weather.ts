@@ -374,7 +374,7 @@ void main() {
 }
 `;
 
-export const PARTICLE_COUNT = 1024;
+export const PARTICLE_COUNT = 2048;
 export const SPLASH_COUNT = 256;
 const HEIGHTMAP_SIZE = 64; // 64x64 blocks around camera
 
@@ -419,6 +419,10 @@ export class WeatherRenderer {
   private readonly heightmapData = new Uint8Array(HEIGHTMAP_SIZE * HEIGHTMAP_SIZE * 4);
   private heightmapOriginX = -32;
   private heightmapOriginZ = -32;
+  // What the texture currently holds, so it is only rebuilt when something it depends on changed
+  private heightmapWorld: World | null = null;
+  private heightmapVersion = -1;
+  private heightmapBuilt = false;
 
   // CPU particle structures for rapid stats evaluation
   private readonly particles: {
@@ -581,6 +585,15 @@ export class WeatherRenderer {
     const gl = this.glWrapper.gl;
     const originX = Math.floor(cameraPos[0]) - HEIGHTMAP_SIZE / 2;
     const originZ = Math.floor(cameraPos[2]) - HEIGHTMAP_SIZE / 2;
+    if (
+      this.heightmapBuilt &&
+      this.heightmapWorld === world &&
+      this.heightmapVersion === weatherManager.heightmap.version &&
+      originX === this.heightmapOriginX &&
+      originZ === this.heightmapOriginZ
+    ) {
+      return;
+    }
     this.heightmapOriginX = originX;
     this.heightmapOriginZ = originZ;
 
@@ -620,6 +633,10 @@ export class WeatherRenderer {
       data,
     );
     gl.bindTexture(gl.TEXTURE_2D, null);
+    this.heightmapWorld = world;
+    // Read after the loop: sampling a column that was not cached yet bumps the version
+    this.heightmapVersion = weatherManager.heightmap.version;
+    this.heightmapBuilt = true;
   }
 
   /**

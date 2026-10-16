@@ -284,6 +284,29 @@ describe('M12c — Weather', () => {
     });
   });
 
+  describe('WeatherHeightmap cache', () => {
+    it('bumps its version on every change and drops unloaded columns', () => {
+      const world = new World();
+      const col = world.getColumn(0, 0, true)!;
+      col.getOrCreateSection(0)?.fill(BlockRegistry.getInstance().getDefaultStateId('stone')!);
+      const hm = new WeatherHeightmap();
+      const v0 = hm.version;
+      hm.updateColumn(world, 0, 0);
+      const v1 = hm.version;
+      expect(v1).toBeGreaterThan(v0);
+      hm.updateBlock(world, 3, 5, 4);
+      const v2 = hm.version;
+      expect(v2).toBeGreaterThan(v1);
+      hm.updateBlock(world, 300, 5, 4); // column not cached: nothing changes
+      expect(hm.version).toBe(v2);
+      hm.removeColumn(0, 0);
+      const v3 = hm.version;
+      expect(v3).toBeGreaterThan(v2);
+      hm.removeColumn(0, 0); // already gone
+      expect(hm.version).toBe(v3);
+    });
+  });
+
   describe('Stable block state IDs', () => {
     it('records every ice, snow_layer and fire state in the append-only table', () => {
       const registry = BlockRegistry.getInstance();

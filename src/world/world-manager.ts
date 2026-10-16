@@ -337,6 +337,7 @@ export class WorldManager {
       freeData: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.world?.removeColumn(cx, cz);
+        weatherManager.heightmap.removeColumn(cx, cz);
       },
       now: () => performance.now(),
       recordSlice: (ms) => frameStats.recordPump(ms),
