@@ -147,3 +147,8 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
 - 2026-10-16: M08a review (session_01MJsmZ7jGqiURDkfykCzczR): VERDICT PASS on e688695, CI green. Told the owner to merge #45.
   - Non-blocking: nothing enforces that every registry state is in data/block-state-ids.json (append-only table); add a test later. HOLLOWDEEP constant unused until M20. removeColumn heap rebuild is O(n). Lava-lava faces are an M08b matter.
   - After #45 merges, the M12c builder must merge master and append ice/snow_layer/fire states to block-state-ids.json.
+- 2026-10-16: The owner merged #45 (M08a) to master as d72f329. The M12c builder merged master into claude/m12c (acd14f4, f4cd7df: fixed the registry import, added World.getBlockDefinition, freezes still sources only); CI green, mergeable.
+  - The owner rejected the new lightning: stitched per-segment quads with gaps.
+  - Sent fixes to the builder: continuous mitred triangle-strip ribbons per branch, a glow ribbon, no additive double-up, finer subdivision and taper.
+  - Also: append ice/snow_layer/fire states to data/block-state-ids.json, with a unit check.
+  - The M12c reviewer prompt waits until this is done.
