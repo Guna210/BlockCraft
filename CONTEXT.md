@@ -152,3 +152,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Sent fixes to the builder: continuous mitred triangle-strip ribbons per branch, a glow ribbon, no additive double-up, finer subdivision and taper.
   - Also: append ice/snow_layer/fire states to data/block-state-ids.json, with a unit check.
   - The M12c reviewer prompt waits until this is done.
+- 2026-10-16: M12c head 70877c0 (continuous lightning ribbons; state IDs recorded). CI green and the owner likes the lightning. Gave the reviewer prompt for #46.
