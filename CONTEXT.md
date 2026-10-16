@@ -199,3 +199,10 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Real creature drops on master (raw_tuftbuck_shank, bark_strips, silk, thorn, egg...) are NOT exempted, so either agy added fake sources or it registered invented items.
   - Also unexplained: src/render/light-curve.ts changed. The recipe test threshold is 100, not 120.
   - Asked the owner to push agy/m10a (draft PR is fine) so I can inspect the diff; it isn't approvable as is.
+- 2026-10-16: Inspected agy/m10a (6a6c22e, no PR). The code is much better than agy's gate report.
+  - Fine: exemptions are real registered items with mostly correct tasks (M13e/M13f/M20a), and the test asserts each exemption is registered. Smelting uses real items. The light-curve change is only a lumite_block cool tint (OK).
+  - BLOCKING:
+    1. Loot is deterministic (all entries always drop), so oak leaves always drop an apple, tall grass drops seed + wheat every time, gravel drops gravel + flint, rainwood leaves drop vine, and ore counts are fixed (no 2–5 or 2–4 ranges). Needs chance and min/max with a seeded roll; no wheat from grass.
+    2. progress/M10a.md line 24 lists nonexistent smelting items (pork, beef, fish, potato, charcoal), and the gate's exemption table didn't match the code.
+  - Owner decision: 106 recipes (smelting included) against SPEC's 120; the test threshold is 100.
+  - Recommended a Sonnet takeover: claude/m10a from origin/agy/m10a. Prompt given.
