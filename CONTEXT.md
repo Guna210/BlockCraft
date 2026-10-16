@@ -133,3 +133,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - No icons for ice/snow_layer/fire (M09b owns the icon atlas).
   - Builder asks the owner to approve a test edit: point the storm screenshot camera at the strike. I recommended yes, with terrain also in the frame. The approval is the owner's, in that session.
   - The claude/m12c PR includes agy's commit; agy/m12c then needs no PR.
+- 2026-10-16: M12c screenshot redone after the owner approved the test edit: it waits for terrain and aims at the strike; the bolt is visible over a rock summit with rain. I couldn't view the PNG; I'll judge it once pushed. Full verify was not re-run after the test-only edit, so CI is the evidence. Told the owner to approve the push/PR in the builder's chat.
