@@ -143,3 +143,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
   - Told the owner the gate is OK to approve.
   - Overlaps with M12c on registry.ts and textures/index.ts; the second to merge resolves them.
 - 2026-10-16: M12c builder update: the short bolt was hidden by a nearer ridge (not a render bug), so the camera was raised 25 blocks in the approved screenshot step. Also added glow, a distance-scaled core, 2–4 forks, a slate storm sky, and near-camera rain skipped within 3.5 blocks. Running the M12a/M12b specs and verify:quick next; the new screenshot goes to the owner.
+- 2026-10-16: M08a PR #45 (claude/m08a e688695) CI green; reviewer prompt given. M12c PR #46 (claude/m12c 98bfdd7) is open as a draft.
