@@ -1,0 +1,75 @@
+{
+  "oak_planks": {
+    "type": "shapeless",
+    "ingredients": ["oak_log"],
+    "result": { "id": "oak_planks", "count": 4 }
+  },
+  "birch_planks": {
+    "type": "shapeless",
+    "ingredients": ["birch_log"],
+    "result": { "id": "birch_planks", "count": 4 }
+  },
+  "pine_planks": {
+    "type": "shapeless",
+    "ingredients": ["pine_log"],
+    "result": { "id": "pine_planks", "count": 4 }
+  },
+  "rainwood_planks": {
+    "type": "shapeless",
+    "ingredients": ["rainwood_log"],
+    "result": { "id": "rainwood_planks", "count": 4 }
+  },
+  "acacia_planks": {
+    "type": "shapeless",
+    "ingredients": ["acacia_log"],
+    "result": { "id": "acacia_planks", "count": 4 }
+  },
+  "stick": {
+    "type": "shaped",
+    "pattern": ["P", "P"],
+    "key": { "P": "#any_planks" },
+    "result": { "id": "stick", "count": 4 }
+  },
+  "bowl": {
+    "type": "shaped",
+    "pattern": ["P P", " P "],
+    "key": { "P": "#any_planks" },
+    "result": { "id": "bowl", "count": 4 }
+  },
+  "ladder": {
+    "type": "shaped",
+    "pattern": ["S S", "SSS", "S S"],
+    "key": { "S": "stick" },
+    "result": { "id": "ladder", "count": 3 }
+  },
+  "oak_planks_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "oak_slab" },
+    "result": { "id": "oak_planks", "count": 1 }
+  },
+  "birch_planks_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "birch_slab" },
+    "result": { "id": "birch_planks", "count": 1 }
+  },
+  "pine_planks_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "pine_slab" },
+    "result": { "id": "pine_planks", "count": 1 }
+  },
+  "rainwood_planks_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "rainwood_slab" },
+    "result": { "id": "rainwood_planks", "count": 1 }
+  },
+  "acacia_planks_from_slabs": {
+    "type": "shaped",
+    "pattern": ["S", "S"],
+    "key": { "S": "acacia_slab" },
+    "result": { "id": "acacia_planks", "count": 1 }
+  }
+}

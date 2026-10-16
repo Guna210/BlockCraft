@@ -9,5 +9,88 @@
     "tool": "pickaxe",
     "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
     "textures": { "top": "stone", "side": "stone", "bottom": "stone" }
+  },
+  "cobblestone_slab": {
+    "hardness": 2.0,
+    "blastResistance": 6.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "pickaxe",
+    "minTier": 0,
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "cobblestone", "side": "cobblestone", "bottom": "cobblestone" }
+  },
+  "mossy_cobblestone_slab": {
+    "hardness": 2.0,
+    "blastResistance": 6.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "pickaxe",
+    "minTier": 0,
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": {
+      "top": "mossy_cobblestone",
+      "side": "mossy_cobblestone",
+      "bottom": "mossy_cobblestone"
+    }
+  },
+  "oak_slab": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "axe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "oak_planks", "side": "oak_planks", "bottom": "oak_planks" }
+  },
+  "birch_slab": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "axe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "birch_planks", "side": "birch_planks", "bottom": "birch_planks" }
+  },
+  "pine_slab": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "axe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "pine_planks", "side": "pine_planks", "bottom": "pine_planks" }
+  },
+  "rainwood_slab": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "axe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "rainwood_planks", "side": "rainwood_planks", "bottom": "rainwood_planks" }
+  },
+  "acacia_slab": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "slab",
+    "tool": "axe",
+    "states": { "half": { "type": "enum", "values": ["bottom", "top"], "default": "bottom" } },
+    "textures": { "top": "acacia_planks", "side": "acacia_planks", "bottom": "acacia_planks" }
   }
 }

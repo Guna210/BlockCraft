@@ -128,5 +128,15 @@
     "kind": "material",
     "maxStack": 64,
     "texture": "seed"
+  },
+  "gold_ingot": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "gold_ingot"
+  },
+  "arrow": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "arrow"
   }
 }

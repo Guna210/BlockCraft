@@ -3,5 +3,10 @@
     "kind": "block",
     "block": "torch",
     "maxStack": 64
+  },
+  "lumite_block": {
+    "kind": "block",
+    "block": "lumite_block",
+    "maxStack": 64
   }
 }

@@ -1,0 +1,19 @@
+{
+  "torch": {
+    "type": "shaped",
+    "pattern": ["C", "S"],
+    "key": { "C": "coal", "S": "stick" },
+    "result": { "id": "torch", "count": 4 }
+  },
+  "lumite_block": {
+    "type": "shaped",
+    "pattern": ["LL", "LL"],
+    "key": { "L": "lumite_shard" },
+    "result": { "id": "lumite_block", "count": 1 }
+  },
+  "lumite_shard_from_block": {
+    "type": "shapeless",
+    "ingredients": ["lumite_block"],
+    "result": { "id": "lumite_shard", "count": 4 }
+  }
+}

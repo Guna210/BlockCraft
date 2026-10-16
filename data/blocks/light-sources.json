@@ -8,5 +8,15 @@
     "model": "cross",
     "tool": "none",
     "textures": { "top": "torch", "side": "torch", "bottom": "torch" }
+  },
+  "lumite_block": {
+    "hardness": 3.0,
+    "blastResistance": 6.0,
+    "lightEmission": 12,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 2,
+    "textures": { "top": "lumite_block", "side": "lumite_block", "bottom": "lumite_block" }
   }
 }

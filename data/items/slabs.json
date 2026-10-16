@@ -3,5 +3,40 @@
     "kind": "block",
     "block": "stone_slab",
     "maxStack": 64
+  },
+  "cobblestone_slab": {
+    "kind": "block",
+    "block": "cobblestone_slab",
+    "maxStack": 64
+  },
+  "mossy_cobblestone_slab": {
+    "kind": "block",
+    "block": "mossy_cobblestone_slab",
+    "maxStack": 64
+  },
+  "oak_slab": {
+    "kind": "block",
+    "block": "oak_slab",
+    "maxStack": 64
+  },
+  "birch_slab": {
+    "kind": "block",
+    "block": "birch_slab",
+    "maxStack": 64
+  },
+  "pine_slab": {
+    "kind": "block",
+    "block": "pine_slab",
+    "maxStack": 64
+  },
+  "rainwood_slab": {
+    "kind": "block",
+    "block": "rainwood_slab",
+    "maxStack": 64
+  },
+  "acacia_slab": {
+    "kind": "block",
+    "block": "acacia_slab",
+    "maxStack": 64
   }
 }

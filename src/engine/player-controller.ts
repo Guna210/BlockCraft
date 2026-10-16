@@ -9,7 +9,7 @@ import { BlockCollision } from '../entity/physics';
 import { ItemEntityManager } from '../entity/item-entity';
 import { BreakParticles } from '../render/particles';
 import { canHarvest } from '../gameplay/mining';
-import { blockLoot } from '../gameplay/loot';
+import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
@@ -82,7 +82,8 @@ export class PlayerController {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
       if (this.player!.mode === 'creative' || !canHarvest(block.definition, tool)) return;
-      const loot = blockLoot(block.blockId);
+      const breakCount = world.breakCount++;
+      const loot = rollBlockLoot(block.blockId, world.worldSeed, x, y, z, breakCount);
       for (let n = 0; n < loot.length; n++) {
         const entry = loot[n]!;
         this.itemEntities!.spawn(entry.id, entry.count, x + 0.5, y + 0.5, z + 0.5);

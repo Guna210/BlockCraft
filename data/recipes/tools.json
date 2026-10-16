@@ -1,0 +1,181 @@
+{
+  "wooden_pickaxe": {
+    "type": "shaped",
+    "pattern": ["MMM", " S ", " S "],
+    "key": { "M": "#any_planks", "S": "stick" },
+    "result": { "id": "wooden_pickaxe", "count": 1 }
+  },
+  "wooden_axe": {
+    "type": "shaped",
+    "pattern": ["MM", "MS", " S"],
+    "key": { "M": "#any_planks", "S": "stick" },
+    "result": { "id": "wooden_axe", "count": 1 }
+  },
+  "wooden_shovel": {
+    "type": "shaped",
+    "pattern": ["M", "S", "S"],
+    "key": { "M": "#any_planks", "S": "stick" },
+    "result": { "id": "wooden_shovel", "count": 1 }
+  },
+  "wooden_hoe": {
+    "type": "shaped",
+    "pattern": ["MM", " S", " S"],
+    "key": { "M": "#any_planks", "S": "stick" },
+    "result": { "id": "wooden_hoe", "count": 1 }
+  },
+  "wooden_sword": {
+    "type": "shaped",
+    "pattern": ["M", "M", "S"],
+    "key": { "M": "#any_planks", "S": "stick" },
+    "result": { "id": "wooden_sword", "count": 1 }
+  },
+  "stone_pickaxe": {
+    "type": "shaped",
+    "pattern": ["MMM", " S ", " S "],
+    "key": { "M": "cobblestone", "S": "stick" },
+    "result": { "id": "stone_pickaxe", "count": 1 }
+  },
+  "stone_axe": {
+    "type": "shaped",
+    "pattern": ["MM", "MS", " S"],
+    "key": { "M": "cobblestone", "S": "stick" },
+    "result": { "id": "stone_axe", "count": 1 }
+  },
+  "stone_shovel": {
+    "type": "shaped",
+    "pattern": ["M", "S", "S"],
+    "key": { "M": "cobblestone", "S": "stick" },
+    "result": { "id": "stone_shovel", "count": 1 }
+  },
+  "stone_hoe": {
+    "type": "shaped",
+    "pattern": ["MM", " S", " S"],
+    "key": { "M": "cobblestone", "S": "stick" },
+    "result": { "id": "stone_hoe", "count": 1 }
+  },
+  "stone_sword": {
+    "type": "shaped",
+    "pattern": ["M", "M", "S"],
+    "key": { "M": "cobblestone", "S": "stick" },
+    "result": { "id": "stone_sword", "count": 1 }
+  },
+  "copper_pickaxe": {
+    "type": "shaped",
+    "pattern": ["MMM", " S ", " S "],
+    "key": { "M": "copper_ingot", "S": "stick" },
+    "result": { "id": "copper_pickaxe", "count": 1 }
+  },
+  "copper_axe": {
+    "type": "shaped",
+    "pattern": ["MM", "MS", " S"],
+    "key": { "M": "copper_ingot", "S": "stick" },
+    "result": { "id": "copper_axe", "count": 1 }
+  },
+  "copper_shovel": {
+    "type": "shaped",
+    "pattern": ["M", "S", "S"],
+    "key": { "M": "copper_ingot", "S": "stick" },
+    "result": { "id": "copper_shovel", "count": 1 }
+  },
+  "copper_hoe": {
+    "type": "shaped",
+    "pattern": ["MM", " S", " S"],
+    "key": { "M": "copper_ingot", "S": "stick" },
+    "result": { "id": "copper_hoe", "count": 1 }
+  },
+  "copper_sword": {
+    "type": "shaped",
+    "pattern": ["M", "M", "S"],
+    "key": { "M": "copper_ingot", "S": "stick" },
+    "result": { "id": "copper_sword", "count": 1 }
+  },
+  "iron_pickaxe": {
+    "type": "shaped",
+    "pattern": ["MMM", " S ", " S "],
+    "key": { "M": "iron_ingot", "S": "stick" },
+    "result": { "id": "iron_pickaxe", "count": 1 }
+  },
+  "iron_axe": {
+    "type": "shaped",
+    "pattern": ["MM", "MS", " S"],
+    "key": { "M": "iron_ingot", "S": "stick" },
+    "result": { "id": "iron_axe", "count": 1 }
+  },
+  "iron_shovel": {
+    "type": "shaped",
+    "pattern": ["M", "S", "S"],
+    "key": { "M": "iron_ingot", "S": "stick" },
+    "result": { "id": "iron_shovel", "count": 1 }
+  },
+  "iron_hoe": {
+    "type": "shaped",
+    "pattern": ["MM", " S", " S"],
+    "key": { "M": "iron_ingot", "S": "stick" },
+    "result": { "id": "iron_hoe", "count": 1 }
+  },
+  "iron_sword": {
+    "type": "shaped",
+    "pattern": ["M", "M", "S"],
+    "key": { "M": "iron_ingot", "S": "stick" },
+    "result": { "id": "iron_sword", "count": 1 }
+  },
+  "skyshard_pickaxe": {
+    "type": "shaped",
+    "pattern": ["MMM", " S ", " S "],
+    "key": { "M": "skyshard_crystal", "S": "stick" },
+    "result": { "id": "skyshard_pickaxe", "count": 1 }
+  },
+  "skyshard_axe": {
+    "type": "shaped",
+    "pattern": ["MM", "MS", " S"],
+    "key": { "M": "skyshard_crystal", "S": "stick" },
+    "result": { "id": "skyshard_axe", "count": 1 }
+  },
+  "skyshard_shovel": {
+    "type": "shaped",
+    "pattern": ["M", "S", "S"],
+    "key": { "M": "skyshard_crystal", "S": "stick" },
+    "result": { "id": "skyshard_shovel", "count": 1 }
+  },
+  "skyshard_hoe": {
+    "type": "shaped",
+    "pattern": ["MM", " S", " S"],
+    "key": { "M": "skyshard_crystal", "S": "stick" },
+    "result": { "id": "skyshard_hoe", "count": 1 }
+  },
+  "skyshard_sword": {
+    "type": "shaped",
+    "pattern": ["M", "M", "S"],
+    "key": { "M": "skyshard_crystal", "S": "stick" },
+    "result": { "id": "skyshard_sword", "count": 1 }
+  },
+  "iron_shears": {
+    "type": "shaped",
+    "pattern": [" I", "I "],
+    "key": { "I": "iron_ingot" },
+    "result": { "id": "iron_shears", "count": 1 }
+  },
+  "bow": {
+    "type": "shaped",
+    "pattern": [" WS", "W S", " WS"],
+    "key": { "W": "stick", "S": "silk" },
+    "result": { "id": "bow", "count": 1 }
+  },
+  "shield": {
+    "type": "shaped",
+    "pattern": ["WIW", "WWW", " W "],
+    "key": { "W": "#any_planks", "I": "iron_ingot" },
+    "result": { "id": "shield", "count": 1 }
+  },
+  "ember_flint": {
+    "type": "shapeless",
+    "ingredients": ["iron_ingot", "flint"],
+    "result": { "id": "ember_flint", "count": 1 }
+  },
+  "arrow": {
+    "type": "shaped",
+    "pattern": ["F", "S", "E"],
+    "key": { "F": "flint", "S": "stick", "E": "feather" },
+    "result": { "id": "arrow", "count": 4 }
+  }
+}

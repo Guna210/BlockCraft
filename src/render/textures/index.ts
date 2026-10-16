@@ -23,7 +23,7 @@ import {
 } from './sky';
 import { genLadder, genVine, PAL_LADDER, PAL_VINE } from './climbing';
 import { genHayTop, genHaySide, PAL_HAY } from './hay';
-import { genTorch, PAL_TORCH } from './light-sources';
+import { genTorch, genLumiteBlock, PAL_TORCH } from './light-sources';
 // src/render/textures/index.ts
 import { TextureData } from './noise';
 import { terrainToolGenerators, terrainToolPalettes } from './tools';
@@ -31,6 +31,8 @@ import {
   genGrassTop,
   genGrassSide,
   genDirt,
+  genCoarseDirt,
+  genMud,
   genFoundationStone,
   genStone,
   genCobblestone,
@@ -40,6 +42,8 @@ import {
   PAL_STONE,
   PAL_FOUNDATION_STONE,
   PAL_DIRT,
+  PAL_MUD,
+  PAL_COARSE_DIRT,
   PAL_GRASS,
   PAL_SAND,
   PAL_GRAVEL,
@@ -155,6 +159,8 @@ import {
   genAcaciaLogSide,
   genRainwoodLeaves,
   genAcaciaLeaves,
+  genRainwoodPlanks,
+  genAcaciaPlanks,
   PAL_RAINWOOD_BARK,
   PAL_RAINWOOD_WOOD,
   PAL_ACACIA_BARK,
@@ -189,10 +195,13 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   hay_top: genHayTop,
   hay_side: genHaySide,
   torch: genTorch,
+  lumite_block: genLumiteBlock,
   // Terrain
   grass_top: genGrassTop,
   grass_side: genGrassSide,
   dirt: genDirt,
+  coarse_dirt: genCoarseDirt,
+  mud: genMud,
   foundation_stone: genFoundationStone,
   stone: genStone,
   cobblestone: genCobblestone,
@@ -235,6 +244,8 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   acacia_log_side: genAcaciaLogSide,
   rainwood_leaves: genRainwoodLeaves,
   acacia_leaves: genAcaciaLeaves,
+  rainwood_planks: genRainwoodPlanks,
+  acacia_planks: genAcaciaPlanks,
 
   // Vegetation and other surface features (M03f)
   tall_grass: genTallGrass,
@@ -365,6 +376,7 @@ export const texturePalettes: Record<string, RGBA[]> = {
   hay_top: PAL_HAY,
   hay_side: PAL_HAY,
   torch: PAL_TORCH,
+  lumite_block: PAL_LUMITE,
   // Terrain
   grass_top: PAL_GRASS,
   grass_side: [
@@ -372,6 +384,8 @@ export const texturePalettes: Record<string, RGBA[]> = {
     ...PAL_DIRT.map((c) => [c[0], c[1], c[2], 0] as RGBA),
   ],
   dirt: PAL_DIRT,
+  coarse_dirt: PAL_COARSE_DIRT,
+  mud: PAL_MUD,
   foundation_stone: PAL_FOUNDATION_STONE,
   stone: PAL_STONE,
   cobblestone: PAL_STONE,
@@ -414,6 +428,8 @@ export const texturePalettes: Record<string, RGBA[]> = {
   acacia_log_side: PAL_ACACIA_BARK,
   rainwood_leaves: PAL_RAINWOOD_LEAVES,
   acacia_leaves: PAL_ACACIA_LEAVES,
+  rainwood_planks: PAL_RAINWOOD_WOOD,
+  acacia_planks: PAL_ACACIA_WOOD,
 
   // Vegetation and other surface features (M03f)
   tall_grass: PAL_TALL_GRASS,
