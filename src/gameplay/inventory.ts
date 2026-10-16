@@ -143,7 +143,8 @@ export class Inventory {
         this.cursor = stack ? { id: stack.id, count: stack.count } : null;
         this.put(slot, null);
       } else if (this.accepts(slot, this.cursor.id)) {
-        if (stack?.id === this.cursor.id) {
+        // Unstackable items never merge, so the same tool or armor piece swaps like any other item.
+        if (stack?.id === this.cursor.id && items.get(stack.id).maxStack > 1) {
           const moved = Math.min(this.cursor.count, items.get(stack.id).maxStack - stack.count);
           stack.count += moved;
           this.cursor.count -= moved;
@@ -249,6 +250,18 @@ export class Inventory {
           stack.count -= moved;
           if (!stack.count) this.put(slot, null);
         }
+    });
+  }
+  /** Moves the cursor into storage slots 0–35 as far as it fits; the rest stays on the cursor. */
+  returnCursor(): void {
+    this.operation(() => {
+      const cursor = this.cursor;
+      if (!cursor) return;
+      const moved = Math.min(cursor.count, this.capacity(cursor.id));
+      if (!moved) return;
+      this.insert(cursor.id, moved);
+      cursor.count -= moved;
+      this.cleanCursor();
     });
   }
   peekDrop(target: InventoryTarget, whole = false): CursorStack | null {

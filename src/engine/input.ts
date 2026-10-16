@@ -16,6 +16,8 @@ export class InputEngine {
   public actionStates = new Map<Action, boolean>();
   public mouseMovement = { x: 0, y: 0 };
   public pointerLocked = false;
+  /** While a UI screen is open, game input is ignored: movement keys, mouse look and buttons. */
+  public captured = false;
   public onAction?: (action: Action, down: boolean) => void;
   private canvas: HTMLCanvasElement;
   private readonly onContextMenu = (event: Event) => {
@@ -92,7 +94,16 @@ export class InputEngine {
     this.keyBindings.delete(code);
   }
 
+  setCapture(on: boolean) {
+    this.captured = on;
+    if (!on) return;
+    this.actionStates.forEach((_, key) => this.setAction(key, false));
+    this.mouseMovement.x = 0;
+    this.mouseMovement.y = 0;
+  }
+
   setAction(action: Action, state: boolean) {
+    if (this.captured && state) return;
     this.actionStates.set(action, state);
     this.onAction?.(action, state);
   }
@@ -109,7 +120,7 @@ export class InputEngine {
   }
 
   private onKeyDown(e: KeyboardEvent) {
-    if (e.repeat) return;
+    if (e.repeat || this.captured) return;
     const action = this.keyBindings.get(e.code);
     if (action) {
       this.setAction(action, true);
@@ -124,7 +135,7 @@ export class InputEngine {
   }
 
   private onMouseMove(e: MouseEvent) {
-    if (this.pointerLocked) {
+    if (this.pointerLocked && !this.captured) {
       this.mouseMovement.x += e.movementX;
       this.mouseMovement.y += e.movementY;
     }
@@ -150,6 +161,12 @@ export class InputEngine {
       // Clear actions when losing pointer lock
       this.actionStates.forEach((_, key) => this.setAction(key, false));
     }
+  }
+
+  /** Asks for pointer lock again after a screen closes; resolves only where the browser allows it. */
+  relock(): Promise<void> | undefined {
+    if (this.pointerLocked) return undefined;
+    return this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
   }
 
   private requestPointerLock() {
