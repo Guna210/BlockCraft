@@ -12,6 +12,8 @@ export class ItemEntity {
   item: ItemDefinition = items.get('stone');
   count = 0;
   age = 0;
+  /** Ticks before the player can collect the item; thrown items use it so they are not re-collected. */
+  pickupDelay = 0;
   phase = 0;
   readonly pos: Position = [0, 0, 0];
   readonly previous: Position = [0, 0, 0];
@@ -37,7 +39,14 @@ export class ItemEntityManager {
     this.collision = new BlockCollision(world);
     this.random = new PRNG(deriveSeed(world.worldSeed, 'item-pop'));
   }
-  spawn(id: string, count: number, x: number, y: number, z: number): ItemEntity | null {
+  spawn(
+    id: string,
+    count: number,
+    x: number,
+    y: number,
+    z: number,
+    thrown?: { velocity: Position; pickupDelay: number },
+  ): ItemEntity | null {
     const item = items.get(id);
     if (!Number.isInteger(count) || count < 1 || count > item.maxStack)
       throw new Error('Item entity count exceeds stack size');
@@ -57,9 +66,16 @@ export class ItemEntityManager {
     entity.pos[0] = entity.previous[0] = x;
     entity.pos[1] = entity.previous[1] = y;
     entity.pos[2] = entity.previous[2] = z;
-    entity.vel[0] = (this.random.next() - 0.5) * 1.6;
-    entity.vel[1] = 2 + this.random.next();
-    entity.vel[2] = (this.random.next() - 0.5) * 1.6;
+    entity.pickupDelay = thrown?.pickupDelay ?? 0;
+    if (thrown) {
+      entity.vel[0] = thrown.velocity[0];
+      entity.vel[1] = thrown.velocity[1];
+      entity.vel[2] = thrown.velocity[2];
+    } else {
+      entity.vel[0] = (this.random.next() - 0.5) * 1.6;
+      entity.vel[1] = 2 + this.random.next();
+      entity.vel[2] = (this.random.next() - 0.5) * 1.6;
+    }
     return entity;
   }
   tick(player: Player): void {
@@ -112,7 +128,8 @@ export class ItemEntityManager {
           break;
         }
       }
-      if (!entity.active || entity.age < 4 || player.detached) continue;
+      if (!entity.active || entity.age < Math.max(4, entity.pickupDelay) || player.detached)
+        continue;
       const dx = player.pos[0] - entity.pos[0],
         dy = player.pos[1] + 0.6 - (entity.pos[1] + 0.125),
         dz = player.pos[2] - entity.pos[2];

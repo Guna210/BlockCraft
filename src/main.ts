@@ -10,6 +10,9 @@ import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
 import { WorldManager } from './world/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
+import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
+import { UiManager, activeUi } from './ui/ui-manager';
+import { createSentinelTile } from './render/texture-resolve';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -74,6 +77,20 @@ function main() {
     worldManager.streamer.canSimulate(Math.floor(x / 16), Math.floor(z / 16)),
   );
   worldManager.playerController = playerController;
+  // The icon atlas is built once, in one pass over the registries, from tiles already generated.
+  // It is built right after the first frame, off the path to the first frame, or on first use.
+  let iconSheet: IconSheet | null = null;
+  const icons = () =>
+    (iconSheet ??= buildIconSheet(
+      createTileLookup(worldManager.atlas!),
+      createSentinelTile(),
+      (name) => {
+        if (!renderStats.missingTextures.includes(name)) renderStats.missingTextures.push(name);
+      },
+    ));
+  const ui = new UiManager(input, () => worldManager.playerController, icons);
+  ui.attach();
+  activeUi.manager = ui;
   let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
     frameDrain = new FencedErrorDrain(
@@ -153,6 +170,8 @@ function main() {
       rendered = worldManager.render();
     }
 
+    ui.frame();
+
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
     if (rendered) cpuTimes.push(frameCpuMs);
@@ -193,6 +212,7 @@ function main() {
   requestAnimationFrame((time) => {
     markReady();
     render(time);
+    setTimeout(icons, 0);
   });
 }
 
