@@ -206,3 +206,4 @@ Ready next: M12c, M13a? (check deps M11/M12). M07b + M12b in flight.
     2. progress/M10a.md line 24 lists nonexistent smelting items (pork, beef, fish, potato, charcoal), and the gate's exemption table didn't match the code.
   - Owner decision: 106 recipes (smelting included) against SPEC's 120; the test threshold is 100.
   - Recommended a Sonnet takeover: claude/m10a from origin/agy/m10a. Prompt given.
+- 2026-10-16: The owner ACCEPTED the M10a recipe shortfall (106 < 120). Add a later "stairs/fences/doors/trapdoors" task (multi-box block shapes plus their recipes); it isn't in SPEC, so the owner will add it. The owner is giving the M10a fixes to agy again (not Sonnet); I gave an agy-format fix prompt.
