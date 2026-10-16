@@ -206,3 +206,56 @@ test('M08b lava cave is animated, emissive and lights neighboring stone', async 
   );
   await assertAndSaveScreenshot({ name: 'm08-fluid-texture-sheet', milestone: 'M08b' });
 });
+
+test('M08b master integration renders M10a cubes and both slab halves beside water', async ({
+  page,
+  assertAndSaveScreenshot,
+}) => {
+  const placed = await page.evaluate(async () => {
+    const a = window.__blockcraft!;
+    await a.createWorld!({
+      name: 'M08b master blocks',
+      mode: 'creative',
+      type: 'flat',
+      seed: 'blockcraft-test-seed-42',
+    });
+    a.pause!();
+    a.setRenderDistance!(4);
+    a.setClouds!('off');
+    a.setTimeOfDay!(6000);
+    a.setFluidAnimationPaused!(true);
+    a.fill!(-4, 65, -12, 20, 78, 12, 'air');
+    const cubes = ['rainwood_planks', 'acacia_planks', 'coarse_dirt', 'mud', 'lumite_block'];
+    const slabs = [
+      'cobblestone_slab',
+      'mossy_cobblestone_slab',
+      'oak_slab',
+      'birch_slab',
+      'pine_slab',
+      'rainwood_slab',
+      'acacia_slab',
+    ];
+    const entries = [
+      ...cubes.map((id) => ({ id, state: {} })),
+      ...slabs.flatMap((id) => [
+        { id, state: { half: 'bottom' } },
+        { id, state: { half: 'top' } },
+      ]),
+    ];
+    const placed = entries.map(({ id, state }, i) => {
+      const x = 3 + (i % 5) * 3,
+        z = -6 + Math.floor(i / 5) * 4;
+      a.setBlock!(x, 66, z, id, state);
+      a.setBlock!(x, 66, z + 1, 'water');
+      return { expected: id, block: a.getBlock!(x, 66, z) };
+    });
+    a.teleport!(-6, 75, -12, 0.65, -0.5);
+    await a.tick!(0);
+    await a.waitForTerrain!(1);
+    return placed;
+  });
+  for (const { expected, block } of placed) expect(block.id).toBe(expected);
+  const shot = await assertAndSaveScreenshot({ name: 'm08-master-blocks', milestone: 'M08b' });
+  assertNotBlank(shot);
+  assertNoMissingTexture(shot);
+});
