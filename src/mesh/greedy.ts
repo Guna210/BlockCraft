@@ -1,3 +1,4 @@
+import { emitFluidBlocks } from './fluids';
 import { MODEL_WALL_TORCH, emitWallTorch } from './wall-torch';
 import {
   MODEL_BOTTOM_SLAB,
@@ -54,6 +55,9 @@ export interface MeshLookupTables {
   logAxis: Uint8Array; // numStates (0=y or none, 1=x, 2=z)
   tileIndices: Uint16Array; // numStates * 6 (faces: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
   tintIndices: Uint8Array; // numStates * 6 (0=none, 1=grass, 2=foliage)
+  fluidKind?: Uint8Array;
+  fluidHeight?: Uint8Array;
+  fluidFalling?: Uint8Array;
   modelKind: Uint8Array; // numStates (cube, cross or slab, see models.ts)
 }
 
@@ -77,6 +81,9 @@ export function buildMeshLookupTables(
   const tileIndices = new Uint16Array(numStates * 6);
   const tintIndices = new Uint8Array(numStates * 6);
   const modelKind = new Uint8Array(numStates);
+  const fluidKind = new Uint8Array(numStates);
+  const fluidHeight = new Uint8Array(numStates);
+  const fluidFalling = new Uint8Array(numStates);
 
   const translucentTypeMap = new Map<string, number>();
   let nextTranslucentGroupId = 1;
@@ -88,6 +95,13 @@ export function buildMeshLookupTables(
     }
 
     const def = resolved.definition;
+    if (def.id === 'water' || def.id === 'lava') {
+      fluidKind[stateId] = def.id === 'water' ? 1 : 2;
+      fluidFalling[stateId] = resolved.properties.falling === 'true' ? 1 : 0;
+      fluidHeight[stateId] = fluidFalling[stateId]
+        ? 64
+        : 56 - Number(resolved.properties.level ?? 0) * 7;
+    }
     isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
     modelKind[stateId] =
       def.model === 'wall_torch'
@@ -162,6 +176,9 @@ export function buildMeshLookupTables(
   }
 
   return {
+    fluidKind,
+    fluidHeight,
+    fluidFalling,
     isOpaqueCube,
     renderLayer,
     translucentGroup,
@@ -182,6 +199,13 @@ export function shouldCullFace(
 ): boolean {
   if (selfState === 0) return true; // Air has no faces
   if (tables.modelKind[selfState] !== MODEL_CUBE) return true; // Plants are drawn by the model pass
+
+  if (tables.fluidKind?.[selfState]) {
+    return (
+      tables.isOpaqueCube[neighborState] === 1 ||
+      tables.fluidKind[selfState] === tables.fluidKind[neighborState]
+    );
+  }
 
   // Rule 1: A face is hidden when its neighbor is a full opaque cube.
   if (tables.isOpaqueCube[neighborState] === 1) {
@@ -217,7 +241,7 @@ const SCRATCH_CORNERS = new Uint32Array(16 * 16 * 4);
 const MAX_VERTS_PER_BUCKET = 24576 * 4 * 2; // 196,608
 const MAX_INDICES_PER_BUCKET = 24576 * 6; // 147,456
 
-interface BucketScratch {
+export interface BucketScratch {
   vertices: Uint32Array;
   indices: Uint32Array;
   vertOffset: number;
@@ -624,6 +648,8 @@ export function greedyMesh(
   resetBucketScratch(translucentScratch);
   resetBucketScratch(modelScratch);
 
+  emitFluidBlocks(paddedSection, tables, paddedLight, opaqueScratch, translucentScratch);
+
   // Process all 6 face directions
   for (let f = 0; f < 6; f++) {
     // Sweep through 16 slice planes (d = 0..15)
@@ -643,7 +669,7 @@ export function greedyMesh(
           const selfState = paddedSection[ownIndex]!;
           const neighState = paddedSection[ownIndex + normalStride]!;
 
-          if (!shouldCullFace(selfState, neighState, tables)) {
+          if (!tables.fluidKind?.[selfState] && !shouldCullFace(selfState, neighState, tables)) {
             const tileIdx = tables.tileIndices[selfState * 6 + f]!;
             const tintIdx = tables.tintIndices ? tables.tintIndices[selfState * 6 + f]! : 0;
             const layer = tables.renderLayer[selfState]!;

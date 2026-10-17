@@ -58,6 +58,7 @@ test.describe('M02c-fix: world load time and the stale first frame', () => {
       window.__blockcraft!.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' }),
     );
 
+    await page.evaluate(() => window.__blockcraft!.setFluidAnimationPaused!(true));
     await lookDown(page);
 
     await drawFrames(page, 1);
@@ -79,6 +80,7 @@ test.describe('M02c-fix: world load time and the stale first frame', () => {
     await page.evaluate(() =>
       window.__blockcraft!.createWorld!({ seed: 'blockcraft-test-seed-42', type: 'default' }),
     );
+    await page.evaluate(() => window.__blockcraft!.setFluidAnimationPaused!(true));
     await lookDown(page);
     await drawFrames(page, 3);
     const settled = await assertAndSaveScreenshot({ milestone: 'm02c-fix', name: 'settled-frame' });

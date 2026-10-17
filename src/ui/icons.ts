@@ -225,7 +225,9 @@ function renderBlockIcon(
     faceFor(lookup, faceName('south'), sideTint, missing),
     faceFor(lookup, faceName('east'), sideTint, missing),
     def.model === 'slab' ? 4 : 8,
-    def.renderLayer,
+    // Water uses depth-based transmission in the world. A thumbnail has no
+    // scene depth, so keep its shaded blue faces opaque for legibility.
+    def.id === 'water' ? 'opaque' : def.renderLayer,
   );
 }
 

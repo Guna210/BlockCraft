@@ -1,3 +1,12 @@
+import { fluidAnimation } from './fluid-animation';
+import { FluidDepth } from './fluid-depth';
+import {
+  quadCenters,
+  sortedQuadIndices,
+  distanceSquared,
+  TRANSLUCENT_NEAR_DISTANCE,
+  TRANSLUCENT_SORT_STEP,
+} from './translucent-sort';
 import { WALL_TORCH_GLSL } from '../mesh/wall-torch';
 import type { UnderwaterView } from './underwater';
 import { canonicalQuadVertices, quadIndices } from './shared-quads';
@@ -41,6 +50,12 @@ uniform vec3 u_sunDir;
 uniform float u_dayFactor;
 uniform float u_twilightFactor;
 uniform float u_nightFactor;
+uniform float u_fluidTime;
+uniform int u_waterTile;
+uniform int u_lavaTile;
+flat out float v_fluid;
+flat out float v_flow;
+out vec3 v_normal;
 uniform float u_rainFactor;
 uniform float u_lightningFlash;
 out vec2 v_unwrappedUV;
@@ -62,7 +77,11 @@ ${WALL_TORCH_GLSL}
 #endif
 void main() {
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
-  localPos.y += float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
+  uint material = a_word0 >> 28u;
+  bool fluid = material == 4u || material == 5u;
+  v_fluid = fluid ? float(material - 3u) : 0.0;
+  v_flow = fluid ? float((a_word1 >> 18u) & 15u) : 0.0;
+  localPos.y += fluid ? -float((a_word1 >> 12u) & 63u) / 64.0 : float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
   vec3 worldPos = u_sectionOrigin + localPos;
   #ifdef WALL_TORCH
   uint normalIdx=(a_word0 >> 15u) & 7u;
@@ -72,7 +91,11 @@ void main() {
   #else
   vec3 normal = NORMALS[(a_word0 >> 15u) & 7u];
   #endif
-  worldPos += normal * float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0;
+  v_normal = normal;
+  if (material == 4u && ((a_word1 >> 12u) & 63u) != 0u) {
+    worldPos.y += 0.018 * sin(worldPos.x * 1.1 + u_fluidTime * 1.2) * cos(worldPos.z * 0.9 + u_fluidTime * 0.8);
+  }
+  worldPos += normal * (fluid ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0);
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
   float ao = ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u);
   float sky = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * float((a_word0 >> 20u) & 15u) / 15.0;
@@ -96,6 +119,7 @@ void main() {
   else if (tintIdx == 2u) v_tint = texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
   v_grassSide = tintIdx == 3u ? 1.0 : 0.0;
   uint tileIdx = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
+  if (fluid) tileIdx = uint(material == 4u ? u_waterTile : u_lavaTile) + uint(mod(floor(u_fluidTime * 8.0), 32.0));
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
@@ -123,6 +147,13 @@ void main() {
 
 const FS_CHUNK = `#version 300 es
 precision highp float;
+flat in float v_fluid;
+flat in float v_flow;
+in vec3 v_normal;
+uniform float u_fluidTime;
+uniform highp sampler2D u_sceneDepth;
+uniform mat4 u_inverseViewProj;
+uniform vec2 u_viewport;
 in vec2 v_unwrappedUV;
 flat in vec2 v_tileOrigin;
 in vec3 v_light;
@@ -152,21 +183,47 @@ void main() {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
   }
+  vec2 uv = v_unwrappedUV;
+  if (v_fluid > 0.5) {
+    uv = abs(v_normal.y) > 0.5 ? v_worldPos.xz : vec2(abs(v_normal.x) > 0.5 ? v_worldPos.z : v_worldPos.x, -v_worldPos.y);
+    if (v_flow > 8.5 || abs(v_normal.y) < 0.5) uv.y -= u_fluidTime * 0.35;
+    else if (v_flow > 0.5) {
+      float angle = (v_flow - 1.0) * 0.785398163;
+      uv -= vec2(cos(angle), sin(angle)) * u_fluidTime * 0.22;
+    }
+  }
   vec2 tileSize = vec2(16.0) / u_atlasSize;
   vec2 halfTexel = vec2(0.5) / u_atlasSize;
-  vec2 tileUV = clamp(v_tileOrigin + fract(v_unwrappedUV) * tileSize, v_tileOrigin + halfTexel, v_tileOrigin + tileSize - halfTexel);
-  vec4 texColor = textureGrad(u_atlasSampler, tileUV, dFdx(v_unwrappedUV) * tileSize, dFdy(v_unwrappedUV) * tileSize);
+  vec2 tileUV = clamp(v_tileOrigin + fract(uv) * tileSize, v_tileOrigin + halfTexel, v_tileOrigin + tileSize - halfTexel);
+  vec4 texColor = textureGrad(u_atlasSampler, tileUV, dFdx(uv) * tileSize, dFdy(uv) * tileSize);
   if (u_isCutout == 1 && texColor.a < 0.5) discard;
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
   vec3 litColor = texColor.rgb * tint * v_light;
+  float alpha = mix(texColor.a, 1.0, v_grassSide);
+  if (v_fluid > 0.5 && v_fluid < 1.5 && u_underwater) alpha = 1.0;
+  if (v_fluid > 1.5) { litColor = texColor.rgb; alpha = 1.0; }
+  if (v_fluid > 0.5 && v_fluid < 1.5 && !u_underwater) {
+    vec2 screenUV = gl_FragCoord.xy / u_viewport;
+    float depth = texture(u_sceneDepth, screenUV).r;
+    vec4 behind = u_inverseViewProj * vec4(screenUV * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec3 scenePos = behind.xyz / behind.w;
+    float thickness = depth >= 0.999999 ? 32.0 : max(0.0, length(scenePos-u_cameraPos)-length(v_worldPos-u_cameraPos));
+    float absorption = 1.0 - exp(-thickness * 0.16);
+    litColor = mix(litColor, vec3(0.025,0.085,0.19) * max(v_light,vec3(0.2)), absorption);
+    vec3 view = normalize(u_cameraPos-v_worldPos);
+    vec3 surfaceNormal = normalize(cross(dFdx(v_worldPos),dFdy(v_worldPos)));
+    float fresnel = 0.02 + 0.30 * pow(1.0-abs(dot(view,surfaceNormal)),5.0);
+    litColor = mix(litColor, v_fogColor, fresnel);
+    alpha = mix(0.26,0.96,absorption) + fresnel * 0.12;
+  }
   if (v_puddle > 0.001) {
     litColor *= (1.0 - 0.22 * v_puddle);
   }
   float horizDist = u_underwater ? length(v_worldPos - u_cameraPos) : length((v_worldPos - u_cameraPos).xz);
   float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
   vec3 finalColor = mix(litColor, u_underwater ? u_waterFogColor : v_fogColor, fogFactor);
-  fragColor = vec4(finalColor, mix(texColor.a, 1.0, v_grassSide));
+  fragColor = vec4(finalColor, alpha);
 }
 `;
 
@@ -180,6 +237,9 @@ export interface GPUBucketMesh {
   lineEbo: WebGLBuffer | null;
   indexCount: number;
   lineIndexCount: number;
+  centers?: Float32Array;
+  sortCamera?: [number, number, number];
+  ownsEbo?: boolean;
 }
 
 export interface GPUSectionMesh {
@@ -195,6 +255,13 @@ export interface GPUSectionMesh {
 }
 
 export class ChunkRenderer {
+  private depth: FluidDepth;
+  private inverseViewProj = mat4.create();
+  private fluidTime = 0;
+  private translucentMeshes: GPUSectionMesh[] = [];
+  private sortedCamera: [number, number, number] = [Infinity, Infinity, Infinity];
+  private sortDirty = true;
+  private translucentVisible = new Map<GPUSectionMesh, number>();
   private sharedEbo: WebGLBuffer | null = null;
   private sharedQuadCapacity = 0;
   private glWrapper: GLWrapper;
@@ -202,6 +269,12 @@ export class ChunkRenderer {
   private programs: WebGLProgram[];
   private programLocations: Array<Record<string, WebGLUniformLocation>>;
 
+  private locFluidTime: WebGLUniformLocation;
+  private locWaterTile: WebGLUniformLocation;
+  private locLavaTile: WebGLUniformLocation;
+  private locSceneDepth: WebGLUniformLocation;
+  private locInverseViewProj: WebGLUniformLocation;
+  private locViewport: WebGLUniformLocation;
   private locViewProj: WebGLUniformLocation;
   private locSectionOrigin: WebGLUniformLocation;
   private locAtlasSampler: WebGLUniformLocation;
@@ -270,6 +343,7 @@ export class ChunkRenderer {
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
+    this.depth = new FluidDepth(glWrapper);
     this.program = this.glWrapper.createProgram(VS_CHUNK, FS_CHUNK);
     const skyOnly = (source: string) =>
       source.replace('#version 300 es', '#version 300 es\n#define SKY_ONLY');
@@ -284,6 +358,12 @@ export class ChunkRenderer {
     this.tintCache = new ColumnTintCache(glWrapper);
 
     const gl = this.glWrapper.gl;
+    this.locFluidTime = gl.getUniformLocation(this.program, 'u_fluidTime')!;
+    this.locWaterTile = gl.getUniformLocation(this.program, 'u_waterTile')!;
+    this.locLavaTile = gl.getUniformLocation(this.program, 'u_lavaTile')!;
+    this.locSceneDepth = gl.getUniformLocation(this.program, 'u_sceneDepth')!;
+    this.locInverseViewProj = gl.getUniformLocation(this.program, 'u_inverseViewProj')!;
+    this.locViewport = gl.getUniformLocation(this.program, 'u_viewport')!;
     this.locViewProj = gl.getUniformLocation(this.program, 'u_viewProj')!;
     this.locSectionOrigin = gl.getUniformLocation(this.program, 'u_sectionOrigin')!;
     this.locAtlasSampler = gl.getUniformLocation(this.program, 'u_atlasSampler')!;
@@ -309,6 +389,12 @@ export class ChunkRenderer {
     this.locRainFactor = gl.getUniformLocation(this.program, 'u_rainFactor')!;
     this.locLightningFlash = gl.getUniformLocation(this.program, 'u_lightningFlash')!;
     const fields = [
+      'locFluidTime',
+      'locWaterTile',
+      'locLavaTile',
+      'locSceneDepth',
+      'locInverseViewProj',
+      'locViewport',
       'locViewProj',
       'locSectionOrigin',
       'locAtlasSampler',
@@ -400,7 +486,8 @@ export class ChunkRenderer {
     const opaque = this.createGPUBucketMesh(meshData.opaque);
     // Plants (cross models) are drawn in the cutout pass, in the same draw call as the leaves
     const cutout = this.createGPUBucketMesh(mergeMeshBuckets(meshData.cutout, meshData.models));
-    const translucent = this.createGPUBucketMesh(meshData.translucent);
+    const translucent = this.createGPUBucketMesh(meshData.translucent, true);
+    if (translucent) this.sortDirty = true;
 
     let hasWallTorch = false;
     for (let i = 0; i < meshData.models.vertices.length; i += 2) {
@@ -444,6 +531,7 @@ export class ChunkRenderer {
     this.freeGPUBucketMesh(existing.translucent);
 
     this.sectionMeshes.delete(key);
+    if (existing.translucent) this.sortDirty = true;
     const colKey = `${existing.sx},${existing.sz}`;
     const list = this.columnMeshes.get(colKey);
     if (list) {
@@ -514,6 +602,9 @@ export class ChunkRenderer {
     for (const key of Array.from(this.sectionMeshes.keys())) {
       this.removeSectionMesh(key);
     }
+    this.depth.dispose();
+    this.translucentMeshes.length = 0;
+    this.translucentVisible.clear();
     this.columnMeshes.clear();
     this.fades.clear();
     this.lastVisible.length = 0;
@@ -523,7 +614,7 @@ export class ChunkRenderer {
     this.sharedQuadCapacity = 0;
   }
 
-  private createGPUBucketMesh(bucket: MeshBucketData): GPUBucketMesh | null {
+  private createGPUBucketMesh(bucket: MeshBucketData, sortable = false): GPUBucketMesh | null {
     if (bucket.quadCount === 0 || bucket.vertices.length === 0) {
       return null;
     }
@@ -532,7 +623,7 @@ export class ChunkRenderer {
     const vao = this.glWrapper.createVertexArray();
     const vbo = this.glWrapper.createBuffer();
     if (!this.sharedEbo) this.sharedEbo = this.glWrapper.createBuffer();
-    const ebo = this.sharedEbo;
+    const ebo = sortable ? this.glWrapper.createBuffer() : this.sharedEbo;
 
     gl.bindVertexArray(vao);
 
@@ -553,7 +644,9 @@ export class ChunkRenderer {
 
     // EBO (Triangles: 6 Uint32 indices per quad)
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-    if (bucket.quadCount > this.sharedQuadCapacity) {
+    if (sortable)
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadIndices(bucket.quadCount), gl.DYNAMIC_DRAW);
+    else if (bucket.quadCount > this.sharedQuadCapacity) {
       this.sharedQuadCapacity = 2 ** Math.ceil(Math.log2(bucket.quadCount));
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadIndices(this.sharedQuadCapacity), gl.STATIC_DRAW);
     }
@@ -565,6 +658,8 @@ export class ChunkRenderer {
       vbo,
       ebo,
       lineEbo: null,
+      ownsEbo: sortable,
+      centers: sortable ? quadCenters(canonicalQuadVertices(bucket)) : undefined,
       indexCount: bucket.indices.length,
       lineIndexCount: bucket.quadCount * 8,
     };
@@ -599,6 +694,7 @@ export class ChunkRenderer {
     if (!bucketMesh) return;
     this.glWrapper.deleteVertexArray(bucketMesh.vao);
     this.glWrapper.deleteBuffer(bucketMesh.vbo);
+    if (bucketMesh.ownsEbo) this.glWrapper.deleteBuffer(bucketMesh.ebo);
     // Triangle EBO belongs to the renderer and is shared by all section VAOs.
     if (bucketMesh.lineEbo) this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
@@ -655,6 +751,19 @@ export class ChunkRenderer {
     this.program = this.programs[index]!;
     Object.assign(this, this.programLocations[index]);
     gl.useProgram(this.program);
+    gl.uniform1f(this.locFluidTime, this.fluidTime);
+    const tileIndex = (name: string) => {
+      const rect = atlas.rects.get(name)!;
+      return (
+        Math.floor(rect.y / CELL_SIZE) * Math.floor(atlas.width / CELL_SIZE) +
+        Math.floor(rect.x / CELL_SIZE)
+      );
+    };
+    gl.uniform1i(this.locWaterTile, tileIndex('water_0'));
+    gl.uniform1i(this.locLavaTile, tileIndex('lava_0'));
+    gl.uniform1i(this.locSceneDepth, 4);
+    gl.uniformMatrix4fv(this.locInverseViewProj, false, this.inverseViewProj);
+    gl.uniform2f(this.locViewport, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.uniform1f(this.locSkyBrightness, this.skyBrightness);
     gl.uniform1i(this.locDebugLight, this.debugLight ? 1 : 0);
     gl.uniform1i(this.locAtlasSampler, 0);
@@ -677,6 +786,70 @@ export class ChunkRenderer {
     gl.uniform1f(this.locRainFactor, this.rainFactor);
     gl.uniform1f(this.locLightningFlash, this.lightningFlash);
     this.fadeUniform.forget();
+  }
+
+  private drawTranslucent(viewProjMatrix: mat4, atlas: TextureAtlas): void {
+    const gl = this.glWrapper.gl;
+    const camera = this.cameraPos;
+    const moved = distanceSquared(camera, this.sortedCamera) >= TRANSLUCENT_SORT_STEP ** 2;
+    if (moved || this.sortDirty) {
+      if (this.sortDirty)
+        this.translucentMeshes = Array.from(this.sectionMeshes.values()).filter(
+          (mesh) => mesh.translucent,
+        );
+      const distance = (mesh: GPUSectionMesh) =>
+        (mesh.sx * 16 + 8 - camera[0]) ** 2 +
+        (mesh.sy * 16 + 8 - camera[1]) ** 2 +
+        (mesh.sz * 16 + 8 - camera[2]) ** 2;
+      this.translucentMeshes.sort((a, b) => distance(b) - distance(a));
+      this.sortedCamera = [...camera];
+      this.sortDirty = false;
+    }
+    const visible = this.translucentVisible;
+    visible.clear();
+    for (let c = 0; c < this.visColumns.length; c++)
+      for (const mesh of this.visColumns[c]!) {
+        if (mesh.translucent) visible.set(mesh, c);
+      }
+    let lastVariant = -1;
+    for (const mesh of this.translucentMeshes) {
+      const c = visible.get(mesh);
+      if (c === undefined) continue;
+      const bucket = mesh.translucent!;
+      const local: [number, number, number] = [
+        camera[0] - mesh.sx * 16,
+        camera[1] - mesh.sy * 16,
+        camera[2] - mesh.sz * 16,
+      ];
+      gl.bindVertexArray(bucket.vao);
+      if (
+        distanceSquared(local, [8, 8, 8]) < TRANSLUCENT_NEAR_DISTANCE ** 2 &&
+        (!bucket.sortCamera ||
+          distanceSquared(local, bucket.sortCamera) >= TRANSLUCENT_SORT_STEP ** 2)
+      ) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.ebo);
+        gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, sortedQuadIndices(bucket.centers!, local));
+        bucket.sortCamera = local;
+      }
+      // Program selection follows sorted geometry, never groups that break blend order.
+      const variant = (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0);
+      if (variant !== lastVariant) {
+        this.selectLightingProgram(!mesh.hasBlockLight, viewProjMatrix, atlas, mesh.hasWallTorch);
+        lastVariant = variant;
+      }
+      gl.uniform1i(this.locIsCutout, 0);
+      gl.uniform1i(this.locIsWireframe, 0);
+      this.fadeUniform.set(this.visFade[c]!);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.visGrass[c]!);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.visFoliage[c]!);
+      this.activeUnit = 2;
+      gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
+      this.glWrapper.drawElements(gl.TRIANGLES, bucket.indexCount, gl.UNSIGNED_INT, 0);
+      this.passDraws++;
+      this.passTriangles += bucket.indexCount / 3;
+    }
   }
 
   private drawLightingPass(pass: number, viewProjMatrix: mat4, atlas: TextureAtlas): void {
@@ -746,6 +919,9 @@ export class ChunkRenderer {
     this.passDraws = 0;
     this.passTriangles = 0;
 
+    this.fluidTime = fluidAnimation.sample(nowMs);
+    mat4.invert(this.inverseViewProj, viewProjMatrix);
+
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
@@ -757,11 +933,18 @@ export class ChunkRenderer {
     const playerDraws = drawPlayer?.() ?? 0;
     if (playerDraws > 0) this.activeUnit = 0;
 
+    // Opaque and cutout rendering is the depth pre-pass for water absorption.
+    if (meshes.some((mesh) => mesh.translucent)) {
+      gl.activeTexture(gl.TEXTURE4);
+      this.activeUnit = 4;
+      this.depth.capture();
+      this.activeUnit = 4;
+    }
     // 3. Translucent Pass
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    this.drawLightingPass(2, viewProjMatrix, atlas);
+    this.drawTranslucent(viewProjMatrix, atlas);
 
     let drawCalls = this.passDraws + playerDraws;
     const triangles = this.passTriangles + playerDraws * 12;
