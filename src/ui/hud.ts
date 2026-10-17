@@ -18,14 +18,14 @@ const HEART: readonly string[] = [
   '.........',
 ];
 const CARROT: readonly string[] = [
-  '....L....',
+  '...LLL...',
   '...LLLL..',
   '...LLLL..',
-  '...BBBB..',
-  '....BBBB.',
-  '.....BBBB',
+  'BBBBBBBBB',
+  'BBBBBBBBB',
+  '.BBBBBBBB',
+  '...BBBBBB',
   '......BBB',
-  '.......BB',
   '........B',
 ];
 const HEART_PALETTE = {
