@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: M09c round 2 PASS on b110d84 (CI #224 green, title verified, merges clean). Told the owner to merge #51; then M10b/M10c are unblocked.
 - 2026-10-17: M09c F3 gate restored (4014936, SPEC §3.2), head b110d84, CI green per the owner. Sent round 2 to session_01WTzFdgDYTcgc2XBz6SSkhu.
 - 2026-10-17: M09c fix 7a8b641 (264-sample graph, 0-33 ms scale, e2e graph check, ART rule named, dead entry removed, F3 ungated) + 294c315 (progress verified with CI #220 numbers). MY ERROR: SPEC §3.2 (binding) says ?debug=1 enables the F3 overlay, so ungating F3 breaks SPEC. Told the owner: either revert the gate (recommended) or edit SPEC §3.2. Round 2 goes to session_01WTzFdgDYTcgc2XBz6SSkhu after the final CI is green.
 - 2026-10-17: M09c review 1 (session_01WTzFdgDYTcgc2XBz6SSkhu) PASS on 0c3d387, merges clean onto master c9d4acf. Underwater: bubbles use the same submerged flag as the fog (no bug). Fix prompt given for Codex: progress/title verified (oranges described), F3 graph history ≥ width + visible scale + e2e check, F3 works without ?debug=1 (player-facing per SPEC), name the ART item-icon rule in the decision, remove the dead ORANGE_BLUSH entry.
