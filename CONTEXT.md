@@ -50,7 +50,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both append to block-state-ids.json; the second to merge renumbers after master. BLOCKS-shapes (owner-requested; claude/blocks-shapes; Sonnet): prompt given. All three (M10b Codex, M10c agy, BLOCKS-shapes Claude) append state IDs; whoever merges later renumbers. M17b needs M15b or an owner SPEC change.
+Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both append to block-state-ids.json; the second to merge renumbers after master. BLOCKS-shapes (owner-requested; claude/blocks-shapes; Sonnet): building, session_01G9eqJk3rGpFktxhridFMPD. All three (M10b Codex, M10c agy, BLOCKS-shapes Claude) append state IDs; whoever merges later renumbers. M17b needs M15b or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: BLOCKS-shapes started (session_01G9eqJk3rGpFktxhridFMPD). M10b (Codex) and M10c (agy) also building.
 - 2026-10-17: The owner assigned M10b to Codex and M10c to agy. Gave the BLOCKS-shapes prompt for Claude: 5 woods × stairs/fence/door/trapdoor + stone/cobble stairs; multi-box shapes (block-shapes, raycast, physics); straight stairs only; fence connection states; 2-tall doors with hinge/open; 3/16 trapdoors; recipes to reach ≥ 120; e2e walk up stairs with the 0.6 step-up, door blocks/open passes.
 - 2026-10-17: #53 merged. Prompts given: Codex M10b (workbench/chest blocks, 2x2 + 3x3 grids, recipe book, chest + double chest block entities, UI-only craft e2e); agy M10c (kiln with facing/lit states, light 13, block entity, xp.ts addXp, kiln UI, tool damage on stacks + M17a serializer extension, harvest level, durability bar). Not started until the owner says.
 - 2026-10-17: INFRA-ci PR #53 paperwork done (007c45b): shards 8m19/12m46/5m12/7m17, wall-clock 12m56 vs 42m29 (#51 master) / 29m30 (#52); per-shard passes 26/25/25/25 = 101; titled verified. Merge once the docs-push CI is green. Shard 2 is the critical path (m04.spec.ts alone takes 8.3m).
