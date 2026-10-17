@@ -43,16 +43,14 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M08b water rendering | review 1 PASS; owner approved the look on a real GPU (2026-10-17); paperwork fix prompt (progress verified + PR title) given for Codex | Codex (full model), claude/m08b | session_01TT5HXsajbjVjMegRNHFMdQ | #50 | Contains master (M09b + M10a merged in). The owner judges the look; the water may read too grey, so a bluer tweak can join the fix round. Owner-approved m02c pause lines are in. |
-| M17a serialization | review 2 PASS (2026-10-17); ready for owner merge | agy, agy/m17a 7cf86c5 (CI green) | session_01DLa6aEZcGeoci97ppP3gPU | #49 | Round 1 fixes (all present in 7cf86c5 on my check): save grass/foliage tints; save player health/hunger/saturation/air/flying/dimension; scheduled ticks; weather timers; reject bad indices and trailing bytes; world bounds checks; compaction/refCount/edit tests; real generated-column size. After the push: send round 2 to the same reviewer (I can send it). |
 
-Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10b/M10c need M09c, M08c after M08b merges (ice from M12c already exists), M17b needs M15b (SPEC order) or an owner SPEC change.
+Ready next: M09c (prompt given for Codex), M08c (prompt given for agy). M10b/M10c need M09c. M17b needs M15b (SPEC order) or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -80,6 +78,7 @@ Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: #50 merged (master 4fd462d). Only M08c and M09c are ready (everything else chains off M09c). Gave prompts: Codex -> M09c (claude/m09c; armorPoints in data/items/armor.json; Player xpLevel/xpProgress + debug setter; creative shows hotbar+crosshair only; F3 data-biome; M04/M05 budgets unchanged). agy -> M08c (agy/m08c; stained-glass.json with 8 colours, append-only state IDs, drop nothing; settings.leaves fancy/fast + src/debug/api/leaves.ts; waving off in fast, existing frame tests must pass unchanged). Not started until the owner says so.
 - 2026-10-17: Owner merged #49 (M17a). #50 verify green on 90c4b1c; told owner to merge without Update branch (no shared files).
 - 2026-10-17: Codex pushed M08b paperwork fix 90c4b1c (title verified; progress cites CI run #204); verify running. #49 and #50 share no files, and a trial merge is clean. Told owner: merge #49 now, #50 when verify is green.
 - 2026-10-17: Owner played M08b on a real GPU: water look approved (darker with depth, shallows see-through), depth blit fine. Gave Codex a paperwork-only fix (progress/M08b.md verified using CI numbers, PR title verified). Then merge #50; #49 ready to merge too.
