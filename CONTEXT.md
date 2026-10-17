@@ -50,7 +50,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-Ready next: M09c (prompt given for Codex), M08c (prompt given for agy). M10b/M10c need M09c. M17b needs M15b (SPEC order) or an owner SPEC change.
+Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a power cut, so the prompt was re-given for a Claude cloud session on claude/m08c). M10b/M10c need M09c. M17b needs M15b (SPEC order) or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -78,6 +78,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given for agy). M10b/M10
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: Power cut, so agy is unavailable. M08c prompt adapted for a Claude cloud builder (claude/m08c, CLAUDE.md flow, full verify in background). Not confirmed started.
 - 2026-10-17: #50 merged (master 4fd462d). Only M08c and M09c are ready (everything else chains off M09c). Gave prompts: Codex -> M09c (claude/m09c; armorPoints in data/items/armor.json; Player xpLevel/xpProgress + debug setter; creative shows hotbar+crosshair only; F3 data-biome; M04/M05 budgets unchanged). agy -> M08c (agy/m08c; stained-glass.json with 8 colours, append-only state IDs, drop nothing; settings.leaves fancy/fast + src/debug/api/leaves.ts; waving off in fast, existing frame tests must pass unchanged). Not started until the owner says so.
 - 2026-10-17: Owner merged #49 (M17a). #50 verify green on 90c4b1c; told owner to merge without Update branch (no shared files).
 - 2026-10-17: Codex pushed M08b paperwork fix 90c4b1c (title verified; progress cites CI run #204); verify running. #49 and #50 share no files, and a trial merge is clean. Told owner: merge #49 now, #50 when verify is green.
