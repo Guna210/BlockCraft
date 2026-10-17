@@ -80,6 +80,7 @@ Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: Codex pushed M08b paperwork fix 90c4b1c (title verified; progress cites CI run #204); verify running. #49 and #50 share no files, and a trial merge is clean. Told owner: merge #49 now, #50 when verify is green.
 - 2026-10-17: Owner played M08b on a real GPU: water look approved (darker with depth, shallows see-through), depth blit fine. Gave Codex a paperwork-only fix (progress/M08b.md verified using CI numbers, PR title verified). Then merge #50; #49 ready to merge too.
 - 2026-10-17: M17a review 2 PASS on 7cf86c5 (CI green). Every round-1 finding fixed; truncation fuzz at every length rejected. Non-blocking items carried to the M17b prompt (see Decisions). Recommended the owner merge #49.
 - 2026-10-17: M17a fix 1 (7cf86c5, CI green) checked: tints in 1807-byte header, player stats, tick save/load, weather meta, index/trailing/bounds checks, compaction tests, real 1165 B column. Round 2 sent to session_01DLa6aEZcGeoci97ppP3gPU.
