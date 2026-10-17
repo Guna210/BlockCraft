@@ -96,6 +96,7 @@ function main() {
     input,
     () => worldManager.playerController,
     icons,
+    debug,
     (): DebugOverlaySnapshot | null => {
       const world = worldManager.world;
       const controller = worldManager.playerController;

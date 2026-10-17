@@ -467,6 +467,7 @@ export class Hud {
     private readonly input: InputEngine,
     private readonly controller: () => PlayerController | null,
     private readonly iconSource: () => IconSheet,
+    private readonly debugEnabled: boolean,
     private readonly getDebugSnapshot: () => DebugOverlaySnapshot | null,
     private readonly isSubmerged: () => boolean,
     private readonly screenOpen: () => boolean,
@@ -543,7 +544,7 @@ export class Hud {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'F3') {
       event.preventDefault();
-      if (!event.repeat && !this.input.captured) {
+      if (!event.repeat && this.debugEnabled && !this.input.captured) {
         this.debugOpen = !this.debugOpen;
         this.lastDebugUpdate = -Infinity;
         if (this.debugOpen && this.controller()?.player) {

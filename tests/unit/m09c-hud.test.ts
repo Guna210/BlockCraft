@@ -45,30 +45,38 @@ it('exposes recent frame CPU samples as a bounded ring buffer', () => {
   expect(stats.recentFrameTimes()).toEqual([]);
 });
 
-it('toggles F3 without a debug-mode gate and prevents its browser default', () => {
-  const hud = new Hud(
-    { captured: false } as never,
-    () => null,
-    () => null as never,
-    () => null,
-    () => false,
-    () => false,
-  );
+it('only toggles F3 in debug mode and prevents its browser default', () => {
+  const createHud = (debugEnabled: boolean) =>
+    new Hud(
+      { captured: false } as never,
+      () => null,
+      () => null as never,
+      debugEnabled,
+      () => null,
+      () => false,
+      () => false,
+    );
   const event = {
     code: 'F3',
     repeat: false,
     preventDefault: vi.fn(),
   } as unknown as KeyboardEvent;
-  const internals = hud as unknown as {
-    onKeyDown(event: KeyboardEvent): void;
-    debugOpen: boolean;
-  };
+  const internals = (hud: Hud) =>
+    hud as unknown as {
+      onKeyDown(event: KeyboardEvent): void;
+      debugOpen: boolean;
+    };
 
-  internals.onKeyDown(event);
-  expect(internals.debugOpen).toBe(true);
+  const normalHud = internals(createHud(false));
+  normalHud.onKeyDown(event);
+  expect(normalHud.debugOpen).toBe(false);
   expect(event.preventDefault).toHaveBeenCalledOnce();
-  internals.onKeyDown(event);
-  expect(internals.debugOpen).toBe(false);
+
+  const debugHud = internals(createHud(true));
+  debugHud.onKeyDown(event);
+  expect(debugHud.debugOpen).toBe(true);
+  debugHud.onKeyDown(event);
+  expect(debugHud.debugOpen).toBe(false);
 });
 
 it('adds XP fields to a new player at their zero defaults and snapshot', () => {
