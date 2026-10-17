@@ -43,14 +43,14 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a power cut, so the prompt was re-given for a Claude cloud session on claude/m08c). M10b/M10c need M09c. M17b needs M15b (SPEC order) or an owner SPEC change.
+Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both append to block-state-ids.json; the second to merge renumbers after master. Claude free: offered the stairs/fences/doors/trapdoors task (owner-requested or SPEC edit). M17b needs M15b or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -73,12 +73,14 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
 - M17b prompt (from M17a review 2 non-blocking): make weather-timer meta fields (manualOverride, strikeCounter, lastTick, elapsed) required on read and write (no ?? defaults; v1 never shipped); BlockTicks.addTicks must rebase due by (current clock - saved column time) or M17b documents a single world clock; actually call LightEngine recompute on load (progress/M17a claims it, persist/ doesn't do it); World.setColumn is the restore hook (only tests call it today).
 - M13c prompt: call PathSearch.dispose() on abandoned searches; adapter.invalidate() or a chunk-load hook (M13b review).
 - Weather migrated onto ticks.ts random ticks: later follow-up (M12c kept its own tick).
+- Armor values are duplicated: M10a ARMOR_DEFENSE in tools.ts and M09c armorPoints in data/items/armor.json (values match today). M11a should use one source.
 - Leftovers:
   - M12c: precipitation stat vs shader mismatch on mountains; lightning buffer re-allocated per frame during a strike; rain factor formula copied 3×; fire doesn't spread or burn out; snow lands on leaves and glass.
   - M08a: no test forces every registry state into data/block-state-ids.json; BlockTicks.removeColumn is O(n).
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: #53 merged. Prompts given: Codex M10b (workbench/chest blocks, 2x2 + 3x3 grids, recipe book, chest + double chest block entities, UI-only craft e2e); agy M10c (kiln with facing/lit states, light 13, block entity, xp.ts addXp, kiln UI, tool damage on stacks + M17a serializer extension, harvest level, durability bar). Not started until the owner says.
 - 2026-10-17: INFRA-ci PR #53 paperwork done (007c45b): shards 8m19/12m46/5m12/7m17, wall-clock 12m56 vs 42m29 (#51 master) / 29m30 (#52); per-shard passes 26/25/25/25 = 101; titled verified. Merge once the docs-push CI is green. Shard 2 is the critical path (m04.spec.ts alone takes 8.3m).
 - 2026-10-17: M09c #51 merged (355d136). INFRA-ci PR CI green: shards 8/12/5/7 min (~12 min wall-clock vs 25-40); the aggregate verify requires needs.shard.result == success; harness label applied. I read the code. The builder is to fill in the timings, mark it verified and retitle; then the owner merges (no separate reviewer, owner's choice).
 - 2026-10-17: INFRA-ci gate (session_01Djxz1qonGn1MJ8hX96nP3R): 4 files (verify.yml, verify.mjs, decisions, progress); local unit 748 + e2e 101 all passed; shard lists 26+25+25+25=101; matrix jobs named 'verify (shard n/4)' plus an aggregate 'verify'. Advised approve; the owner adds harness-change; retitle verified after CI timings are recorded.
