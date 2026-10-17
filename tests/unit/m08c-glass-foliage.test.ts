@@ -12,12 +12,7 @@ import { textureGenerators, texturePalettes } from '../../src/render/textures';
 import { STAINED_GLASS_COLORS } from '../../src/render/textures/stained-glass';
 import { FluidAnimationClock } from '../../src/render/fluid-animation';
 import { TextureAtlas } from '../../src/render/atlas';
-import {
-  atlasTileIndex,
-  buildLeafFills,
-  buildSwayMasks,
-  packedMaskHas,
-} from '../../src/render/foliage';
+import { atlasTileIndex, buildSwayMasks, packedMaskHas } from '../../src/render/foliage';
 import type { MeshBucketData } from '../../src/mesh/greedy';
 import type { TextureData } from '../../src/render/textures/noise';
 
@@ -298,27 +293,5 @@ describe('M08c foliage uniforms', () => {
   it('keeps the sway masks within 64 vertex uniform vectors', () => {
     const { leaf, plant } = buildSwayMasks(registry, atlas);
     expect((leaf.length + plant.length) / 4).toBe(64);
-  });
-
-  it("fast leaf fill is each leaf texture's darkest body colour, not near-black", () => {
-    const fills = buildLeafFills(registry, atlas);
-    expect(fills.count).toBeGreaterThanOrEqual(5);
-    const birch = atlasTileIndex(
-      atlas,
-      registry.getBlockDefinition('birch_leaves')!.textures!.side!,
-    );
-    const at = fills.tiles.indexOf(birch);
-    expect(at).toBeGreaterThanOrEqual(0);
-    // Birch leaves: #3f7a2c is the body colour; #24481a is a rare accent.
-    expect(fills.colors[at * 3]! * 255).toBeCloseTo(0x3f, 0);
-    expect(fills.colors[at * 3 + 1]! * 255).toBeCloseTo(0x7a, 0);
-    expect(fills.colors[at * 3 + 2]! * 255).toBeCloseTo(0x2c, 0);
-    for (let i = 0; i < fills.count; i++) {
-      const lum =
-        0.2126 * fills.colors[i * 3]! +
-        0.7152 * fills.colors[i * 3 + 1]! +
-        0.0722 * fills.colors[i * 3 + 2]!;
-      expect(lum).toBeGreaterThan(0.1);
-    }
   });
 });
