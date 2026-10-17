@@ -63,6 +63,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - .save file: cheap once M17a/M17b exist (format + Blob download + file picker).
   - SPEC wording offered, not yet written (the owner hasn't asked).
 - Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
+- Performance: the owner's Ryzen 7 5700U (Vega iGPU, the SPEC §1.2 target class) struggles, with the GPU maxed and the tab at ~1 GB. Culling and batching are M22a/M22b (end of the plan); there is only column-level frustum culling today. Suggested: get F3 numbers at RD8 after M09c merges, then the owner may edit SPEC to pull M22a's cave and section culling earlier (e.g. after M10).
 - CI retries 2 can hide flaky tests; decide later.
 - npm ci reports 1 high-severity vulnerability; not investigated.
 
