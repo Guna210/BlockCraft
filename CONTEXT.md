@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: M09c review 1 (session_01WTzFdgDYTcgc2XBz6SSkhu) PASS on 0c3d387, merges clean onto master c9d4acf. Underwater: bubbles use the same submerged flag as the fog (no bug). Fix prompt given for Codex: progress/title verified (oranges described), F3 graph history ≥ width + visible scale + e2e check, F3 works without ?debug=1 (player-facing per SPEC), name the ART item-icon rule in the decision, remove the dead ORANGE_BLUSH entry.
 - 2026-10-17: #52 (M08c) merged. M09c: the owner swapped the carrots for oranges (head 0c3d387, CI green; I checked the icons: round, outlined, half and empty states fine). Reviewer prompt given.
 - 2026-10-17: #52 CI green on 0424f18; told the owner to merge. A trial merge of m08c with m09c is clean.
 - 2026-10-17: M08c revert pushed (0424f18): fast-leaf screenshot byte-identical to 8f0d70f; net change vs the reviewed head is only the sway-mask packing + its test + notes. Merge #52 once CI is green.
