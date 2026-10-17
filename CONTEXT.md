@@ -49,8 +49,8 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M08b water rendering | PR open, CI green on 40581bd; review 1 prompt given to the owner (reviewer not started yet) | Codex (full model), claude/m08b | — | #50 | Contains master (M09b + M10a merged in). The owner judges the look; the water may read too grey, so a bluer tweak can join the fix round. Owner-approved m02c pause lines are in. |
-| M17a serialization | fixing 1 (agy has the fix prompt) | agy, agy/m17a b51b116 | session_01DLa6aEZcGeoci97ppP3gPU | #49 | Round 1 fixes: save grass/foliage tints; save player health/hunger/saturation/air/flying/dimension; scheduled ticks; weather timers; reject bad indices and trailing bytes; world bounds checks; compaction/refCount/edit tests; real generated-column size. After the push: send round 2 to the same reviewer (I can send it). |
+| M08b water rendering | review 1 PASS; owner to check look + real GPU, then paperwork fix (progress + title) | Codex (full model), claude/m08b | session_01TT5HXsajbjVjMegRNHFMdQ | #50 | Contains master (M09b + M10a merged in). The owner judges the look; the water may read too grey, so a bluer tweak can join the fix round. Owner-approved m02c pause lines are in. |
+| M17a serialization | review 2 sent 2026-10-17 | agy, agy/m17a 7cf86c5 (CI green) | session_01DLa6aEZcGeoci97ppP3gPU | #49 | Round 1 fixes (all present in 7cf86c5 on my check): save grass/foliage tints; save player health/hunger/saturation/air/flying/dimension; scheduled ticks; weather timers; reject bad indices and trailing bytes; world bounds checks; compaction/refCount/edit tests; real generated-column size. After the push: send round 2 to the same reviewer (I can send it). |
 
 Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10b/M10c need M09c, M08c after M08b merges (ice from M12c already exists), M17b needs M15b (SPEC order) or an owner SPEC change.
 
@@ -79,6 +79,8 @@ Ready next (deps merged): M09c (HUD and hotbar; visual → Claude or Codex), M10
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: M17a fix 1 (7cf86c5, CI green) checked: tints in 1807-byte header, player stats, tick save/load, weather meta, index/trailing/bounds checks, compaction tests, real 1165 B column. Round 2 sent to session_01DLa6aEZcGeoci97ppP3gPU.
+- 2026-10-17: M08b review 1 (session_01TT5HXsajbjVjMegRNHFMdQ) PASS, no blocking. Non-blocking: water subdued/no visible sky tint, faint waterfall, progress + PR title still say incomplete, depth blit from antialiased default framebuffer untested on a real GPU. Told owner: check look + real GPU, then a paperwork fix (or look fix as round 2) before merge.
 - 2026-10-16: M08b PR #50 (claude/m08b 40581bd) contains master (M09b and M10a merged in); CI green (verify, harness guard, Cloudflare). Not yet reviewed; reviewer prompt given.
 - 2026-10-16: M17a review round 1 (session_01DLa6aEZcGeoci97ppP3gPU) on b51b116 (CI green): CHANGES NEEDED.
   - grassTints/foliageTints not saved (blended, not derivable from biome indices), so reloaded columns would turn plains-green.
