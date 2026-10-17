@@ -96,15 +96,15 @@ describe('M08c registry, items, loot and recipes', () => {
     expect(new Set(results)).toEqual(new Set(STAINED));
   });
 
-  it('appends the stained glass states to the end of the saved state IDs without reordering', () => {
-    const entries = Object.entries(savedStateIds as Record<string, number>);
-    const newest = entries.sort((a, b) => b[1] - a[1]).slice(0, 8);
-    expect(newest.map(([id]) => id).sort()).toEqual([...STAINED].sort());
-    expect((savedStateIds as Record<string, number>)['air']).toBe(0);
-    expect((savedStateIds as Record<string, number>)['glass']).toBe(29);
-    expect((savedStateIds as Record<string, number>)['packed_ice']).toBe(51);
-    for (const id of STAINED)
-      expect(registry.getStateId(id)).toBe((savedStateIds as Record<string, number>)[id]);
+  it('preserves the stained glass state IDs when later tasks append newer states', () => {
+    const table = savedStateIds as Record<string, number>;
+    expect(STAINED.map((id) => table[id]!).sort((a, b) => a - b)).toEqual([
+      137, 138, 139, 140, 141, 142, 143, 144,
+    ]);
+    expect(table['air']).toBe(0);
+    expect(table['glass']).toBe(29);
+    expect(table['packed_ice']).toBe(51);
+    for (const id of STAINED) expect(registry.getStateId(id)).toBe(table[id]);
   });
 
   it('keeps glass, ice and packed ice translucent and lets light through all but packed ice', () => {

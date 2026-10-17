@@ -11,6 +11,8 @@ import { BreakParticles } from '../render/particles';
 import { canHarvest } from '../gameplay/mining';
 import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
+import type { RayHit } from '../world/raycast';
+import { spillChestContents } from '../gameplay/chests';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -19,6 +21,7 @@ export class PlayerController {
   public itemEntities: ItemEntityManager | null = null;
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
+  public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
   private perspectiveDown = false;
@@ -78,6 +81,11 @@ export class PlayerController {
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
+    this.interaction.onUse = (blockId, target) => this.onUseBlock(blockId, target);
+    this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
+      if (world.getBlock(x, y, z).id !== 'chest') return true;
+      return !!this.itemEntities && spillChestContents(world, this.itemEntities, x, y, z);
+    };
     this.interaction.onBreak = (state, x, y, z, tool) => {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;

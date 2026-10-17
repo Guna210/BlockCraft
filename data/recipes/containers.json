@@ -1,0 +1,14 @@
+{
+  "workbench": {
+    "type": "shaped",
+    "pattern": ["PP", "PP"],
+    "key": { "P": "#any_planks" },
+    "result": { "id": "workbench", "count": 1 }
+  },
+  "chest": {
+    "type": "shaped",
+    "pattern": ["PPP", "P P", "PPP"],
+    "key": { "P": "#any_planks" },
+    "result": { "id": "chest", "count": 1 }
+  }
+}

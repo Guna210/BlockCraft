@@ -1,42 +1,107 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
 import { dropInventoryStack } from '../gameplay/inventory-drop';
-import type { InventoryTarget } from '../gameplay/inventory';
+import type { InventoryTarget, ItemStack } from '../gameplay/inventory';
 import type { Player } from '../entity/player';
 import type { IconSheet } from './icons';
 import {
   computeLayout,
   contains,
-  slotAt,
-  SLOT_COUNT,
+  PANEL_H,
+  PANEL_W,
   type InventoryLayout,
 } from './inventory-layout';
 import { drawInventoryScreen, tooltipFor } from './inventory-screen';
-import type { Rect } from './ui-kit';
+import {
+  BOOK_FILTER,
+  BOOK_NEXT,
+  BOOK_PANEL_W,
+  BOOK_PREV,
+  BOOK_ROWS,
+  BOOK_SEARCH,
+  CHEST_PANEL_H,
+  CHEST_PANEL_W,
+  CRAFT_BOOK_BUTTON,
+  CRAFT_FILTER_BUTTON,
+  CRAFT_OUTPUT,
+  CRAFT_PANEL_H,
+  CRAFT_PANEL_W,
+  RECIPE_BASE_CRAFTING,
+  RECIPE_BASE_INVENTORY,
+  bookRowRects,
+  craftGridRects,
+  drawChestScreen,
+  drawCraftPanel,
+  drawRecipeBookPanel,
+  type BookRow,
+} from './crafting-screen';
+import { UI, type Rect } from './ui-kit';
+import { displayName } from './pixel-font';
+import { crafting } from '../gameplay/crafting';
+import {
+  canFillRecipe,
+  fillRecipe,
+  takeCraftingOutput,
+  type CraftingSlot,
+} from '../gameplay/crafting-session';
+import { items } from '../gameplay/items';
+import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 
-export type ScreenName = 'inventory';
+export type ScreenName = 'inventory' | 'crafting' | 'chest';
 export type ClickButton = 'left' | 'right';
 
 export interface ScreenSnapshot {
   name: ScreenName | null;
   /** Canvas pixels per UI pixel (an integer). */
   scale: number;
-  /** Rectangles in CSS pixels; `slots[i]` is the 18×18 UI-pixel cell of inventory slot i. */
+  /** The full visible screen rectangle in CSS pixels. */
   panel: Rect | null;
+  /** Clickable slot rectangles indexed by uiClickSlot's slot argument. */
   slots: Rect[];
   closeButton: Rect | null;
   hoverSlot: number | null;
   tooltip: string | null;
+  craftingSlots: Rect[];
+  outputSlot: Rect | null;
+  recipeSlots: Rect[];
+  recipeIds: Array<string | null>;
+  recipeBookButton: Rect | null;
+  craftableFilterButton: Rect | null;
+  recipeFilterButton: Rect | null;
+  searchField: Rect | null;
+  searchText: string;
+  craftableOnly: boolean;
+  doubleChest: boolean;
 }
 
 const DOUBLE_CLICK_MS = 400;
 const THROW_SPEED = 4;
 const THROW_PICKUP_DELAY_TICKS = 40;
+const INVENTORY_CRAFT_BASE = 41;
+const INVENTORY_OUTPUT_SLOT = 45;
+const CRAFTING_OUTPUT_SLOT = 9;
+const CHEST_RADIUS = 4.5;
+const CRAFT_PANEL_X = PANEL_W + 6;
+const BOOK_PANEL_X = CRAFT_PANEL_X + CRAFT_PANEL_W + 6;
 
-/** The UI overlay: a 2D canvas above the game canvas that owns screens and their input. */
+interface ClickTarget {
+  slot: number;
+  rect: Rect;
+}
+
+interface ScreenControls {
+  close: Rect | null;
+  book: Rect | null;
+  craftFilter: Rect | null;
+  search: Rect | null;
+  bookFilter: Rect | null;
+  previous: Rect | null;
+  next: Rect | null;
+}
+
+/** The overlay canvas owns inventory, crafting, recipe-book and chest input. */
 export class UiManager {
   screen: ScreenName | null = null;
-  // The 2D canvases are created on first open, so startup does not pay for them.
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
   private sheet!: HTMLCanvasElement;
@@ -46,9 +111,41 @@ export class UiManager {
   private mouse = { x: 0, y: 0 };
   private hoverSlot: number | null = null;
   private hoverClose = false;
+  private hoverBook = false;
+  private hoverCraftFilter = false;
+  private hoverBookFilter = false;
+  private hoverSearch = false;
+  private hoverPrevious = false;
+  private hoverNext = false;
+  private hoverRecipeRow: number | null = null;
   private drag: { button: ClickButton; slots: number[] } | null = null;
   private lastPick = { slot: -1, time: 0 };
   private wasLocked = false;
+  private grid: CraftingSlot[] = [];
+  private dimension: 2 | 3 = 2;
+  private chestStorage: ChestStorage | null = null;
+  private bookOpen = false;
+  private searchFocused = false;
+  private searchText = '';
+  private craftableOnly = false;
+  private bookPage = 0;
+  private bookRows: BookRow[] = [];
+  private screenSlots: Rect[] = [];
+  private clickTargets: ClickTarget[] = [];
+  private craftingSlotRects: Rect[] = [];
+  private outputRect: Rect | null = null;
+  private recipeSlotRects: Rect[] = [];
+  private panelRect: Rect | null = null;
+  private closeRect: Rect | null = null;
+  private controls: ScreenControls = {
+    close: null,
+    book: null,
+    craftFilter: null,
+    search: null,
+    bookFilter: null,
+    previous: null,
+    next: null,
+  };
 
   constructor(
     private readonly input: InputEngine,
@@ -85,7 +182,8 @@ export class UiManager {
     this.canvas.id = 'ui-canvas';
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     this.canvas.addEventListener('mousemove', this.onMouseMove);
-    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     document.body.appendChild(this.canvas);
   }
 
@@ -100,11 +198,40 @@ export class UiManager {
   }
 
   open(name: ScreenName): void {
-    if (name !== 'inventory') throw new Error(`Unknown screen: ${name}`);
+    if (name === 'chest') {
+      const target = this.findNearbyChest();
+      if (!target) throw new Error('No chest is within reach');
+      this.openChest(target[0], target[1], target[2]);
+      return;
+    }
+    this.startOpen(name);
+  }
+
+  openChest(x: number, y: number, z: number): void {
+    const world = this.requirePlayer().collision.world;
+    const storage = chestStorageAt(world, x, y, z);
+    if (!storage) throw new Error('Chest block entity is unavailable');
+    if (this.screen) this.close();
+    if (this.screen) return;
+    this.chestStorage = storage;
+    this.startOpen('chest');
+  }
+
+  private startOpen(name: Exclude<ScreenName, 'chest'> | 'chest'): void {
     this.requirePlayer();
+    if (this.screen) this.close();
     if (this.screen) return;
     this.ensureCanvases();
     this.screen = name;
+    this.dimension = name === 'crafting' ? 3 : 2;
+    this.grid =
+      name === 'chest' ? [] : Array.from({ length: this.dimension * this.dimension }, () => null);
+    if (name !== 'chest') this.chestStorage = null;
+    this.bookOpen = false;
+    this.searchFocused = false;
+    this.searchText = '';
+    this.craftableOnly = false;
+    this.bookPage = 0;
     this.wasLocked = this.input.pointerLocked;
     this.input.setCapture(true);
     if (this.wasLocked) document.exitPointerLock();
@@ -116,20 +243,27 @@ export class UiManager {
     this.render();
   }
 
-  /** Returns the cursor stack to the inventory, or throws it into the world when it does not fit. */
+  /** Returns cursor and crafting-grid items before closing; a full drop pool leaves the screen open. */
   close(): void {
     if (!this.screen) return;
     const player = this.player;
     if (player) {
+      if (this.grid.length && !this.returnCraftGrid()) {
+        this.render();
+        return;
+      }
       player.inventory.returnCursor();
       if (player.inventory.cursor) this.throwStack('cursor', true);
     }
     this.screen = null;
+    this.grid = [];
+    this.chestStorage = null;
+    this.bookOpen = false;
+    this.searchFocused = false;
     this.drag = null;
     this.canvas.style.display = 'none';
     this.input.setCapture(false);
     if (this.wasLocked) {
-      // Keyboard activation allows re-locking; a refusal leaves the player to click the game.
       try {
         const lock = this.input.relock();
         if (lock) lock.catch(() => {});
@@ -139,21 +273,220 @@ export class UiManager {
     }
   }
 
+  private returnCraftGrid(): boolean {
+    const player = this.player;
+    const controller = this.controller();
+    if (!player) return true;
+    for (let i = 0; i < this.grid.length; i++) {
+      const stack = this.grid[i];
+      if (!stack) continue;
+      const move = Math.min(stack.count, player.inventory.capacity(stack.id));
+      if (move > 0) {
+        player.inventory.insert(stack.id, move);
+        stack.count -= move;
+      }
+      if (stack.count > 0) {
+        if (!controller?.itemEntities) return false;
+        const [x, y, z] = player.pos;
+        if (!controller.itemEntities.spawn(stack.id, stack.count, x, y + 0.5, z)) return false;
+      }
+      this.grid[i] = null;
+    }
+    return true;
+  }
+
+  private findNearbyChest(): [number, number, number] | null {
+    const player = this.requirePlayer();
+    const world = player.collision.world;
+    const px = player.pos[0];
+    const py = player.pos[1] + player.eye;
+    const pz = player.pos[2];
+    let nearest: [number, number, number] | null = null;
+    let nearestDistance = CHEST_RADIUS * CHEST_RADIUS;
+    for (let x = Math.floor(px) - 5; x <= Math.floor(px) + 5; x++)
+      for (let y = Math.floor(py) - 4; y <= Math.floor(py) + 2; y++)
+        for (let z = Math.floor(pz) - 5; z <= Math.floor(pz) + 5; z++) {
+          if (world.getBlock(x, y, z).id !== 'chest') continue;
+          const distance = (x + 0.5 - px) ** 2 + (y + 0.5 - py) ** 2 + (z + 0.5 - pz) ** 2;
+          if (distance <= nearestDistance) {
+            nearest = [x, y, z];
+            nearestDistance = distance;
+          }
+        }
+    return nearest;
+  }
+
   /** The same operation a mouse click performs; shift-click quick-moves. */
   clickSlot(slot: number, button: ClickButton, shift = false): void {
-    if (!Number.isInteger(slot) || slot < 0 || slot >= SLOT_COUNT)
-      throw new Error('Invalid inventory slot');
+    if (!Number.isInteger(slot) || slot < 0 || !this.screen) throw new Error('Invalid screen slot');
+    const player = this.requirePlayer();
+    const inventory = player.inventory;
+
+    if (this.screen === 'inventory') {
+      if (slot < 41) this.clickInventorySlot(slot, button, shift);
+      else if (slot < INVENTORY_OUTPUT_SLOT)
+        this.clickGridSlot(slot - INVENTORY_CRAFT_BASE, button, shift);
+      else if (slot === INVENTORY_OUTPUT_SLOT) takeCraftingOutput(this.grid, inventory, shift);
+      else this.selectRecipe(slot - RECIPE_BASE_INVENTORY);
+    } else if (this.screen === 'crafting') {
+      if (slot < CRAFTING_OUTPUT_SLOT) this.clickGridSlot(slot, button, shift);
+      else if (slot === CRAFTING_OUTPUT_SLOT) takeCraftingOutput(this.grid, inventory, shift);
+      else if (slot < RECIPE_BASE_CRAFTING) this.clickInventorySlot(slot - 10, button, shift);
+      else this.selectRecipe(slot - RECIPE_BASE_CRAFTING);
+    } else if (this.chestStorage) {
+      const chestCount = this.chestSlotCount;
+      if (slot < chestCount) this.clickChestSlot(slot, button, shift);
+      else if (slot < chestCount + 41) this.clickInventorySlot(slot - chestCount, button, shift);
+    }
+    this.render();
+  }
+
+  private clickInventorySlot(slot: number, button: ClickButton, shift: boolean): void {
     const inventory = this.requirePlayer().inventory;
-    if (shift) inventory.shiftClick(slot);
-    else if (button === 'left') inventory.leftClick(slot);
+    if (this.screen === 'chest' && shift) {
+      this.quickMoveInventoryToChest(slot);
+      return;
+    }
+    if (this.screen !== 'chest' && shift && slot >= 0 && slot < 36) {
+      inventory.shiftClick(slot);
+      return;
+    }
+    if (shift) {
+      inventory.shiftClick(slot);
+      return;
+    }
+    if (button === 'left') inventory.leftClick(slot);
     else inventory.rightClick(slot);
   }
 
-  /** Throws a stack from the player's eye along the view direction; a full pool keeps the stack. */
-  throwStack(target: InventoryTarget, whole: boolean): void {
+  private clickGridSlot(slot: number, button: ClickButton, shift: boolean): void {
+    if (slot < 0 || slot >= this.grid.length) return;
+    if (shift) {
+      const stack = this.grid[slot];
+      if (!stack) return;
+      const inventory = this.requirePlayer().inventory;
+      const moved = Math.min(stack.count, inventory.capacity(stack.id));
+      if (moved) inventory.insert(stack.id, moved);
+      stack.count -= moved;
+      if (!stack.count) this.grid[slot] = null;
+      return;
+    }
+    this.clickExternalSlot(
+      () => this.grid[slot] ?? null,
+      (stack) => (this.grid[slot] = stack),
+      button,
+    );
+  }
+
+  private clickChestSlot(slot: number, button: ClickButton, shift: boolean): void {
+    if (shift) {
+      this.quickMoveChestToInventory(slot);
+      return;
+    }
+    this.clickExternalSlot(
+      () => this.getChestSlot(slot),
+      (stack) => this.setChestSlot(slot, stack),
+      button,
+    );
+  }
+
+  private clickExternalSlot(
+    read: () => { id: string; count: number } | null,
+    write: (stack: { id: string; count: number } | null) => void,
+    button: ClickButton,
+  ): void {
+    const inventory = this.requirePlayer().inventory;
+    const slotStack = read();
+    const cursor = inventory.cursor;
+    if (button === 'left') {
+      if (!cursor) {
+        inventory.cursor = slotStack ? { id: slotStack.id, count: slotStack.count } : null;
+        write(null);
+      } else if (
+        slotStack?.id === cursor.id &&
+        items.get(cursor.id).maxStack > 1 &&
+        slotStack.count < items.get(cursor.id).maxStack
+      ) {
+        const moved = Math.min(cursor.count, items.get(cursor.id).maxStack - slotStack.count);
+        slotStack.count += moved;
+        cursor.count -= moved;
+        if (!cursor.count) inventory.cursor = null;
+      } else {
+        write(cursor);
+        inventory.cursor = slotStack ? { id: slotStack.id, count: slotStack.count } : null;
+      }
+    } else if (!cursor && slotStack) {
+      const half = Math.ceil(slotStack.count / 2);
+      inventory.cursor = { id: slotStack.id, count: half };
+      slotStack.count -= half;
+      write(slotStack.count ? slotStack : null);
+    } else if (
+      cursor &&
+      (!slotStack ||
+        (slotStack.id === cursor.id && slotStack.count < items.get(cursor.id).maxStack))
+    ) {
+      if (slotStack) slotStack.count++;
+      else write({ id: cursor.id, count: 1 });
+      cursor.count--;
+      if (!cursor.count) inventory.cursor = null;
+    }
+    inventory.assertInvariant();
+  }
+
+  private get chestSlotCount(): number {
+    return (this.chestStorage?.halves.length ?? 0) * 27;
+  }
+
+  private getChestSlot(slot: number): ChestSlot | null {
+    const halves = this.chestStorage?.halves;
+    if (!halves || slot < 0 || slot >= halves.length * 27) return null;
+    return halves[Math.floor(slot / 27)]!.slots[slot % 27] ?? null;
+  }
+
+  private setChestSlot(slot: number, stack: ChestSlot | null): void {
+    const halves = this.chestStorage?.halves;
+    if (!halves || slot < 0 || slot >= halves.length * 27) return;
+    halves[Math.floor(slot / 27)]!.slots[slot % 27] = stack ? { ...stack } : null;
+  }
+
+  private quickMoveChestToInventory(slot: number): void {
+    const stack = this.getChestSlot(slot);
+    if (!stack) return;
+    const inventory = this.requirePlayer().inventory;
+    const moved = Math.min(stack.count, inventory.capacity(stack.id));
+    if (!moved || !inventory.insert(stack.id, moved)) return;
+    stack.count -= moved;
+    this.setChestSlot(slot, stack.count ? stack : null);
+  }
+
+  private quickMoveInventoryToChest(slot: number): void {
+    const inventory = this.requirePlayer().inventory;
+    const stack = inventory.slots[slot];
+    if (!stack || slot < 0 || slot >= 41) return;
+    let count = stack.count;
+    const max = items.get(stack.id).maxStack;
+    for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
+      const dest = this.getChestSlot(target);
+      if (!dest || dest.id !== stack.id) continue;
+      const moved = Math.min(count, max - dest.count);
+      dest.count += moved;
+      count -= moved;
+    }
+    for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
+      if (this.getChestSlot(target)) continue;
+      const moved = Math.min(count, max);
+      this.setChestSlot(target, { id: stack.id, count: moved });
+      count -= moved;
+    }
+    stack.count = count;
+    if (count === 0) inventory.slots[slot] = null;
+    inventory.assertInvariant();
+  }
+
+  private throwStack(target: InventoryTarget, whole: boolean): void {
     const player = this.player;
-    const items = this.controller()?.itemEntities;
-    if (!player || !items) return;
+    const itemEntities = this.controller()?.itemEntities;
+    if (!player || !itemEntities) return;
     const cos = Math.cos(player.pitch);
     const dir = [
       Math.cos(player.yaw) * cos,
@@ -163,7 +496,7 @@ export class UiManager {
     const eye = player.pos[1] + player.eye - 0.3;
     dropInventoryStack(
       player.inventory,
-      items,
+      itemEntities,
       [player.pos[0] + dir[0] * 0.3, eye + dir[1] * 0.3, player.pos[2] + dir[2] * 0.3],
       target,
       whole,
@@ -174,27 +507,110 @@ export class UiManager {
     );
   }
 
+  private selectRecipe(row: number): void {
+    const recipe = this.bookRows[this.bookPage * BOOK_ROWS + row];
+    if (!recipe) return;
+    const definition = crafting.recipes.get(recipe.recipeId);
+    if (!definition) return;
+    const filled = fillRecipe(
+      definition,
+      this.dimension,
+      this.grid,
+      this.requirePlayer().inventory.slots,
+    );
+    if (!filled) return;
+    const inventory = this.requirePlayer().inventory;
+    this.grid = filled.grid;
+    for (let slot = 0; slot < inventory.slots.length; slot++)
+      inventory.slots[slot] = filled.inventory[slot] ?? null;
+  }
+
+  private filteredRecipes(): BookRow[] {
+    const player = this.player;
+    if (!player) return [];
+    const query = this.searchText.trim().toLowerCase();
+    const rows: BookRow[] = [];
+    for (const recipe of crafting.recipes.values()) {
+      const resultName = displayName(recipe.result.id).toLowerCase();
+      if (query && !resultName.includes(query)) continue;
+      const craftable = canFillRecipe(recipe, this.dimension, this.grid, player.inventory.slots);
+      if (this.craftableOnly && !craftable) continue;
+      rows.push({ recipeId: recipe.id, resultId: recipe.result.id, craftable });
+    }
+    rows.sort(
+      (a, b) =>
+        displayName(a.resultId).localeCompare(displayName(b.resultId)) ||
+        a.recipeId.localeCompare(b.recipeId),
+    );
+    return rows;
+  }
+
+  private outputStack(): ItemStack | null {
+    const recipe = crafting.match(this.grid);
+    return recipe ? { slot: -1, id: recipe.result.id, count: recipe.result.count } : null;
+  }
+
   snapshot(): ScreenSnapshot {
-    const layout = this.screen ? this.layout : null;
-    const inv = this.player?.inventory;
-    const css = (r: Rect): Rect => ({
-      x: r.x / this.dpr,
-      y: r.y / this.dpr,
-      w: r.w / this.dpr,
-      h: r.h / this.dpr,
-    });
+    const css = (rect: Rect | null): Rect | null =>
+      rect
+        ? {
+            x: rect.x / this.dpr,
+            y: rect.y / this.dpr,
+            w: rect.w / this.dpr,
+            h: rect.h / this.dpr,
+          }
+        : null;
     return {
       name: this.screen,
-      scale: layout?.scale ?? 0,
-      panel: layout ? css(layout.panel) : null,
-      slots: layout ? layout.slots.map(css) : [],
-      closeButton: layout ? css(layout.closeButton) : null,
+      scale: this.layout?.scale ?? 0,
+      panel: css(this.panelRect),
+      slots: this.screenSlots.map((rect) => css(rect)!),
+      closeButton: css(this.closeRect),
       hoverSlot: this.hoverSlot,
-      tooltip: inv ? tooltipFor(inv, this.hoverSlot) : null,
+      tooltip: this.hoveredTooltip(),
+      craftingSlots: this.craftingSlotRects.map((rect) => css(rect)!),
+      outputSlot: css(this.outputRect),
+      recipeSlots: this.recipeSlotRects.map((rect) => css(rect)!),
+      recipeIds: Array.from(
+        { length: BOOK_ROWS },
+        (_, index) => this.bookRows[this.bookPage * BOOK_ROWS + index]?.recipeId ?? null,
+      ),
+      recipeBookButton: css(this.controls.book),
+      craftableFilterButton: css(this.controls.craftFilter),
+      recipeFilterButton: css(this.controls.bookFilter),
+      searchField: css(this.controls.search),
+      searchText: this.searchText,
+      craftableOnly: this.craftableOnly,
+      doubleChest: this.chestStorage?.double ?? false,
     };
   }
 
-  /** Redraws the open screen; called every frame while one is open. */
+  private hoveredTooltip(): string | null {
+    if (this.hoverSlot === null || !this.screen) return null;
+    if (this.screen === 'inventory') {
+      if (this.hoverSlot < 41) return tooltipFor(this.requirePlayer().inventory, this.hoverSlot);
+      if (this.hoverSlot < INVENTORY_OUTPUT_SLOT)
+        return (
+          this.grid[this.hoverSlot - INVENTORY_CRAFT_BASE]?.id.replace(/_/g, ' ').toUpperCase() ??
+          null
+        );
+      if (this.hoverSlot === INVENTORY_OUTPUT_SLOT)
+        return this.outputStack()?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+    } else if (this.screen === 'crafting') {
+      if (this.hoverSlot < CRAFTING_OUTPUT_SLOT)
+        return this.grid[this.hoverSlot]?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      if (this.hoverSlot === CRAFTING_OUTPUT_SLOT)
+        return this.outputStack()?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      if (this.hoverSlot < RECIPE_BASE_CRAFTING)
+        return tooltipFor(this.requirePlayer().inventory, this.hoverSlot - 10);
+    } else {
+      if (this.hoverSlot < this.chestSlotCount)
+        return this.getChestSlot(this.hoverSlot)?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      return tooltipFor(this.requirePlayer().inventory, this.hoverSlot - this.chestSlotCount);
+    }
+    return null;
+  }
+
   frame(): void {
     if (this.screen) this.render();
   }
@@ -202,13 +618,126 @@ export class UiManager {
   render(): void {
     const player = this.player;
     if (!this.screen || !player) return;
-    this.layout = computeLayout(this.canvas.width, this.canvas.height);
+    this.bookRows = this.bookOpen ? this.filteredRecipes() : [];
+    const pageCount = Math.max(1, Math.ceil(this.bookRows.length / BOOK_ROWS));
+    this.bookPage = Math.max(0, Math.min(this.bookPage, pageCount - 1));
+    const visibleRows = this.bookRows.slice(
+      this.bookPage * BOOK_ROWS,
+      (this.bookPage + 1) * BOOK_ROWS,
+    );
+    this.screenSlots = [];
+    this.clickTargets = [];
+    this.craftingSlotRects = [];
+    this.outputRect = null;
+    this.recipeSlotRects = [];
+    this.controls = {
+      close: null,
+      book: null,
+      craftFilter: null,
+      search: null,
+      bookFilter: null,
+      previous: null,
+      next: null,
+    };
+
+    if (this.screen === 'chest') {
+      this.renderChest(player);
+      return;
+    }
+
+    const base = computeLayout(this.canvas.width, this.canvas.height);
+    const scale = base.scale;
+    const bookWidth = this.bookOpen ? 6 + BOOK_PANEL_W : 0;
+    const totalWidth = PANEL_W + 6 + CRAFT_PANEL_W + bookWidth;
+    const originX = Math.floor((this.canvas.width - totalWidth * scale) / 2);
+    const shiftX = originX - base.originX;
+    this.layout = {
+      ...base,
+      originX,
+      panel: { ...base.panel, x: base.panel.x + shiftX },
+      slots: base.slots.map((rect) => ({ ...rect, x: rect.x + shiftX })),
+      closeButton: { ...base.closeButton, x: base.closeButton.x + shiftX },
+    };
+    this.panelRect = {
+      x: originX,
+      y: base.originY,
+      w: totalWidth * scale,
+      h: PANEL_H * scale,
+    };
+    this.closeRect = this.layout.closeButton;
+    this.controls.close = this.closeRect;
+    this.screenSlots = this.layout.slots.map((rect) => ({ ...rect }));
+    this.layout.slots.forEach((rect, slot) => this.clickTargets.push({ slot, rect }));
+
+    const craftX = CRAFT_PANEL_X;
+    const craftY = Math.floor((PANEL_H - CRAFT_PANEL_H) / 2);
+    const gridLocal = craftGridRects(this.dimension);
+    const gridBase = this.screen === 'inventory' ? INVENTORY_CRAFT_BASE : 0;
+    this.craftingSlotRects = gridLocal.map((rect, index) => {
+      const screenSlot = gridBase + index;
+      const pixel = this.toCanvasRect(rect, craftX, craftY, scale, originX, base.originY);
+      this.screenSlots[screenSlot] = pixel;
+      this.clickTargets.push({ slot: screenSlot, rect: pixel });
+      return pixel;
+    });
+    const outputId = this.screen === 'inventory' ? INVENTORY_OUTPUT_SLOT : CRAFTING_OUTPUT_SLOT;
+    this.outputRect = this.toCanvasRect(CRAFT_OUTPUT, craftX, craftY, scale, originX, base.originY);
+    this.screenSlots[outputId] = this.outputRect;
+    this.clickTargets.push({ slot: outputId, rect: this.outputRect });
+
+    if (this.screen === 'crafting') {
+      const firstInventorySlot = 10;
+      this.layout.slots.forEach((rect, slot) => {
+        const mapped = firstInventorySlot + slot;
+        this.screenSlots[mapped] = rect;
+        this.clickTargets.push({ slot: mapped, rect });
+      });
+    }
+
+    let bookRects: { search: Rect; filter: Rect; rows: Rect[]; prev: Rect; next: Rect } | null =
+      null;
+    if (this.bookOpen) {
+      const bookX = BOOK_PANEL_X;
+      bookRects = this.logicalBookRects(bookX, 0, scale, originX, base.originY);
+      const bookBase = this.screen === 'inventory' ? RECIPE_BASE_INVENTORY : RECIPE_BASE_CRAFTING;
+      for (let i = 0; i < BOOK_ROWS; i++) {
+        const rect = bookRects.rows[i]!;
+        const slot = bookBase + i;
+        this.recipeSlotRects.push(rect);
+        this.screenSlots[slot] = rect;
+        if (visibleRows[i]) this.clickTargets.push({ slot, rect });
+      }
+      this.controls.search = bookRects.search;
+      this.controls.bookFilter = bookRects.filter;
+      this.controls.previous = bookRects.prev;
+      this.controls.next = bookRects.next;
+    }
+    this.controls.book = this.toCanvasRect(
+      CRAFT_BOOK_BUTTON,
+      craftX,
+      craftY,
+      scale,
+      originX,
+      base.originY,
+    );
+    this.controls.craftFilter = this.toCanvasRect(
+      CRAFT_FILTER_BUTTON,
+      craftX,
+      craftY,
+      scale,
+      originX,
+      base.originY,
+    );
+
+    const output = this.outputStack();
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     drawInventoryScreen(
       this.ctx,
       {
         layout: this.layout,
         inventory: player.inventory,
-        hoverSlot: this.hoverSlot,
+        hoverSlot:
+          this.screen === 'inventory' ? this.hoverSlot : this.inventorySlot(this.hoverSlot),
         hoverClose: this.hoverClose,
         mouse: this.mouse,
         width: this.canvas.width,
@@ -217,6 +746,204 @@ export class UiManager {
       this.icons,
       this.sheet,
     );
+    this.ctx.save();
+    this.ctx.translate(originX, base.originY);
+    const craftResult = drawCraftPanel(
+      this.ctx,
+      {
+        x: craftX,
+        y: craftY,
+        scale,
+        dimension: this.dimension,
+        grid: this.grid,
+        output,
+        title: this.screen === 'inventory' ? 'CRAFT' : 'WORKBENCH',
+        hoverSlots: this.hoveredCraftSlots(),
+        hoverBook: this.hoverButton(this.controls.book),
+        hoverFilter: this.hoverButton(this.controls.craftFilter),
+      },
+      this.icons,
+      this.sheet,
+    );
+    this.controls.book = this.logicalRectToCanvas(craftResult.book, scale, originX, base.originY);
+    this.controls.craftFilter = this.logicalRectToCanvas(
+      craftResult.filter,
+      scale,
+      originX,
+      base.originY,
+    );
+    if (bookRects) {
+      const view = drawRecipeBookPanel(
+        this.ctx,
+        {
+          x: BOOK_PANEL_X,
+          y: 0,
+          scale,
+          searchText: this.searchText,
+          searchFocused: this.searchFocused,
+          craftableOnly: this.craftableOnly,
+          page: this.bookPage,
+          pageCount,
+          rows: visibleRows,
+          hoveredRow: this.hoverRecipeRow,
+          hoverSearch: this.hoverSearch,
+          hoverFilter: this.hoverBookFilter,
+          hoverPrev: this.hoverPrevious,
+          hoverNext: this.hoverNext,
+        },
+        this.icons,
+        this.sheet,
+      );
+      this.controls.search = this.logicalRectToCanvas(view.search, scale, originX, base.originY);
+      this.controls.bookFilter = this.logicalRectToCanvas(
+        view.filter,
+        scale,
+        originX,
+        base.originY,
+      );
+      this.controls.previous = this.logicalRectToCanvas(view.prev, scale, originX, base.originY);
+      this.controls.next = this.logicalRectToCanvas(view.next, scale, originX, base.originY);
+    }
+    this.ctx.restore();
+    this.setBookTargetsVisible(visibleRows.length);
+    this.closeRect = this.layout.closeButton;
+  }
+
+  private renderChest(player: Player): void {
+    const storage = this.chestStorage;
+    if (!storage) return;
+    const scale = Math.min(
+      Math.max(1, Math.floor(this.canvas.width / CHEST_PANEL_W)),
+      Math.max(1, Math.floor(this.canvas.height / CHEST_PANEL_H)),
+    );
+    const originX = Math.floor((this.canvas.width - CHEST_PANEL_W * scale) / 2);
+    const originY = Math.floor((this.canvas.height - CHEST_PANEL_H * scale) / 2);
+    const chestSlots = storage.halves.flatMap((half) => half.slots);
+    this.screenSlots = [];
+    this.clickTargets = [];
+    this.craftingSlotRects = [];
+    this.outputRect = null;
+    this.recipeSlotRects = [];
+    this.layout = {
+      ...computeLayout(this.canvas.width, this.canvas.height),
+      scale,
+      originX,
+      originY,
+    };
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.globalAlpha = 0.55;
+    this.ctx.fillStyle = UI.outline;
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.globalAlpha = 1;
+    const drawn = drawChestScreen(this.ctx, {
+      scale,
+      originX,
+      originY,
+      inventory: player.inventory.slots,
+      chestSlots,
+      double: storage.double,
+      hoverSlot: this.hoverSlot,
+      hoverClose: this.hoverClose,
+      cursor: player.inventory.cursor,
+      mouse: this.mouse,
+      icons: this.icons,
+      sheet: this.sheet,
+    });
+    this.panelRect = drawn.panel;
+    this.closeRect = drawn.close;
+    this.controls.close = drawn.close;
+    for (let slot = 0; slot < drawn.chest.length; slot++) {
+      this.screenSlots[slot] = drawn.chest[slot]!;
+      this.clickTargets.push({ slot, rect: drawn.chest[slot]! });
+    }
+    const offset = drawn.chest.length;
+    for (let slot = 0; slot < drawn.inventory.length; slot++) {
+      const id = offset + slot;
+      this.screenSlots[id] = drawn.inventory[slot]!;
+      this.clickTargets.push({ slot: id, rect: drawn.inventory[slot]! });
+    }
+  }
+
+  private setBookTargetsVisible(count: number): void {
+    const base = this.screen === 'inventory' ? RECIPE_BASE_INVENTORY : RECIPE_BASE_CRAFTING;
+    this.clickTargets = this.clickTargets.filter(
+      (target) => target.slot < base || target.slot >= base + BOOK_ROWS,
+    );
+    for (let row = 0; row < count; row++) {
+      const slot = base + row;
+      const rect = this.screenSlots[slot];
+      if (rect) this.clickTargets.push({ slot, rect });
+    }
+  }
+
+  private hoveredCraftSlots(): Set<number> {
+    const result = new Set<number>();
+    const base = this.screen === 'inventory' ? INVENTORY_CRAFT_BASE : 0;
+    if (this.hoverSlot !== null) {
+      const index = this.hoverSlot - base;
+      if (index >= 0 && index < this.grid.length) result.add(index);
+      if (
+        this.hoverSlot ===
+        (this.screen === 'inventory' ? INVENTORY_OUTPUT_SLOT : CRAFTING_OUTPUT_SLOT)
+      )
+        result.add(this.dimension * this.dimension);
+    }
+    return result;
+  }
+
+  private inventorySlot(slot: number | null): number | null {
+    if (slot === null) return null;
+    if (this.screen === 'inventory') return slot < 41 ? slot : null;
+    if (this.screen === 'crafting') return slot >= 10 && slot < 51 ? slot - 10 : null;
+    if (this.screen === 'chest')
+      return slot >= this.chestSlotCount ? slot - this.chestSlotCount : null;
+    return null;
+  }
+
+  private toCanvasRect(
+    rect: Rect,
+    x: number,
+    y: number,
+    scale: number,
+    originX: number,
+    originY: number,
+  ): Rect {
+    return {
+      x: originX + (x + rect.x) * scale,
+      y: originY + (y + rect.y) * scale,
+      w: rect.w * scale,
+      h: rect.h * scale,
+    };
+  }
+
+  private logicalRectToCanvas(rect: Rect, scale: number, originX: number, originY: number): Rect {
+    return {
+      x: originX + rect.x * scale,
+      y: originY + rect.y * scale,
+      w: rect.w * scale,
+      h: rect.h * scale,
+    };
+  }
+
+  private logicalBookRects(
+    x: number,
+    y: number,
+    scale: number,
+    originX: number,
+    originY: number,
+  ): { search: Rect; filter: Rect; rows: Rect[]; prev: Rect; next: Rect } {
+    const convert = (rect: Rect) => this.toCanvasRect(rect, x, y, scale, originX, originY);
+    return {
+      search: convert(BOOK_SEARCH),
+      filter: convert(BOOK_FILTER),
+      rows: bookRowRects().map(convert),
+      prev: convert(BOOK_PREV),
+      next: convert(BOOK_NEXT),
+    };
+  }
+
+  private hoverButton(rect: Rect | null): boolean {
+    return !!rect && contains(rect, this.mouse.x, this.mouse.y);
   }
 
   private resizeCanvas(): void {
@@ -231,53 +958,97 @@ export class UiManager {
     this.render();
   };
 
-  private updateMouse(e: MouseEvent): void {
-    this.mouse = { x: e.clientX * this.dpr, y: e.clientY * this.dpr };
-    if (!this.layout) return;
-    this.hoverSlot = slotAt(this.layout, this.mouse.x, this.mouse.y);
-    this.hoverClose = contains(this.layout.closeButton, this.mouse.x, this.mouse.y);
+  private updateMouse(event: MouseEvent): void {
+    this.mouse = { x: event.clientX * this.dpr, y: event.clientY * this.dpr };
+    this.hoverSlot = this.slotAt(this.mouse.x, this.mouse.y);
+    this.hoverClose = this.hoverButton(this.controls.close);
+    this.hoverBook = this.hoverButton(this.controls.book);
+    this.hoverCraftFilter = this.hoverButton(this.controls.craftFilter);
+    this.hoverSearch = this.hoverButton(this.controls.search);
+    this.hoverBookFilter = this.hoverButton(this.controls.bookFilter);
+    this.hoverPrevious = this.hoverButton(this.controls.previous);
+    this.hoverNext = this.hoverButton(this.controls.next);
+    const row = this.recipeSlotRects.findIndex((rect) =>
+      contains(rect, this.mouse.x, this.mouse.y),
+    );
+    this.hoverRecipeRow = row >= 0 ? row : null;
   }
 
-  private readonly onMouseMove = (e: MouseEvent): void => {
-    this.updateMouse(e);
+  private slotAt(x: number, y: number): number | null {
+    const target = this.clickTargets.find(({ rect }) => contains(rect, x, y));
+    return target?.slot ?? null;
+  }
+
+  private readonly onMouseMove = (event: MouseEvent): void => {
+    this.updateMouse(event);
     const slot = this.hoverSlot;
     if (this.drag && slot !== null && !this.drag.slots.includes(slot)) this.drag.slots.push(slot);
   };
 
-  private readonly onMouseDown = (e: MouseEvent): void => {
-    e.preventDefault();
-    if (!this.screen || !this.layout) return;
-    this.updateMouse(e);
-    const button: ClickButton | null = e.button === 0 ? 'left' : e.button === 2 ? 'right' : null;
+  private readonly onMouseDown = (event: MouseEvent): void => {
+    event.preventDefault();
+    if (!this.screen) return;
+    this.updateMouse(event);
+    const button: ClickButton | null =
+      event.button === 0 ? 'left' : event.button === 2 ? 'right' : null;
     const player = this.player;
     if (!button || !player) return;
-    const inventory = player.inventory;
     if (this.hoverClose && button === 'left') return this.close();
+    if (this.hoverSearch && button === 'left') {
+      this.searchFocused = true;
+      return this.render();
+    }
+    if (this.hoverBook && button === 'left') {
+      this.bookOpen = !this.bookOpen;
+      this.searchFocused = false;
+      this.bookPage = 0;
+      return this.render();
+    }
+    if ((this.hoverBookFilter || this.hoverCraftFilter) && button === 'left') {
+      this.craftableOnly = !this.craftableOnly;
+      this.bookPage = 0;
+      return this.render();
+    }
+    if (this.hoverPrevious && button === 'left') {
+      this.bookPage = Math.max(0, this.bookPage - 1);
+      return this.render();
+    }
+    if (this.hoverNext && button === 'left') {
+      const count = this.filteredRecipes().length;
+      this.bookPage = Math.min(Math.max(0, Math.ceil(count / BOOK_ROWS) - 1), this.bookPage + 1);
+      return this.render();
+    }
+    this.searchFocused = false;
+
     const slot = this.hoverSlot;
     if (slot === null) {
-      // Outside the panel, a click throws the cursor stack (all with left, one with right).
-      if (inventory.cursor && !contains(this.layout.panel, this.mouse.x, this.mouse.y))
+      if (
+        player.inventory.cursor &&
+        this.panelRect &&
+        !contains(this.panelRect, this.mouse.x, this.mouse.y)
+      )
         this.throwStack('cursor', button === 'left');
       return;
     }
-    if (e.shiftKey) return this.clickSlot(slot, button, true);
+    if (event.shiftKey) return this.clickSlot(slot, button, true);
     const now = performance.now();
     if (
       button === 'left' &&
-      inventory.cursor &&
+      player.inventory.cursor &&
       this.lastPick.slot === slot &&
-      now - this.lastPick.time < DOUBLE_CLICK_MS
+      (event.detail === 2 || now - this.lastPick.time < DOUBLE_CLICK_MS) &&
+      this.inventorySlot(slot) !== null
     ) {
       this.lastPick.slot = -1;
-      return inventory.doubleClick();
+      player.inventory.doubleClick();
+      return this.render();
     }
-    if (inventory.cursor) {
-      // A held stack may be spread over several slots; the press decides on release.
+    if (player.inventory.cursor) {
       this.drag = { button, slots: [slot] };
       return;
     }
     this.clickSlot(slot, button);
-    this.lastPick = { slot: inventory.cursor ? slot : -1, time: now };
+    this.lastPick = { slot: player.inventory.cursor ? slot : -1, time: now };
   };
 
   private readonly onMouseUp = (): void => {
@@ -285,23 +1056,129 @@ export class UiManager {
     this.drag = null;
     const player = this.player;
     if (!drag || !player) return;
-    if (drag.slots.length === 1) this.clickSlot(drag.slots[0]!, drag.button);
-    else player.inventory.drag(drag.slots, drag.button);
+    if (drag.slots.length === 1) return this.clickSlot(drag.slots[0]!, drag.button);
+    const inventorySlots = drag.slots.map((slot) => this.inventorySlot(slot));
+    if (inventorySlots.every((slot): slot is number => slot !== null)) {
+      player.inventory.drag(inventorySlots, drag.button);
+      return this.render();
+    }
+    this.dragExternal(drag.slots, drag.button);
+    this.render();
   };
 
-  private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.repeat) return;
-    if (e.code === 'KeyE' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+  private dragExternal(slots: readonly number[], button: ClickButton): void {
+    const inventory = this.requirePlayer().inventory;
+    const cursor = inventory.cursor;
+    if (!cursor) return;
+    const external: Array<{
+      read: () => { id: string; count: number } | null;
+      write: (stack: { id: string; count: number } | null) => void;
+    }> = [];
+    for (const slot of [...new Set(slots)]) {
+      if (
+        this.screen === 'inventory' &&
+        slot >= INVENTORY_CRAFT_BASE &&
+        slot < INVENTORY_OUTPUT_SLOT
+      ) {
+        const index = slot - INVENTORY_CRAFT_BASE;
+        external.push({
+          read: () => this.grid[index] ?? null,
+          write: (stack) => (this.grid[index] = stack),
+        });
+      } else if (this.screen === 'crafting' && slot < CRAFTING_OUTPUT_SLOT) {
+        external.push({
+          read: () => this.grid[slot] ?? null,
+          write: (stack) => (this.grid[slot] = stack),
+        });
+      } else if (this.screen === 'chest' && slot < this.chestSlotCount) {
+        external.push({
+          read: () => this.getChestSlot(slot),
+          write: (stack) => this.setChestSlot(slot, stack),
+        });
+      }
+    }
+    const eligible = external.filter(({ read }) => {
+      const stack = read();
+      return !stack || (stack.id === cursor.id && stack.count < items.get(stack.id).maxStack);
+    });
+    if (!eligible.length) return;
+    const each = button === 'left' ? Math.floor(cursor.count / eligible.length) : 1;
+    for (const target of eligible) {
+      if (!cursor.count) break;
+      const stack = target.read();
+      const moved = Math.min(
+        each,
+        cursor.count,
+        items.get(cursor.id).maxStack - (stack?.count ?? 0),
+      );
+      if (!moved) continue;
+      if (stack) stack.count += moved;
+      else target.write({ id: cursor.id, count: moved });
+      cursor.count -= moved;
+    }
+    if (!cursor.count) inventory.cursor = null;
+    inventory.assertInvariant();
+  }
+
+  private readonly onWheel = (event: WheelEvent): void => {
+    if (!this.screen || !this.bookOpen || !this.controls.search) return;
+    const inBook = this.recipeSlotRects.some((row) =>
+      contains(row, event.clientX * this.dpr, event.clientY * this.dpr),
+    );
+    if (!inBook) return;
+    event.preventDefault();
+    const count = this.filteredRecipes().length;
+    const pageCount = Math.max(1, Math.ceil(count / BOOK_ROWS));
+    this.bookPage = Math.max(
+      0,
+      Math.min(pageCount - 1, this.bookPage + (event.deltaY > 0 ? 1 : -1)),
+    );
+    this.render();
+  };
+
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.repeat) return;
+    if (this.screen && this.bookOpen && this.searchFocused) {
+      if (event.key === 'Escape') {
+        this.searchFocused = false;
+        event.preventDefault();
+        this.close();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        this.searchText = '';
+      } else if (event.key === 'Backspace') {
+        this.searchText = this.searchText.slice(0, -1);
+      } else if (event.key.length === 1 && /^[a-z0-9 _-]$/i.test(event.key)) {
+        this.searchText += event.key.toLowerCase();
+      } else if (event.key === 'ArrowDown') {
+        this.bookPage++;
+      } else if (event.key === 'ArrowUp') {
+        this.bookPage = Math.max(0, this.bookPage - 1);
+      } else if (event.key !== 'Enter') {
+        return;
+      }
+      this.bookPage = Math.max(
+        0,
+        Math.min(
+          Math.max(0, Math.ceil(this.filteredRecipes().length / BOOK_ROWS) - 1),
+          this.bookPage,
+        ),
+      );
+      event.preventDefault();
+      if (event.key === 'Enter') this.searchFocused = false;
+      return this.render();
+    }
+    if (event.code === 'KeyE' && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (this.screen) this.close();
       else if (this.player) this.open('inventory');
-      e.preventDefault();
-    } else if (e.code === 'Escape' && this.screen) {
+      event.preventDefault();
+    } else if (event.code === 'Escape' && this.screen) {
       this.close();
-    } else if (e.code === 'KeyQ' && this.player) {
-      // Open: the hovered slot. Closed: the selected hotbar slot.
-      const target = this.screen ? this.hoverSlot : this.player.selectedSlot;
-      if (target !== null) this.throwStack(target, e.ctrlKey);
-      e.preventDefault();
+    } else if (event.code === 'KeyQ' && this.player) {
+      const target = this.screen ? this.inventorySlot(this.hoverSlot) : this.player.selectedSlot;
+      if (target !== null) this.throwStack(target, event.ctrlKey);
+      event.preventDefault();
     }
   };
 }

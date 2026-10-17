@@ -1,0 +1,15 @@
+{
+  "workbench": {
+    "hardness": 2.5,
+    "blastResistance": 2.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "textures": {
+      "top": "workbench_top",
+      "side": "workbench_side",
+      "bottom": "workbench_side"
+    }
+  }
+}

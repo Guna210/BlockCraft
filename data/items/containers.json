@@ -1,0 +1,12 @@
+{
+  "workbench": {
+    "kind": "block",
+    "block": "workbench",
+    "maxStack": 64
+  },
+  "chest": {
+    "kind": "block",
+    "block": "chest",
+    "maxStack": 64
+  }
+}
