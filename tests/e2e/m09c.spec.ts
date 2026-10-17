@@ -90,6 +90,36 @@ async function crosshairShape(page: import('@playwright/test').Page) {
   });
 }
 
+async function frameGraphPlotColumns(page: import('@playwright/test').Page): Promise<number> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('#f3-overlay');
+    if (!canvas) return 0;
+    const scale = Math.max(
+      1,
+      Math.min(Math.floor(canvas.width / 320), Math.floor(canvas.height / 240)),
+    );
+    const pixels = canvas
+      .getContext('2d')!
+      .getImageData(10 * scale, 93 * scale, 262 * scale, 15 * scale);
+    let litColumns = 0;
+    const center = Math.floor(scale / 2);
+    for (let x = 0; x < 262; x++) {
+      for (let y = 0; y < 15; y++) {
+        const index = ((y * scale + center) * pixels.width + x * scale + center) * 4;
+        if (
+          pixels.data[index] === 226 &&
+          pixels.data[index + 1] === 180 &&
+          pixels.data[index + 2] === 58
+        ) {
+          litColumns++;
+          break;
+        }
+      }
+    }
+    return litColumns;
+  });
+}
+
 test('survival HUD draws the requested health, hunger, armor and XP state', async ({
   page,
   assertAndSaveScreenshot,
@@ -205,6 +235,8 @@ test('F3 shows stats and a frame graph with the current getBiome value', async (
   ).toBe(true);
   const overlay = page.locator('#f3-overlay');
   await expect(overlay).toBeVisible();
+  await page.waitForTimeout(3000);
+  await expect.poll(() => frameGraphPlotColumns(page), { timeout: 5000 }).toBeGreaterThan(30);
   await expect
     .poll(() =>
       page.evaluate(() => {

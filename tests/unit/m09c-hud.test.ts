@@ -1,8 +1,8 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import armorItems from '../../data/items/armor.json';
-import { FrameStats } from '../../src/engine/frame-stats';
+import { FrameStats, MAX_RECENT_FRAME_SAMPLES } from '../../src/engine/frame-stats';
 import { Player } from '../../src/entity/player';
-import { equippedArmorPoints } from '../../src/ui/hud';
+import { equippedArmorPoints, Hud } from '../../src/ui/hud';
 
 it('gives armor items valid display points with full sets capped at 20', () => {
   const copper = ['copper_helmet', 'copper_chestplate', 'copper_leggings', 'copper_boots'];
@@ -34,11 +34,41 @@ it('totals armor from the four equipped slots only', () => {
 
 it('exposes recent frame CPU samples as a bounded ring buffer', () => {
   const stats = new FrameStats();
-  for (let frame = 1; frame <= 125; frame++) stats.record(frame, 0, 0);
-  expect(stats.recentFrameTimes()).toHaveLength(120);
-  expect(stats.recentFrameTimes(3)).toEqual([123, 124, 125]);
+  for (let frame = 1; frame <= MAX_RECENT_FRAME_SAMPLES + 5; frame++) stats.record(frame, 0, 0);
+  expect(stats.recentFrameTimes()).toHaveLength(MAX_RECENT_FRAME_SAMPLES);
+  expect(stats.recentFrameTimes(3)).toEqual([
+    MAX_RECENT_FRAME_SAMPLES + 3,
+    MAX_RECENT_FRAME_SAMPLES + 4,
+    MAX_RECENT_FRAME_SAMPLES + 5,
+  ]);
   stats.reset();
   expect(stats.recentFrameTimes()).toEqual([]);
+});
+
+it('toggles F3 without a debug-mode gate and prevents its browser default', () => {
+  const hud = new Hud(
+    { captured: false } as never,
+    () => null,
+    () => null as never,
+    () => null,
+    () => false,
+    () => false,
+  );
+  const event = {
+    code: 'F3',
+    repeat: false,
+    preventDefault: vi.fn(),
+  } as unknown as KeyboardEvent;
+  const internals = hud as unknown as {
+    onKeyDown(event: KeyboardEvent): void;
+    debugOpen: boolean;
+  };
+
+  internals.onKeyDown(event);
+  expect(internals.debugOpen).toBe(true);
+  expect(event.preventDefault).toHaveBeenCalledOnce();
+  internals.onKeyDown(event);
+  expect(internals.debugOpen).toBe(false);
 });
 
 it('adds XP fields to a new player at their zero defaults and snapshot', () => {

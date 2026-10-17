@@ -96,7 +96,6 @@ function main() {
     input,
     () => worldManager.playerController,
     icons,
-    debug,
     (): DebugOverlaySnapshot | null => {
       const world = worldManager.world;
       const controller = worldManager.playerController;
@@ -127,7 +126,7 @@ function main() {
       }
       return {
         fps: renderStats.fps,
-        frameTimes: frameStats.recentFrameTimes(120),
+        frameTimes: frameStats.recentFrameTimes(),
         position: [...player.pos],
         chunk: [Math.floor(x / 16), Math.floor(z / 16)],
         facing: directions[Math.round(angle) % directions.length]!,

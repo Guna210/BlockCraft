@@ -1,5 +1,6 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
+import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
 import { items } from '../gameplay/items';
 import type { Player } from '../entity/player';
 import { displayName, drawText, textWidth } from './pixel-font';
@@ -51,7 +52,7 @@ const ORANGE_PALETTE = {
 } as const;
 const HEART_HIGHLIGHTS = new Set(['6,1', '5,2', '6,2']);
 const ORANGE_HIGHLIGHTS = new Set(['2,3', '3,3', '2,4']);
-const ORANGE_BLUSH = new Set(['3,3', '3,4']);
+const ORANGE_BLUSH = new Set(['3,3']);
 const ARMOR: readonly string[] = [
   '00111100',
   '01111110',
@@ -63,6 +64,7 @@ const ARMOR: readonly string[] = [
 ];
 const BUBBLE: readonly string[] = ['001100', '010010', '100001', '100001', '010010', '001100'];
 const SLOT_STEP = 20;
+const FRAME_GRAPH_MAX_MS = 33;
 
 export interface HudSnapshot {
   mode: string;
@@ -388,7 +390,10 @@ function drawGraph(
   samples.slice(-width + 2).forEach((ms, i) => {
     const barHeight = Math.max(
       1,
-      Math.min(height - 2, Math.round((Math.min(ms, 50) / 50) * (height - 2))),
+      Math.min(
+        height - 2,
+        Math.round((Math.min(ms, FRAME_GRAPH_MAX_MS) / FRAME_GRAPH_MAX_MS) * (height - 2)),
+      ),
     );
     fillRect(ctx, x + 1 + i, y + height - 1 - barHeight, 1, barHeight, UI.accent, s);
   });
@@ -413,7 +418,7 @@ function drawDebugOverlay(
   }
   const [x, y, z] = sample.position;
   const latestFrame = sample.frameTimes[sample.frameTimes.length - 1] ?? 0;
-  line(`FPS ${sample.fps}  FRAME ${latestFrame.toFixed(1)} MS`, 0);
+  line(`FPS ${sample.fps}  FRAME ${latestFrame.toFixed(1)} MS (0-33)`, 0);
   line(`POS ${x.toFixed(1)} ${y.toFixed(1)} ${z.toFixed(1)}`, 1);
   line(`CHUNK ${sample.chunk[0]} ${sample.chunk[1]} FACING ${sample.facing}`, 2);
   line(`BIOME ${sample.biome.replace(/_/g, ' ').toUpperCase()}`, 3);
@@ -432,11 +437,11 @@ function drawDebugOverlay(
     `WORKER ${sample.workers.genMsP95.toFixed(1)}-${sample.workers.meshMsP95.toFixed(1)} Q ${sample.workers.queueLength}`,
     9,
   );
-  graphCanvas.width = 264 * s;
+  graphCanvas.width = MAX_RECENT_FRAME_SAMPLES * s;
   graphCanvas.height = 17 * s;
   const graphContext = graphCanvas.getContext('2d')!;
   graphContext.imageSmoothingEnabled = false;
-  drawGraph(graphContext, sample.frameTimes, 0, 0, 264, 17, s);
+  drawGraph(graphContext, sample.frameTimes, 0, 0, MAX_RECENT_FRAME_SAMPLES, 17, s);
   ctx.drawImage(graphCanvas, 9 * s, 92 * s);
 }
 
@@ -462,7 +467,6 @@ export class Hud {
     private readonly input: InputEngine,
     private readonly controller: () => PlayerController | null,
     private readonly iconSource: () => IconSheet,
-    private readonly debugEnabled: boolean,
     private readonly getDebugSnapshot: () => DebugOverlaySnapshot | null,
     private readonly isSubmerged: () => boolean,
     private readonly screenOpen: () => boolean,
@@ -539,7 +543,7 @@ export class Hud {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'F3') {
       event.preventDefault();
-      if (!event.repeat && this.debugEnabled && !this.input.captured) {
+      if (!event.repeat && !this.input.captured) {
         this.debugOpen = !this.debugOpen;
         this.lastDebugUpdate = -Infinity;
         if (this.debugOpen && this.controller()?.player) {
