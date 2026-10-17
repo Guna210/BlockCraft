@@ -78,6 +78,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: Codex M09c gate (98105b7, not pushed): 17 files, all in scope, no existing test changed. Unit 730 passed; e2e 95/97, failing m04:66 (pump 72.4 ms, higher than the usual ~51-55) and m04:221 timeout. Advised approve; watch m04:66 in CI (a real HUD cost if red there). Check screenshots after the push.
 - 2026-10-17: Power cut, so agy is unavailable. M08c prompt adapted for a Claude cloud builder (claude/m08c, CLAUDE.md flow, full verify in background). Not confirmed started.
 - 2026-10-17: #50 merged (master 4fd462d). Only M08c and M09c are ready (everything else chains off M09c). Gave prompts: Codex -> M09c (claude/m09c; armorPoints in data/items/armor.json; Player xpLevel/xpProgress + debug setter; creative shows hotbar+crosshair only; F3 data-biome; M04/M05 budgets unchanged). agy -> M08c (agy/m08c; stained-glass.json with 8 colours, append-only state IDs, drop nothing; settings.leaves fancy/fast + src/debug/api/leaves.ts; waving off in fast, existing frame tests must pass unchanged). Not started until the owner says so.
 - 2026-10-17: Owner merged #49 (M17a). #50 verify green on 90c4b1c; told owner to merge without Update branch (no shared files).
