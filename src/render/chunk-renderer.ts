@@ -22,6 +22,13 @@ import { GLWrapper } from './gl';
 import { settings } from '../engine/settings';
 import { BlockRegistry } from '../world/blocks/registry';
 import { TextureAtlas, CELL_SIZE } from './atlas';
+import {
+  atlasTileIndex,
+  buildLeafFills,
+  buildSwayMasks,
+  type LeafFills,
+  type SwayMasks,
+} from './foliage';
 import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
@@ -57,8 +64,8 @@ uniform int u_waterTile;
 uniform int u_lavaTile;
 uniform float u_swayOn;
 uniform float u_windTime;
-uniform uint u_swayLeaf[128];
-uniform uint u_swayPlant[128];
+uniform uvec4 u_swayLeaf[32];
+uniform uvec4 u_swayPlant[32];
 flat out float v_leaf;
 flat out float v_fluid;
 flat out float v_flow;
@@ -104,8 +111,8 @@ void main() {
   }
   worldPos += normal * (fluid ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0);
   uint swayTile = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
-  bool leaf = !fluid && ((u_swayLeaf[swayTile >> 5u] >> (swayTile & 31u)) & 1u) == 1u;
-  bool plant = !fluid && ((u_swayPlant[swayTile >> 5u] >> (swayTile & 31u)) & 1u) == 1u;
+  bool leaf = !fluid && ((u_swayLeaf[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
+  bool plant = !fluid && ((u_swayPlant[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
   v_leaf = leaf ? 1.0 : 0.0;
   if (u_swayOn > 0.0 && (leaf || plant)) {
     // Wind: a function of world position and the shared animation clock, so blocks sharing a corner
@@ -175,6 +182,10 @@ flat in float v_flow;
 in vec3 v_normal;
 uniform float u_fluidTime;
 uniform int u_fastLeaves;
+uniform int u_leafFillCount;
+uniform int u_leafFillTile[16];
+uniform vec3 u_leafFillColor[16];
+uniform float u_cellSize;
 uniform highp sampler2D u_sceneDepth;
 uniform mat4 u_inverseViewProj;
 uniform vec2 u_viewport;
@@ -221,8 +232,15 @@ void main() {
   vec2 tileUV = clamp(v_tileOrigin + fract(uv) * tileSize, v_tileOrigin + halfTexel, v_tileOrigin + tileSize - halfTexel);
   vec4 texColor = textureGrad(u_atlasSampler, tileUV, dFdx(uv) * tileSize, dFdy(uv) * tileSize);
   if (u_fastLeaves == 1 && v_leaf > 0.5) {
-    // Fast leaves are opaque cubes: gaps in the sprite become a dark leaf colour.
-    texColor = texColor.a < 0.5 ? vec4(0.11, 0.17, 0.08, 1.0) : vec4(texColor.rgb, 1.0);
+    // Fast leaves are opaque cubes: gaps in the sprite take the leaf texture's own mid-green, which
+    // the tint below multiplies like the rest of the leaf.
+    if (texColor.a < 0.5) {
+      vec2 cell = floor((v_tileOrigin * u_atlasSize - 4.0) / u_cellSize + 0.5);
+      int tile = int(cell.y) * int(u_atlasSize.x / u_cellSize) + int(cell.x);
+      vec3 fill = vec3(0.17, 0.30, 0.13);
+      for (int i = 0; i < 16; i++) if (i < u_leafFillCount && u_leafFillTile[i] == tile) fill = u_leafFillColor[i];
+      texColor = vec4(fill, 1.0);
+    } else texColor = vec4(texColor.rgb, 1.0);
   } else if (u_isCutout == 1 && texColor.a < 0.5) discard;
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
@@ -333,8 +351,15 @@ export class ChunkRenderer {
   private locWindTime: WebGLUniformLocation;
   private locSwayLeaf: WebGLUniformLocation;
   private locSwayPlant: WebGLUniformLocation;
+  private locLeafFillCount: WebGLUniformLocation;
+  private locLeafFillTile: WebGLUniformLocation;
+  private locLeafFillColor: WebGLUniformLocation;
   private locFastLeaves: WebGLUniformLocation;
-  private swayMasks: { atlas: TextureAtlas; leaf: Uint32Array; plant: Uint32Array } | null = null;
+  private foliage: {
+    atlas: TextureAtlas;
+    sway: SwayMasks;
+    fills: LeafFills;
+  } | null = null;
   private rainFactor = 0;
   private lightningFlash = 0;
   private skyBrightness = 1;
@@ -428,6 +453,9 @@ export class ChunkRenderer {
     this.locSwayLeaf = gl.getUniformLocation(this.program, 'u_swayLeaf')!;
     this.locSwayPlant = gl.getUniformLocation(this.program, 'u_swayPlant')!;
     this.locFastLeaves = gl.getUniformLocation(this.program, 'u_fastLeaves')!;
+    this.locLeafFillCount = gl.getUniformLocation(this.program, 'u_leafFillCount')!;
+    this.locLeafFillTile = gl.getUniformLocation(this.program, 'u_leafFillTile')!;
+    this.locLeafFillColor = gl.getUniformLocation(this.program, 'u_leafFillColor')!;
     const fields = [
       'locFluidTime',
       'locWaterTile',
@@ -463,6 +491,9 @@ export class ChunkRenderer {
       'locWindTime',
       'locSwayLeaf',
       'locSwayPlant',
+      'locLeafFillCount',
+      'locLeafFillTile',
+      'locLeafFillColor',
       'locFastLeaves',
     ];
     this.programLocations = this.programs.map((program) =>
@@ -749,27 +780,16 @@ export class ChunkRenderer {
     if (bucketMesh.lineEbo) this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
-  /** Bit masks over atlas tiles of leaves and swaying plants, rebuilt only when the atlas changes. */
-  private getSwayMasks(atlas: TextureAtlas, tileIndex: (name: string) => number) {
-    if (this.swayMasks?.atlas === atlas) return this.swayMasks;
+  /** Sway masks and fast-leaf fill colours, rebuilt only when the atlas changes. */
+  private getFoliage(atlas: TextureAtlas) {
+    if (this.foliage?.atlas === atlas) return this.foliage;
     const registry = BlockRegistry.getInstance();
-    const leaf = new Uint32Array(128);
-    const plant = new Uint32Array(128);
-    for (const id of registry.getAllBlockIds()) {
-      const def = registry.getBlockDefinition(id);
-      if (!def || def.renderLayer !== 'cutout') continue;
-      const target = id.endsWith('_leaves')
-        ? leaf
-        : def.model === 'cross' && id !== 'fire' && id !== 'torch'
-          ? plant
-          : null;
-      const texture = def.textures?.side;
-      if (!target || !texture || !atlas.rects.has(texture)) continue;
-      const tile = tileIndex(texture);
-      target[tile >> 5] = (target[tile >> 5]! | (1 << (tile & 31))) >>> 0;
-    }
-    this.swayMasks = { atlas, leaf, plant };
-    return this.swayMasks;
+    this.foliage = {
+      atlas,
+      sway: buildSwayMasks(registry, atlas),
+      fills: buildLeafFills(registry, atlas),
+    };
+    return this.foliage;
   }
 
   /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
@@ -825,19 +845,16 @@ export class ChunkRenderer {
     Object.assign(this, this.programLocations[index]);
     gl.useProgram(this.program);
     gl.uniform1f(this.locFluidTime, this.fluidTime);
-    const tileIndex = (name: string) => {
-      const rect = atlas.rects.get(name)!;
-      return (
-        Math.floor(rect.y / CELL_SIZE) * Math.floor(atlas.width / CELL_SIZE) +
-        Math.floor(rect.x / CELL_SIZE)
-      );
-    };
-    const sway = this.getSwayMasks(atlas, tileIndex);
+    const tileIndex = (name: string) => atlasTileIndex(atlas, name);
+    const { sway, fills } = this.getFoliage(atlas);
     gl.uniform1f(this.locSwayOn, settings.leaves === 'fast' ? 0 : 1);
     gl.uniform1f(this.locWindTime, this.windTime);
-    gl.uniform1uiv(this.locSwayLeaf, sway.leaf);
-    gl.uniform1uiv(this.locSwayPlant, sway.plant);
+    gl.uniform4uiv(this.locSwayLeaf, sway.leaf);
+    gl.uniform4uiv(this.locSwayPlant, sway.plant);
     gl.uniform1i(this.locFastLeaves, settings.leaves === 'fast' ? 1 : 0);
+    gl.uniform1i(this.locLeafFillCount, fills.count);
+    gl.uniform1iv(this.locLeafFillTile, fills.tiles);
+    gl.uniform3fv(this.locLeafFillColor, fills.colors);
     gl.uniform1i(this.locWaterTile, tileIndex('water_0'));
     gl.uniform1i(this.locLavaTile, tileIndex('lava_0'));
     gl.uniform1i(this.locSceneDepth, 4);
