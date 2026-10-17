@@ -6,10 +6,12 @@ export interface BlockTick {
   z: number;
   type: string;
 }
-interface Entry extends BlockTick {
+export interface ScheduledTick extends BlockTick {
   due: number;
   priority: number;
   order: number;
+}
+interface Entry extends ScheduledTick {
   key: string;
 }
 export interface TickSection {
@@ -24,6 +26,68 @@ export class BlockTicks {
   private order = 0;
   private heap: Entry[] = [];
   private pending = new Map<string, Entry>();
+
+  getPendingTicks(): ScheduledTick[] {
+    return this.heap.map((e) => ({
+      x: e.x,
+      y: e.y,
+      z: e.z,
+      type: e.type,
+      due: e.due,
+      priority: e.priority,
+      order: e.order,
+    }));
+  }
+
+  getPendingTicksForColumn(cx: number, cz: number): ScheduledTick[] {
+    return this.heap
+      .filter((e) => Math.floor(e.x / 16) === cx && Math.floor(e.z / 16) === cz)
+      .map((e) => ({
+        x: e.x,
+        y: e.y,
+        z: e.z,
+        type: e.type,
+        due: e.due,
+        priority: e.priority,
+        order: e.order,
+      }));
+  }
+
+  loadTicks(ticks: ScheduledTick[], time?: number, replace = true): void {
+    if (time !== undefined) {
+      this.time = time;
+    }
+    if (replace) {
+      this.heap = [];
+      this.pending.clear();
+      this.order = 0;
+    }
+    let maxOrder = this.order;
+    for (const t of ticks) {
+      const key = `${t.type}:${t.x},${t.y},${t.z}`;
+      if (this.pending.has(key)) continue;
+      const entry: Entry = {
+        x: t.x,
+        y: t.y,
+        z: t.z,
+        type: t.type,
+        due: t.due,
+        priority: t.priority,
+        order: t.order,
+        key,
+      };
+      if (t.order >= maxOrder) {
+        maxOrder = t.order + 1;
+      }
+      this.pending.set(key, entry);
+      this.push(entry);
+    }
+    this.order = Math.max(this.order, maxOrder);
+  }
+
+  addTicks(ticks: ScheduledTick[]): void {
+    this.loadTicks(ticks, undefined, false);
+  }
   private randomTicks?: {
     sections: () => Iterable<TickSection>;
     samples: number;

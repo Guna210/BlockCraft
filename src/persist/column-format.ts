@@ -6,7 +6,7 @@ import { deflate, inflate } from './compress';
 import { FORMAT_VERSION, migrations } from './version';
 
 export const COLUMN_MAGIC = 0x46434342; // 'BCCF' in Little-Endian (0x42, 0x43, 0x43, 0x46)
-export const HEADER_SIZE = 271; // 4 magic + 2 version + 4 cx + 4 cz + 1 count + 256 biomes
+export const HEADER_SIZE = 1807; // 4 magic + 2 version + 4 cx + 4 cz + 1 count + 256 biomes + 768 grass + 768 foliage
 
 export function calculateBitsPerEntry(paletteSize: number): number {
   if (paletteSize <= 1) return 0;
@@ -72,6 +72,12 @@ export function serializeColumnBinary(col: ChunkColumn): Uint8Array {
 
   // Biome indices (256 bytes)
   out.set(col.biomeIndices, 15);
+
+  // Grass tints (256 * 3 = 768 bytes)
+  out.set(col.grassTints, 271);
+
+  // Foliage tints (256 * 3 = 768 bytes)
+  out.set(col.foliageTints, 1039);
 
   let offset = HEADER_SIZE;
   for (let sy = 0; sy < ChunkColumn.SECTION_COUNT; sy++) {
@@ -146,6 +152,10 @@ export function deserializeColumnBinary(
     view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   }
 
+  if (data.length < HEADER_SIZE) {
+    throw new Error('Invalid column binary: data too short for header');
+  }
+
   const cx = view.getInt32(6, true);
   const cz = view.getInt32(10, true);
   const sectionCount = view.getUint8(14);
@@ -156,6 +166,8 @@ export function deserializeColumnBinary(
   const col = new ChunkColumn(cx, cz);
   const biomeIndices = data.subarray(15, 271);
   col.setBiomeIndices(biomeIndices, OVERWORLD_BIOME_IDS);
+  col.grassTints.set(data.subarray(271, 1039));
+  col.foliageTints.set(data.subarray(1039, 1807));
 
   const validateStateIds = options?.validateStateIds ?? true;
   const stateValidator =
@@ -191,6 +203,11 @@ export function deserializeColumnBinary(
       const sec = col.getOrCreateSection(sy, stateId);
       sec?.fill(stateId);
     } else {
+      if (paletteSize > ChunkSection.TOTAL_BLOCKS) {
+        throw new Error(
+          `Invalid palette size ${paletteSize} in section ${sy}: exceeds section block count ${ChunkSection.TOTAL_BLOCKS}`,
+        );
+      }
       if (offset + paletteSize * 2 > data.length) {
         throw new Error(`Unexpected end of data reading palette for section ${sy}`);
       }
@@ -242,9 +259,12 @@ export function deserializeColumnBinary(
         } else if (bits === 16) {
           pIdx = (indices as Uint16Array)[i]!;
         }
-        if (pIdx < paletteSize) {
-          refCounts[pIdx]!++;
+        if (pIdx >= paletteSize) {
+          throw new Error(
+            `Palette index out of bounds: ${pIdx} >= ${paletteSize} at block ${i} in section ${sy}`,
+          );
         }
+        refCounts[pIdx]!++;
       }
 
       const sec = col.getOrCreateSection(sy);
@@ -256,6 +276,10 @@ export function deserializeColumnBinary(
         indices,
       });
     }
+  }
+
+  if (offset < data.length) {
+    throw new Error(`Unexpected trailing data: ${data.length - offset} extra bytes`);
   }
 
   return col;

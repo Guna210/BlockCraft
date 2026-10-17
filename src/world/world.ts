@@ -215,6 +215,14 @@ export class World {
     return this.lastCol;
   }
 
+  public setColumn(col: ChunkColumn): void {
+    const key = World.getChunkKey(col.cx, col.cz);
+    this.columns.set(key, col);
+    this.lastCX = col.cx;
+    this.lastCZ = col.cz;
+    this.lastCol = col;
+  }
+
   public getBlockStateId(x: number, y: number, z: number): number {
     if (y < ChunkColumn.MIN_Y || y > ChunkColumn.MAX_Y) {
       return 0; // Air for y out of bounds

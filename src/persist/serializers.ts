@@ -2,8 +2,9 @@ import { type BlockEntityInstance, isPlainJsonObject } from '../world/block-enti
 import { Inventory } from '../gameplay/inventory';
 import { items } from '../gameplay/items';
 import type { ItemEntity } from '../entity/item-entity';
-import type { Player } from '../entity/player';
+import type { Player, PlayerSnapshot } from '../entity/player';
 import type { ChunkColumn } from '../world/column';
+import { BlockTicks, type ScheduledTick } from '../world/ticks';
 import { serializeColumn, deserializeColumn } from './column-format';
 import { FORMAT_VERSION, migrations } from './version';
 
@@ -23,7 +24,12 @@ export function serializeBlockEntities(entities: ReadonlyArray<BlockEntityInstan
 
 export function deserializeBlockEntities(bytes: Uint8Array): BlockEntityInstance[] {
   const json = new TextDecoder().decode(bytes);
-  const data = JSON.parse(json) as unknown;
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid block entities data');
+  }
   if (!Array.isArray(data)) {
     throw new Error('Deserialized block entities data must be an array');
   }
@@ -81,7 +87,12 @@ export function deserializeInventory(
   targetInv?: Inventory,
 ): SerializedInventory {
   const json = new TextDecoder().decode(bytes);
-  const data = JSON.parse(json) as unknown;
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid inventory data');
+  }
   if (typeof data !== 'object' || data === null) {
     throw new Error('Invalid inventory data');
   }
@@ -215,7 +226,12 @@ export function serializeItemEntities(
 
 export function deserializeItemEntities(bytes: Uint8Array): SerializedItemEntity[] {
   const json = new TextDecoder().decode(bytes);
-  const data = JSON.parse(json) as unknown;
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid item entity data');
+  }
   if (!Array.isArray(data)) {
     throw new Error('Deserialized item entities must be an array');
   }
@@ -255,19 +271,37 @@ export interface SerializedPlayerData {
   rotation: [number, number]; // [yaw, pitch]
   mode: 'survival' | 'creative';
   selectedSlot: number;
+  health: number;
+  hunger: number;
+  saturation: number;
+  air: number;
+  flying: boolean;
+  dimension: string;
 }
 
-export function serializePlayerData(player: Player | SerializedPlayerData): Uint8Array {
+export function serializePlayerData(
+  player: Player | PlayerSnapshot | SerializedPlayerData,
+): Uint8Array {
   let serializable: SerializedPlayerData;
-  if ('pos' in player && 'yaw' in player) {
+  if ('pos' in player && 'yaw' in player && 'health' in player) {
+    const flying =
+      'flying' in player && typeof (player as { flying?: unknown }).flying === 'boolean'
+        ? (player as { flying: boolean }).flying
+        : false;
     serializable = {
       position: [player.pos[0], player.pos[1], player.pos[2]],
       rotation: [player.yaw, player.pitch],
-      mode: player.mode,
+      mode: player.mode as 'survival' | 'creative',
       selectedSlot: player.selectedSlot,
+      health: player.health,
+      hunger: player.hunger,
+      saturation: player.saturation,
+      air: player.air,
+      flying,
+      dimension: player.dimension,
     };
   } else {
-    serializable = player;
+    serializable = player as SerializedPlayerData;
   }
   const json = JSON.stringify(serializable);
   return new TextEncoder().encode(json);
@@ -275,7 +309,12 @@ export function serializePlayerData(player: Player | SerializedPlayerData): Uint
 
 export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
   const json = new TextDecoder().decode(bytes);
-  const data = JSON.parse(json) as unknown;
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid player data');
+  }
   if (typeof data !== 'object' || data === null) {
     throw new Error('Invalid player data');
   }
@@ -284,6 +323,13 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
   const rot = d['rotation'];
   const mode = d['mode'];
   const selectedSlot = d['selectedSlot'];
+  const health = d['health'];
+  const hunger = d['hunger'];
+  const saturation = d['saturation'];
+  const air = d['air'];
+  const flying = d['flying'];
+  const dimension = d['dimension'];
+
   if (
     !Array.isArray(pos) ||
     pos.length !== 3 ||
@@ -295,7 +341,22 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     typeof selectedSlot !== 'number' ||
     !Number.isInteger(selectedSlot) ||
     selectedSlot < 0 ||
-    selectedSlot > 8
+    selectedSlot > 8 ||
+    typeof health !== 'number' ||
+    !Number.isFinite(health) ||
+    health < 0 ||
+    typeof hunger !== 'number' ||
+    !Number.isFinite(hunger) ||
+    hunger < 0 ||
+    typeof saturation !== 'number' ||
+    !Number.isFinite(saturation) ||
+    saturation < 0 ||
+    typeof air !== 'number' ||
+    !Number.isFinite(air) ||
+    air < 0 ||
+    typeof flying !== 'boolean' ||
+    typeof dimension !== 'string' ||
+    dimension.length === 0
   ) {
     throw new Error('Invalid player data');
   }
@@ -304,6 +365,12 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     rotation: [rot[0] as number, rot[1] as number],
     mode,
     selectedSlot,
+    health,
+    hunger,
+    saturation,
+    air,
+    flying,
+    dimension,
   };
 }
 
@@ -317,6 +384,12 @@ export function applyPlayerData(player: Player, data: SerializedPlayerData): voi
   );
   player.mode = data.mode;
   player.selectedSlot = data.selectedSlot;
+  player.health = data.health;
+  player.hunger = data.hunger;
+  player.saturation = data.saturation;
+  player.air = data.air;
+  player.flying = data.flying;
+  player.dimension = data.dimension;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,18 +400,45 @@ export interface SerializedWorldMetadata {
   seed: number;
   timeOfDay: number;
   weather: 'clear' | 'rain' | 'thunder';
+  manualOverride: boolean;
+  strikeCounter: number;
+  lastTick: number;
+  elapsed: number;
   breakCount: number;
   worldType?: 'default' | 'flat';
 }
 
-export function serializeWorldMetadata(meta: SerializedWorldMetadata): Uint8Array {
-  const json = JSON.stringify(meta);
+export function serializeWorldMetadata(
+  meta: Partial<SerializedWorldMetadata> & {
+    seed: number;
+    timeOfDay: number;
+    weather: 'clear' | 'rain' | 'thunder';
+    breakCount: number;
+  },
+): Uint8Array {
+  const serializable: SerializedWorldMetadata = {
+    seed: meta.seed,
+    timeOfDay: meta.timeOfDay,
+    weather: meta.weather,
+    manualOverride: meta.manualOverride ?? false,
+    strikeCounter: meta.strikeCounter ?? 0,
+    lastTick: meta.lastTick ?? -1,
+    elapsed: meta.elapsed ?? 0,
+    breakCount: meta.breakCount,
+    worldType: meta.worldType,
+  };
+  const json = JSON.stringify(serializable);
   return new TextEncoder().encode(json);
 }
 
 export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMetadata {
   const json = new TextDecoder().decode(bytes);
-  const data = JSON.parse(json) as unknown;
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid world metadata');
+  }
   if (typeof data !== 'object' || data === null) {
     throw new Error('Invalid world metadata');
   }
@@ -346,6 +446,10 @@ export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMeta
   const seed = d['seed'];
   const timeOfDay = d['timeOfDay'];
   const weather = d['weather'];
+  const manualOverride = d['manualOverride'] ?? false;
+  const strikeCounter = d['strikeCounter'] ?? 0;
+  const lastTick = d['lastTick'] ?? -1;
+  const elapsed = d['elapsed'] ?? 0;
   const breakCount = d['breakCount'];
   const worldType = d['worldType'];
   if (
@@ -355,6 +459,16 @@ export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMeta
     !Number.isFinite(timeOfDay) ||
     timeOfDay < 0 ||
     (weather !== 'clear' && weather !== 'rain' && weather !== 'thunder') ||
+    typeof manualOverride !== 'boolean' ||
+    typeof strikeCounter !== 'number' ||
+    !Number.isInteger(strikeCounter) ||
+    strikeCounter < 0 ||
+    typeof lastTick !== 'number' ||
+    !Number.isInteger(lastTick) ||
+    lastTick < -1 ||
+    typeof elapsed !== 'number' ||
+    !Number.isInteger(elapsed) ||
+    elapsed < 0 ||
     typeof breakCount !== 'number' ||
     !Number.isInteger(breakCount) ||
     breakCount < 0
@@ -365,13 +479,112 @@ export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMeta
     seed,
     timeOfDay,
     weather,
+    manualOverride,
+    strikeCounter,
+    lastTick,
+    elapsed,
     breakCount,
     worldType: worldType === 'default' || worldType === 'flat' ? worldType : undefined,
   };
 }
 
 // ---------------------------------------------------------------------------
-// 6. Whole World Container
+// 6. Scheduled Block Ticks
+// ---------------------------------------------------------------------------
+
+export interface SerializedBlockTicks {
+  time: number;
+  ticks: ScheduledTick[];
+}
+
+export function serializeBlockTicks(
+  source: BlockTicks | SerializedBlockTicks | ScheduledTick[],
+  time?: number,
+): Uint8Array {
+  let data: SerializedBlockTicks;
+  if (source instanceof BlockTicks) {
+    data = {
+      time: source.time,
+      ticks: source.getPendingTicks(),
+    };
+  } else if (Array.isArray(source)) {
+    data = {
+      time: time ?? 0,
+      ticks: source,
+    };
+  } else {
+    data = source;
+  }
+
+  if (typeof data.time !== 'number' || !Number.isInteger(data.time) || !Array.isArray(data.ticks)) {
+    throw new Error('Invalid block ticks data');
+  }
+
+  for (const t of data.ticks) {
+    if (
+      typeof t !== 'object' ||
+      t === null ||
+      !Number.isInteger(t.x) ||
+      !Number.isInteger(t.y) ||
+      !Number.isInteger(t.z) ||
+      typeof t.type !== 'string' ||
+      !Number.isInteger(t.due) ||
+      !Number.isInteger(t.priority) ||
+      !Number.isInteger(t.order)
+    ) {
+      throw new Error('Invalid block tick entry');
+    }
+  }
+
+  const json = JSON.stringify(data);
+  return new TextEncoder().encode(json);
+}
+
+export function deserializeBlockTicks(bytes: Uint8Array): SerializedBlockTicks {
+  const json = new TextDecoder().decode(bytes);
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('Invalid block ticks data');
+  }
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Invalid block ticks data');
+  }
+  const d = data as Record<string, unknown>;
+  const time = d['time'];
+  const ticks = d['ticks'];
+  if (typeof time !== 'number' || !Number.isInteger(time) || !Array.isArray(ticks)) {
+    throw new Error('Invalid block ticks data');
+  }
+  for (const t of ticks) {
+    if (
+      typeof t !== 'object' ||
+      t === null ||
+      !Number.isInteger(t.x) ||
+      !Number.isInteger(t.y) ||
+      !Number.isInteger(t.z) ||
+      typeof t.type !== 'string' ||
+      !Number.isInteger(t.due) ||
+      !Number.isInteger(t.priority) ||
+      !Number.isInteger(t.order)
+    ) {
+      throw new Error('Invalid block tick entry');
+    }
+  }
+  return {
+    time,
+    ticks: ticks as ScheduledTick[],
+  };
+}
+
+export function serializeColumnTicks(ticks: BlockTicks, cx: number, cz: number): Uint8Array {
+  const colTicks = ticks.getPendingTicksForColumn(cx, cz);
+  return serializeBlockTicks({ time: ticks.time, ticks: colTicks });
+}
+
+// ---------------------------------------------------------------------------
+// 7. Whole World Container
 // ---------------------------------------------------------------------------
 
 export interface WorldSaveData {
@@ -381,9 +594,11 @@ export interface WorldSaveData {
   columns: ChunkColumn[];
   blockEntities: BlockEntityInstance[];
   itemEntities: SerializedItemEntity[];
+  blockTicks?: SerializedBlockTicks;
 }
 
 export const WORLD_MAGIC = 0x44574342; // 'BCWD' in Little-Endian (0x42, 0x43, 0x57, 0x44)
+export const WORLD_HEADER_SIZE = 34; // 4 magic + 2 version + 7 * 4 TOC
 
 export async function serializeWorld(data: WorldSaveData): Promise<Uint8Array> {
   const metaBytes = serializeWorldMetadata(data.metadata);
@@ -391,6 +606,7 @@ export async function serializeWorld(data: WorldSaveData): Promise<Uint8Array> {
   const invBytes = serializeInventory(data.inventory);
   const beBytes = serializeBlockEntities(data.blockEntities);
   const ieBytes = serializeItemEntities(data.itemEntities);
+  const ticksBytes = serializeBlockTicks(data.blockTicks ?? { time: 0, ticks: [] });
 
   const colEntries: Array<{ cx: number; cz: number; bytes: Uint8Array }> = [];
   for (const col of data.columns) {
@@ -398,13 +614,14 @@ export async function serializeWorld(data: WorldSaveData): Promise<Uint8Array> {
     colEntries.push({ cx: col.cx, cz: col.cz, bytes });
   }
 
-  // Header: 4 magic + 2 version + 6 * 4 table of contents = 30 bytes
-  let totalSize = 30;
+  // Header: 4 magic + 2 version + 7 * 4 table of contents = 34 bytes
+  let totalSize = WORLD_HEADER_SIZE;
   totalSize += metaBytes.length;
   totalSize += playerBytes.length;
   totalSize += invBytes.length;
   totalSize += beBytes.length;
   totalSize += ieBytes.length;
+  totalSize += ticksBytes.length;
 
   for (const entry of colEntries) {
     totalSize += 12 + entry.bytes.length; // 4 cx + 4 cz + 4 length + payload
@@ -428,9 +645,10 @@ export async function serializeWorld(data: WorldSaveData): Promise<Uint8Array> {
   view.setUint32(14, invBytes.length, true);
   view.setUint32(18, beBytes.length, true);
   view.setUint32(22, ieBytes.length, true);
-  view.setUint32(26, colEntries.length, true);
+  view.setUint32(26, ticksBytes.length, true);
+  view.setUint32(30, colEntries.length, true);
 
-  let offset = 30;
+  let offset = WORLD_HEADER_SIZE;
 
   out.set(metaBytes, offset);
   offset += metaBytes.length;
@@ -446,6 +664,9 @@ export async function serializeWorld(data: WorldSaveData): Promise<Uint8Array> {
 
   out.set(ieBytes, offset);
   offset += ieBytes.length;
+
+  out.set(ticksBytes, offset);
+  offset += ticksBytes.length;
 
   for (const entry of colEntries) {
     view.setInt32(offset, entry.cx, true);
@@ -463,8 +684,10 @@ export async function deserializeWorld(
   inputData: Uint8Array,
   options?: { targetVersion?: number },
 ): Promise<WorldSaveData> {
-  if (inputData.length < 30) {
-    throw new Error('Invalid world save data: too short for header');
+  if (inputData.length < WORLD_HEADER_SIZE) {
+    throw new Error(
+      `Truncated world data: buffer size ${inputData.length} is smaller than header size ${WORLD_HEADER_SIZE}`,
+    );
   }
 
   let data = inputData;
@@ -482,45 +705,84 @@ export async function deserializeWorld(
     view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   }
 
+  if (data.length < WORLD_HEADER_SIZE) {
+    throw new Error(
+      `Truncated world data: buffer size ${data.length} is smaller than header size ${WORLD_HEADER_SIZE}`,
+    );
+  }
+
   const metaLen = view.getUint32(6, true);
   const playerLen = view.getUint32(10, true);
   const invLen = view.getUint32(14, true);
   const beLen = view.getUint32(18, true);
   const ieLen = view.getUint32(22, true);
-  const colCount = view.getUint32(26, true);
+  const ticksLen = view.getUint32(26, true);
+  const colCount = view.getUint32(30, true);
 
-  let offset = 30;
+  let offset = WORLD_HEADER_SIZE;
 
+  function checkBounds(needed: number, field: string) {
+    if (offset + needed > data.length) {
+      throw new Error(
+        `Truncated world data: expected ${needed} bytes for ${field} at offset ${offset}, have ${data.length - offset}`,
+      );
+    }
+  }
+
+  checkBounds(metaLen, 'metadata');
   const metaBytes = data.subarray(offset, offset + metaLen);
   offset += metaLen;
 
+  checkBounds(playerLen, 'player data');
   const playerBytes = data.subarray(offset, offset + playerLen);
   offset += playerLen;
 
+  checkBounds(invLen, 'inventory');
   const invBytes = data.subarray(offset, offset + invLen);
   offset += invLen;
 
+  checkBounds(beLen, 'block entities');
   const beBytes = data.subarray(offset, offset + beLen);
   offset += beLen;
 
+  checkBounds(ieLen, 'item entities');
   const ieBytes = data.subarray(offset, offset + ieLen);
   offset += ieLen;
+
+  checkBounds(ticksLen, 'block ticks');
+  const ticksBytes = data.subarray(offset, offset + ticksLen);
+  offset += ticksLen;
 
   const metadata = deserializeWorldMetadata(metaBytes);
   const player = deserializePlayerData(playerBytes);
   const inventory = deserializeInventory(invBytes);
   const blockEntities = deserializeBlockEntities(beBytes);
   const itemEntities = deserializeItemEntities(ieBytes);
+  const blockTicks = deserializeBlockTicks(ticksBytes);
 
   const columns: ChunkColumn[] = [];
   for (let i = 0; i < colCount; i++) {
+    checkBounds(12, `column ${i} header`);
+    const cx = view.getInt32(offset, true);
+    const cz = view.getInt32(offset + 4, true);
     const colLen = view.getUint32(offset + 8, true);
     offset += 12;
+
+    checkBounds(colLen, `column ${i} payload`);
     const colBytes = data.subarray(offset, offset + colLen);
     offset += colLen;
 
     const col = await deserializeColumn(colBytes);
+    if (col.cx !== cx || col.cz !== cz) {
+      throw new Error(
+        `Column coordinate mismatch in world save: TOC (${cx},${cz}) != payload (${col.cx},${col.cz})`,
+      );
+    }
     columns.push(col);
+  }
+
+  if (offset < data.length) {
+    throw new Error(`Unexpected trailing data in world save: ${data.length - offset} extra bytes`);
   }
 
   return {
@@ -530,5 +792,6 @@ export async function deserializeWorld(
     columns,
     blockEntities,
     itemEntities,
+    blockTicks,
   };
 }
