@@ -17,16 +17,16 @@ const HEART: readonly string[] = [
   '....#....',
   '.........',
 ];
-const CARROT: readonly string[] = [
-  '.....L...',
+const ORANGE: readonly string[] = [
+  '.....LLL.',
   '....LLLL.',
-  '...LLLLLL',
-  '....BBBBB',
-  '...BBBBB.',
-  '..BBBB...',
-  '.BBB.....',
-  'BB.......',
-  'B........',
+  '..AASAA..',
+  '.AAAAAAA.',
+  'AAAAAAAAA',
+  'AAAAAAAAA',
+  '.AAAAAAA.',
+  '..AAAAA..',
+  '..AAAAA..',
 ];
 const HEART_PALETTE = {
   outline: '#4a1528',
@@ -37,19 +37,21 @@ const HEART_PALETTE = {
   pink: '#ff93a3',
   highlight: '#ffe8ec',
 } as const;
-const CARROT_PALETTE = {
-  outline: '#493120',
-  empty: '#4a4140',
-  leafShadow: '#397a43',
-  leaf: '#7fbd5b',
-  orangeShadow: '#ca5a22',
-  orange: '#ef842f',
-  highlight: '#ffd478',
-  ridge: '#9b3f1c',
+const ORANGE_PALETTE = {
+  outline: '#54250f',
+  empty: '#4a4248',
+  shadow: '#b74d12',
+  mid: '#e47416',
+  orange: '#f39224',
+  blush: '#ffd37a',
+  highlight: '#fff1d2',
+  leafShadow: '#347b3c',
+  leaf: '#67b653',
+  stem: '#80502c',
 } as const;
 const HEART_HIGHLIGHTS = new Set(['6,1', '5,2', '6,2']);
-const CARROT_HIGHLIGHTS = new Set(['5,3', '4,4', '3,5']);
-const CARROT_RIDGES = new Set(['6,3', '5,4', '4,5']);
+const ORANGE_HIGHLIGHTS = new Set(['2,3', '3,3', '2,4']);
+const ORANGE_BLUSH = new Set(['3,3', '3,4']);
 const ARMOR: readonly string[] = [
   '00111100',
   '01111110',
@@ -194,33 +196,32 @@ function drawHeart(
   });
 }
 
-function drawCarrot(
+function drawOrange(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   fraction: number,
   s: number,
 ): void {
-  const minDepth = -3;
-  const maxDepth = 2;
-  drawStatusGlyph(ctx, CARROT, x, y, fraction, s, (px, py, type, edge, amount) => {
-    if (edge) return CARROT_PALETTE.outline;
-    const depth = (py - px - minDepth) / (maxDepth - minDepth);
-    const filled = type === 'L' ? amount >= 1 : depth >= 1 - amount;
-    if (!filled) return CARROT_PALETTE.empty;
-    if (CARROT_RIDGES.has(`${px},${py}`)) return CARROT_PALETTE.ridge;
-    if (CARROT_HIGHLIGHTS.has(`${px},${py}`)) return CARROT_PALETTE.highlight;
-    if (type === 'L')
-      return (px === 5 && py === 2) || (px === 7 && py === 2)
-        ? CARROT_PALETTE.leafShadow
-        : CARROT_PALETTE.leaf;
-    return depth > 0.58 ? CARROT_PALETTE.orangeShadow : CARROT_PALETTE.orange;
+  drawStatusGlyph(ctx, ORANGE, x, y, fraction, s, (px, py, type, edge, amount) => {
+    if (edge) return ORANGE_PALETTE.outline;
+    if (type === 'S') return amount > 0 ? ORANGE_PALETTE.stem : ORANGE_PALETTE.empty;
+    if (type === 'L') {
+      if (amount <= 0) return ORANGE_PALETTE.empty;
+      return px === 6 && py === 1 ? ORANGE_PALETTE.leafShadow : ORANGE_PALETTE.leaf;
+    }
+    if (px / ORANGE[0]!.length >= amount) return ORANGE_PALETTE.empty;
+    if (ORANGE_HIGHLIGHTS.has(`${px},${py}`))
+      return ORANGE_BLUSH.has(`${px},${py}`) ? ORANGE_PALETTE.highlight : ORANGE_PALETTE.blush;
+    if (px <= 2 || py >= 7) return ORANGE_PALETTE.shadow;
+    if (px <= 4 || py >= 5) return ORANGE_PALETTE.mid;
+    return ORANGE_PALETTE.orange;
   });
 }
 
 function drawStatusMeter(
   ctx: CanvasRenderingContext2D,
-  glyph: 'heart' | 'carrot',
+  glyph: 'heart' | 'orange',
   amount: number,
   count: number,
   x: number,
@@ -231,7 +232,7 @@ function drawStatusMeter(
   for (let i = 0; i < count; i++) {
     const fraction = Math.max(0, Math.min(1, amount / 2 - i));
     if (glyph === 'heart') drawHeart(ctx, x + i * step, y, fraction, s);
-    else drawCarrot(ctx, x + i * step, y, fraction, s);
+    else drawOrange(ctx, x + i * step, y, fraction, s);
   }
 }
 
@@ -328,7 +329,7 @@ function drawHud(
   if (snapshot.mode === 'creative') return;
 
   drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9);
-  drawStatusMeter(ctx, 'carrot', snapshot.hunger, 10, centerX + 5, statusY, s, 9);
+  drawStatusMeter(ctx, 'orange', snapshot.hunger, 10, centerX + 5, statusY, s, 9);
   if (snapshot.armorPoints > 0)
     drawMeter(ctx, ARMOR, snapshot.armorPoints, 10, centerX - 44, statusY - 10, s, UI.light, 9);
   if (snapshot.submerged)
