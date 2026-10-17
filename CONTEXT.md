@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: #52 CI green on 0424f18; told the owner to merge. A trial merge of m08c with m09c is clean.
 - 2026-10-17: M08c revert pushed (0424f18): fast-leaf screenshot byte-identical to 8f0d70f; net change vs the reviewed head is only the sway-mask packing + its test + notes. Merge #52 once CI is green.
 - 2026-10-17: Owner disliked the new fast-leaves look; asked the M08c builder to revert only the fast-leaf colour (keep the original near-black substitute) and keep the uvec4 sway packing. Then merge #52 when CI is green.
 - 2026-10-17: M08c fix 257a3f3 pushed: sway masks uvec4[32]×2 (64 vectors, equivalence test over 4096 tiles, src/render/foliage.ts); fast leaves fill with the texture's own body colour × tint (screenshot checked: even dark green, no black, no wallpaper pattern). Told the owner to merge #52 once CI is green (no round 2 needed). M09c awaits the owner: chunkier carrots or start the reviewer.
