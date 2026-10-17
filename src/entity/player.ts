@@ -13,6 +13,8 @@ export interface PlayerSnapshot {
   hunger: number;
   saturation: number;
   air: number;
+  xpLevel: number;
+  xpProgress: number;
   onGround: boolean;
   inFluid: string | null;
   mode: string;
@@ -30,6 +32,8 @@ export class Player {
   public hunger = 20;
   public saturation = 5;
   public air = 300;
+  public xpLevel = 0;
+  public xpProgress = 0;
   public dimension = 'overworld';
   public readonly inventory = new Inventory();
   get selectedSlot(): number {
@@ -344,6 +348,8 @@ export class Player {
       hunger: this.hunger,
       saturation: this.saturation,
       air: this.air,
+      xpLevel: this.xpLevel,
+      xpProgress: this.xpProgress,
       onGround: this.onGround,
       inFluid: this.inFluid,
       mode: this.mode,

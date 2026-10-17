@@ -26,6 +26,8 @@ import {
   getGlResourceCounts,
 } from './streaming';
 import { WorldManager } from '../../world/world-manager';
+import { setXp } from './xp';
+import { setVitals } from './vitals';
 
 declare global {
   interface Window {
@@ -37,6 +39,8 @@ export function initDebugApi() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('debug') === '1') {
     registerPlayerApi();
+    api.setXp = setXp;
+    api.setVitals = setVitals;
     api.audio = audioApi;
     api.look = look;
     api.showTestScene = showTestScene;

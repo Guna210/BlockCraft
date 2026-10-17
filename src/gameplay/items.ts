@@ -9,6 +9,7 @@ export interface ItemDefinition {
   texture?: string;
   tool?: MiningTool;
   armorSlot?: 'head' | 'chest' | 'legs' | 'feet';
+  armorPoints?: number;
   hunger?: number;
   saturation?: number;
 }
@@ -29,9 +30,12 @@ export class ItemRegistry {
           throw new Error(`Equipment must be unstackable: ${id}`);
         if (
           data.kind === 'armor' &&
-          !['head', 'chest', 'legs', 'feet'].includes(data.armorSlot ?? '')
+          (!['head', 'chest', 'legs', 'feet'].includes(data.armorSlot ?? '') ||
+            !Number.isInteger(data.armorPoints) ||
+            data.armorPoints! < 0 ||
+            data.armorPoints! > 20)
         )
-          throw new Error(`Invalid armor slot: ${id}`);
+          throw new Error(`Invalid armor definition: ${id}`);
         if (
           data.kind === 'food' &&
           (!Number.isInteger(data.hunger) ||
