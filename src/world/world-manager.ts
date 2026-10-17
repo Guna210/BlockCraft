@@ -43,6 +43,7 @@ import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
+import { settings, type LeavesSetting } from '../engine/settings';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
 import { MeshAttempts } from './mesh-attempts';
 import { fadeStartFor } from '../render/column-fade';
@@ -152,6 +153,8 @@ export class WorldManager {
   public lightWorkerPool: LightWorkerPool;
   public pipeline: TerrainPipeline;
   public tables: MeshLookupTables | null = null;
+  private tileResolver: ((texName: string) => number) | null = null;
+  private tablesFastLeaves = false;
 
   public worldSeedStr: string = 'blockcraft-test-seed-42';
   public worldSeed: number = hashString('blockcraft-test-seed-42');
@@ -655,7 +658,11 @@ export class WorldManager {
       return tileNameToIndex.get(SENTINEL_KEY) ?? 0;
     };
 
-    this.tables = buildMeshLookupTables(registry, tileResolver);
+    this.tileResolver = tileResolver;
+    this.tablesFastLeaves = settings.leaves === 'fast';
+    this.tables = buildMeshLookupTables(registry, tileResolver, {
+      fastLeaves: this.tablesFastLeaves,
+    });
 
     // 4. Sky & Chunk Renderers
     this.skyRenderer = new SkyRenderer(this.glWrapper);
@@ -667,6 +674,17 @@ export class WorldManager {
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
     this.weatherRenderer = new WeatherRenderer(this.glWrapper);
+  }
+
+  /** Sets the leaves mode; when it differs from the one the meshes were built for, remeshes every loaded section. */
+  public setLeaves(mode: LeavesSetting): void {
+    settings.leaves = mode;
+    if (!this.tileResolver || this.tablesFastLeaves === (mode === 'fast')) return;
+    this.tablesFastLeaves = mode === 'fast';
+    this.tables = buildMeshLookupTables(BlockRegistry.getInstance(), this.tileResolver, {
+      fastLeaves: this.tablesFastLeaves,
+    });
+    this.streamer.invalidateAll();
   }
 
   public async createWorld(opts?: {
@@ -1004,6 +1022,7 @@ export class WorldManager {
       const underwater = this.underwaterView;
       const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
       this.chunkRenderer.setSkyBrightness?.(skyLightMultiplier(ticks));
+      this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
         fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,

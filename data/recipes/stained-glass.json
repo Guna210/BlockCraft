@@ -1,0 +1,98 @@
+{
+  "red_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "wild_rose"
+    },
+    "result": {
+      "id": "red_stained_glass",
+      "count": 8
+    }
+  },
+  "orange_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "marigold"
+    },
+    "result": {
+      "id": "orange_stained_glass",
+      "count": 8
+    }
+  },
+  "yellow_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "buttercup"
+    },
+    "result": {
+      "id": "yellow_stained_glass",
+      "count": 8
+    }
+  },
+  "green_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "cactus"
+    },
+    "result": {
+      "id": "green_stained_glass",
+      "count": 8
+    }
+  },
+  "cyan_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "lumite_shard"
+    },
+    "result": {
+      "id": "cyan_stained_glass",
+      "count": 8
+    }
+  },
+  "blue_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "bluebell"
+    },
+    "result": {
+      "id": "blue_stained_glass",
+      "count": 8
+    }
+  },
+  "purple_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "violet"
+    },
+    "result": {
+      "id": "purple_stained_glass",
+      "count": 8
+    }
+  },
+  "pink_stained_glass": {
+    "type": "shaped",
+    "pattern": ["GGG", "GDG", "GGG"],
+    "key": {
+      "G": "glass",
+      "D": "heather"
+    },
+    "result": {
+      "id": "pink_stained_glass",
+      "count": 8
+    }
+  }
+}

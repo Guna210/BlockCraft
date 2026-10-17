@@ -135,5 +135,13 @@
   "pine_slab[half=top]": 133,
   "rainwood_planks": 134,
   "rainwood_slab[half=bottom]": 135,
-  "rainwood_slab[half=top]": 136
+  "rainwood_slab[half=top]": 136,
+  "blue_stained_glass": 137,
+  "cyan_stained_glass": 138,
+  "green_stained_glass": 139,
+  "orange_stained_glass": 140,
+  "pink_stained_glass": 141,
+  "purple_stained_glass": 142,
+  "red_stained_glass": 143,
+  "yellow_stained_glass": 144
 }

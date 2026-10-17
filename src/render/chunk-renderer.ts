@@ -1,4 +1,4 @@
-import { fluidAnimation } from './fluid-animation';
+import { fluidAnimation, windAnimation } from './fluid-animation';
 import { FluidDepth } from './fluid-depth';
 import {
   quadCenters,
@@ -19,7 +19,10 @@ import {
 } from './light-curve';
 import { mat4 } from 'gl-matrix';
 import { GLWrapper } from './gl';
+import { settings } from '../engine/settings';
+import { BlockRegistry } from '../world/blocks/registry';
 import { TextureAtlas, CELL_SIZE } from './atlas';
+import { atlasTileIndex, buildSwayMasks, type SwayMasks } from './foliage';
 import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
@@ -53,6 +56,11 @@ uniform float u_nightFactor;
 uniform float u_fluidTime;
 uniform int u_waterTile;
 uniform int u_lavaTile;
+uniform float u_swayOn;
+uniform float u_windTime;
+uniform uvec4 u_swayLeaf[32];
+uniform uvec4 u_swayPlant[32];
+flat out float v_leaf;
 flat out float v_fluid;
 flat out float v_flow;
 out vec3 v_normal;
@@ -96,6 +104,21 @@ void main() {
     worldPos.y += 0.018 * sin(worldPos.x * 1.1 + u_fluidTime * 1.2) * cos(worldPos.z * 0.9 + u_fluidTime * 0.8);
   }
   worldPos += normal * (fluid ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0);
+  uint swayTile = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
+  bool leaf = !fluid && ((u_swayLeaf[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
+  bool plant = !fluid && ((u_swayPlant[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
+  v_leaf = leaf ? 1.0 : 0.0;
+  if (u_swayOn > 0.0 && (leaf || plant)) {
+    // Wind: a function of world position and the shared animation clock, so blocks sharing a corner
+    // move together. Leaves move 0.03 blocks at most; plants sway 0.04 at the tip and stay fixed at the base.
+    float weight = plant ? 1.0 - float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u) : 1.0;
+    float amplitude = plant ? 0.04 : 0.03;
+    vec3 base = u_sectionOrigin + localPos;
+    float phase = u_windTime * 1.6 + base.x * 0.7 + base.z * 0.5;
+    worldPos.x += amplitude * weight * sin(phase + base.y * 0.3);
+    worldPos.z += amplitude * weight * cos(phase * 0.8 + base.x * 0.2);
+    worldPos.y += leaf ? 0.01 * sin(phase * 1.3 + base.z * 0.4) : 0.0;
+  }
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
   float ao = ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u);
   float sky = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * float((a_word0 >> 20u) & 15u) / 15.0;
@@ -147,10 +170,12 @@ void main() {
 
 const FS_CHUNK = `#version 300 es
 precision highp float;
+flat in float v_leaf;
 flat in float v_fluid;
 flat in float v_flow;
 in vec3 v_normal;
 uniform float u_fluidTime;
+uniform int u_fastLeaves;
 uniform highp sampler2D u_sceneDepth;
 uniform mat4 u_inverseViewProj;
 uniform vec2 u_viewport;
@@ -196,7 +221,10 @@ void main() {
   vec2 halfTexel = vec2(0.5) / u_atlasSize;
   vec2 tileUV = clamp(v_tileOrigin + fract(uv) * tileSize, v_tileOrigin + halfTexel, v_tileOrigin + tileSize - halfTexel);
   vec4 texColor = textureGrad(u_atlasSampler, tileUV, dFdx(uv) * tileSize, dFdy(uv) * tileSize);
-  if (u_isCutout == 1 && texColor.a < 0.5) discard;
+  if (u_fastLeaves == 1 && v_leaf > 0.5) {
+    // Fast leaves are opaque cubes: gaps in the sprite become a dark leaf colour.
+    texColor = texColor.a < 0.5 ? vec4(0.11, 0.17, 0.08, 1.0) : vec4(texColor.rgb, 1.0);
+  } else if (u_isCutout == 1 && texColor.a < 0.5) discard;
   // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
   vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
   vec3 litColor = texColor.rgb * tint * v_light;
@@ -258,6 +286,8 @@ export class ChunkRenderer {
   private depth: FluidDepth;
   private inverseViewProj = mat4.create();
   private fluidTime = 0;
+  private windTime = 0;
+  private worldPaused = false;
   private translucentMeshes: GPUSectionMesh[] = [];
   private sortedCamera: [number, number, number] = [Infinity, Infinity, Infinity];
   private sortDirty = true;
@@ -300,6 +330,15 @@ export class ChunkRenderer {
   private locNightFactor: WebGLUniformLocation;
   private locRainFactor: WebGLUniformLocation;
   private locLightningFlash: WebGLUniformLocation;
+  private locSwayOn: WebGLUniformLocation;
+  private locWindTime: WebGLUniformLocation;
+  private locSwayLeaf: WebGLUniformLocation;
+  private locSwayPlant: WebGLUniformLocation;
+  private locFastLeaves: WebGLUniformLocation;
+  private foliage: {
+    atlas: TextureAtlas;
+    sway: SwayMasks;
+  } | null = null;
   private rainFactor = 0;
   private lightningFlash = 0;
   private skyBrightness = 1;
@@ -388,6 +427,11 @@ export class ChunkRenderer {
     this.locWaterFogColor = gl.getUniformLocation(this.program, 'u_waterFogColor')!;
     this.locRainFactor = gl.getUniformLocation(this.program, 'u_rainFactor')!;
     this.locLightningFlash = gl.getUniformLocation(this.program, 'u_lightningFlash')!;
+    this.locSwayOn = gl.getUniformLocation(this.program, 'u_swayOn')!;
+    this.locWindTime = gl.getUniformLocation(this.program, 'u_windTime')!;
+    this.locSwayLeaf = gl.getUniformLocation(this.program, 'u_swayLeaf')!;
+    this.locSwayPlant = gl.getUniformLocation(this.program, 'u_swayPlant')!;
+    this.locFastLeaves = gl.getUniformLocation(this.program, 'u_fastLeaves')!;
     const fields = [
       'locFluidTime',
       'locWaterTile',
@@ -419,6 +463,11 @@ export class ChunkRenderer {
       'locWaterFogColor',
       'locRainFactor',
       'locLightningFlash',
+      'locSwayOn',
+      'locWindTime',
+      'locSwayLeaf',
+      'locSwayPlant',
+      'locFastLeaves',
     ];
     this.programLocations = this.programs.map((program) =>
       Object.fromEntries(
@@ -429,6 +478,11 @@ export class ChunkRenderer {
       ),
     );
     this.fadeUniform = new UniformValueCache((value) => gl.uniform1f(this.locFade, value));
+  }
+
+  /** The simulation is paused: wind stands still, like every other world animation. */
+  public setWorldPaused(paused: boolean): void {
+    this.worldPaused = paused;
   }
 
   public setSkyBrightness(brightness: number): void {
@@ -699,6 +753,17 @@ export class ChunkRenderer {
     if (bucketMesh.lineEbo) this.glWrapper.deleteBuffer(bucketMesh.lineEbo);
   }
 
+  /** Sway masks, rebuilt only when the atlas changes. */
+  private getFoliage(atlas: TextureAtlas) {
+    if (this.foliage?.atlas === atlas) return this.foliage;
+    const registry = BlockRegistry.getInstance();
+    this.foliage = {
+      atlas,
+      sway: buildSwayMasks(registry, atlas),
+    };
+    return this.foliage;
+  }
+
   /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
   private drawPass(pass: number, skyOnly: boolean, wallTorch = false): void {
     const gl = this.glWrapper.gl;
@@ -752,13 +817,13 @@ export class ChunkRenderer {
     Object.assign(this, this.programLocations[index]);
     gl.useProgram(this.program);
     gl.uniform1f(this.locFluidTime, this.fluidTime);
-    const tileIndex = (name: string) => {
-      const rect = atlas.rects.get(name)!;
-      return (
-        Math.floor(rect.y / CELL_SIZE) * Math.floor(atlas.width / CELL_SIZE) +
-        Math.floor(rect.x / CELL_SIZE)
-      );
-    };
+    const tileIndex = (name: string) => atlasTileIndex(atlas, name);
+    const { sway } = this.getFoliage(atlas);
+    gl.uniform1f(this.locSwayOn, settings.leaves === 'fast' ? 0 : 1);
+    gl.uniform1f(this.locWindTime, this.windTime);
+    gl.uniform4uiv(this.locSwayLeaf, sway.leaf);
+    gl.uniform4uiv(this.locSwayPlant, sway.plant);
+    gl.uniform1i(this.locFastLeaves, settings.leaves === 'fast' ? 1 : 0);
     gl.uniform1i(this.locWaterTile, tileIndex('water_0'));
     gl.uniform1i(this.locLavaTile, tileIndex('lava_0'));
     gl.uniform1i(this.locSceneDepth, 4);
@@ -920,6 +985,10 @@ export class ChunkRenderer {
     this.passTriangles = 0;
 
     this.fluidTime = fluidAnimation.sample(nowMs);
+    this.windTime = windAnimation.sample(
+      nowMs,
+      this.worldPaused || fluidAnimation.snapshot().paused,
+    );
     mat4.invert(this.inverseViewProj, viewProjMatrix);
 
     // 1. Opaque Pass
