@@ -18,15 +18,15 @@ const HEART: readonly string[] = [
   '.........',
 ];
 const CARROT: readonly string[] = [
-  '...LLL...',
-  '...LLLL..',
-  '...LLLL..',
-  'BBBBBBBBB',
-  'BBBBBBBBB',
-  '.BBBBBBBB',
-  '...BBBBBB',
-  '......BBB',
-  '........B',
+  '.....L...',
+  '....LLLL.',
+  '...LLLLLL',
+  '....BBBBB',
+  '...BBBBB.',
+  '..BBBB...',
+  '.BBB.....',
+  'BB.......',
+  'B........',
 ];
 const HEART_PALETTE = {
   outline: '#4a1528',
@@ -48,8 +48,8 @@ const CARROT_PALETTE = {
   ridge: '#9b3f1c',
 } as const;
 const HEART_HIGHLIGHTS = new Set(['6,1', '5,2', '6,2']);
-const CARROT_HIGHLIGHTS = new Set(['4,3', '5,4', '6,5']);
-const CARROT_RIDGES = new Set(['5,3', '5,5', '7,6']);
+const CARROT_HIGHLIGHTS = new Set(['5,3', '4,4', '3,5']);
+const CARROT_RIDGES = new Set(['6,3', '5,4', '4,5']);
 const ARMOR: readonly string[] = [
   '00111100',
   '01111110',
@@ -201,17 +201,17 @@ function drawCarrot(
   fraction: number,
   s: number,
 ): void {
-  const minDepth = 6;
-  const maxDepth = 16;
+  const minDepth = -3;
+  const maxDepth = 2;
   drawStatusGlyph(ctx, CARROT, x, y, fraction, s, (px, py, type, edge, amount) => {
     if (edge) return CARROT_PALETTE.outline;
-    const depth = (px + py - minDepth) / (maxDepth - minDepth);
+    const depth = (py - px - minDepth) / (maxDepth - minDepth);
     const filled = type === 'L' ? amount >= 1 : depth >= 1 - amount;
     if (!filled) return CARROT_PALETTE.empty;
     if (CARROT_RIDGES.has(`${px},${py}`)) return CARROT_PALETTE.ridge;
     if (CARROT_HIGHLIGHTS.has(`${px},${py}`)) return CARROT_PALETTE.highlight;
     if (type === 'L')
-      return (px === 4 && py === 1) || (px === 5 && py === 2)
+      return (px === 5 && py === 2) || (px === 7 && py === 2)
         ? CARROT_PALETTE.leafShadow
         : CARROT_PALETTE.leaf;
     return depth > 0.58 ? CARROT_PALETTE.orangeShadow : CARROT_PALETTE.orange;
