@@ -5,11 +5,11 @@ import { LCG, TextureData } from './noise';
  * Luminance delta: 238.6 - 156.1 = 82.5 >= 60.
  */
 export const PAL_ICE: [number, number, number, number][] = [
-  [108, 166, 200, 220], // 0: dark crack edge / shadow (#6ca6c8)
-  [130, 186, 220, 210], // 1: deep ice blue (#82badc)
-  [158, 206, 235, 200], // 2: mid ice blue (#9eceeb)
-  [186, 226, 245, 200], // 3: pale ice blue (#bae2f5)
-  [223, 242, 251, 230], // 4: frost glint highlight (#dff2fb)
+  [108, 166, 200, 175], // 0: dark crack edge / shadow (#6ca6c8)
+  [130, 186, 220, 150], // 1: deep ice blue (#82badc)
+  [158, 206, 235, 140], // 2: mid ice blue (#9eceeb)
+  [186, 226, 245, 135], // 3: pale ice blue (#bae2f5)
+  [223, 242, 251, 190], // 4: frost glint highlight (#dff2fb)
 ];
 
 /**

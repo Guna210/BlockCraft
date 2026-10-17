@@ -69,6 +69,7 @@ const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'sout
 export function buildMeshLookupTables(
   registry: BlockRegistry,
   tileResolver: (texName: string) => number,
+  options: { fastLeaves?: boolean } = {},
 ): MeshLookupTables {
   const stateIds = registry.getAllStateIds();
   const maxStateId = stateIds.length > 0 ? Math.max(...stateIds) : 0;
@@ -102,7 +103,9 @@ export function buildMeshLookupTables(
         ? 64
         : 56 - Number(resolved.properties.level ?? 0) * 7;
     }
-    isOpaqueCube[stateId] = def.fullOpaqueCube ? 1 : 0;
+    // Fast leaves are opaque cubes: their inner faces and faces behind them are never drawn.
+    isOpaqueCube[stateId] =
+      def.fullOpaqueCube || (options.fastLeaves && def.id.endsWith('_leaves')) ? 1 : 0;
     modelKind[stateId] =
       def.model === 'wall_torch'
         ? MODEL_WALL_TORCH +

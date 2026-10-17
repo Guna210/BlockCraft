@@ -302,6 +302,8 @@ export function genGlass(_seed: number = 0): TextureData {
   setPixel(data, 2, 2, PAL_GLASS_GLINT);
   setPixel(data, 3, 3, PAL_GLASS_GLINT);
   setPixel(data, 4, 4, PAL_GLASS_GLINT);
+  setPixel(data, 10, 10, PAL_GLASS_GLINT);
+  setPixel(data, 11, 11, PAL_GLASS_GLINT);
 
   return data;
 }

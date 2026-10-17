@@ -94,7 +94,13 @@ export const PAL_PUMPKIN: RGBA[] = pal([
   '#6a8a30',
 ]);
 export const PAL_MOSSY: RGBA[] = [...PAL_STONE, ...pal(['#2f5a22', '#4a8232', '#74ae4a'])];
-export const PAL_PACKED_ICE: RGBA[] = pal(['#5686c0', '#79ace0', '#a1cdf2', '#cde8fb', '#f0faff']);
+export const PAL_PACKED_ICE: RGBA[] = pal([
+  '#5686c0',
+  '#79ace0',
+  '#a1cdf2',
+  '#cde8fb',
+  '#f0faff',
+]).map((c) => [c[0], c[1], c[2], 230] as RGBA);
 
 // ---- drawing helpers -------------------------------------------------------------------------
 

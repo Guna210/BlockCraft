@@ -34,7 +34,7 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
     } else if (
       blockId === 'air' ||
       blockId === 'glass' ||
-      blockId.startsWith('stained_glass') ||
+      blockId.endsWith('_stained_glass') ||
       blockId === 'ice'
     ) {
       opacity = 0;
@@ -42,6 +42,8 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
       opacity = 1;
     } else if (blockId === 'water') {
       opacity = 1;
+    } else if (blockId === 'packed_ice') {
+      opacity = 3;
     } else {
       opacity = 0;
     }

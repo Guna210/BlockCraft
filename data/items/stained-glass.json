@@ -1,0 +1,42 @@
+{
+  "red_stained_glass": {
+    "kind": "block",
+    "block": "red_stained_glass",
+    "maxStack": 64
+  },
+  "orange_stained_glass": {
+    "kind": "block",
+    "block": "orange_stained_glass",
+    "maxStack": 64
+  },
+  "yellow_stained_glass": {
+    "kind": "block",
+    "block": "yellow_stained_glass",
+    "maxStack": 64
+  },
+  "green_stained_glass": {
+    "kind": "block",
+    "block": "green_stained_glass",
+    "maxStack": 64
+  },
+  "cyan_stained_glass": {
+    "kind": "block",
+    "block": "cyan_stained_glass",
+    "maxStack": 64
+  },
+  "blue_stained_glass": {
+    "kind": "block",
+    "block": "blue_stained_glass",
+    "maxStack": 64
+  },
+  "purple_stained_glass": {
+    "kind": "block",
+    "block": "purple_stained_glass",
+    "maxStack": 64
+  },
+  "pink_stained_glass": {
+    "kind": "block",
+    "block": "pink_stained_glass",
+    "maxStack": 64
+  }
+}
