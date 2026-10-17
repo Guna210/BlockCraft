@@ -1,6 +1,6 @@
 # INFRA-ci — shard the Playwright suite across 4 CI jobs
 
-Status: incomplete (CI timing section to be filled in after the PR's CI run)
+Status: verified
 Depends on: none (owner-requested infrastructure task)
 Full verify (this session): typecheck ✓ · lint ✓ · placeholders ✓ · unit 748 passed (94 files) · e2e 101 passed (23.3m) · console errors 0
 
@@ -11,12 +11,22 @@ Full verify (this session): typecheck ✓ · lint ✓ · placeholders ✓ · uni
 - `VERIFY_E2E_SHARD=1/4 npm run verify`: all five steps passed, e2e 26 passed (3.2m)
 - Plain `npm run verify`: all five steps passed, none of the known 2-core failures occurred
 
-## CI results (fill in after the PR's CI finishes)
+## CI results (run https://github.com/Guna210/BlockCraft/actions/runs/39058618292, head f78d161)
 
-- Per-shard duration: TBD
-- Total wall-clock: TBD
-- Recent single-job Verify run for comparison: TBD
-- Per-shard e2e pass counts (must sum to 101): TBD
+All four shards and the aggregate `verify` job succeeded. Durations are job start to completion as reported by the GitHub API.
+
+| Job | Duration | e2e passed (from job log) |
+|---|---|---|
+| verify (shard 1/4), also static checks + unit | 8m 19s | 26 (4.5m) |
+| verify (shard 2/4) | 12m 46s | 25 (12.3m) |
+| verify (shard 3/4) | 5m 12s | 25 (4.7m) |
+| verify (shard 4/4) | 7m 17s | 25 (6.8m) |
+| verify (aggregate) | 3s | n/a |
+
+- Per-shard e2e pass counts: 26 + 25 + 25 + 25 = 101, which equals the full count.
+- Total wall-clock for the run: 12m 56s (18:33:26 to 18:46:22 UTC). Shard 2 is the critical path: `m04.spec.ts` alone took 8.3m in that job, so shard 2 will stay the slowest shard.
+- Single-job comparison: Verify run https://github.com/Guna210/BlockCraft/actions/runs/39054376303 (master push of PR #51), job 42m 29s. An earlier master run, https://github.com/Guna210/BlockCraft/actions/runs/39040208868 (PR #52), took 29m 30s.
+- Sharded run vs the 42m 29s single job: 12m 56s, about 3.3 times faster. Against the 29m 30s run: about 2.3 times faster.
 
 ## What was built
 
