@@ -121,6 +121,14 @@ export function scheduledWeather(ticks: number): WeatherState {
   return r < 0.9 ? 'rain' : 'thunder';
 }
 
+export interface WeatherSaveState {
+  weather: WeatherState;
+  manualOverride: boolean;
+  strikeCounter: number;
+  lastTick: number;
+  elapsed: number;
+}
+
 class WeatherManager {
   public weather: WeatherState = 'clear';
   public manualOverride = false;
@@ -128,9 +136,27 @@ class WeatherManager {
   public activeStrike: ActiveLightningStrike | null = null;
   public readonly heightmap = new WeatherHeightmap();
 
-  private strikeCounter = 0;
-  private lastTick = -1;
-  private elapsed = 0;
+  public strikeCounter = 0;
+  public lastTick = -1;
+  public elapsed = 0;
+
+  public getState(): WeatherSaveState {
+    return {
+      weather: this.weather,
+      manualOverride: this.manualOverride,
+      strikeCounter: this.strikeCounter,
+      lastTick: this.lastTick,
+      elapsed: this.elapsed,
+    };
+  }
+
+  public setState(state: WeatherSaveState): void {
+    this.weather = state.weather;
+    this.manualOverride = state.manualOverride;
+    this.strikeCounter = state.strikeCounter;
+    this.lastTick = state.lastTick;
+    this.elapsed = state.elapsed;
+  }
 
   public reset(): void {
     this.weather = 'clear';
