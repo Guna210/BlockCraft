@@ -7,23 +7,49 @@ import type { IconSheet } from './icons';
 import { UI, drawCount, drawInset, drawPanel, drawSlot, fillRect, uiScaleFor } from './ui-kit';
 
 const HEART: readonly string[] = [
-  '01100110',
-  '11111111',
-  '11111111',
-  '11111111',
-  '01111110',
-  '00111100',
-  '00011000',
+  '..##.##..',
+  '.#######.',
+  '#########',
+  '#########',
+  '.#######.',
+  '..#####..',
+  '...###...',
+  '....#....',
+  '.........',
 ];
-const HUNGER: readonly string[] = [
-  '00001100',
-  '00111110',
-  '01111111',
-  '01111111',
-  '00111110',
-  '00011100',
-  '00011000',
+const CARROT: readonly string[] = [
+  '.........',
+  '..L.L....',
+  '.LLLL....',
+  '..LLBBB..',
+  '...BBBB..',
+  '....BBBB.',
+  '.....BBBB',
+  '......BBB',
+  '........B',
 ];
+const HEART_PALETTE = {
+  outline: '#4a1528',
+  empty: '#4a4248',
+  shadow: '#8f1d35',
+  mid: '#c82a44',
+  red: '#ea455b',
+  pink: '#ff93a3',
+  highlight: '#ffe8ec',
+} as const;
+const CARROT_PALETTE = {
+  outline: '#493120',
+  empty: '#4a4140',
+  leafShadow: '#397a43',
+  leaf: '#7fbd5b',
+  orangeShadow: '#ca5a22',
+  orange: '#ef842f',
+  highlight: '#ffd478',
+  ridge: '#9b3f1c',
+} as const;
+const HEART_HIGHLIGHTS = new Set(['6,1', '5,2', '6,2']);
+const CARROT_HIGHLIGHTS = new Set(['4,3', '5,4', '6,5']);
+const CARROT_RIDGES = new Set(['5,3', '5,5', '7,6']);
 const ARMOR: readonly string[] = [
   '00111100',
   '01111110',
@@ -113,6 +139,100 @@ function drawPattern(
       fillRect(ctx, x + px, y + py, 1, 1, px / width < bounded ? color : UI.shade, s);
     }
   });
+}
+
+function isPatternEdge(pattern: readonly string[], x: number, y: number): boolean {
+  const filled = (px: number, py: number) =>
+    py >= 0 && py < pattern.length && px >= 0 && px < (pattern[py]?.length ?? 0)
+      ? pattern[py]?.[px] !== '.'
+      : false;
+  return !filled(x - 1, y) || !filled(x + 1, y) || !filled(x, y - 1) || !filled(x, y + 1);
+}
+
+function drawStatusGlyph(
+  ctx: CanvasRenderingContext2D,
+  pattern: readonly string[],
+  x: number,
+  y: number,
+  fraction: number,
+  s: number,
+  colorForCell: (px: number, py: number, type: string, edge: boolean, amount: number) => string,
+): void {
+  const amount = Math.max(0, Math.min(1, fraction));
+  pattern.forEach((row, py) => {
+    for (let px = 0; px < row.length; px++) {
+      const type = row[px]!;
+      if (type === '.') continue;
+      fillRect(
+        ctx,
+        x + px,
+        y + py,
+        1,
+        1,
+        colorForCell(px, py, type, isPatternEdge(pattern, px, py), amount),
+        s,
+      );
+    }
+  });
+}
+
+function drawHeart(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  fraction: number,
+  s: number,
+) {
+  drawStatusGlyph(ctx, HEART, x, y, fraction, s, (px, py, _type, edge, amount) => {
+    if (edge) return HEART_PALETTE.outline;
+    if (px / HEART[0]!.length >= amount) return HEART_PALETTE.empty;
+    if (HEART_HIGHLIGHTS.has(`${px},${py}`))
+      return px === 6 && py === 1 ? HEART_PALETTE.highlight : HEART_PALETTE.pink;
+    if (px <= 2 || py >= 6) return HEART_PALETTE.shadow;
+    if (px <= 4 || py >= 4) return HEART_PALETTE.mid;
+    return HEART_PALETTE.red;
+  });
+}
+
+function drawCarrot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  fraction: number,
+  s: number,
+): void {
+  const minDepth = 6;
+  const maxDepth = 16;
+  drawStatusGlyph(ctx, CARROT, x, y, fraction, s, (px, py, type, edge, amount) => {
+    if (edge) return CARROT_PALETTE.outline;
+    const depth = (px + py - minDepth) / (maxDepth - minDepth);
+    const filled = type === 'L' ? amount >= 1 : depth >= 1 - amount;
+    if (!filled) return CARROT_PALETTE.empty;
+    if (CARROT_RIDGES.has(`${px},${py}`)) return CARROT_PALETTE.ridge;
+    if (CARROT_HIGHLIGHTS.has(`${px},${py}`)) return CARROT_PALETTE.highlight;
+    if (type === 'L')
+      return (px === 2 && py === 2) || (px === 3 && py === 3)
+        ? CARROT_PALETTE.leafShadow
+        : CARROT_PALETTE.leaf;
+    return depth > 0.58 ? CARROT_PALETTE.orangeShadow : CARROT_PALETTE.orange;
+  });
+}
+
+function drawStatusMeter(
+  ctx: CanvasRenderingContext2D,
+  glyph: 'heart' | 'carrot',
+  amount: number,
+  count: number,
+  x: number,
+  y: number,
+  s: number,
+  step: number,
+): void {
+  for (let i = 0; i < count; i++) {
+    const fraction = Math.max(0, Math.min(1, amount / 2 - i));
+    if (glyph === 'heart') drawHeart(ctx, x + i * step, y, fraction, s);
+    else drawCarrot(ctx, x + i * step, y, fraction, s);
+  }
 }
 
 function drawMeter(
@@ -207,8 +327,8 @@ function drawHud(
   drawCrosshair(ctx, width, height);
   if (snapshot.mode === 'creative') return;
 
-  drawMeter(ctx, HEART, snapshot.health, 10, centerX - 94, statusY, s, UI.accent, 9);
-  drawMeter(ctx, HUNGER, snapshot.hunger, 10, centerX + 5, statusY, s, UI.accent, 9);
+  drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9);
+  drawStatusMeter(ctx, 'carrot', snapshot.hunger, 10, centerX + 5, statusY, s, 9);
   if (snapshot.armorPoints > 0)
     drawMeter(ctx, ARMOR, snapshot.armorPoints, 10, centerX - 44, statusY - 10, s, UI.light, 9);
   if (snapshot.submerged)
