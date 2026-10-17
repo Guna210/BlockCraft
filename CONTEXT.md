@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: Sent the M08c fix round (owner-approved) to session_01DR2TANX6z4XcX2ac2TvxWj: pack the sway masks as uvec4[32] or a texture (+ equivalence test); fast leaves use the darkest mid-green × biome tint, re-capture the screenshot. Then the same reviewer for round 2 if needed, or merge.
 - 2026-10-17: M08c review 1 (session_01HfQXqib82PoFwEDCW1rFXa) PASS, no blocking. Non-blocking: sway masks are 2× uint[128] uniforms (~256 vertex uniform vectors, a link-failure risk on minimum-spec GPUs); fast leaves near-black; diagonal sway ~0.057. Recommended a small fix (pack as uvec4[32] or a texture), plus optionally a mid-green for fast leaves. Awaiting the owner's choice.
 - 2026-10-17: M09c c51f405 (icon change), CI green. Hearts match the owner's request; carrots read well as hunger but are thin (about 2 px), and I offered a chunkier-carrot fix line. Updated reviewer prompt given (head c51f405; the PR title still says [INCOMPLETE]).
 - 2026-10-17: M08c PR #52 (8f0d70f), CI green. My screenshot check: glass and stained glass good; fast leaves near-black with a visible repeating pattern (owner to judge). Reviewer prompt given. M09c head moved to c51f405 (icon change); check its screenshots once CI is green.
