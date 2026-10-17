@@ -18,14 +18,14 @@ const HEART: readonly string[] = [
   '.........',
 ];
 const CARROT: readonly string[] = [
-  '.........',
-  '..L.L....',
-  '.LLLL....',
-  '..LLBBB..',
+  '....L....',
+  '...LLLL..',
+  '...LLLL..',
   '...BBBB..',
   '....BBBB.',
   '.....BBBB',
   '......BBB',
+  '.......BB',
   '........B',
 ];
 const HEART_PALETTE = {
@@ -211,7 +211,7 @@ function drawCarrot(
     if (CARROT_RIDGES.has(`${px},${py}`)) return CARROT_PALETTE.ridge;
     if (CARROT_HIGHLIGHTS.has(`${px},${py}`)) return CARROT_PALETTE.highlight;
     if (type === 'L')
-      return (px === 2 && py === 2) || (px === 3 && py === 3)
+      return (px === 4 && py === 1) || (px === 5 && py === 2)
         ? CARROT_PALETTE.leafShadow
         : CARROT_PALETTE.leaf;
     return depth > 0.58 ? CARROT_PALETTE.orangeShadow : CARROT_PALETTE.orange;
