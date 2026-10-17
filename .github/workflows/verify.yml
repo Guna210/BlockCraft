@@ -5,10 +5,23 @@ on:
     branches: [master]
   pull_request:
 
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  verify:
+  shard:
+    name: verify (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      VERIFY_E2E_SHARD: ${{ matrix.shard }}/4
+      # Shard 1 runs typecheck, lint, placeholders and unit; the others run e2e only.
+      VERIFY_SKIP_STATIC: ${{ matrix.shard == 1 && '0' || '1' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,8 +49,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verification-artifacts
+          name: verification-artifacts-shard-${{ matrix.shard }}
           path: |
             artifacts/
             playwright-report/
           retention-days: 7
+
+  verify:
+    name: verify
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every shard to succeed
+        run: |
+          echo "shard result: ${{ needs.shard.result }}"
+          [ "${{ needs.shard.result }}" = "success" ]
