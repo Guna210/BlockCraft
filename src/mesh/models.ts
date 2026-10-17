@@ -168,7 +168,7 @@ export function mergeMeshBuckets<
 }
 
 /** Six outward faces of a half-height stone slab, using the shared half-Y packed bit. */
-const SLAB_CORNERS = [
+export const SLAB_CORNERS = [
   [
     [1, 0, 0],
     [1, 1, 0],

@@ -1,9 +1,9 @@
 import { AO_STEP, lightBrightness } from '../render/light-curve';
 
 export const FACE_NORMAL_STRIDES = [1, -1, 18, -18, 324, -324] as const;
-const U_STRIDES = [324, 324, 1, 1, 1, 1] as const;
-const V_STRIDES = [18, 18, 324, 324, 18, 18] as const;
-const CORNER_SIGNS = [
+export const U_STRIDES = [324, 324, 1, 1, 1, 1] as const;
+export const V_STRIDES = [18, 18, 324, 324, 18, 18] as const;
+export const CORNER_SIGNS = [
   [-1, -1, 1, -1, 1, 1, -1, 1],
   [1, -1, -1, -1, -1, 1, 1, 1],
   [-1, 1, 1, 1, 1, -1, -1, -1],

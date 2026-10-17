@@ -169,6 +169,7 @@ import {
   PAL_ACACIA_LEAVES,
 } from './wood-extra';
 import { genIce, genFire, PAL_ICE, PAL_FIRE } from './weather';
+import { shapeGenerators, shapePalettes } from './shapes';
 import { STAINED_GLASS_COLORS, genStainedGlass, stainedGlassPalette } from './stained-glass';
 
 export { PAL_ICE, PAL_FIRE, genIce, genFire };
@@ -177,6 +178,7 @@ export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
 export const textureGenerators: Record<string, TextureGenerator> = {
   ...terrainToolGenerators,
+  ...shapeGenerators,
   ...Object.fromEntries(
     STAINED_GLASS_COLORS.map((c) => [
       `${c}_stained_glass`,
@@ -363,6 +365,7 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  ...shapePalettes,
   ...Object.fromEntries(
     STAINED_GLASS_COLORS.map((c) => [`${c}_stained_glass`, stainedGlassPalette(c)]),
   ),

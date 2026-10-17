@@ -1,0 +1,134 @@
+{
+  "oak_stairs": [
+    {
+      "id": "oak_stairs",
+      "count": 1
+    }
+  ],
+  "oak_fence": [
+    {
+      "id": "oak_fence",
+      "count": 1
+    }
+  ],
+  "oak_door": [
+    {
+      "id": "oak_door",
+      "count": 1
+    }
+  ],
+  "oak_trapdoor": [
+    {
+      "id": "oak_trapdoor",
+      "count": 1
+    }
+  ],
+  "birch_stairs": [
+    {
+      "id": "birch_stairs",
+      "count": 1
+    }
+  ],
+  "birch_fence": [
+    {
+      "id": "birch_fence",
+      "count": 1
+    }
+  ],
+  "birch_door": [
+    {
+      "id": "birch_door",
+      "count": 1
+    }
+  ],
+  "birch_trapdoor": [
+    {
+      "id": "birch_trapdoor",
+      "count": 1
+    }
+  ],
+  "pine_stairs": [
+    {
+      "id": "pine_stairs",
+      "count": 1
+    }
+  ],
+  "pine_fence": [
+    {
+      "id": "pine_fence",
+      "count": 1
+    }
+  ],
+  "pine_door": [
+    {
+      "id": "pine_door",
+      "count": 1
+    }
+  ],
+  "pine_trapdoor": [
+    {
+      "id": "pine_trapdoor",
+      "count": 1
+    }
+  ],
+  "acacia_stairs": [
+    {
+      "id": "acacia_stairs",
+      "count": 1
+    }
+  ],
+  "acacia_fence": [
+    {
+      "id": "acacia_fence",
+      "count": 1
+    }
+  ],
+  "acacia_door": [
+    {
+      "id": "acacia_door",
+      "count": 1
+    }
+  ],
+  "acacia_trapdoor": [
+    {
+      "id": "acacia_trapdoor",
+      "count": 1
+    }
+  ],
+  "rainwood_stairs": [
+    {
+      "id": "rainwood_stairs",
+      "count": 1
+    }
+  ],
+  "rainwood_fence": [
+    {
+      "id": "rainwood_fence",
+      "count": 1
+    }
+  ],
+  "rainwood_door": [
+    {
+      "id": "rainwood_door",
+      "count": 1
+    }
+  ],
+  "rainwood_trapdoor": [
+    {
+      "id": "rainwood_trapdoor",
+      "count": 1
+    }
+  ],
+  "stone_stairs": [
+    {
+      "id": "stone_stairs",
+      "count": 1
+    }
+  ],
+  "cobblestone_stairs": [
+    {
+      "id": "cobblestone_stairs",
+      "count": 1
+    }
+  ]
+}

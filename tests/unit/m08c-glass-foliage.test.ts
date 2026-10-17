@@ -97,7 +97,10 @@ describe('M08c registry, items, loot and recipes', () => {
   });
 
   it('appends the stained glass states to the end of the saved state IDs without reordering', () => {
-    const entries = Object.entries(savedStateIds as Record<string, number>);
+    // States appended by later tasks (BLOCKS-shapes starts at 145) follow the stained glass.
+    const entries = Object.entries(savedStateIds as Record<string, number>).filter(
+      ([, id]) => id <= 144,
+    );
     const newest = entries.sort((a, b) => b[1] - a[1]).slice(0, 8);
     expect(newest.map(([id]) => id).sort()).toEqual([...STAINED].sort());
     expect((savedStateIds as Record<string, number>)['air']).toBe(0);

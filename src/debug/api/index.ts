@@ -12,6 +12,7 @@ import './clouds';
 import './leaves';
 import './weather';
 import './raycast';
+import './shapes';
 import './inventory';
 import './ui';
 import './entities';
