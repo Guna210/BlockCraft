@@ -43,7 +43,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: #52 (M08c) merged. M09c: the owner swapped the carrots for oranges (head 0c3d387, CI green; I checked the icons: round, outlined, half and empty states fine). Reviewer prompt given.
 - 2026-10-17: #52 CI green on 0424f18; told the owner to merge. A trial merge of m08c with m09c is clean.
 - 2026-10-17: M08c revert pushed (0424f18): fast-leaf screenshot byte-identical to 8f0d70f; net change vs the reviewed head is only the sway-mask packing + its test + notes. Merge #52 once CI is green.
 - 2026-10-17: Owner disliked the new fast-leaves look; asked the M08c builder to revert only the fast-leaf colour (keep the original near-black substitute) and keep the uvec4 sway packing. Then merge #52 when CI is green.
