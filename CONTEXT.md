@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: INFRA-ci gate (session_01Djxz1qonGn1MJ8hX96nP3R): 4 files (verify.yml, verify.mjs, decisions, progress); local unit 748 + e2e 101 all passed; shard lists 26+25+25+25=101; matrix jobs named 'verify (shard n/4)' plus an aggregate 'verify'. Advised approve; the owner adds harness-change; retitle verified after CI timings are recorded.
 - 2026-10-17: Owner wants faster CI. Gave a Sonnet prompt for INFRA-ci (claude/infra-ci): 4-way Playwright sharding via a matrix where each job runs `npm run verify` with VERIFY_E2E_SHARD (keeps SPEC §5.6); shard 1 runs static+unit, shards 2-4 set VERIFY_SKIP_STATIC=1; a final job named `verify` aggregates; per-PR concurrency cancel. Needs the owner's harness-change label. Told the owner to tell me #51 status / M10b-M10c builders.
 - 2026-10-17: M09c round 2 PASS on b110d84 (CI #224 green, title verified, merges clean). Told the owner to merge #51; then M10b/M10c are unblocked.
 - 2026-10-17: M09c F3 gate restored (4014936, SPEC §3.2), head b110d84, CI green per the owner. Sent round 2 to session_01WTzFdgDYTcgc2XBz6SSkhu.
