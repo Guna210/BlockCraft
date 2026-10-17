@@ -79,6 +79,7 @@ Ready next: M09c (prompt given for Codex), M08c (prompt given; agy out after a p
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-17: Owner wants faster CI. Gave a Sonnet prompt for INFRA-ci (claude/infra-ci): 4-way Playwright sharding via a matrix where each job runs `npm run verify` with VERIFY_E2E_SHARD (keeps SPEC §5.6); shard 1 runs static+unit, shards 2-4 set VERIFY_SKIP_STATIC=1; a final job named `verify` aggregates; per-PR concurrency cancel. Needs the owner's harness-change label. Told the owner to tell me #51 status / M10b-M10c builders.
 - 2026-10-17: M09c round 2 PASS on b110d84 (CI #224 green, title verified, merges clean). Told the owner to merge #51; then M10b/M10c are unblocked.
 - 2026-10-17: M09c F3 gate restored (4014936, SPEC §3.2), head b110d84, CI green per the owner. Sent round 2 to session_01WTzFdgDYTcgc2XBz6SSkhu.
 - 2026-10-17: M09c fix 7a8b641 (264-sample graph, 0-33 ms scale, e2e graph check, ART rule named, dead entry removed, F3 ungated) + 294c315 (progress verified with CI #220 numbers). MY ERROR: SPEC §3.2 (binding) says ?debug=1 enables the F3 overlay, so ungating F3 breaks SPEC. Told the owner: either revert the gate (recommended) or edit SPEC §3.2. Round 2 goes to session_01WTzFdgDYTcgc2XBz6SSkhu after the final CI is green.
