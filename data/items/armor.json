@@ -3,48 +3,56 @@
     "kind": "armor",
     "maxStack": 1,
     "texture": "copper_helmet",
-    "armorSlot": "head"
+    "armorSlot": "head",
+    "armorPoints": 2
   },
   "copper_chestplate": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "copper_chestplate",
-    "armorSlot": "chest"
+    "armorSlot": "chest",
+    "armorPoints": 4
   },
   "copper_leggings": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "copper_leggings",
-    "armorSlot": "legs"
+    "armorSlot": "legs",
+    "armorPoints": 3
   },
   "copper_boots": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "copper_boots",
-    "armorSlot": "feet"
+    "armorSlot": "feet",
+    "armorPoints": 1
   },
   "iron_helmet": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "iron_helmet",
-    "armorSlot": "head"
+    "armorSlot": "head",
+    "armorPoints": 2
   },
   "iron_chestplate": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "iron_chestplate",
-    "armorSlot": "chest"
+    "armorSlot": "chest",
+    "armorPoints": 6
   },
   "iron_leggings": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "iron_leggings",
-    "armorSlot": "legs"
+    "armorSlot": "legs",
+    "armorPoints": 5
   },
   "iron_boots": {
     "kind": "armor",
     "maxStack": 1,
     "texture": "iron_boots",
-    "armorSlot": "feet"
+    "armorSlot": "feet",
+    "armorPoints": 2
   }
 }

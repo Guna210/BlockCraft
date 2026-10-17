@@ -12,6 +12,7 @@ import { WorldManager } from './world/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
 import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
+import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { createSentinelTile } from './render/texture-resolve';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -91,6 +92,64 @@ function main() {
   const ui = new UiManager(input, () => worldManager.playerController, icons);
   ui.attach();
   activeUi.manager = ui;
+  const hud = new Hud(
+    input,
+    () => worldManager.playerController,
+    icons,
+    debug,
+    (): DebugOverlaySnapshot | null => {
+      const world = worldManager.world;
+      const controller = worldManager.playerController;
+      const player = controller?.player;
+      if (!world || !controller || !player) return null;
+      const [x, y, z] = player.pos;
+      const blockX = Math.floor(x);
+      const blockY = Math.floor(y + player.eye);
+      const blockZ = Math.floor(z);
+      const angle = (((player.yaw / (Math.PI / 4)) % 8) + 8) % 8;
+      const directions = [
+        'EAST',
+        'SOUTH-EAST',
+        'SOUTH',
+        'SOUTH-WEST',
+        'WEST',
+        'NORTH-WEST',
+        'NORTH',
+        'NORTH-EAST',
+      ];
+      const interaction = controller.interaction;
+      let target = 'NONE';
+      if (interaction?.target.hit) {
+        const hit = interaction.target;
+        target = `${hit.x} ${hit.y} ${hit.z} ${world
+          .getBlock(hit.x, hit.y, hit.z)
+          .id.toUpperCase()}`;
+      }
+      return {
+        fps: renderStats.fps,
+        frameTimes: frameStats.recentFrameTimes(),
+        position: [...player.pos],
+        chunk: [Math.floor(x / 16), Math.floor(z / 16)],
+        facing: directions[Math.round(angle) % directions.length]!,
+        biome: world.getBiome(blockX, blockZ),
+        light: world.getLight(blockX, blockY, blockZ),
+        target,
+        render: {
+          frameCpuMsP95: renderStats.frameCpuMsP95,
+          uploadMsP95: renderStats.uploadMsP95,
+          drawCalls: renderStats.drawCalls,
+          triangles: renderStats.triangles,
+          chunksLoaded: renderStats.chunksLoaded,
+          chunksMeshed: renderStats.chunksMeshed,
+          chunksVisible: renderStats.chunksVisible,
+        },
+        workers: worldManager.getWorkerStats(),
+      };
+    },
+    () => worldManager.underwaterView.submerged,
+    () => ui.screen !== null,
+  );
+  hud.attach();
   let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
     frameDrain = new FencedErrorDrain(
@@ -171,6 +230,7 @@ function main() {
     }
 
     ui.frame();
+    hud.frame(time);
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;

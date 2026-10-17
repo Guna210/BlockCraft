@@ -20,6 +20,7 @@ export interface FrameStatsSnapshot {
 
 /** Oldest samples are dropped beyond this many frames (an hour at 60 fps is 216000). */
 const MAX_SAMPLES = 100_000;
+export const MAX_RECENT_FRAME_SAMPLES = 264;
 
 export function percentile95(samples: ArrayLike<number>): number {
   if (samples.length === 0) return 0;
@@ -38,12 +39,17 @@ export class FrameStats {
   private upload: number[] = [];
   private glCheck: number[] = [];
   private pump: number[] = [];
+  private readonly recentFrames = new Array<number>(MAX_RECENT_FRAME_SAMPLES);
+  private recentFrameCount = 0;
+  private nextRecentFrame = 0;
 
   reset(): void {
     this.pump = [];
     this.frameCpu = [];
     this.upload = [];
     this.glCheck = [];
+    this.recentFrameCount = 0;
+    this.nextRecentFrame = 0;
   }
 
   record(frameCpuMs: number, uploadMs: number, glCheckMs: number): void {
@@ -56,6 +62,22 @@ export class FrameStats {
     this.frameCpu.push(frameCpuMs);
     this.upload.push(uploadMs);
     this.glCheck.push(glCheckMs);
+    this.recentFrames[this.nextRecentFrame] = frameCpuMs;
+    this.nextRecentFrame = (this.nextRecentFrame + 1) % this.recentFrames.length;
+    this.recentFrameCount = Math.min(this.recentFrames.length, this.recentFrameCount + 1);
+  }
+
+  /** A copy of the latest frame CPU samples for small diagnostic graphs. */
+  recentFrameTimes(limit = MAX_RECENT_FRAME_SAMPLES): number[] {
+    if (!Number.isInteger(limit) || limit < 0)
+      throw new Error('Frame history limit must be non-negative');
+    const count = Math.min(limit, this.recentFrameCount);
+    const first =
+      (this.nextRecentFrame - count + this.recentFrames.length) % this.recentFrames.length;
+    return Array.from(
+      { length: count },
+      (_, i) => this.recentFrames[(first + i) % this.recentFrames.length]!,
+    );
   }
 
   /** One streaming task outside the frame callback: its main-thread time. */
