@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: BLOCKS-shapes catch-up 57ef54d: merged master, IDs 158-533, m08c test identical to master, crafting 121 + smelting 17, tile ≥ 1024 guard + door-drop test. Needs owner approval for a test edit: m10b-crafting-chests.test.ts:42 getMaxStateId() toBe(157) → ≥ 157 (exact workbench/chest IDs still pinned); I recommended approval. Merge #54 when CI is green; then M10c kiln = 534-541.
 - 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
 - 2026-10-18: Merge order changed: M10b (#55) → BLOCKS-shapes (#54, renumber to 158-533 and take master's m08c test) → M10c (#56, renumber once at the end, after master's last ID, probably 534-541).
 - 2026-10-18: M10b round 2 PASS on 76c4776 (slot mapping verified by the e2e test; non-blocking: RESULT label touches a count, unexplained READY button). Told the owner to merge #55; then M10c renumbers after 157 and takes Codex's m08c test, and BLOCKS-shapes renumbers last.
