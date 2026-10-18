@@ -4,7 +4,6 @@ import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../harness/fixture';
 import { assertNotBlank, assertNoMissingTexture } from '../harness/pixels';
-import { FLAME_FRAMES, isFlameEdge } from '../../src/ui/kiln-screen';
 
 async function setupWorld(page: Page) {
   await page.evaluate(async () => {
@@ -246,6 +245,68 @@ test('Visual Review: m10-kiln mid-smelt with damaged tool durability bar', async
       flamePng.data[idx + 3] = 255;
     }
   }
+
+  // Copy of FLAME_FRAMES in src/ui/kiln-screen.ts (the spec cannot import src modules that load JSON).
+  const FLAME_FRAMES: readonly (readonly string[])[] = [
+    [
+      '......R.......',
+      '.....ROR......',
+      '.....ROR......',
+      '....ROOORR....',
+      '..RROOOOOR....',
+      '..ROOOOOOR....',
+      '..ROOOOOOOR...',
+      '..ROOOYOOOR...',
+      '.ROOOYYYOOR...',
+      '.ROOOYYYOOORR.',
+      'RRROOOOOOOOR..',
+      '...ROOOOOOR...',
+      '...ROOOOOR....',
+      '....RRRRR.....',
+    ],
+    [
+      '.......R......',
+      '.....RRR......',
+      '.....ROR.R....',
+      '....ROOOR.R...',
+      '...ROOOOORR...',
+      '...ROOOOOR....',
+      '...ROOOOOOR...',
+      '..ROOOYOOOR...',
+      'RROOOYYYOOOR..',
+      'ROOOOYYYOOOR..',
+      '.ROOOOOOOOR...',
+      '..ROOOOOOOR...',
+      '...ROOOOOR....',
+      '....RRRRR.....',
+    ],
+    [
+      '.....R........',
+      '.....RRR......',
+      '...R.ROR......',
+      '...RROOOR.....',
+      '...ROOOOOR....',
+      '...ROOOOOOR...',
+      '..ROOOOOOORR..',
+      '..ROOOYOOR....',
+      '.ROOOYYYOORR..',
+      '..ROOYYYOOOR..',
+      '.ROOOOOOOOORR.',
+      '..ROOOOOOOR...',
+      '...ROOOOOR....',
+      '....RRRRR.....',
+    ],
+  ];
+
+  const isFlameEdge = (frame: readonly string[], row: number, col: number): boolean => {
+    if (row === 0 || row === 13 || col === 0 || col === 13) return true;
+    return (
+      frame[row - 1]![col] === '.' ||
+      frame[row + 1]![col] === '.' ||
+      frame[row]![col - 1] === '.' ||
+      frame[row]![col + 1] === '.'
+    );
+  };
 
   const renderSingleFlame = (
     startX: number,
