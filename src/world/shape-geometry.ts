@@ -7,6 +7,8 @@ export const BOTTOM_SLAB_BOX: Box = [0, 0, 0, 1, 0.5, 1];
 export const TOP_SLAB_BOX: Box = [0, 0.5, 0, 1, 1, 1];
 const PLANT_BOX: Box = [0.15, 0, 0.15, 0.85, 1, 0.85];
 const TORCH_BOX: Box = [0.35, 0, 0.35, 0.7, 0.875, 0.7];
+const TRACE_BOX: Box = [0, 0, 0, 1, 0.125, 1];
+const TRIPWIRE_BOX: Box = [0, 0.4, 0, 1, 0.6, 1];
 export const WALL_FACINGS = ['north', 'south', 'east', 'west'] as const;
 export type Facing = (typeof WALL_FACINGS)[number];
 const WALL_BOXES: readonly Box[] = [
@@ -125,6 +127,12 @@ export function selectionBoxes(
   if (blockId === 'wall_torch') return [WALL_TORCH_BOXES[facing]!];
   if (blockId === 'torch') return [TORCH_BOX];
   switch (model) {
+    case 'trace':
+      return [TRACE_BOX];
+    case 'tripwire':
+      return [TRIPWIRE_BOX];
+    case 'pressure_plate':
+      return [[0, 0, 0, 1, String(props.powered) === 'true' ? 1 / 32 : 1 / 16, 1]];
     case 'cross':
       return [PLANT_BOX];
     case 'wall':
@@ -155,6 +163,9 @@ export function collisionBoxes(
     case 'cross':
     case 'wall':
     case 'wall_torch':
+    case 'trace':
+    case 'tripwire':
+    case 'pressure_plate':
       return [];
     case 'fence':
       return fenceBoxes(props, true);

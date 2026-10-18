@@ -1,0 +1,66 @@
+{
+  "copper_trace": {
+    "type": "shaped",
+    "pattern": ["CCC"],
+    "key": { "C": "copper_ingot" },
+    "result": { "id": "copper_trace", "count": 8 }
+  },
+  "inverter_torch": {
+    "type": "shaped",
+    "pattern": ["C", "S"],
+    "key": { "C": "copper_ingot", "S": "stick" },
+    "result": { "id": "inverter_torch", "count": 2 }
+  },
+  "relay": {
+    "type": "shaped",
+    "pattern": ["CSC", " I "],
+    "key": { "C": "copper_ingot", "S": "stone", "I": "iron_ingot" },
+    "result": { "id": "relay", "count": 1 }
+  },
+  "gauge": {
+    "type": "shaped",
+    "pattern": ["CIC", " G ", "C C"],
+    "key": { "C": "copper_ingot", "I": "iron_ingot", "G": "glass" },
+    "result": { "id": "gauge", "count": 1 }
+  },
+  "lever": {
+    "type": "shaped",
+    "pattern": ["S", "C"],
+    "key": { "S": "stick", "C": "cobblestone" },
+    "result": { "id": "lever", "count": 1 }
+  },
+  "stone_button": {
+    "type": "shapeless",
+    "ingredients": ["stone"],
+    "result": { "id": "stone_button", "count": 1 }
+  },
+  "wooden_button": {
+    "type": "shapeless",
+    "ingredients": ["#any_planks"],
+    "result": { "id": "wooden_button", "count": 1 }
+  },
+  "pressure_plate": {
+    "type": "shaped",
+    "pattern": ["CC"],
+    "key": { "C": "stone" },
+    "result": { "id": "pressure_plate", "count": 1 }
+  },
+  "tripwire_hook": {
+    "type": "shaped",
+    "pattern": ["I", "S", "P"],
+    "key": { "I": "iron_ingot", "S": "stick", "P": "#any_planks" },
+    "result": { "id": "tripwire_hook", "count": 2 }
+  },
+  "tripwire": {
+    "type": "shaped",
+    "pattern": ["SPS"],
+    "key": { "S": "stick", "P": "#any_planks" },
+    "result": { "id": "tripwire", "count": 3 }
+  },
+  "lamp": {
+    "type": "shaped",
+    "pattern": ["GCG", "C C", "GCG"],
+    "key": { "G": "glass", "C": "copper_ingot" },
+    "result": { "id": "lamp", "count": 1 }
+  }
+}

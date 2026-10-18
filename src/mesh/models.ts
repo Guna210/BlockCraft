@@ -9,6 +9,8 @@ export const MODEL_CROSS = 1;
 export const MODEL_BOTTOM_SLAB = 2;
 export const MODEL_TOP_SLAB = 3;
 export const MODEL_WALL_NORTH = 4;
+export const MODEL_TRACE = 13;
+export const MODEL_TRIPWIRE = 14;
 export const WALL_NORMALS = [5, 4, 0, 1] as const;
 
 /**

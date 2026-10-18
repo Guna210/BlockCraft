@@ -214,6 +214,10 @@ export class BlockRegistry {
 
     const tex = state.definition.textures;
 
+    if (state.blockId === 'copper_trace') {
+      return `copper_trace_${Number(state.properties.power ?? 0)}`;
+    }
+
     // Log axis rotation handling:
     // If block has an 'axis' state property ('x', 'y', 'z')
     const axis = state.properties['axis'] as string | undefined;
@@ -252,6 +256,12 @@ export class BlockRegistry {
       if (face === 'top') return tex.top || tex.side || tex.front;
       if (face === 'bottom') return tex.bottom || tex.top || tex.side || tex.front;
       return tex[face] || tex.side || tex.top || tex.front;
+    }
+
+    if (String(state.properties['lit']) === 'true') {
+      const litTexture =
+        tex[`${face}_lit`] ?? (face === 'top' || face === 'bottom' ? undefined : tex.side_lit);
+      if (litTexture) return litTexture;
     }
 
     // Default face fallback order:

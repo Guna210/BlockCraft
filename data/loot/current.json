@@ -1,0 +1,13 @@
+{
+  "copper_trace": [{ "id": "copper_trace", "count": 1 }],
+  "gauge": [{ "id": "gauge", "count": 1 }],
+  "inverter_torch": [{ "id": "inverter_torch", "count": 1 }],
+  "lamp": [{ "id": "lamp", "count": 1 }],
+  "lever": [{ "id": "lever", "count": 1 }],
+  "pressure_plate": [{ "id": "pressure_plate", "count": 1 }],
+  "relay": [{ "id": "relay", "count": 1 }],
+  "stone_button": [{ "id": "stone_button", "count": 1 }],
+  "tripwire": [{ "id": "tripwire", "count": 1 }],
+  "tripwire_hook": [{ "id": "tripwire_hook", "count": 1 }],
+  "wooden_button": [{ "id": "wooden_button", "count": 1 }]
+}

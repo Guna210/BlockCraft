@@ -1,0 +1,214 @@
+{
+  "copper_trace": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "trace",
+    "tool": "none",
+    "states": {
+      "power": {
+        "type": "enum",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ],
+        "default": "0"
+      }
+    },
+    "textures": { "top": "copper_trace_0", "side": "copper_trace_0", "bottom": "copper_trace_0" }
+  },
+  "gauge": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west"],
+        "default": "north"
+      },
+      "mode": { "type": "enum", "values": ["compare", "subtract"], "default": "compare" },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": {
+      "top": "gauge_top",
+      "side": "gauge_side",
+      "bottom": "gauge_bottom",
+      "front": "gauge_front",
+      "front_lit": "gauge_front_lit"
+    }
+  },
+  "inverter_torch": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "states": {
+      "attachment": {
+        "type": "enum",
+        "values": ["floor", "ceiling", "wall_north", "wall_south", "wall_east", "wall_west"],
+        "default": "floor"
+      },
+      "lit": { "type": "enum", "values": ["false", "true"], "default": "true" }
+    },
+    "textures": { "top": "inverter_torch", "side": "inverter_torch", "bottom": "inverter_torch" }
+  },
+  "lamp": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "lightEmissionWhen": { "lit": "true", "value": 15 },
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": { "lit": { "type": "enum", "values": ["false", "true"], "default": "false" } },
+    "textures": {
+      "top": "lamp_top",
+      "side": "lamp_side",
+      "bottom": "lamp_bottom",
+      "top_lit": "lamp_top_lit",
+      "side_lit": "lamp_side_lit",
+      "bottom_lit": "lamp_bottom_lit"
+    }
+  },
+  "lever": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "states": {
+      "face": {
+        "type": "enum",
+        "values": ["floor", "ceiling", "wall_north", "wall_south", "wall_east", "wall_west"],
+        "default": "floor"
+      },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": { "top": "lever", "side": "lever", "bottom": "lever" }
+  },
+  "pressure_plate": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "pressure_plate",
+    "tool": "none",
+    "states": { "powered": { "type": "enum", "values": ["false", "true"], "default": "false" } },
+    "textures": { "top": "pressure_plate", "side": "pressure_plate", "bottom": "pressure_plate" }
+  },
+  "relay": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "delay": { "type": "enum", "values": ["1", "2", "3", "4"], "default": "1" },
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west"],
+        "default": "north"
+      },
+      "locked": { "type": "enum", "values": ["false", "true"], "default": "false" },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": {
+      "top": "relay_top",
+      "side": "relay_side",
+      "bottom": "relay_bottom",
+      "front": "relay_front",
+      "front_lit": "relay_front_lit"
+    }
+  },
+  "stone_button": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "states": {
+      "face": {
+        "type": "enum",
+        "values": ["floor", "ceiling", "wall_north", "wall_south", "wall_east", "wall_west"],
+        "default": "floor"
+      },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": { "top": "stone_button", "side": "stone_button", "bottom": "stone_button" }
+  },
+  "tripwire": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "tripwire",
+    "tool": "none",
+    "textures": { "top": "tripwire", "side": "tripwire", "bottom": "tripwire" }
+  },
+  "tripwire_hook": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "wall",
+    "tool": "none",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west"],
+        "default": "north"
+      },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": { "top": "tripwire_hook", "side": "tripwire_hook", "bottom": "tripwire_hook" }
+  },
+  "wooden_button": {
+    "hardness": 0.5,
+    "blastResistance": 0.5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "states": {
+      "face": {
+        "type": "enum",
+        "values": ["floor", "ceiling", "wall_north", "wall_south", "wall_east", "wall_west"],
+        "default": "floor"
+      },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": { "top": "wooden_button", "side": "wooden_button", "bottom": "wooden_button" }
+  }
+}

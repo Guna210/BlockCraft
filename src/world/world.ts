@@ -4,6 +4,8 @@ import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
+import { EntityQuery } from '../entity/query';
+import { CurrentEngine } from '../gameplay/current';
 import {
   BlockEntityManager,
   BLOCK_ENTITY_TICK_TYPE,
@@ -14,6 +16,8 @@ export class World {
   public readonly ticks = new BlockTicks();
   public readonly fluids: FluidSimulation;
   public readonly blockEntities: BlockEntityManager;
+  public readonly entityQuery = new EntityQuery();
+  public readonly current: CurrentEngine;
 
   public *getTickSections(): Iterable<TickSection> {
     for (const col of this.columns.values()) {
@@ -28,9 +32,11 @@ export class World {
       if (block.type === BLOCK_ENTITY_TICK_TYPE) {
         this.blockEntities.tickBlockEntity(block.x, block.y, block.z);
       } else {
+        if (this.current.hasComponents && this.current.handleScheduledTick(block)) return;
         this.fluids.tick(block);
       }
     });
+    if (this.current.hasComponents) this.current.tick();
   }
 
   private columns: Map<string, ChunkColumn> = new Map();
@@ -49,6 +55,7 @@ export class World {
     this.registry = BlockRegistry.getInstance();
     this.fluids = new FluidSimulation(this);
     this.blockEntities = new BlockEntityManager(this);
+    this.current = new CurrentEngine(this);
     this.lightEngine = initLightEngine ? new LightEngine() : (null as unknown as LightEngine);
   }
 
@@ -262,6 +269,9 @@ export class World {
     const oldBlockId = this.registry.getResolvedState(oldStateId)?.blockId ?? 'air';
     const newBlockId = this.registry.getResolvedState(stateId)?.blockId ?? 'air';
     this.blockEntities.onBlockChanged(x, y, z, oldBlockId, newBlockId, stateId, oldStateId);
+    if (this.current.shouldObserveBlockChange(newBlockId)) {
+      this.current.onBlockChanged(x, y, z, newBlockId);
+    }
 
     if (this.lightEngine) {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);

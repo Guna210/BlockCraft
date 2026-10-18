@@ -7,11 +7,14 @@ import {
   MODEL_BOTTOM_SLAB,
   MODEL_TOP_SLAB,
   MODEL_WALL_NORTH,
+  MODEL_TRACE,
+  MODEL_TRIPWIRE,
   emitWallBlock,
   emitSlabBlock,
 } from './models';
 import { sampleFaceCorners, canMergeCorners, shouldFlipQuad, FACE_NORMAL_STRIDES } from './ao';
 import { packVertex } from './vertex';
+import { emitCopperTrace, emitTripwire } from './current';
 export { packVertex } from './vertex';
 import type { BlockRegistry } from '../world/blocks/registry';
 import type { BlockFaceDirection } from '../world/blocks/types';
@@ -69,7 +72,7 @@ export interface MeshLookupTables {
 }
 
 const FACING_FACE: Record<Facing, number> = { east: 0, west: 1, south: 4, north: 5 };
-const SHAPE_MODELS = new Set(['stairs', 'fence', 'door', 'trapdoor']);
+const SHAPE_MODELS = new Set(['stairs', 'fence', 'door', 'trapdoor', 'pressure_plate']);
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
 
@@ -130,16 +133,20 @@ export function buildMeshLookupTables(
       : def.model === 'wall_torch'
         ? MODEL_WALL_TORCH +
           ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
-        : def.model === 'cross'
-          ? MODEL_CROSS
-          : def.model === 'slab'
-            ? resolved.properties.half === 'top'
-              ? MODEL_TOP_SLAB
-              : MODEL_BOTTOM_SLAB
-            : def.model === 'wall'
-              ? MODEL_WALL_NORTH +
-                ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
-              : MODEL_CUBE;
+        : def.model === 'trace'
+          ? MODEL_TRACE
+          : def.model === 'tripwire'
+            ? MODEL_TRIPWIRE
+            : def.model === 'cross'
+              ? MODEL_CROSS
+              : def.model === 'slab'
+                ? resolved.properties.half === 'top'
+                  ? MODEL_TOP_SLAB
+                  : MODEL_BOTTOM_SLAB
+                : def.model === 'wall'
+                  ? MODEL_WALL_NORTH +
+                    ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
+                  : MODEL_CUBE;
 
     if (def.renderLayer === 'opaque') {
       renderLayer[stateId] = 1;
@@ -333,18 +340,29 @@ const cutoutScratch = createBucketScratch();
 const translucentScratch = createBucketScratch();
 const modelScratch = createBucketScratch();
 
-/** Model blocks are not bounded by 6 faces each, so the model bucket grows when a section needs it. */
+/** Models can emit double-sided quads, so reserve up to 12 indices per quad. */
 function reserveQuads(scratch: BucketScratch, quads: number): void {
-  const needed = scratch.quadCount + quads;
-  if (needed * 8 <= scratch.vertices.length) return;
-  let capacity = scratch.vertices.length / 8;
-  while (capacity < needed) capacity *= 2;
-  const vertices = new Uint32Array(capacity * 8);
-  const indices = new Uint32Array(capacity * 6);
-  vertices.set(scratch.vertices.subarray(0, scratch.vertOffset));
-  indices.set(scratch.indices.subarray(0, scratch.indexOffset));
-  scratch.vertices = vertices;
-  scratch.indices = indices;
+  const neededVertices = scratch.vertOffset + quads * 8;
+  const neededIndices = scratch.indexOffset + quads * 12;
+  if (neededVertices <= scratch.vertices.length && neededIndices <= scratch.indices.length) return;
+
+  let vertexCapacity = scratch.vertices.length;
+  let indexCapacity = scratch.indices.length;
+  while (vertexCapacity < neededVertices) vertexCapacity *= 2;
+  while (indexCapacity < neededIndices) indexCapacity *= 2;
+  if (vertexCapacity === scratch.vertices.length && indexCapacity === scratch.indices.length)
+    return;
+
+  if (vertexCapacity !== scratch.vertices.length) {
+    const vertices = new Uint32Array(vertexCapacity);
+    vertices.set(scratch.vertices.subarray(0, scratch.vertOffset));
+    scratch.vertices = vertices;
+  }
+  if (indexCapacity !== scratch.indices.length) {
+    const indices = new Uint32Array(indexCapacity);
+    indices.set(scratch.indices.subarray(0, scratch.indexOffset));
+    scratch.indices = indices;
+  }
 }
 
 function resetBucketScratch(scratch: BucketScratch): void {
@@ -860,6 +878,47 @@ export function greedyMesh(
             tables as Required<MeshLookupTables>,
             state,
             paddedSection,
+            paddedLight,
+            px + yzOff,
+            px - 1,
+            py - 1,
+            pz - 1,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+          );
+          bucket.vertOffset += quads * 8;
+          bucket.indexOffset += quads * 6;
+          bucket.quadCount += quads;
+          continue;
+        }
+        if (tables.modelKind[state] === MODEL_TRACE) {
+          const bucket = modelScratch;
+          const quads = emitCopperTrace(
+            tables,
+            paddedSection,
+            paddedLight,
+            state,
+            px + yzOff,
+            px - 1,
+            py - 1,
+            pz - 1,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+          );
+          bucket.vertOffset += quads * 8;
+          bucket.indexOffset += quads * 6;
+          bucket.quadCount += quads;
+          continue;
+        }
+        if (tables.modelKind[state] === MODEL_TRIPWIRE) {
+          const bucket = modelScratch;
+          const quads = emitTripwire(
+            state,
+            tables,
             paddedLight,
             px + yzOff,
             px - 1,
