@@ -40,14 +40,19 @@ function rect(tile: TextureData, x0: number, y0: number, x1: number, y1: number,
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) setPixel(tile, x, y, color);
 }
 
-/** Beveled stone frame shared by every piston and dispenser face: light top-left, dark bottom-right. */
+/**
+ * Beveled stone frame shared by every piston and dispenser face: a dark outline whose opposite
+ * edges match so the tile wraps, then a bevel lit from the top-left.
+ */
 function stoneFrame(tile: TextureData, width: number): void {
   rect(tile, 0, 0, 15, 15, STONE[2]!);
-  rect(tile, 0, 0, 15, width - 1, STONE[3]!);
-  rect(tile, 0, 0, width - 1, 15, STONE[3]!);
-  rect(tile, 0, 16 - width, 15, 15, STONE[1]!);
-  rect(tile, 16 - width, 0, 15, 15, STONE[1]!);
+  rect(tile, 1, 1, 14, width, STONE[3]!);
+  rect(tile, 1, 1, width, 14, STONE[3]!);
+  rect(tile, 1, 15 - width, 14, 14, STONE[1]!);
+  rect(tile, 15 - width, 1, 14, 14, STONE[1]!);
+  rect(tile, 0, 0, 15, 0, STONE[0]!);
   rect(tile, 0, 15, 15, 15, STONE[0]!);
+  rect(tile, 0, 0, 0, 15, STONE[0]!);
   rect(tile, 15, 0, 15, 15, STONE[0]!);
 }
 
@@ -144,7 +149,7 @@ export function genStickyPistonFrontOpen(seed = 15109): TextureData {
 export function genPistonShaft(seed = 15104): TextureData {
   const tile = createEmptyTexture();
   rect(tile, 0, 0, 15, 15, IRON[1]!);
-  rect(tile, 0, 0, 15, 0, IRON[3]!);
+  rect(tile, 0, 0, 15, 0, IRON[0]!);
   rect(tile, 0, 15, 15, 15, IRON[0]!);
   for (const x of [1, 6, 11]) {
     rect(tile, x, 1, x + 1, 14, IRON[2]!);
@@ -218,7 +223,7 @@ function planks(tile: TextureData, seed: number): void {
   rect(tile, 0, 0, 15, 15, WOOD[2]!);
   for (const y of [0, 4, 8, 12]) {
     rect(tile, 0, y, 15, y, WOOD[3]!);
-    rect(tile, 0, y + 3, 15, y + 3, WOOD[0]!);
+    rect(tile, 0, y + 3, 15, y + 3, y === 12 ? WOOD[3]! : WOOD[0]!);
     rect(tile, 3 + ((y * 5) % 8), y + 1, 6 + ((y * 5) % 8), y + 1, WOOD[1]!);
   }
   for (const [x, y] of [

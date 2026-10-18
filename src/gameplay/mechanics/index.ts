@@ -122,6 +122,8 @@ export class Mechanics {
   private readonly moving = new Map<string, BlockPosition>();
   private readonly owners = new Map<string, number>();
   private readonly doorPower = new Map<string, boolean>();
+  /** Receivers whose inputs may have changed since the last reconcile. */
+  private readonly dirty = new Set<string>();
   private readonly listeners = new Set<(event: ToneEvent) => void>();
   private readonly registry = BlockRegistry.getInstance();
   private readonly openableCache = new Map<string, boolean>();
@@ -155,8 +157,10 @@ export class Mechanics {
 
   observe(position: BlockPosition, id: string): void {
     const key = positionKey(position);
-    if (this.isReceiverId(id)) this.receivers.set(key, position);
-    else {
+    if (this.isReceiverId(id)) {
+      if (!this.receivers.has(key)) this.dirty.add(key);
+      this.receivers.set(key, position);
+    } else {
       this.receivers.delete(key);
       this.doorPower.delete(key);
     }
@@ -196,9 +200,33 @@ export class Mechanics {
     return (this.owners.get(positionKey({ x, y, z })) ?? 0) > 0;
   }
 
-  reconcile(): void {
+  /**
+   * Flags every receiver within two cells of a changed block: power reaches a receiver from a
+   * neighbour, or through a solid neighbour from a component one cell further out.
+   */
+  markAround(position: BlockPosition): void {
     if (this.receivers.size === 0) return;
-    for (const position of [...this.receivers.values()].sort(comparePositions)) {
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dy = -2 + Math.abs(dx); dy <= 2 - Math.abs(dx); dy++)
+        for (
+          let dz = -2 + Math.abs(dx) + Math.abs(dy);
+          dz <= 2 - Math.abs(dx) - Math.abs(dy);
+          dz++
+        ) {
+          const key = `${position.x + dx},${position.y + dy},${position.z + dz}`;
+          if (this.receivers.has(key)) this.dirty.add(key);
+        }
+  }
+
+  reconcile(): void {
+    if (this.dirty.size === 0) return;
+    const positions: BlockPosition[] = [];
+    for (const key of this.dirty) {
+      const position = this.receivers.get(key);
+      if (position) positions.push(position);
+    }
+    this.dirty.clear();
+    for (const position of positions.sort(comparePositions)) {
       const block = this.world.getBlock(position.x, position.y, position.z);
       if (!this.isReceiverId(block.id)) continue;
       if (PISTON_IDS.has(block.id)) this.reconcilePiston(position, block.id, block.state);
@@ -219,7 +247,10 @@ export class Mechanics {
     const owner = entity ? positionKey(arrayPosition(entity.state.owner)) : '';
     const left = (this.owners.get(owner) ?? 1) - 1;
     if (left > 0) this.owners.set(owner, left);
-    else this.owners.delete(owner);
+    else {
+      this.owners.delete(owner);
+      this.dirty.add(owner);
+    }
     this.world.setBlockStateId(tick.x, tick.y, tick.z, landState);
     if (left <= 0) this.refresh();
     return true;

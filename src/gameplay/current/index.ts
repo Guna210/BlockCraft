@@ -108,6 +108,7 @@ export class CurrentEngine {
       if (!touchesCurrent) return;
     }
     this.track(position, newBlockId);
+    this.mechanics.markAround(position);
     // Enqueue neighbour invalidations in the documented fixed axis order.
     for (const offset of NEIGHBOR_OFFSETS)
       this.neighborQueue.push(offsetPosition(position, offset));
