@@ -40,6 +40,7 @@ Last updated: 2026-10-16 (before compaction)
   - setClouds('off') ×3: m12 RD8, m12 M12a time-of-day, m04:276
   - M12c screenshot step aimed at the lightning strike
   - M08b setFluidAnimationPaused(true) in m02c-fix.spec:52 and :74 (approved, in PR #50)
+  - sky-holes.test.ts:168 timeout → 120000 (owner edits master directly, 2026-10-18)
 - Prompt ≠ launch: a prompt can be given and not used (the owner changed their mind on M09b once). Trust the owner's word about what is running.
 
 ## Task status
@@ -84,6 +85,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: Owner decided to raise the sky-holes.test.ts:168 timeout to 120000 directly on master (web edit). Open PRs pick it up on their next push (a re-run reuses the old merge commit).
 - 2026-10-18: M15a round 1 fixes 0f2befa (strong power through blocks + tests, night screenshot). Viewed the new m15-circuit.png: night, the far trace bright and the near one dark, the far lamp lit with a light pool on the grass, the near lamp unlit, a lever at left. Looks right. CI shard 1 failed only on the sky-holes unit timeout (34.5 s vs 30 s) plus an m02:54 retry. Told the owner to re-run failed jobs once and Codex not to change anything; offered the owner a timeout raise as the permanent fix.
 - 2026-10-18: Round 1 results. M11a CHANGES NEEDED: the sprint test bypasses Player (hooks and creative untested); progress/decisions inaccurate (hud, sky-holes listed, verify line, swim 3D vs horizontal). I added: drowning first hit at tick 320 (currently 319), no eating when the use press went to block use, gate regen/starvation to survival, health <= 0 dead, drop duplicate eatFood, suffocation test for glass/leaves/slab/stairs. Keep saturation 0 (reviewer: 5 makes M06 fall test see fast regen). M15a CHANGES NEEDED: strongly powered blocks don't power adjacent traces/lamps/relays (lever on wall + trace = 0); screenshot fails (night, close, lit vs unlit lamp). Plus decisions notes for O(n^2) settle and M17b re-registering components on load.
 - 2026-10-18: #58 M11a CI green (7c9c588, hud revert in). #59 M15a CI green (9d59614). Viewed m15-circuit.png: daytime flat world, one bright peach trace and one dark trace, a dark framed block and a tan block at the ends; it is unclear which lamp is lit and no light glow is visible in daylight. Asked the reviewer to judge (possible fix: night-time or darker scene). Gave both round 1 reviewer prompts.
@@ -103,4 +105,3 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - 2026-10-18: #54 merged (fcaaa1f; master IDs end at 533). agy M10c fix bda76dc: kiln back to append (145-152), registration in main.ts, lightEmissionWhen, flame now a teardrop but with a plus-shaped core and no tongues; agy re-edited the m08c test (undisclosed). A trial merge with master conflicts in 6 files. Gave a Sonnet takeover prompt: claude/m10c from agy/m10c, merge master, kiln 534-541, master's m08c test, keep the hooks from all 3 tasks, teardrop core + tongues, full verify, gate; the new PR supersedes #56.
 - 2026-10-18: Owner approved the m10b-crafting-chests.test.ts:42 edit (≥ 157). #54 CI green on 57ef54d; told the owner to merge.
 - 2026-10-18: BLOCKS-shapes catch-up 57ef54d: merged master, IDs 158-533, m08c test identical to master, crafting 121 + smelting 17, tile ≥ 1024 guard + door-drop test. Needs owner approval for a test edit: m10b-crafting-chests.test.ts:42 getMaxStateId() toBe(157) → ≥ 157 (exact workbench/chest IDs still pinned); I recommended approval. Merge #54 when CI is green; then M10c kiln = 534-541.
-- 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
