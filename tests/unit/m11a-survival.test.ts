@@ -3,6 +3,11 @@ import { World } from '../../src/world/world';
 import { Player } from '../../src/entity/player';
 import { BlockCollision } from '../../src/entity/physics';
 import { BreakParticles } from '../../src/render/particles';
+import { PlayerController } from '../../src/engine/player-controller';
+import { Camera } from '../../src/render/camera';
+import { InputEngine } from '../../src/engine/input';
+import { BARE_HAND } from '../../src/gameplay/mining';
+import { BlockRegistry } from '../../src/world/blocks/registry';
 import foodItems from '../../data/items/food.json';
 import {
   Survival,
@@ -29,7 +34,6 @@ import {
   SLOW_REGEN_INTERVAL,
   STARVATION_INTERVAL,
   EATING_DURATION_TICKS,
-  eatFood,
   touchesBlock,
 } from '../../src/gameplay/survival';
 
@@ -46,40 +50,48 @@ function createTestContext(mode: 'survival' | 'creative' = 'survival') {
 
 describe('M11a: Appendix D survival model & 10-minute sprint scenario', () => {
   it('exhaustion/saturation/hunger model matches the table in Appendix D over a simulated 10-minute sprint scenario', () => {
-    const survival = new Survival();
-    survival.hunger = 20;
-    survival.saturation = 5;
-    survival.exhaustion = 0;
+    const { world, player } = createTestContext('survival');
+    const stoneState = BlockRegistry.getInstance().getStateId('stone')!;
+    world.getBlockStateId = (_x: number, y: number, _z: number) => {
+      if (y === 64) return stoneState;
+      return 0;
+    };
+    player.hunger = 20;
+    player.saturation = 5;
+    player.survival.exhaustion = 0;
+    player.input('forward', true);
+    player.input('sprint', true);
 
     // In 10 minutes at 20 TPS = 12,000 ticks.
     // Sprint speed is 5.6 blocks/second = 0.28 blocks/tick.
     // Sprinting adds 0.1 exhaustion per block.
-    // When hunger <= 6, sprinting is disabled, so exhaustion stops accumulating from sprint.
-    const speedPerTick = 5.6 / 20; // 0.28 blocks per tick
-    const exhaustionPerBlock = 0.1;
-    let distanceSprinted = 0;
-
-    for (let tick = 0; tick < 12000; tick++) {
-      if (survival.hunger > 6) {
-        distanceSprinted += speedPerTick;
-        survival.addExhaustion(speedPerTick * exhaustionPerBlock);
-      }
-      // Natural regen/starvation tick
-      survival.tickRegenAndStarvation();
-    }
-
+    // When hunger <= 6, sprinting is disabled by Player's own hunger <= 6 sprint gate, so exhaustion stops accumulating from sprint.
     // 4.0 exhaustion per saturation or hunger point.
     // 4.0 / 0.1 = 40 blocks sprinted per point.
     // Saturation 5 -> 5 * 40 = 200 blocks.
     // Hunger from 20 down to 6 -> 14 * 40 = 560 blocks.
     // Total distance to reach hunger 6 = 760 blocks sprinted!
-    expect(survival.saturation).toBe(0);
-    expect(survival.hunger).toBe(6);
+    let distanceSprinted = 0;
+
+    for (let tick = 0; tick < 12000; tick++) {
+      const prevX = player.pos[0];
+      const prevZ = player.pos[2];
+      player.tick();
+      player.survival.tick(world, player);
+      if (player.hunger > 6) {
+        distanceSprinted += Math.hypot(player.pos[0] - prevX, player.pos[2] - prevZ);
+      }
+    }
+
+    expect(player.saturation).toBe(0);
+    expect(player.hunger).toBe(6);
     expect(distanceSprinted).toBeCloseTo(760, 0);
+    // Continuous walking on the flat floor after hunger dropped to 6 covers over 2000 blocks without draining hunger further
+    expect(player.pos[0]).toBeGreaterThan(2000);
 
     // Verify leftover exhaustion is less than 4.0
-    expect(survival.exhaustion).toBeGreaterThanOrEqual(0);
-    expect(survival.exhaustion).toBeLessThan(4.0);
+    expect(player.survival.exhaustion).toBeGreaterThanOrEqual(0);
+    expect(player.survival.exhaustion).toBeLessThan(4.0);
   });
 
   it('accumulates exhaustion for actions per Appendix D', () => {
@@ -138,6 +150,140 @@ describe('M11a: Appendix D survival model & 10-minute sprint scenario', () => {
     survival.saturation = 25;
     survival.addExhaustion(0.01);
     expect(survival.saturation).toBeLessThanOrEqual(survival.hunger);
+  });
+
+  it('jump hook adds 0.05 exhaustion in survival mode through Player', () => {
+    const { player } = createTestContext('survival');
+    player.survival.exhaustion = 0;
+    player.onGround = true;
+    player.input('jump', true);
+    player.tick();
+    expect(player.survival.exhaustion).toBeCloseTo(0.05, 5);
+  });
+
+  it('sprint-jump hook adds 0.2 exhaustion in survival mode through Player', () => {
+    const { player } = createTestContext('survival');
+    player.input('forward', true);
+    player.input('sprint', true);
+    player.tick();
+    player.tick();
+    player.survival.exhaustion = 0;
+    const prevX = player.pos[0];
+    const prevZ = player.pos[2];
+    player.input('jump', true);
+    player.tick();
+    const walked = Math.hypot(player.pos[0] - prevX, player.pos[2] - prevZ);
+    expect(player.survival.exhaustion).toBeCloseTo(0.2 + walked * 0.1, 4);
+  });
+
+  it('swimming hook adds 0.01 exhaustion per 3D block moved in fluid through Player', () => {
+    const world = new World(false);
+    const stoneState = BlockRegistry.getInstance().getStateId('stone')!;
+    const waterState = BlockRegistry.getInstance().getStateId('water')!;
+    world.getBlockStateId = (_x: number, y: number, _z: number) => {
+      if (y === 64) return stoneState;
+      if (y >= 65 && y <= 70) return waterState;
+      return 0;
+    };
+    const collision = new BlockCollision(world);
+    const player = new Player(collision, () => true);
+    player.setGameMode('survival');
+    player.teleport(0.5, 66, 0.5, 0, 0);
+    player.survival.exhaustion = 0;
+
+    player.input('forward', true);
+    const prevPos: [number, number, number] = [...player.pos];
+    player.tick();
+
+    const moved3d = Math.hypot(
+      player.pos[0] - prevPos[0],
+      player.pos[1] - prevPos[1],
+      player.pos[2] - prevPos[2],
+    );
+    expect(moved3d).toBeGreaterThan(0);
+    expect(player.survival.exhaustion).toBeCloseTo(moved3d * 0.01, 5);
+  });
+
+  it('block break hook adds 0.005 exhaustion through PlayerController', () => {
+    const world = new World(false);
+    const controller = new PlayerController(
+      new Camera(1),
+      new InputEngine(document.createElement('canvas')),
+      () => true,
+    );
+    controller.spawn(world, 0.5, 65, 0.5, 'survival');
+    controller.loop.pause();
+    const stoneState = BlockRegistry.getInstance().getStateId('stone')!;
+
+    controller.player!.survival.exhaustion = 0;
+    controller.interaction!.onBreak!(stoneState, 0, 65, 0, BARE_HAND);
+    expect(controller.player!.survival.exhaustion).toBeCloseTo(0.005, 5);
+  });
+
+  it('creative-mode: no hunger drain, no hazard damage, no eating', () => {
+    const { world, player, particles } = createTestContext('creative');
+    player.hunger = 20;
+    player.saturation = 0;
+    player.survival.exhaustion = 0;
+
+    // Movement / sprint / jump does not drain hunger or add exhaustion
+    player.input('forward', true);
+    player.input('sprint', true);
+    player.input('jump', true);
+    for (let t = 0; t < 50; t++) {
+      player.tick();
+    }
+    expect(player.hunger).toBe(20);
+    expect(player.saturation).toBe(0);
+    expect(player.survival.exhaustion).toBe(0);
+
+    // Hazard ticking causes no damage in creative mode
+    world.setBlock(0, 65, 0, 'lava');
+    for (let t = 0; t < 40; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+
+    world.setBlock(0, 66, 0, 'water');
+    for (let t = 0; t < 350; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+    expect(player.air).toBe(MAX_AIR);
+
+    // Eating is disabled in creative mode
+    player.hunger = 10;
+    player.inventory.slots[0] = { slot: 0, id: 'bread', count: 2 };
+    player.selectedSlot = 0;
+    player.input('use', true);
+    for (let t = 0; t < 40; t++) {
+      player.survival.tickEating(player, particles);
+    }
+    expect(player.isEating).toBe(false);
+    expect(player.survival.eatingTicks).toBe(0);
+    expect(player.inventory.slots[0]?.count).toBe(2);
+    expect(player.hunger).toBe(10);
+
+    // Integrated survival.tick does not damage, starve, regen, or eat in creative mode
+    player.health = 10;
+    for (let t = 0; t < 100; t++) {
+      player.survival.tick(world, player, particles);
+    }
+    expect(player.health).toBe(10);
+    expect(player.hunger).toBe(10);
+
+    // Block break does not add exhaustion in creative mode
+    const controller = new PlayerController(
+      new Camera(1),
+      new InputEngine(document.createElement('canvas')),
+      () => true,
+    );
+    controller.spawn(world, 0.5, 65, 0.5, 'creative');
+    controller.loop.pause();
+    const stoneState = BlockRegistry.getInstance().getStateId('stone')!;
+    controller.player!.survival.exhaustion = 0;
+    controller.interaction!.onBreak!(stoneState, 0, 65, 0, BARE_HAND);
+    expect(controller.player!.survival.exhaustion).toBe(0);
   });
 });
 
@@ -239,23 +385,142 @@ describe('M11a: Natural regeneration & starvation', () => {
 describe('M11a: Food items & eating', () => {
   it('applies declared hunger and saturation from food.json to all foods, capped at hunger', () => {
     for (const [id, def] of Object.entries(foodItems)) {
-      const state = { hunger: 10, saturation: 0 };
-      const { hungerGained, saturationGained } = eatFood(state, id);
-      expect(hungerGained).toBe(def.hunger);
-      expect(saturationGained).toBe(def.saturation);
-      expect(state.hunger).toBe(10 + def.hunger);
+      const survival = new Survival();
+      survival.hunger = 10;
+      survival.saturation = 0;
+      const success = survival.eatFood(id);
+      expect(success).toBe(true);
+      expect(survival.hunger).toBe(10 + def.hunger);
+      expect(survival.saturation).toBe(Math.min(survival.hunger, def.saturation));
       // Saturation cannot exceed hunger
-      expect(state.saturation).toBeLessThanOrEqual(state.hunger);
+      expect(survival.saturation).toBeLessThanOrEqual(survival.hunger);
     }
   });
 
   it('caps saturation at current hunger when eating', () => {
-    const state = { hunger: 2, saturation: 0 };
+    const survival = new Survival();
+    survival.hunger = 2;
+    survival.saturation = 0;
     // roast_boar_chop gives 8 hunger, 12.8 saturation
     // 2 + 8 = 10 hunger; saturation becomes min(10, 0 + 12.8) = 10
-    eatFood(state, 'roast_boar_chop');
-    expect(state.hunger).toBe(10);
-    expect(state.saturation).toBe(10);
+    survival.eatFood('roast_boar_chop');
+    expect(survival.hunger).toBe(10);
+    expect(survival.saturation).toBe(10);
+  });
+
+  it('eating must not start when the same use press was consumed by block use (opening a chest/kiln, toggling a door)', () => {
+    const world = new World(false);
+    world.fill(-5, 64, -5, 5, 64, 5, 'stone');
+    world.setBlock(2, 66, 0, 'chest');
+
+    const controller = new PlayerController(
+      new Camera(1),
+      new InputEngine(document.createElement('canvas')),
+      () => true,
+    );
+    controller.spawn(world, 0.5, 65, 0.5, 'survival');
+    controller.loop.pause();
+
+    controller.look(0, 0); // Yaw 0 points toward +X
+    let chestOpened = false;
+    let kilnOpened = false;
+    controller.onUseBlock = (blockId) => {
+      if (blockId === 'chest') {
+        chestOpened = true;
+        return true;
+      }
+      if (blockId === 'kiln') {
+        kilnOpened = true;
+        return true;
+      }
+      return false;
+    };
+
+    controller.player!.hunger = 10;
+    controller.player!.inventory.slots[0] = { slot: 0, id: 'bread', count: 3 };
+    controller.player!.selectedSlot = 0;
+
+    // 1. Opening a chest: press use on chest
+    controller.setInput('use', true);
+    controller.tick(1);
+
+    expect(chestOpened).toBe(true);
+    expect(controller.player!.survival.useConsumed).toBe(true);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+
+    // Hold use continuously for 40 ticks
+    controller.tick(40);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+    expect(controller.player!.inventory.slots[0]?.count).toBe(3);
+    expect(controller.player!.hunger).toBe(10);
+
+    // Release use
+    controller.setInput('use', false);
+    controller.tick(1);
+    expect(controller.player!.survival.useConsumed).toBe(false);
+
+    // 2. Opening a kiln: replace chest with kiln
+    world.setBlock(2, 66, 0, 'kiln');
+    controller.setInput('use', true);
+    controller.tick(1);
+
+    expect(kilnOpened).toBe(true);
+    expect(controller.player!.survival.useConsumed).toBe(true);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+
+    controller.tick(40);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+    expect(controller.player!.inventory.slots[0]?.count).toBe(3);
+    expect(controller.player!.hunger).toBe(10);
+
+    // Release use
+    controller.setInput('use', false);
+    controller.tick(1);
+    expect(controller.player!.survival.useConsumed).toBe(false);
+
+    // 3. Toggling a door: place oak_door with lower and upper halves facing west
+    const doorLower = BlockRegistry.getInstance().getStateId('oak_door', {
+      facing: 'west',
+      half: 'lower',
+      hinge: 'left',
+      open: 'false',
+    })!;
+    const doorUpper = BlockRegistry.getInstance().getStateId('oak_door', {
+      facing: 'west',
+      half: 'upper',
+      hinge: 'left',
+      open: 'false',
+    })!;
+    world.setBlockStateId(2, 65, 0, doorLower);
+    world.setBlockStateId(2, 66, 0, doorUpper);
+    controller.setInput('use', true);
+    controller.tick(1);
+
+    expect(controller.player!.survival.useConsumed).toBe(true);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+
+    controller.tick(40);
+    expect(controller.player!.isEating).toBe(false);
+    expect(controller.player!.survival.eatingTicks).toBe(0);
+    expect(controller.player!.inventory.slots[0]?.count).toBe(3);
+    expect(controller.player!.hunger).toBe(10);
+
+    // Release use
+    controller.setInput('use', false);
+    controller.tick(1);
+    expect(controller.player!.survival.useConsumed).toBe(false);
+
+    // 4. Look away from the door (up toward sky) and eat
+    controller.look(0, Math.PI / 3);
+    controller.setInput('use', true);
+    controller.tick(32);
+    expect(controller.player!.inventory.slots[0]?.count).toBe(2);
+    expect(controller.player!.hunger).toBe(15);
   });
 
   it('eating requires 32 ticks of holding use, consumes item and slows movement', () => {
@@ -442,6 +707,92 @@ describe('M11a: Hazard damage rates', () => {
       player.survival.tickHazards(world, player);
     }
     expect(player.health).toBe(MAX_HEALTH - SUFFOCATION_DAMAGE);
+  });
+
+  it('glass, leaves, a slab and stairs at eye level do NOT cause suffocation, while stone does', () => {
+    const { world, player } = createTestContext('survival');
+    const eyeY = 66; // eye level block for player at y=65 (eye = 1.62, 65+1.62 = 66.62)
+
+    // 1. Glass at eye level: does not suffocate
+    world.setBlock(0, eyeY, 0, 'glass');
+    player.health = 20;
+    player.survival.suffocationTicks = 0;
+    for (let t = 0; t < SUFFOCATION_INTERVAL * 2; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+    expect(player.survival.suffocationTicks).toBe(0);
+
+    // 2. Leaves at eye level: does not suffocate
+    world.setBlock(0, eyeY, 0, 'oak_leaves');
+    player.health = 20;
+    player.survival.suffocationTicks = 0;
+    for (let t = 0; t < SUFFOCATION_INTERVAL * 2; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+    expect(player.survival.suffocationTicks).toBe(0);
+
+    // 3. Slab at eye level: does not suffocate
+    world.setBlock(0, eyeY, 0, 'stone_slab');
+    player.health = 20;
+    player.survival.suffocationTicks = 0;
+    for (let t = 0; t < SUFFOCATION_INTERVAL * 2; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+    expect(player.survival.suffocationTicks).toBe(0);
+
+    // 4. Stairs at eye level: does not suffocate
+    world.setBlock(0, eyeY, 0, 'oak_stairs');
+    player.health = 20;
+    player.survival.suffocationTicks = 0;
+    for (let t = 0; t < SUFFOCATION_INTERVAL * 2; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(20);
+    expect(player.survival.suffocationTicks).toBe(0);
+
+    // 5. Stone at eye level: DOES cause suffocation
+    world.setBlock(0, eyeY, 0, 'stone');
+    player.health = 20;
+    player.survival.suffocationTicks = 0;
+    for (let t = 0; t < SUFFOCATION_INTERVAL; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(19);
+    for (let t = 0; t < SUFFOCATION_INTERVAL; t++) {
+      player.survival.tickHazards(world, player);
+    }
+    expect(player.health).toBe(18);
+  });
+
+  it('health setter treats any value <= 0 as dead and clamps to 0', () => {
+    const { player } = createTestContext('survival');
+    player.health = -5;
+    expect(player.health).toBe(0);
+    expect(player.dead).toBe(true);
+
+    player.health = 15;
+    expect(player.health).toBe(15);
+    expect(player.dead).toBe(false);
+
+    player.health = 0;
+    expect(player.health).toBe(0);
+    expect(player.dead).toBe(true);
+
+    const survival = new Survival();
+    survival.health = -5;
+    expect(survival.health).toBe(0);
+    expect(survival.dead).toBe(true);
+
+    survival.health = 15;
+    expect(survival.health).toBe(15);
+    expect(survival.dead).toBe(false);
+
+    survival.health = 0;
+    expect(survival.health).toBe(0);
+    expect(survival.dead).toBe(true);
   });
 
   it('void: y < -64 deals 4 damage per 10 ticks', () => {

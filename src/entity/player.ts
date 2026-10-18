@@ -36,11 +36,6 @@ export class Player {
   }
   set health(val: number) {
     this.survival.health = val;
-    if (val === 0) {
-      this.survival.dead = true;
-    } else if (val > 0 && this.survival.dead) {
-      this.survival.dead = false;
-    }
   }
   get hunger(): number {
     return this.survival.hunger;
@@ -126,6 +121,9 @@ export class Player {
   }
 
   input(action: Action, down: boolean): void {
+    if (action === 'use' && !down) {
+      this.survival.useConsumed = false;
+    }
     if (down && !this.actions.get(action)) {
       if (action === 'forward') this.forwardPressed = true;
       if (action === 'jump') this.jumpPressed = true;
@@ -141,6 +139,7 @@ export class Player {
     this.lastForward = -Infinity;
     this.lastJump = -Infinity;
     this.sprinting = false;
+    this.survival.useConsumed = false;
   }
   teleport(x: number, y: number, z: number, yaw = this.yaw, pitch = this.pitch): void {
     this.pos[0] = x;

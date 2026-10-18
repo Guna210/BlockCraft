@@ -136,26 +136,29 @@ export interface SurvivalHost {
   };
 }
 
-export function eatFood(
-  state: { hunger: number; saturation: number },
-  foodId: string,
-): { hungerGained: number; saturationGained: number } {
-  const def = items.get(foodId);
-  const hungerGained = def.hunger ?? 0;
-  const saturationGained = def.saturation ?? 0;
-  state.hunger = Math.min(MAX_HUNGER, state.hunger + hungerGained);
-  state.saturation = Math.min(state.hunger, state.saturation + saturationGained);
-  return { hungerGained, saturationGained };
-}
-
 export class Survival {
-  public health: number = MAX_HEALTH;
+  private _health: number = MAX_HEALTH;
+  get health(): number {
+    return this._health;
+  }
+  set health(val: number) {
+    if (val <= 0) {
+      this._health = 0;
+      this.dead = true;
+    } else {
+      this._health = Math.min(MAX_HEALTH, val);
+      if (this.dead) {
+        this.dead = false;
+      }
+    }
+  }
   public hunger: number = MAX_HUNGER;
   public saturation: number = 0;
   public exhaustion: number = 0;
   public air: number = MAX_AIR;
   public burningTicks: number = 0;
   public dead: boolean = false;
+  public useConsumed: boolean = false;
 
   public eatingTicks: number = 0;
   public eatingItemId: string | null = null;
@@ -185,6 +188,7 @@ export class Survival {
     this.air = MAX_AIR;
     this.burningTicks = 0;
     this.dead = false;
+    this.useConsumed = false;
     this.eatingTicks = 0;
     this.eatingItemId = null;
     this.isEating = false;
@@ -206,7 +210,8 @@ export class Survival {
     if (source !== 'starvation') {
       this.addExhaustion(0.1);
     }
-    if (this.health === 0) {
+    if (this.health <= 0) {
+      this.health = 0;
       this.dead = true;
     }
   }
@@ -241,8 +246,8 @@ export class Survival {
     return true;
   }
 
-  tickRegenAndStarvation(): void {
-    if (this.dead) return;
+  tickRegenAndStarvation(mode: 'survival' | 'creative' = 'survival'): void {
+    if (this.dead || mode !== 'survival') return;
 
     if (this.health < MAX_HEALTH) {
       if (this.hunger === MAX_HUNGER && this.saturation > 0) {
@@ -298,15 +303,15 @@ export class Survival {
 
     // 1. Water drowning
     if (headInWater) {
-      this.air = Math.max(0, this.air - 1);
-      if (this.air === 0) {
+      if (this.air > 0) {
+        this.air = Math.max(0, this.air - 1);
+        this.drowningTicks = 0;
+      } else {
         this.drowningTicks++;
         if (this.drowningTicks >= DROWNING_INTERVAL) {
           this.drowningTicks = 0;
           this.damage(DROWNING_DAMAGE, 'drowning');
         }
-      } else {
-        this.drowningTicks = 0;
       }
     } else {
       this.air = MAX_AIR;
@@ -402,6 +407,9 @@ export class Survival {
   }
 
   tickEating(host: SurvivalHost, particles: BreakParticles | null): void {
+    if (!host.down('use')) {
+      this.useConsumed = false;
+    }
     if (this.dead || host.mode !== 'survival') {
       this.isEating = false;
       this.eatingTicks = 0;
@@ -413,6 +421,7 @@ export class Survival {
     const itemDef = held ? items.items.get(held.id) : undefined;
     const canEat =
       host.down('use') &&
+      !this.useConsumed &&
       this.hunger < MAX_HUNGER &&
       itemDef !== undefined &&
       itemDef.kind === 'food';
@@ -446,7 +455,7 @@ export class Survival {
   tick(world: World, host: SurvivalHost, particles: BreakParticles | null = null): void {
     if (this.dead) return;
     this.saturation = Math.min(this.saturation, this.hunger);
-    this.tickRegenAndStarvation();
+    this.tickRegenAndStarvation(host.mode);
     this.tickHazards(world, host);
     this.tickEating(host, particles);
   }

@@ -6,7 +6,7 @@ All survival simulation logic—including health, hunger, saturation, exhaustion
 ## 2. Exhaustion Table & Sprint Threshold
 Exhaustion values strictly adhere to SPEC Appendix D:
 - Sprinting: `0.1` per horizontal block traversed
-- Swimming: `0.01` per horizontal block traversed in fluid
+- Swimming: `0.01` per 3D block traversed in fluid
 - Jumping: `0.05` for normal jump; `0.2` for sprint-jump
 - Breaking a block: `0.005` per block broken
 - Taking damage: `0.1` per hit taken

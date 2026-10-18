@@ -31,12 +31,24 @@ test('M11a submerge player for 400 ticks depletes air to 0 at tick 300 then dama
     api.teleport!(0.5, 65, 0.5, 0, 0);
     api.setVitals!({ health: 20, hunger: 15, air: 300 });
 
-    // Submerge for 300 ticks: air depletes to 0
-    await api.tick!(300);
+    // Submerge for 299 ticks: air is still > 0
+    await api.tick!(299);
+    const at299 = api.getPlayer!();
+
+    // Tick 1 more (total 300 ticks): air reaches 0, health still 20
+    await api.tick!(1);
     const at300 = api.getPlayer!();
 
-    // Next 100 ticks (total 400 ticks submerged): damage 2 half-hearts per second (5 hits * 2 = 10 damage)
-    await api.tick!(100);
+    // Tick 19 more (total 319 ticks): 19 ticks without air, health still 20
+    await api.tick!(19);
+    const at319 = api.getPlayer!();
+
+    // Tick 1 more (total 320 ticks): first 2-health hit lands 20 ticks after air reached 0
+    await api.tick!(1);
+    const at320 = api.getPlayer!();
+
+    // Tick 80 more (total 400 ticks submerged): 4 more hits of 2 damage = 8 damage, total 10 damage taken -> health 10
+    await api.tick!(80);
     const at400 = api.getPlayer!();
 
     // Teleport above/out of water to surface
@@ -44,11 +56,14 @@ test('M11a submerge player for 400 ticks depletes air to 0 at tick 300 then dama
     await api.tick!(1);
     const surfaced = api.getPlayer!();
 
-    return { at300, at400, surfaced };
+    return { at299, at300, at319, at320, at400, surfaced };
   });
 
+  expect(result.at299.air).toBeGreaterThan(0);
   expect(result.at300.air).toBe(0);
   expect(result.at300.health).toBe(20);
+  expect(result.at319.health).toBe(20);
+  expect(result.at320.health).toBe(18);
   expect(result.at400.air).toBe(0);
   expect(result.at400.health).toBe(10);
   expect(result.surfaced.air).toBe(300);
