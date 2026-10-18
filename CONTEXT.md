@@ -51,7 +51,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M11a survival & hazards | Round 1 CHANGES NEEDED (reviewer session_01MU4uejbhaYeR9Xt79ouucZ); fix prompt for agy given || air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
-| M15a current & logic | Round 1 CHANGES NEEDED (reviewer session_01Qh8guTsjL7Pm8sXzx8Xb4b); fix prompt for Codex given | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
+| M15a current & logic | Round 1 fixes pushed (0f2befa); CI shard 1 red on sky-holes timeout (34 s > 30 s); owner to re-run failed jobs once, then round 2 | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
 
 Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a). M17b needs M15b or an owner SPEC change.
 
@@ -68,6 +68,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - Speed budgets: two-tier §2.3 budgets before M22a (offered to draft).
 - Performance: the owner's Ryzen 7 5700U (Vega iGPU, the SPEC §1.2 target class) struggles, with the GPU maxed and the tab at ~1 GB. Culling and batching are M22a/M22b (end of the plan); there is only column-level frustum culling today. Suggested: get F3 numbers at RD8 after M09c merges, then the owner may edit SPEC to pull M22a's cave and section culling earlier (e.g. after M10).
 - CI retries 2 can hide flaky tests; decide later.
+- sky-holes.test.ts:94 'rejects every generated block colour' runs ~30-34 s on CI against a 30 s vitest timeout, and it grows with every new block (M15a added 157 states). Failed on #59 0f2befa; agy hit it on the laptop. Options: owner approves a timeout raise (line 168, e.g. 120000) or a faster test; offered.
 - npm ci reports 1 high-severity vulnerability; not investigated.
 
 ## Decisions not yet on master
@@ -83,6 +84,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: M15a round 1 fixes 0f2befa (strong power through blocks + tests, night screenshot). Viewed the new m15-circuit.png: night, the far trace bright and the near one dark, the far lamp lit with a light pool on the grass, the near lamp unlit, a lever at left. Looks right. CI shard 1 failed only on the sky-holes unit timeout (34.5 s vs 30 s) plus an m02:54 retry. Told the owner to re-run failed jobs once and Codex not to change anything; offered the owner a timeout raise as the permanent fix.
 - 2026-10-18: Round 1 results. M11a CHANGES NEEDED: the sprint test bypasses Player (hooks and creative untested); progress/decisions inaccurate (hud, sky-holes listed, verify line, swim 3D vs horizontal). I added: drowning first hit at tick 320 (currently 319), no eating when the use press went to block use, gate regen/starvation to survival, health <= 0 dead, drop duplicate eatFood, suffocation test for glass/leaves/slab/stairs. Keep saturation 0 (reviewer: 5 makes M06 fall test see fast regen). M15a CHANGES NEEDED: strongly powered blocks don't power adjacent traces/lamps/relays (lever on wall + trace = 0); screenshot fails (night, close, lit vs unlit lamp). Plus decisions notes for O(n^2) settle and M17b re-registering components on load.
 - 2026-10-18: #58 M11a CI green (7c9c588, hud revert in). #59 M15a CI green (9d59614). Viewed m15-circuit.png: daytime flat world, one bright peach trace and one dark trace, a dark framed block and a tan block at the ends; it is unclear which lamp is lit and no light glow is visible in daylight. Asked the reviewer to judge (possible fix: night-time or darker scene). Gave both round 1 reviewer prompts.
 - 2026-10-18: M15a: atlas.test.ts diff only adds failure messages to 2 expects (same assertions); recommended approval. IDs 542-698, none changed. Blocker removed, progress verified (9d59614). Told the owner to approve the push; reviewer after CI green.
@@ -102,4 +104,3 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - 2026-10-18: Owner approved the m10b-crafting-chests.test.ts:42 edit (≥ 157). #54 CI green on 57ef54d; told the owner to merge.
 - 2026-10-18: BLOCKS-shapes catch-up 57ef54d: merged master, IDs 158-533, m08c test identical to master, crafting 121 + smelting 17, tile ≥ 1024 guard + door-drop test. Needs owner approval for a test edit: m10b-crafting-chests.test.ts:42 getMaxStateId() toBe(157) → ≥ 157 (exact workbench/chest IDs still pinned); I recommended approval. Merge #54 when CI is green; then M10c kiln = 534-541.
 - 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
-- 2026-10-18: Merge order changed: M10b (#55) → BLOCKS-shapes (#54, renumber to 158-533 and take master's m08c test) → M10c (#56, renumber once at the end, after master's last ID, probably 534-541).
