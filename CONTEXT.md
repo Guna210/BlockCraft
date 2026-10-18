@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: M10b fix 76c4776 (CI green per the owner): the double-chest screenshot now fits (one-line title, 27 slots + separate hotbar, margins). Sent round 2 to session_01CVaVvTgfoBEWzTvk2QPuyd.
 - 2026-10-18: BLOCKS-shapes #54 review 1 (session_01RmTZW4vQiYRGCxtUG6TBvr) PASS; non-blocking: tile<1024 guard, door drop and fence collision tests, mesher allocation, weak fence icons. Merge after renumbering post M10b/M10c. Slow shard 2 = m04:221/276 time out then pass on retry (~12 min), also on master: a follow-up idea.
 - 2026-10-18: M10b #55 review 1 (session_01CVaVvTgfoBEWzTvk2QPuyd) CHANGES NEEDED: double-chest screen title wraps, panel overflows the viewport, shows armor/offhand slots, hotbar not separated. Polish: displayName tooltips, '1/1' page indicator, RESULT label clipped. Fix prompt given for Codex. M10b IDs: workbench 145, chest 146-157.
 - 2026-10-18: Open PRs: #55 M10b (fd56c66, CI green), #54 BLOCKS-shapes (bfba567, CI green; shard 2 took 28 min, check for retries), #56 M10c draft (agy fixing). Reviewer prompts given for #55 and #54 (in parallel). Merge order: M10b → M10c → BLOCKS-shapes.
