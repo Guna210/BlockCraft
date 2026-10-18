@@ -49,7 +49,25 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
     }
 
     let emission = def.lightEmission ?? 0;
-    if (blockId === 'lava') {
+    if (def.lightEmissionWhen) {
+      const rules = Array.isArray(def.lightEmissionWhen)
+        ? def.lightEmissionWhen
+        : [def.lightEmissionWhen];
+      for (const rule of rules) {
+        let match = true;
+        for (const [key, val] of Object.entries(rule)) {
+          if (key === 'value') continue;
+          if (String(resolved.properties[key]) !== String(val)) {
+            match = false;
+            break;
+          }
+        }
+        if (match && typeof rule.value === 'number') {
+          emission = rule.value;
+          break;
+        }
+      }
+    } else if (blockId === 'lava') {
       emission = 15;
     }
 

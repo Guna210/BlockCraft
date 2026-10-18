@@ -243,6 +243,17 @@ export class BlockRegistry {
       }
     }
 
+    if (tex.front) {
+      const facing = (state.properties['facing'] as string) || 'north';
+      if (face === facing) {
+        const lit = String(state.properties['lit']) === 'true';
+        return lit && tex.front_lit ? tex.front_lit : tex.front;
+      }
+      if (face === 'top') return tex.top || tex.side || tex.front;
+      if (face === 'bottom') return tex.bottom || tex.top || tex.side || tex.front;
+      return tex[face] || tex.side || tex.top || tex.front;
+    }
+
     // Default face fallback order:
     // 1. Explicit face (e.g. north)
     // 2. top/bottom/side generic faces

@@ -11,10 +11,12 @@ import {
   SLOT_COUNT,
   type InventoryLayout,
 } from './inventory-layout';
+import { getToolDurability } from '../gameplay/tools';
 import {
   UI,
   drawButton,
   drawCount,
+  drawDurabilityBar,
   drawInset,
   drawPanel,
   drawSlot,
@@ -77,6 +79,12 @@ export function drawInventoryScreen(
     if (stack) {
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (y + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, y, s);
+      if (stack.damage !== undefined && stack.damage !== null && stack.damage > 0) {
+        const durability = getToolDurability(stack.id);
+        if (durability !== null && durability > 0) {
+          drawDurabilityBar(ctx, stack.damage, durability, x, y, s);
+        }
+      }
     }
     if (view.hoverSlot === slot) drawSlotHighlight(ctx, x, y, s);
   }
@@ -93,6 +101,12 @@ export function drawInventoryScreen(
       ctx.translate(x - s, y - s);
       drawCount(ctx, cursor.count, 0, 0, s);
       ctx.restore();
+    }
+    if (cursor.damage !== undefined && cursor.damage !== null && cursor.damage > 0) {
+      const durability = getToolDurability(cursor.id);
+      if (durability !== null && durability > 0) {
+        drawDurabilityBar(ctx, cursor.damage, durability, Math.floor(x / s), Math.floor(y / s), s);
+      }
     }
   } else if (view.hoverSlot !== null) {
     const stack = inventory.slots[view.hoverSlot];

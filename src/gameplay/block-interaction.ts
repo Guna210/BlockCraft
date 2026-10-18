@@ -190,6 +190,18 @@ export class BlockInteraction {
           ? this.registry.getDefaultStateId('torch')!
           : this.registry.getStateId('wall_torch', { facing: t.face })!;
     }
+    if (s.blockId === 'kiln') {
+      const angle = (((p.yaw / (Math.PI / 4)) % 8) + 8) % 8;
+      const facing =
+        angle >= 7 || angle < 1
+          ? 'west'
+          : angle >= 1 && angle < 3
+            ? 'north'
+            : angle >= 3 && angle < 5
+              ? 'east'
+              : 'south';
+      held = this.registry.getStateId('kiln', { facing, lit: 'false' })!;
+    }
     let cells: PlacedCell[] = [{ x, y, z, state: held }];
     if (shapeModel(this.registry, held)) {
       const px = this.eye[0]! + this.look[0]! * t.distance - t.x;

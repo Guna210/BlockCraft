@@ -13,6 +13,8 @@ import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { RayHit } from '../world/raycast';
 import { spillChestContents } from '../gameplay/chests';
+import { spillKilnContents } from '../gameplay/kiln';
+import { getToolDurability } from '../gameplay/tools';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -83,12 +85,36 @@ export class PlayerController {
     );
     this.interaction.onUse = (blockId, target) => this.onUseBlock(blockId, target);
     this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
-      if (world.getBlock(x, y, z).id !== 'chest') return true;
-      return !!this.itemEntities && spillChestContents(world, this.itemEntities, x, y, z);
+      const id = world.getBlock(x, y, z).id;
+      if (id !== 'chest' && id !== 'kiln') return true;
+      if (!this.itemEntities) return false;
+      return id === 'chest'
+        ? spillChestContents(world, this.itemEntities, x, y, z)
+        : spillKilnContents(world, this.itemEntities, x, y, z);
     };
     this.interaction.onBreak = (state, x, y, z, tool) => {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
+
+      if (this.player!.mode === 'survival') {
+        const held = this.player!.inventory.held;
+        if (held) {
+          const durability = getToolDurability(held.id);
+          if (durability !== null && durability > 0) {
+            held.damage = (held.damage ?? 0) + 1;
+            if (held.damage >= durability) {
+              this.particles!.spawn(
+                state,
+                this.player!.pos[0],
+                this.player!.pos[1] + this.player!.eye,
+                this.player!.pos[2],
+              );
+              this.player!.inventory.slots[this.player!.inventory.selectedSlot] = null;
+            }
+          }
+        }
+      }
+
       if (this.player!.mode === 'creative' || !canHarvest(block.definition, tool)) return;
       const breakCount = world.breakCount++;
       const loot = rollBlockLoot(block.blockId, world.worldSeed, x, y, z, breakCount);

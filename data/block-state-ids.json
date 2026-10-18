@@ -532,5 +532,13 @@
   "stone_stairs[facing=east,half=bottom]": 530,
   "stone_stairs[facing=east,half=top]": 531,
   "stone_stairs[facing=west,half=bottom]": 532,
-  "stone_stairs[facing=west,half=top]": 533
+  "stone_stairs[facing=west,half=top]": 533,
+  "kiln[facing=east,lit=false]": 534,
+  "kiln[facing=east,lit=true]": 535,
+  "kiln[facing=north,lit=false]": 536,
+  "kiln[facing=north,lit=true]": 537,
+  "kiln[facing=south,lit=false]": 538,
+  "kiln[facing=south,lit=true]": 539,
+  "kiln[facing=west,lit=false]": 540,
+  "kiln[facing=west,lit=true]": 541
 }

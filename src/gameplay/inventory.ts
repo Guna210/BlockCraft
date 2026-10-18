@@ -4,12 +4,15 @@ export interface ItemStack {
   slot: number;
   id: string;
   count: number;
+  damage?: number | null;
 }
 
 export interface CursorStack {
   id: string;
   count: number;
+  damage?: number | null;
 }
+
 export type InventoryTarget = number | 'cursor';
 const ARMOR = ['head', 'chest', 'legs', 'feet'] as const;
 const HOTBAR = Array.from({ length: 9 }, (_, i) => i);
@@ -88,7 +91,13 @@ export class Inventory {
       .map((stack) => (stack ? { ...stack } : null));
   }
   cursorSnapshot(): CursorStack | null {
-    return this.cursor ? { id: this.cursor.id, count: this.cursor.count } : null;
+    return this.cursor
+      ? {
+          id: this.cursor.id,
+          count: this.cursor.count,
+          ...(this.cursor.damage !== undefined ? { damage: this.cursor.damage } : {}),
+        }
+      : null;
   }
   private checkSlot(slot: number): void {
     if (!Number.isInteger(slot) || slot < 0 || slot >= 41)
@@ -140,7 +149,13 @@ export class Inventory {
     this.operation(() => {
       const stack = this.slots[slot];
       if (!this.cursor) {
-        this.cursor = stack ? { id: stack.id, count: stack.count } : null;
+        this.cursor = stack
+          ? {
+              id: stack.id,
+              count: stack.count,
+              ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+            }
+          : null;
         this.put(slot, null);
       } else if (this.accepts(slot, this.cursor.id)) {
         // Unstackable items never merge, so the same tool or armor piece swaps like any other item.
@@ -151,7 +166,13 @@ export class Inventory {
           this.cleanCursor();
         } else {
           const held = this.cursor;
-          this.cursor = stack ? { id: stack.id, count: stack.count } : null;
+          this.cursor = stack
+            ? {
+                id: stack.id,
+                count: stack.count,
+                ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+              }
+            : null;
           this.put(slot, held);
         }
       }
@@ -163,7 +184,11 @@ export class Inventory {
       const stack = this.slots[slot];
       if (!this.cursor && stack) {
         const count = Math.ceil(stack.count / 2);
-        this.cursor = { id: stack.id, count };
+        this.cursor = {
+          id: stack.id,
+          count,
+          ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+        };
         stack.count -= count;
         if (!stack.count) this.put(slot, null);
       } else if (
@@ -172,14 +197,23 @@ export class Inventory {
         (!stack || (stack.id === this.cursor.id && stack.count < items.get(stack.id).maxStack))
       ) {
         if (stack) stack.count++;
-        else this.put(slot, { id: this.cursor.id, count: 1 });
+        else
+          this.put(slot, {
+            id: this.cursor.id,
+            count: 1,
+            ...(this.cursor.damage !== undefined ? { damage: this.cursor.damage } : {}),
+          });
         this.cursor.count--;
         this.cleanCursor();
       }
     });
   }
+
   /** Merge first, then fill empty targets, leaving any overflow at source. */
-  private route(source: ItemStack, targets: readonly number[]): void {
+  public route(
+    source: { id: string; count: number; damage?: number | null },
+    targets: readonly number[] = [...MAIN, ...HOTBAR],
+  ): void {
     for (const empty of [false, true])
       for (const slot of targets) {
         const target = this.slots[slot];
@@ -191,7 +225,12 @@ export class Inventory {
           continue;
         const moved = Math.min(source.count, items.get(source.id).maxStack - (target?.count ?? 0));
         if (target) target.count += moved;
-        else this.put(slot, { id: source.id, count: moved });
+        else
+          this.put(slot, {
+            id: source.id,
+            count: moved,
+            ...(source.damage !== undefined ? { damage: source.damage } : {}),
+          });
         source.count -= moved;
       }
   }
@@ -231,12 +270,18 @@ export class Inventory {
         const moved = Math.min(each, cursor.count, max - (stack?.count ?? 0));
         if (!moved) continue;
         if (stack) stack.count += moved;
-        else this.put(slot, { id: cursor.id, count: moved });
+        else
+          this.put(slot, {
+            id: cursor.id,
+            count: moved,
+            ...(cursor.damage !== undefined ? { damage: cursor.damage } : {}),
+          });
         cursor.count -= moved;
       }
       this.cleanCursor();
     });
   }
+
   doubleClick(): void {
     this.operation(() => {
       if (!this.cursor) return;

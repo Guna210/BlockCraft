@@ -14,6 +14,8 @@ import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { createSentinelTile } from './render/texture-resolve';
+import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
+import type { BlockEntityInstance } from './world/block-entities';
 import './gameplay/chests';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -43,6 +45,7 @@ function hueToRgb(p: number, q: number, t: number) {
 
 function main() {
   initDebugApi();
+  registerKilnBlockEntity();
 
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   const errorScreen = document.getElementById('error-screen') as HTMLDivElement;
@@ -96,6 +99,12 @@ function main() {
   playerController.onUseBlock = (blockId, target) => {
     if (blockId === 'workbench') {
       ui.open('crafting');
+      return true;
+    }
+    if (blockId === 'kiln') {
+      const entity = worldManager.world?.blockEntities.get(target.x, target.y, target.z);
+      if (!entity) return false;
+      ui.openKiln(entity as BlockEntityInstance<KilnState>);
       return true;
     }
     if (blockId === 'chest') {

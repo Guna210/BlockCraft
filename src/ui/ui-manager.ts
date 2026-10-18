@@ -45,9 +45,15 @@ import {
   type CraftingSlot,
 } from '../gameplay/crafting-session';
 import { items } from '../gameplay/items';
+import { computeKilnLayout, type KilnLayout } from './kiln-layout';
+import { drawKilnScreen, kilnTooltipFor } from './kiln-screen';
+import type { BlockEntityInstance } from '../world/block-entities';
+import type { KilnState } from '../gameplay/kiln';
+import { smelting } from '../gameplay/smelting';
+import { addXp } from '../gameplay/xp';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 
-export type ScreenName = 'inventory' | 'crafting' | 'chest';
+export type ScreenName = 'inventory' | 'crafting' | 'chest' | 'kiln';
 export type ClickButton = 'left' | 'right';
 
 export interface ScreenSnapshot {
@@ -72,6 +78,8 @@ export interface ScreenSnapshot {
   searchText: string;
   craftableOnly: boolean;
   doubleChest: boolean;
+  /** The kiln's flame indicator in CSS pixels; null outside the kiln screen. */
+  flameBox: Rect | null;
 }
 
 const DOUBLE_CLICK_MS = 400;
@@ -81,6 +89,7 @@ const INVENTORY_CRAFT_BASE = 41;
 const INVENTORY_OUTPUT_SLOT = 45;
 const CRAFTING_OUTPUT_SLOT = 9;
 const CHEST_RADIUS = 4.5;
+const KILN_RADIUS = 4.5;
 const CRAFT_PANEL_X = PANEL_W + 6;
 const BOOK_PANEL_X = CRAFT_PANEL_X + CRAFT_PANEL_W + 6;
 
@@ -124,6 +133,8 @@ export class UiManager {
   private grid: CraftingSlot[] = [];
   private dimension: 2 | 3 = 2;
   private chestStorage: ChestStorage | null = null;
+  activeKiln: BlockEntityInstance<KilnState> | null = null;
+  private kilnLayout: KilnLayout | null = null;
   private bookOpen = false;
   private searchFocused = false;
   private searchText = '';
@@ -204,7 +215,20 @@ export class UiManager {
       this.openChest(target[0], target[1], target[2]);
       return;
     }
+    if (name === 'kiln') {
+      const target = this.findNearbyKiln();
+      if (!target) throw new Error('No kiln is within reach');
+      this.openKiln(target);
+      return;
+    }
     this.startOpen(name);
+  }
+
+  openKiln(entity: BlockEntityInstance<KilnState>): void {
+    if (this.screen) this.close();
+    if (this.screen) return;
+    this.activeKiln = entity;
+    this.startOpen('kiln');
   }
 
   openChest(x: number, y: number, z: number): void {
@@ -225,8 +249,11 @@ export class UiManager {
     this.screen = name;
     this.dimension = name === 'crafting' ? 3 : 2;
     this.grid =
-      name === 'chest' ? [] : Array.from({ length: this.dimension * this.dimension }, () => null);
+      name === 'chest' || name === 'kiln'
+        ? []
+        : Array.from({ length: this.dimension * this.dimension }, () => null);
     if (name !== 'chest') this.chestStorage = null;
+    if (name !== 'kiln') this.activeKiln = null;
     this.bookOpen = false;
     this.searchFocused = false;
     this.searchText = '';
@@ -258,6 +285,8 @@ export class UiManager {
     this.screen = null;
     this.grid = [];
     this.chestStorage = null;
+    this.activeKiln = null;
+    this.kilnLayout = null;
     this.bookOpen = false;
     this.searchFocused = false;
     this.drag = null;
@@ -316,6 +345,26 @@ export class UiManager {
     return nearest;
   }
 
+  private findNearbyKiln(): BlockEntityInstance<KilnState> | null {
+    const player = this.requirePlayer();
+    const world = player.collision.world;
+    const px = player.pos[0];
+    const py = player.pos[1] + player.eye;
+    const pz = player.pos[2];
+    let nearest: BlockEntityInstance<KilnState> | null = null;
+    let nearestDistance = KILN_RADIUS * KILN_RADIUS;
+    for (const entity of world.blockEntities.getAll()) {
+      if (entity.blockId !== 'kiln') continue;
+      const distance =
+        (entity.x + 0.5 - px) ** 2 + (entity.y + 0.5 - py) ** 2 + (entity.z + 0.5 - pz) ** 2;
+      if (distance <= nearestDistance) {
+        nearest = entity as BlockEntityInstance<KilnState>;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
+
   /** The same operation a mouse click performs; shift-click quick-moves. */
   clickSlot(slot: number, button: ClickButton, shift = false): void {
     if (!Number.isInteger(slot) || slot < 0 || !this.screen) throw new Error('Invalid screen slot');
@@ -333,6 +382,8 @@ export class UiManager {
       else if (slot === CRAFTING_OUTPUT_SLOT) takeCraftingOutput(this.grid, inventory, shift);
       else if (slot < RECIPE_BASE_CRAFTING) this.clickInventorySlot(slot - 10, button, shift);
       else this.selectRecipe(slot - RECIPE_BASE_CRAFTING);
+    } else if (this.screen === 'kiln') {
+      this.handleKilnSlot(slot, button, shift, player);
     } else if (this.chestStorage) {
       const chestCount = this.chestSlotCount;
       if (slot < chestCount) this.clickChestSlot(slot, button, shift);
@@ -483,6 +534,206 @@ export class UiManager {
     inventory.assertInvariant();
   }
 
+  private handleKilnSlot(slot: number, button: ClickButton, shift: boolean, player: Player): void {
+    if (!this.activeKiln) return;
+    const kiln = this.activeKiln.state;
+    const inv = player.inventory;
+
+    if (slot === 0 || slot === 1) {
+      const slotKey = slot === 0 ? 'input' : 'fuel';
+      const current = kiln[slotKey];
+      if (shift) {
+        if (current) {
+          inv.route(current);
+          if (current.count <= 0) kiln[slotKey] = null;
+        }
+        return;
+      }
+
+      if (button === 'left') {
+        if (!inv.cursor) {
+          if (current) {
+            inv.cursor = {
+              id: current.id,
+              count: current.count,
+              damage: current.damage ?? undefined,
+            };
+            kiln[slotKey] = null;
+          }
+        } else {
+          const cursor = inv.cursor;
+          if (!current) {
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: cursor.count,
+              damage: cursor.damage ?? null,
+            };
+            inv.cursor = null;
+          } else if (current.id === cursor.id) {
+            const max = items.get(current.id).maxStack;
+            const canAdd = Math.min(cursor.count, max - current.count);
+            current.count += canAdd;
+            cursor.count -= canAdd;
+            if (cursor.count <= 0) inv.cursor = null;
+          } else {
+            const temp = {
+              id: current.id,
+              count: current.count,
+              damage: current.damage ?? undefined,
+            };
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: cursor.count,
+              damage: cursor.damage ?? null,
+            };
+            inv.cursor = temp;
+          }
+        }
+      } else if (button === 'right') {
+        if (!inv.cursor) {
+          if (current) {
+            const take = Math.ceil(current.count / 2);
+            inv.cursor = {
+              id: current.id,
+              count: take,
+              damage: current.damage ?? undefined,
+            };
+            current.count -= take;
+            if (current.count <= 0) kiln[slotKey] = null;
+          }
+        } else {
+          const cursor = inv.cursor;
+          if (!current) {
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: 1,
+              damage: cursor.damage ?? null,
+            };
+            cursor.count--;
+            if (cursor.count <= 0) inv.cursor = null;
+          } else if (current.id === cursor.id) {
+            const max = items.get(current.id).maxStack;
+            if (current.count < max) {
+              current.count++;
+              cursor.count--;
+              if (cursor.count <= 0) inv.cursor = null;
+            }
+          }
+        }
+      }
+    } else if (slot === 2) {
+      if (!kiln.output) return;
+      if (shift) {
+        const before = kiln.output.count;
+        inv.route(kiln.output);
+        const moved = before - (kiln.output ? kiln.output.count : 0);
+        if (moved > 0) {
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+        }
+        if (kiln.output.count <= 0) kiln.output = null;
+        return;
+      }
+
+      if (button === 'left') {
+        if (!inv.cursor) {
+          inv.cursor = {
+            id: kiln.output.id,
+            count: kiln.output.count,
+            damage: kiln.output.damage ?? undefined,
+          };
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+          kiln.output = null;
+        } else if (inv.cursor.id === kiln.output.id) {
+          const max = items.get(kiln.output.id).maxStack;
+          const canAdd = Math.min(kiln.output.count, max - inv.cursor.count);
+          if (canAdd > 0) {
+            inv.cursor.count += canAdd;
+            kiln.output.count -= canAdd;
+            addXp(player, kiln.storedXp);
+            kiln.storedXp = 0;
+            if (kiln.output.count <= 0) kiln.output = null;
+          }
+        }
+      } else if (button === 'right') {
+        if (!inv.cursor) {
+          const take = Math.ceil(kiln.output.count / 2);
+          inv.cursor = {
+            id: kiln.output.id,
+            count: take,
+            damage: kiln.output.damage ?? undefined,
+          };
+          kiln.output.count -= take;
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+          if (kiln.output.count <= 0) kiln.output = null;
+        } else if (inv.cursor.id === kiln.output.id) {
+          const max = items.get(kiln.output.id).maxStack;
+          if (inv.cursor.count < max) {
+            inv.cursor.count++;
+            kiln.output.count--;
+            addXp(player, kiln.storedXp);
+            kiln.storedXp = 0;
+            if (kiln.output.count <= 0) kiln.output = null;
+          }
+        }
+      }
+    } else {
+      const pSlot = slot <= 11 ? slot - 3 : slot - 12 + 9;
+      if (!shift) {
+        if (button === 'left') inv.leftClick(pSlot);
+        else inv.rightClick(pSlot);
+      } else {
+        const stack = inv.slots[pSlot];
+        if (!stack) return;
+        const isFuel = smelting.isFuel(stack.id);
+        const isSmeltable = smelting.getByInput(stack.id) !== undefined;
+        if (
+          isFuel &&
+          (!kiln.fuel ||
+            (kiln.fuel.id === stack.id && kiln.fuel.count < items.get(stack.id).maxStack))
+        ) {
+          if (!kiln.fuel) {
+            kiln.fuel = {
+              id: stack.id,
+              count: stack.count,
+              damage: stack.damage ?? null,
+            };
+            inv.slots[pSlot] = null;
+          } else {
+            const max = items.get(stack.id).maxStack;
+            const add = Math.min(stack.count, max - kiln.fuel.count);
+            kiln.fuel.count += add;
+            stack.count -= add;
+            if (stack.count <= 0) inv.slots[pSlot] = null;
+          }
+        } else if (
+          isSmeltable &&
+          (!kiln.input ||
+            (kiln.input.id === stack.id && kiln.input.count < items.get(stack.id).maxStack))
+        ) {
+          if (!kiln.input) {
+            kiln.input = {
+              id: stack.id,
+              count: stack.count,
+              damage: stack.damage ?? null,
+            };
+            inv.slots[pSlot] = null;
+          } else {
+            const max = items.get(stack.id).maxStack;
+            const add = Math.min(stack.count, max - kiln.input.count);
+            kiln.input.count += add;
+            stack.count -= add;
+            if (stack.count <= 0) inv.slots[pSlot] = null;
+          }
+        } else {
+          inv.shiftClick(pSlot);
+        }
+      }
+    }
+  }
+
   private throwStack(target: InventoryTarget, whole: boolean): void {
     const player = this.player;
     const itemEntities = this.controller()?.itemEntities;
@@ -562,7 +813,7 @@ export class UiManager {
         : null;
     return {
       name: this.screen,
-      scale: this.layout?.scale ?? 0,
+      scale: (this.screen === 'kiln' ? this.kilnLayout?.scale : this.layout?.scale) ?? 0,
       panel: css(this.panelRect),
       slots: this.screenSlots.map((rect) => css(rect)!),
       closeButton: css(this.closeRect),
@@ -582,11 +833,17 @@ export class UiManager {
       searchText: this.searchText,
       craftableOnly: this.craftableOnly,
       doubleChest: this.chestStorage?.double ?? false,
+      flameBox: this.screen === 'kiln' && this.kilnLayout ? css(this.kilnLayout.flame) : null,
     };
   }
 
   private hoveredTooltip(): string | null {
     if (this.hoverSlot === null || !this.screen) return null;
+    if (this.screen === 'kiln') {
+      return this.activeKiln
+        ? kilnTooltipFor(this.requirePlayer().inventory, this.activeKiln.state, this.hoverSlot)
+        : null;
+    }
     if (this.screen === 'inventory') {
       if (this.hoverSlot < 41) return tooltipFor(this.requirePlayer().inventory, this.hoverSlot);
       if (this.hoverSlot < INVENTORY_OUTPUT_SLOT) {
@@ -649,6 +906,10 @@ export class UiManager {
 
     if (this.screen === 'chest') {
       this.renderChest(player);
+      return;
+    }
+    if (this.screen === 'kiln') {
+      this.renderKiln(player);
       return;
     }
 
@@ -816,6 +1077,35 @@ export class UiManager {
     this.closeRect = this.layout.closeButton;
   }
 
+  private renderKiln(player: Player): void {
+    const kiln = this.activeKiln;
+    if (!kiln) return;
+    const layout = computeKilnLayout(this.canvas.width, this.canvas.height);
+    this.kilnLayout = layout;
+    this.panelRect = layout.panel;
+    this.closeRect = layout.closeButton;
+    this.controls.close = layout.closeButton;
+    layout.slots.forEach((rect, slot) => {
+      this.screenSlots[slot] = rect;
+      this.clickTargets.push({ slot, rect });
+    });
+    drawKilnScreen(
+      this.ctx,
+      {
+        layout,
+        inventory: player.inventory,
+        kiln: kiln.state,
+        hoverSlot: this.hoverSlot,
+        hoverClose: this.hoverClose,
+        mouse: this.mouse,
+        width: this.canvas.width,
+        height: this.canvas.height,
+      },
+      this.icons,
+      this.sheet,
+    );
+  }
+
   private renderChest(player: Player): void {
     const storage = this.chestStorage;
     if (!storage) return;
@@ -903,6 +1193,10 @@ export class UiManager {
     if (slot === null) return null;
     if (this.screen === 'inventory') return slot < 41 ? slot : null;
     if (this.screen === 'crafting') return slot >= 10 && slot < 51 ? slot - 10 : null;
+    if (this.screen === 'kiln') {
+      if (slot >= 3 && slot <= 11) return slot - 3;
+      return slot >= 12 && slot <= 38 ? slot - 3 : null;
+    }
     if (this.screen === 'chest')
       return slot >= this.chestSlotCount ? slot - this.chestSlotCount : null;
     return null;

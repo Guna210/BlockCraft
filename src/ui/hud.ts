@@ -3,9 +3,19 @@ import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
 import { items } from '../gameplay/items';
 import type { Player } from '../entity/player';
+import { getToolDurability } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
 import type { IconSheet } from './icons';
-import { UI, drawCount, drawInset, drawPanel, drawSlot, fillRect, uiScaleFor } from './ui-kit';
+import {
+  UI,
+  drawCount,
+  drawDurabilityBar,
+  drawInset,
+  drawPanel,
+  drawSlot,
+  fillRect,
+  uiScaleFor,
+} from './ui-kit';
 
 const HEART: readonly string[] = [
   '..##.##..',
@@ -76,7 +86,7 @@ export interface HudSnapshot {
   xpLevel: number;
   xpProgress: number;
   selectedSlot: number;
-  hotbar: Array<{ id: string; count: number } | null>;
+  hotbar: Array<{ id: string; count: number; damage?: number } | null>;
 }
 
 export interface DebugOverlaySnapshot {
@@ -120,9 +130,17 @@ export function hudSnapshot(player: Player, submerged: boolean): HudSnapshot {
     xpLevel: player.xpLevel,
     xpProgress: player.xpProgress,
     selectedSlot: player.selectedSlot,
-    hotbar: player.inventory.slots
-      .slice(0, 9)
-      .map((stack) => (stack ? { id: stack.id, count: stack.count } : null)),
+    hotbar: player.inventory.slots.slice(0, 9).map((stack) =>
+      stack
+        ? {
+            id: stack.id,
+            count: stack.count,
+            ...(stack.damage !== undefined && stack.damage !== null
+              ? { damage: stack.damage }
+              : {}),
+          }
+        : null,
+    ),
   };
 }
 
@@ -323,6 +341,12 @@ function drawHud(
     if (stack) {
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (hotbarY + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, hotbarY, s);
+      if (stack.damage !== undefined && stack.damage > 0) {
+        const durability = getToolDurability(stack.id);
+        if (durability !== null && durability > 0) {
+          drawDurabilityBar(ctx, stack.damage, durability, x, hotbarY, s);
+        }
+      }
     }
     if (slot === snapshot.selectedSlot) drawSelection(ctx, x, hotbarY, s);
   }
