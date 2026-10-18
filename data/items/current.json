@@ -1,0 +1,13 @@
+{
+  "copper_trace": { "kind": "block", "block": "copper_trace", "maxStack": 64 },
+  "gauge": { "kind": "block", "block": "gauge", "maxStack": 64 },
+  "inverter_torch": { "kind": "block", "block": "inverter_torch", "maxStack": 64 },
+  "lamp": { "kind": "block", "block": "lamp", "maxStack": 64 },
+  "lever": { "kind": "block", "block": "lever", "maxStack": 64 },
+  "pressure_plate": { "kind": "block", "block": "pressure_plate", "maxStack": 64 },
+  "relay": { "kind": "block", "block": "relay", "maxStack": 64 },
+  "stone_button": { "kind": "block", "block": "stone_button", "maxStack": 64 },
+  "tripwire": { "kind": "block", "block": "tripwire", "maxStack": 64 },
+  "tripwire_hook": { "kind": "block", "block": "tripwire_hook", "maxStack": 64 },
+  "wooden_button": { "kind": "block", "block": "wooden_button", "maxStack": 64 }
+}

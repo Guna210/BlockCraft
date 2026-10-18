@@ -186,12 +186,60 @@ import { shapeGenerators, shapePalettes } from './shapes';
 import { STAINED_GLASS_COLORS, genStainedGlass, stainedGlassPalette } from './stained-glass';
 import { genWorkbenchSide, genWorkbenchTop, PAL_WORKBENCH } from './workbench';
 import { genChestBottom, genChestSide, genChestTop, PAL_CHEST } from './chest';
+import {
+  genCopperTrace,
+  genGaugeFace,
+  genInverterTorch,
+  genLampBottom,
+  genLampBottomLit,
+  genLampSide,
+  genLampSideLit,
+  genLampTop,
+  genLampTopLit,
+  genLever,
+  genPressurePlate,
+  genRelayFace,
+  genStoneButton,
+  genTripwire,
+  genTripwireHook,
+  genWoodenButton,
+  CURRENT_PALETTES,
+} from './current';
 
 export { PAL_ICE, PAL_FIRE, genIce, genFire };
 
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
 export const textureGenerators: Record<string, TextureGenerator> = {
+  ...Object.fromEntries(
+    Array.from({ length: 16 }, (_, power) => [
+      `copper_trace_${power}`,
+      (seed?: number) => genCopperTrace(power, seed),
+    ]),
+  ),
+  gauge_top: (seed) => genGaugeFace(false, seed),
+  gauge_side: (seed) => genGaugeFace(false, seed),
+  gauge_bottom: (seed) => genGaugeFace(false, seed),
+  gauge_front: (seed) => genGaugeFace(false, seed),
+  gauge_front_lit: (seed) => genGaugeFace(true, seed),
+  inverter_torch: genInverterTorch,
+  lamp_top: genLampTop,
+  lamp_side: genLampSide,
+  lamp_bottom: genLampBottom,
+  lamp_top_lit: genLampTopLit,
+  lamp_side_lit: genLampSideLit,
+  lamp_bottom_lit: genLampBottomLit,
+  lever: genLever,
+  pressure_plate: genPressurePlate,
+  relay_top: (seed) => genRelayFace(false, seed),
+  relay_side: (seed) => genRelayFace(false, seed),
+  relay_bottom: (seed) => genRelayFace(false, seed),
+  relay_front: (seed) => genRelayFace(false, seed),
+  relay_front_lit: (seed) => genRelayFace(true, seed),
+  stone_button: genStoneButton,
+  tripwire: genTripwire,
+  tripwire_hook: genTripwireHook,
+  wooden_button: genWoodenButton,
   ...terrainToolGenerators,
   ...shapeGenerators,
   ...Object.fromEntries(
@@ -391,6 +439,32 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  ...Object.fromEntries(
+    Array.from({ length: 16 }, (_, power) => [`copper_trace_${power}`, CURRENT_PALETTES.copper]),
+  ),
+  gauge_top: CURRENT_PALETTES.gaugeUnlit,
+  gauge_side: CURRENT_PALETTES.gaugeUnlit,
+  gauge_bottom: CURRENT_PALETTES.gaugeUnlit,
+  gauge_front: CURRENT_PALETTES.gaugeUnlit,
+  gauge_front_lit: CURRENT_PALETTES.gaugeLit,
+  inverter_torch: CURRENT_PALETTES.copper,
+  lamp_top: CURRENT_PALETTES.lamp,
+  lamp_side: CURRENT_PALETTES.lamp,
+  lamp_bottom: CURRENT_PALETTES.lamp,
+  lamp_top_lit: CURRENT_PALETTES.lamp,
+  lamp_side_lit: CURRENT_PALETTES.lamp,
+  lamp_bottom_lit: CURRENT_PALETTES.lamp,
+  lever: CURRENT_PALETTES.woodCutout,
+  pressure_plate: CURRENT_PALETTES.woodCutout,
+  relay_top: CURRENT_PALETTES.relayUnlit,
+  relay_side: CURRENT_PALETTES.relayUnlit,
+  relay_bottom: CURRENT_PALETTES.relayUnlit,
+  relay_front: CURRENT_PALETTES.relayUnlit,
+  relay_front_lit: CURRENT_PALETTES.relayLit,
+  stone_button: CURRENT_PALETTES.stoneCutout,
+  tripwire: CURRENT_PALETTES.stoneCutout,
+  tripwire_hook: CURRENT_PALETTES.tripwireHook,
+  wooden_button: CURRENT_PALETTES.woodCutout,
   ...shapePalettes,
   ...Object.fromEntries(
     STAINED_GLASS_COLORS.map((c) => [`${c}_stained_glass`, stainedGlassPalette(c)]),

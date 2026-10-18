@@ -26,7 +26,18 @@ export interface BlockTextures {
 
 /** How the mesher draws a block: a cube (default) or two diagonal quads (plants). */
 export type BlockModel =
-  'cube' | 'cross' | 'slab' | 'wall' | 'wall_torch' | 'stairs' | 'fence' | 'door' | 'trapdoor';
+  | 'cube'
+  | 'cross'
+  | 'slab'
+  | 'wall'
+  | 'wall_torch'
+  | 'stairs'
+  | 'fence'
+  | 'door'
+  | 'trapdoor'
+  | 'trace'
+  | 'tripwire'
+  | 'pressure_plate';
 
 export interface BlockDefinition {
   id: string;

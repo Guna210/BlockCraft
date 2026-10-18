@@ -7,6 +7,15 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type BlockEntityState = Record<string, JsonValue>;
 
+export interface ContainerSlot {
+  id: string;
+  count: number;
+}
+
+export interface BlockEntityContainer {
+  slots: ReadonlyArray<ContainerSlot | null>;
+}
+
 export interface BlockEntityInstance<TState extends BlockEntityState = BlockEntityState> {
   readonly blockId: string;
   readonly x: number;
@@ -20,6 +29,7 @@ export interface BlockEntityTypeDefinition<TState extends BlockEntityState = Blo
   readonly tickInterval?: number;
   create: (x: number, y: number, z: number, stateId: number) => TState;
   tick?: (entity: BlockEntityInstance<TState>, world: World) => void;
+  container?: (entity: BlockEntityInstance<TState>) => BlockEntityContainer | undefined;
   afterPlaced?: (entity: BlockEntityInstance<TState>, world: World) => void;
   afterStateChanged?: (entity: BlockEntityInstance<TState>, world: World) => void;
   afterRemoved?: (entity: BlockEntityInstance<TState>, world: World) => void;
@@ -121,6 +131,12 @@ export class BlockEntityManager {
 
   public getAll(): ReadonlyArray<BlockEntityInstance> {
     return [...this.entities.values()];
+  }
+
+  public getContainer(x: number, y: number, z: number): BlockEntityContainer | undefined {
+    const entity = this.get(x, y, z);
+    if (!entity) return undefined;
+    return blockEntityRegistry.get(entity.blockId)?.container?.(entity);
   }
 
   public onBlockChanged(

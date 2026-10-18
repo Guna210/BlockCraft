@@ -228,7 +228,7 @@ describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
           if (seedAgnosticGenerators.includes(name)) {
             expect(result1[i]).toEqual(arr3[i]);
           } else {
-            expect(result1[i]).not.toEqual(arr3[i]);
+            expect(result1[i], `${name}_${i} should vary by seed`).not.toEqual(arr3[i]);
           }
         }
       } else {
@@ -237,7 +237,7 @@ describe('Generators Seed Parameter & Duplicate Rect Checks', () => {
         if (seedAgnosticGenerators.includes(name)) {
           expect(result1).toEqual(result3);
         } else {
-          expect(result1).not.toEqual(result3);
+          expect(result1, `${name} should vary by seed`).not.toEqual(result3);
         }
       }
     }

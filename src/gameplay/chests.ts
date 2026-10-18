@@ -136,6 +136,7 @@ export function registerChestBlockEntity(): void {
   blockEntityRegistry.register<ChestEntityState>({
     blockId: 'chest',
     create: () => ({ slots: Array.from({ length: 27 }, () => null) }),
+    container: (entity) => ({ slots: entity.state.slots }),
     afterPlaced: (entity, world) => reconcileAround(world, entity.x, entity.y, entity.z),
     afterStateChanged: (entity, world) => reconcileAround(world, entity.x, entity.y, entity.z),
     afterRemoved: (entity, world) => reconcileAround(world, entity.x, entity.y, entity.z),
