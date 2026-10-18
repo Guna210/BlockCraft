@@ -51,7 +51,12 @@ export interface BlockCraftDebugAPI {
   };
   getPlayer?: () => import('../../entity/player').PlayerSnapshot;
   setXp?: (level: number, progress: number) => void;
-  setVitals?: (vitals: { health?: number; hunger?: number; air?: number }) => void;
+  setVitals?: (vitals: {
+    health?: number;
+    hunger?: number;
+    air?: number;
+    saturation?: number;
+  }) => void;
   teleport?: (x: number, y: number, z: number, yaw?: number, pitch?: number) => void;
   input?: (action: string, down: boolean) => void;
   pause?: () => void;

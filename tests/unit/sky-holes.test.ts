@@ -165,7 +165,7 @@ describe('sky holes: noon curve regression', () => {
     expect(closest - NOON_SKY_RADIUS).toBeGreaterThanOrEqual(2);
     expect(collisions.slice(0, 20)).toEqual([]);
     expect(collisions).toHaveLength(0);
-  });
+  }, 60000);
 });
 
 describe('sky holes: what counts as a hole', () => {

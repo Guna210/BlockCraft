@@ -4,6 +4,7 @@ export interface PlayerVitals {
   health?: number;
   hunger?: number;
   air?: number;
+  saturation?: number;
 }
 
 /** Set already modeled player vitals for diagnostics; this does not simulate survival effects. */
@@ -19,5 +20,6 @@ export function setVitals(vitals: PlayerVitals): void {
   if (!player) throw new Error('Create a world before setting player vitals');
   if (vitals.health !== undefined) player.health = vitals.health;
   if (vitals.hunger !== undefined) player.hunger = vitals.hunger;
+  if (vitals.saturation !== undefined) player.saturation = vitals.saturation;
   if (vitals.air !== undefined) player.air = vitals.air;
 }
