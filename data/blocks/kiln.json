@@ -3,6 +3,10 @@
     "hardness": 3.5,
     "blastResistance": 3.5,
     "lightEmission": 0,
+    "lightEmissionWhen": {
+      "lit": "true",
+      "value": 13
+    },
     "renderLayer": "opaque",
     "fullOpaqueCube": true,
     "tool": "pickaxe",

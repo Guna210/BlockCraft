@@ -94,7 +94,7 @@ export function tickKiln(entity: BlockEntityInstance<KilnState>, world: World): 
   const currentStateId = world.getBlockStateId(entity.x, entity.y, entity.z);
   const resolved = BlockRegistry.getInstance().getResolvedState(currentStateId);
   if (resolved && resolved.blockId === 'kiln') {
-    const currentLit = resolved.properties.lit === 'true';
+    const currentLit = String(resolved.properties.lit) === 'true';
     if (currentLit !== isLit) {
       const facing = (resolved.properties.facing as string) || 'north';
       const newStateId = BlockRegistry.getInstance().getStateId('kiln', {

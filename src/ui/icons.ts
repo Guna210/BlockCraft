@@ -212,8 +212,13 @@ function renderBlockIcon(
   // Air is the only block without textures, and it has nothing to show.
   if (!def.textures) return null;
   const foliage = FOLIAGE_BLOCKS.has(def.id);
-  const faceName = (face: 'top' | 'south' | 'east') =>
-    def.id === 'kiln' && face === 'south' ? 'kiln_front' : registry.getFaceTexture(stateId, face);
+  const faceName = (face: 'top' | 'south' | 'east') => {
+    if (face === 'south' && def.textures?.front) {
+      const lit = String(registry.getResolvedState(stateId)?.properties['lit']) === 'true';
+      return lit && def.textures.front_lit ? def.textures.front_lit : def.textures.front;
+    }
+    return registry.getFaceTexture(stateId, face);
+  };
 
   if (def.model === 'cross' || def.model === 'wall' || def.model === 'wall_torch') {
     const tint: Tint = foliage ? 'foliage' : def.id === 'tall_grass' ? 'grass' : 'none';

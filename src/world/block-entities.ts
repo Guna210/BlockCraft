@@ -86,14 +86,10 @@ export class BlockEntityRegistry {
 
 export const blockEntityRegistry = BlockEntityRegistry.getInstance();
 
-import { registerKilnBlockEntity } from '../gameplay/kiln';
-
 export class BlockEntityManager {
   private readonly entities = new Map<string, BlockEntityInstance>();
 
-  constructor(private readonly world: World) {
-    registerKilnBlockEntity();
-  }
+  constructor(private readonly world: World) {}
 
   public static key(x: number, y: number, z: number): string {
     return `${x},${y},${z}`;

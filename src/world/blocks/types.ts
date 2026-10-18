@@ -15,6 +15,8 @@ export interface BlockTextures {
   top?: string;
   side?: string;
   bottom?: string;
+  front?: string;
+  front_lit?: string;
   north?: string;
   south?: string;
   east?: string;
@@ -40,6 +42,7 @@ export interface BlockDefinition {
   minTier?: number;
   states?: Record<string, StateDefinition>;
   textures?: BlockTextures;
+  lightEmissionWhen?: Record<string, string | number> | Array<Record<string, string | number>>;
 }
 
 export interface ResolvedBlockState {

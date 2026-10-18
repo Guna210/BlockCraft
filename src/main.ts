@@ -14,6 +14,7 @@ import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { createSentinelTile } from './render/texture-resolve';
+import { registerKilnBlockEntity } from './gameplay/kiln';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -42,6 +43,7 @@ function hueToRgb(p: number, q: number, t: number) {
 
 function main() {
   initDebugApi();
+  registerKilnBlockEntity();
 
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
   const errorScreen = document.getElementById('error-screen') as HTMLDivElement;

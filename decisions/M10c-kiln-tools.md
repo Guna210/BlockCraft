@@ -21,12 +21,12 @@
 ## 2. Block state ID allocation (`data/block-state-ids.json`)
 
 - State IDs `145..152` were appended strictly to the END of `data/block-state-ids.json` without reordering or shifting any existing IDs:
-  - `145`: `kiln[facing=north,lit=false]`
-  - `146`: `kiln[facing=north,lit=true]`
-  - `147`: `kiln[facing=south,lit=false]`
-  - `148`: `kiln[facing=south,lit=true]`
-  - `149`: `kiln[facing=east,lit=false]`
-  - `150`: `kiln[facing=east,lit=true]`
+  - `145`: `kiln[facing=east,lit=false]`
+  - `146`: `kiln[facing=east,lit=true]`
+  - `147`: `kiln[facing=north,lit=false]`
+  - `148`: `kiln[facing=north,lit=true]`
+  - `149`: `kiln[facing=south,lit=false]`
+  - `150`: `kiln[facing=south,lit=true]`
   - `151`: `kiln[facing=west,lit=false]`
   - `152`: `kiln[facing=west,lit=true]`
 
@@ -105,15 +105,41 @@
 
 ## 8. Automated verification
 
-- Unit tests in `tests/unit/m10c-kiln-tools.test.ts` (10 tests) verify:
+- Unit tests in `tests/unit/m10c-kiln-tools.test.ts` (14 tests) verify:
   - Fuel burn times and smelting recipes.
   - XP progression curve and level advances.
   - Inventory item damage serialization and round-trip persistence.
   - Kiln block entity tick simulation (smelting 8 iron ore with 1 coal in 1600 ticks, storing XP, and toggling lit state).
   - Light emission (13 when lit, 0 when unlit).
+  - Data-driven generic front / front_lit face texture resolution across all facings.
+  - Flame indicator 3-layer pixel art frames and boundary edge detection.
 - E2E tests in `tests/e2e/m10c.spec.ts` (4 tests) verify:
   - Kiln smelts 8 iron ore with 1 coal in 80 s of `tick()`.
   - Wooden pickaxe breaks after exactly 59 uses.
   - Iron ore drops with stone pickaxe and drops nothing with wooden pickaxe.
-  - Visual review screen capture (`m10-kiln.png`).
-- Maintained passing status of `tests/unit/m10a-reachability.test.ts`.
+  - Visual review screen capture (`m10-kiln.png` and `m10-kiln-flame.png`).
+- Maintained passing status of `tests/unit/m10a-reachability.test.ts` and `tests/unit/m08c-glass-foliage.test.ts`.
+
+## 9. Review feedback architectural decoupling & data-driven features
+
+- **State ID Restoration (`data/block-state-ids.json`)**:
+  - Restored `blue_stained_glass` through `yellow_stained_glass` to their canonical master IDs `137..144`.
+  - Appended kiln states strictly to the end as `145..152` (`kiln[facing=east,lit=false]` through `kiln[facing=west,lit=true]`).
+  - Updated `tests/unit/m08c-glass-foliage.test.ts` to assert that stained glass blocks occupy IDs `137..144`.
+- **Core Decoupling (`src/world/block-entities.ts`)**:
+  - Removed kiln import and registration from `src/world/block-entities.ts` to preserve clean layering where the core world does not import gameplay mechanisms.
+  - Kiln block entity registers at application runtime startup in `src/main.ts` via `registerKilnBlockEntity()`.
+  - Simulation unit tests call `registerKilnBlockEntity()` in `beforeEach()`.
+- **Generic Data-Driven Block Features**:
+  - **Facing & Lit Textures (`src/world/blocks/registry.ts`)**: Replaced `blockId === 'kiln'` special case with a generic rule: any block defining `front` (and optionally `front_lit`) resolves that texture on the face matching its `facing` state.
+  - **Icon Generation (`src/ui/icons.ts`)**: Replaced hardcoded kiln check with the generic rule checking `front` / `front_lit` for the icon's south face.
+  - **State-Dependent Lighting (`src/world/lighting.ts` & `data/blocks/kiln.json`)**: Supported `lightEmissionWhen` in block definitions matching property conditions (e.g. `{"lit": "true", "value": 13}`), removing all hardcoded lighting engine branches for kiln.
+  - Verification: Zero occurrences of `'kiln'` in `src/world/block-entities.ts`, `src/world/blocks/registry.ts`, `src/ui/icons.ts`, and `src/world/lighting.ts`.
+- **Flame Indicator Redesign & Animation (`src/ui/kiln-screen.ts`)**:
+  - Redrawn 14×14 flame as a teardrop silhouette (rounded bottom, rising point at top, 2–3 flickering wisps along edges across 3 animation frames).
+  - 3 nested color layers: outer RED (`#b32b1b`), middle ORANGE (`#d96d1a`), and inner YELLOW core (`#f2c12e`) in the lower-middle.
+  - Depletion shrinks smoothly from top down as fuel is consumed.
+  - Renders an empty dark flame outline (`UI.outline` edge, `UI.slot` interior) when unlit or depleted.
+- **Visual Review Screenshots**:
+  - `docs/screenshots/M10c/m10-kiln.png`: Mid-smelt kiln UI with new teardrop flame and damaged wooden pickaxe wear bar in hotbar.
+  - `docs/screenshots/M10c/m10-kiln-flame.png`: Side-by-side zoomed comparison of the flame at full fuel vs ~half fuel.

@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { smelting } from '../../src/gameplay/smelting';
-import { canSmelt, tickKiln, type KilnState } from '../../src/gameplay/kiln';
+import {
+  canSmelt,
+  tickKiln,
+  registerKilnBlockEntity,
+  type KilnState,
+} from '../../src/gameplay/kiln';
 import { getToolDurability } from '../../src/gameplay/tools';
 import { canHarvest } from '../../src/gameplay/mining';
 import { BlockRegistry } from '../../src/world/blocks/registry';
@@ -10,11 +15,19 @@ import { Inventory } from '../../src/gameplay/inventory';
 import { serializeInventory, deserializeInventory } from '../../src/persist/serializers';
 import { World } from '../../src/world/world';
 import { ChunkColumn } from '../../src/world/column';
+import {
+  FLAME_FRAMES,
+  isFlameEdge,
+  FLAME_RED,
+  FLAME_ORANGE,
+  FLAME_YELLOW,
+} from '../../src/ui/kiln-screen';
 
 describe('M10c — Kiln & tool wear unit tests', () => {
   beforeEach(() => {
-    // Ensure registry is loaded
+    // Ensure registry is loaded and kiln block entity is registered
     BlockRegistry.getInstance();
+    registerKilnBlockEntity();
   });
 
   describe('XP progression curve', () => {
@@ -213,6 +226,76 @@ describe('M10c — Kiln & tool wear unit tests', () => {
 
       world.setBlockStateId(1, 65, 1, litId);
       expect(world.getLight(1, 65, 1).block).toBe(13);
+    });
+  });
+
+  describe('Data-driven block facing and textures', () => {
+    it('resolves front and front_lit textures generically based on facing and lit states', () => {
+      const reg = BlockRegistry.getInstance();
+      const directions = ['north', 'south', 'east', 'west'] as const;
+
+      for (const dir of directions) {
+        const unlitStateId = reg.getStateId('kiln', { facing: dir, lit: 'false' })!;
+        const litStateId = reg.getStateId('kiln', { facing: dir, lit: 'true' })!;
+
+        // Facing face displays front or front_lit
+        expect(reg.getFaceTexture(unlitStateId, dir)).toBe('kiln_front');
+        expect(reg.getFaceTexture(litStateId, dir)).toBe('kiln_front_lit');
+
+        // Top and bottom
+        expect(reg.getFaceTexture(unlitStateId, 'top')).toBe('kiln_top');
+        expect(reg.getFaceTexture(unlitStateId, 'bottom')).toBe('kiln_bottom');
+
+        // Non-facing side faces
+        for (const other of directions) {
+          if (other !== dir) {
+            expect(reg.getFaceTexture(unlitStateId, other)).toBe('kiln_side');
+            expect(reg.getFaceTexture(litStateId, other)).toBe('kiln_side');
+          }
+        }
+      }
+    });
+
+    it('handles generic front/front_lit texture resolution with boolean or string lit states', () => {
+      const reg = BlockRegistry.getInstance();
+      const litStateId = reg.getStateId('kiln', { facing: 'south', lit: 'true' })!;
+      expect(reg.getFaceTexture(litStateId, 'south')).toBe('kiln_front_lit');
+      expect(reg.getFaceTexture(litStateId, 'east')).toBe('kiln_side');
+
+      // Also verify unlit state
+      const unlitStateId = reg.getStateId('kiln', { facing: 'south', lit: 'false' })!;
+      expect(reg.getFaceTexture(unlitStateId, 'south')).toBe('kiln_front');
+      expect(reg.getFaceTexture(unlitStateId, 'east')).toBe('kiln_side');
+    });
+  });
+
+  describe('UI flame indicator design & edge detection', () => {
+    it('has 3 valid 14x14 pixel-art flame frames with red, orange, and yellow core layers', () => {
+      expect(FLAME_FRAMES).toHaveLength(3);
+      expect(FLAME_RED).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(FLAME_ORANGE).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(FLAME_YELLOW).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+      for (const frame of FLAME_FRAMES) {
+        expect(frame).toHaveLength(14);
+        for (const row of frame) {
+          expect(row).toHaveLength(14);
+          expect(row).toMatch(/^[.ROY]+$/);
+        }
+        // Must contain outer Red, middle Orange, and inner Yellow
+        const joined = frame.join('');
+        expect(joined.includes('R')).toBe(true);
+        expect(joined.includes('O')).toBe(true);
+        expect(joined.includes('Y')).toBe(true);
+      }
+    });
+
+    it('correctly classifies outer boundary pixels as flame edges', () => {
+      const frame = FLAME_FRAMES[0]!;
+      // Top tip of flame in frame 0 is at row 0, col 6
+      expect(isFlameEdge(frame, 0, 6)).toBe(true);
+      // Yellow core pixel at row 8, col 6 is completely enclosed by orange/yellow, not an outer edge
+      expect(isFlameEdge(frame, 8, 6)).toBe(false);
     });
   });
 });

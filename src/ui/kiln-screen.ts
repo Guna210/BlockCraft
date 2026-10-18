@@ -50,23 +50,71 @@ function drawIcon(
   if (rect) ctx.drawImage(sheet, rect.x, rect.y, 16, 16, x, y, size, size);
 }
 
-// 14x14 flame silhouette (1: flame pixel, 0: background)
-const FLAME_MASK: readonly string[] = [
-  '....#....#....',
-  '...###..###...',
-  '..##########..',
-  '..##########..',
-  '.############.',
-  '.############.',
-  '##############',
-  '##############',
-  '##############',
-  '##############',
-  '.############.',
-  '.############.',
-  '..##########..',
-  '...########...',
+export const FLAME_RED = '#b32b1b';
+export const FLAME_ORANGE = '#d96d1a';
+export const FLAME_YELLOW = '#f2c12e';
+
+// 14x14 animated teardrop flame frames (R: outer red, O: middle orange, Y: inner yellow core, .: empty)
+export const FLAME_FRAMES: readonly (readonly string[])[] = [
+  [
+    '......R.......',
+    '.....RRR......',
+    '....RROOR.....',
+    '...RROOORR....',
+    '..RROOOOOOR...',
+    '...ROOOOOOOR..',
+    '..RROOOOOOORR.',
+    '..RROOOYOOORR.',
+    '.RROOOYYYOOOR.',
+    '.RROOOYYYOOOR.',
+    '..RROOOYOOOR..',
+    '..RROOOOOORR..',
+    '...RRROOORR...',
+    '....RRRRR.....',
+  ],
+  [
+    '.......R......',
+    '......RRR.....',
+    '....RROORR....',
+    '...RROOOORR...',
+    '...ROOOOOOOR..',
+    '..RROOOOOOORR.',
+    '...ROOOOOOORR.',
+    '..RROOOYOOOR..',
+    '.RROOOYYYOOOR.',
+    '.RROOOYYYOOOR.',
+    '..RROOOYOOOR..',
+    '..RROOOOOORR..',
+    '...RRROOORR...',
+    '....RRRRR.....',
+  ],
+  [
+    '.....R.R......',
+    '....RRRRRR....',
+    '...RROOOORR...',
+    '..RROOOOOOR...',
+    '..RROOOOOOOR..',
+    '...ROOOOOOOR..',
+    '..RROOOOOOOR..',
+    '..RROOOYOOORR.',
+    '.RROOOYYYOOOR.',
+    '.RROOOYYYOOOR.',
+    '..RROOOYOOOR..',
+    '..RROOOOOORR..',
+    '...RRROOORR...',
+    '....RRRRR.....',
+  ],
 ];
+
+export function isFlameEdge(frame: readonly string[], row: number, col: number): boolean {
+  if (row === 0 || row === 13 || col === 0 || col === 13) return true;
+  return (
+    frame[row - 1]![col] === '.' ||
+    frame[row + 1]![col] === '.' ||
+    frame[row]![col - 1] === '.' ||
+    frame[row]![col + 1] === '.'
+  );
+}
 
 function drawFlame(
   ctx: CanvasRenderingContext2D,
@@ -76,20 +124,24 @@ function drawFlame(
   burnRemaining: number,
   burnTotal: number,
 ): void {
+  const frameIndex = burnRemaining > 0 ? Math.floor(burnRemaining / 4) % 3 : 0;
+  const frame = FLAME_FRAMES[frameIndex]!;
   const ratio = burnTotal > 0 ? Math.max(0, Math.min(1, burnRemaining / burnTotal)) : 0;
   const fillH = Math.round(14 * ratio);
   const startFillRow = 14 - fillH;
 
   for (let row = 0; row < 14; row++) {
-    const line = FLAME_MASK[row]!;
+    const line = frame[row]!;
     const isLitRow = row >= startFillRow && burnRemaining > 0;
     for (let col = 0; col < 14; col++) {
-      if (line[col] === '#') {
-        const color = isLitRow
-          ? col >= 4 && col <= 9 && row >= 4 && row <= 11
-            ? UI.text
-            : UI.accent
-          : UI.slot;
+      const ch = line[col];
+      if (ch === '.') continue;
+      if (isLitRow) {
+        const color = ch === 'Y' ? FLAME_YELLOW : ch === 'O' ? FLAME_ORANGE : FLAME_RED;
+        fillRect(ctx, x + col, y + row, 1, 1, color, s);
+      } else {
+        const isEdge = isFlameEdge(frame, row, col);
+        const color = isEdge ? UI.outline : UI.slot;
         fillRect(ctx, x + col, y + row, 1, 1, color, s);
       }
     }

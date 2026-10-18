@@ -243,15 +243,15 @@ export class BlockRegistry {
       }
     }
 
-    if (state.blockId === 'kiln') {
+    if (tex.front) {
       const facing = (state.properties['facing'] as string) || 'north';
-      const lit = state.properties['lit'] === 'true';
-      if (face === 'top') return tex.top || 'kiln_top';
-      if (face === 'bottom') return tex.bottom || 'kiln_bottom';
       if (face === facing) {
-        return lit ? tex.front_lit || 'kiln_front_lit' : tex.front || 'kiln_front';
+        const lit = String(state.properties['lit']) === 'true';
+        return lit && tex.front_lit ? tex.front_lit : tex.front;
       }
-      return tex.side || 'kiln_side';
+      if (face === 'top') return tex.top || tex.side || tex.front;
+      if (face === 'bottom') return tex.bottom || tex.top || tex.side || tex.front;
+      return tex[face] || tex.side || tex.top || tex.front;
     }
 
     // Default face fallback order:
