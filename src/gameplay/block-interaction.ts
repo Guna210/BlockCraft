@@ -13,6 +13,8 @@ import {
   updateFenceNeighbours,
   type PlacedCell,
 } from './shape-blocks';
+import { chestFacingFromYaw } from './chests';
+import type { RayHit } from '../world/raycast';
 const NORMALS = {
   top: [0, 1, 0],
   bottom: [0, -1, 0],
@@ -27,6 +29,8 @@ export class BlockInteraction {
   progress = 0;
   tool: MiningTool = BARE_HAND;
   onBreak?: (state: number, x: number, y: number, z: number, tool: MiningTool) => void;
+  onBreakBeforeRemove?: (state: number, x: number, y: number, z: number) => boolean | void;
+  onUse?: (blockId: string, target: RayHit) => boolean;
   private attack = false;
   private use = false;
   private pick = false;
@@ -107,7 +111,10 @@ export class BlockInteraction {
       p.inventory.pickBlock(id);
     }
     this.pickPressed = false;
-    if (this.usePressed && t.hit && !this.toggle()) this.place();
+    if (this.usePressed && t.hit) {
+      const blockId = this.registry.getResolvedState(t.stateId)!.blockId;
+      if (!this.onUse?.(blockId, t) && !this.toggle()) this.place();
+    }
     this.usePressed = false;
     if (!t.hit || !this.attack || p.detached) {
       this.reset();
@@ -123,9 +130,11 @@ export class BlockInteraction {
     this.progress =
       p.mode === 'creative' || seconds === 0 ? 1 : Math.min(1, this.progress + 0.05 / seconds);
     if (this.progress >= 1 - 1e-10) {
+      const brokenState = t.stateId;
+      if (this.onBreakBeforeRemove?.(brokenState, t.x, t.y, t.z) === false) return;
       for (const cell of removeShapeBlock(this.registry, p.collision.world, t.x, t.y, t.z))
         this.edited(cell.x, cell.y, cell.z);
-      this.onBreak?.(t.stateId, t.x, t.y, t.z, this.tool);
+      this.onBreak?.(brokenState, t.x, t.y, t.z, this.tool);
       this.reset();
       t.hit = false;
     }
@@ -168,6 +177,11 @@ export class BlockInteraction {
     if (s.properties.axis !== undefined)
       held = this.registry.getStateId(s.blockId, {
         axis: normal[0] ? 'x' : normal[1] ? 'y' : 'z',
+      })!;
+    if (s.blockId === 'chest')
+      held = this.registry.getStateId('chest', {
+        facing: chestFacingFromYaw(p.yaw),
+        pair: 'single',
       })!;
     if (s.blockId === 'torch' || s.blockId === 'wall_torch') {
       if (t.face === 'bottom') return false;

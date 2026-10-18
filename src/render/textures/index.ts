@@ -171,6 +171,8 @@ import {
 import { genIce, genFire, PAL_ICE, PAL_FIRE } from './weather';
 import { shapeGenerators, shapePalettes } from './shapes';
 import { STAINED_GLASS_COLORS, genStainedGlass, stainedGlassPalette } from './stained-glass';
+import { genWorkbenchSide, genWorkbenchTop, PAL_WORKBENCH } from './workbench';
+import { genChestBottom, genChestSide, genChestTop, PAL_CHEST } from './chest';
 
 export { PAL_ICE, PAL_FIRE, genIce, genFire };
 
@@ -205,6 +207,11 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   hay_side: genHaySide,
   torch: genTorch,
   lumite_block: genLumiteBlock,
+  workbench_top: genWorkbenchTop,
+  workbench_side: genWorkbenchSide,
+  chest_top: genChestTop,
+  chest_side: genChestSide,
+  chest_bottom: genChestBottom,
   // Terrain
   grass_top: genGrassTop,
   grass_side: genGrassSide,
@@ -390,6 +397,11 @@ export const texturePalettes: Record<string, RGBA[]> = {
   hay_side: PAL_HAY,
   torch: PAL_TORCH,
   lumite_block: PAL_LUMITE,
+  workbench_top: PAL_WORKBENCH,
+  workbench_side: PAL_WORKBENCH,
+  chest_top: PAL_CHEST,
+  chest_side: PAL_CHEST,
+  chest_bottom: PAL_CHEST,
   // Terrain
   grass_top: PAL_GRASS,
   grass_side: [

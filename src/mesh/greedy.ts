@@ -1,5 +1,6 @@
 import { emitFluidBlocks } from './fluids';
 import { MODEL_WALL_TORCH, emitWallTorch } from './wall-torch';
+import { SHAPE_VERTEX } from './vertex';
 import { MODEL_SHAPE, MAX_SHAPE_QUADS_PER_BLOCK, emitShapeBlock } from './shapes';
 import { doorFrontNormal, oppositeFacing, stateBoxes, type Facing } from '../world/shape-geometry';
 import {
@@ -197,6 +198,10 @@ export function buildMeshLookupTables(
     }
 
     if (boxes && def.textures) applyShapeTiles(stateId, resolved, tileIndices, tileResolver);
+    if (boxes)
+      for (let f = 0; f < 6; f++)
+        if (tileIndices[stateId * 6 + f]! > SHAPE_VERTEX.tileMask)
+          throw new Error(`${resolved.blockId}: tile index exceeds the shape vertex's 10 bits`);
   }
 
   return {

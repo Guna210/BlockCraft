@@ -44,8 +44,6 @@ Door and trapdoor tiles are chosen per state in `buildMeshLookupTables`: the lea
 
 Stairs, fences and trapdoors get an isometric multi-box icon (`renderBoxes` in `src/ui/icons.ts`, same projection and shading as `renderBox`, which still draws cubes and slabs). The fence icon shows east and west arms. Doors use a flat sprite (`<wood>_door_item`).
 
-## State IDs and an existing test
+## State IDs
 
-376 new states are appended to `data/block-state-ids.json` (ids 145–520) in registry order. If master gains state IDs first, renumber these after master's last one.
-
-`tests/unit/m08c-glass-foliage.test.ts › appends the stained glass states to the end of the saved state IDs` asserted that the stained glass states are the eight highest IDs in the table, which no later block addition can satisfy. Its filter now ignores IDs above 144 (the M08c table); every other assertion in it is unchanged. **The owner should confirm this one-line change to an existing test.**
+376 new states are appended to `data/block-state-ids.json` (ids 158–533, after M10b's chest) in registry order. If master gains state IDs first, renumber these after master's last one.

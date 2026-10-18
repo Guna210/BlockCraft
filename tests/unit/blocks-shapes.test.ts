@@ -13,6 +13,8 @@ import {
   fenceStateFor,
   type ShapeWorld,
 } from '../../src/gameplay/shape-blocks';
+import { rollBlockLoot } from '../../src/gameplay/loot';
+import { textureGenerators } from '../../src/render/textures';
 import { collisionBoxes } from '../../src/world/shape-geometry';
 import { crafting } from '../../src/gameplay/crafting';
 import { smelting } from '../../src/gameplay/smelting';
@@ -313,5 +315,28 @@ describe('BLOCKS-shapes meshing', () => {
     const mesh = greedyMesh(blocks, tables).models;
     expect(mesh.quadCount).toBeGreaterThan(24576 / 8);
     expect(mesh.indices.length).toBe(mesh.quadCount * 6);
+  });
+});
+
+describe('BLOCKS-shapes limits and drops', () => {
+  it('keeps every atlas tile index inside the 10 bits of a shape vertex', () => {
+    let tiles = 0;
+    for (const generate of Object.values(textureGenerators)) {
+      const result = generate();
+      tiles += Array.isArray(result) ? result.length : 1;
+    }
+    expect(tiles).toBeLessThanOrEqual(1024);
+  });
+  it('breaking a door drops exactly one door, whichever half was broken', () => {
+    for (const wood of WOODS) {
+      expect(rollBlockLoot(`${wood}_door`, 1, 0, 65, 0)).toEqual([
+        { id: `${wood}_door`, count: 1 },
+      ]);
+    }
+    const w = makeWorld();
+    for (const c of shapePlacement(registry, w, 'oak_door', ctx(), free(w))!)
+      w.setBlockStateId(c.x, c.y, c.z, c.state);
+    // BlockInteraction calls onBreak once per break, and removeShapeBlock clears both halves.
+    expect(removeShapeBlock(registry, w, 0, 1, 0).filter((c) => c.state === 0)).toHaveLength(2);
   });
 });

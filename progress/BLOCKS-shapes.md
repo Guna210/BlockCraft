@@ -8,7 +8,7 @@ Full verify (this session): typecheck ✓ · lint ✓ · placeholders ✓ · uni
 
 Owner-requested task, so there is no SPEC row. The brief's goals and where they are tested:
 
-- [x] 22 new crafting recipes lift the recipe total to ≥ 120 (now 119 crafting + 17 smelting = 136) → tests/unit/blocks-shapes.test.ts › "brings the crafting recipe total to at least 120"
+- [x] 22 new crafting recipes lift the recipe total to ≥ 120 (now 121 crafting + 17 smelting = 138, including M10b's workbench and chest) → tests/unit/blocks-shapes.test.ts › "brings the crafting recipe total to at least 120"
 - [x] Every wood has stairs, fences, doors and trapdoors → tests/unit/blocks-shapes.test.ts › "registers stairs, fences, doors and trapdoors…"
 - [x] Box geometry of every shape kind → tests/unit/blocks-shapes.test.ts › "BLOCKS-shapes boxes"
 - [x] Placement orientation, fence connection, two-block doors → "BLOCKS-shapes placement rules"
@@ -33,7 +33,7 @@ Owner-requested task, so there is no SPEC row. The brief's goals and where they 
 - `src/gameplay/shape-blocks.ts` and `src/gameplay/block-interaction.ts`: placement, fence connection, toggling and breaking.
 - `src/render/textures/shapes.ts`, `src/ui/icons.ts`: door, trapdoor and door-sprite textures, multi-box icons.
 - `src/debug/api/shapes.ts`: `placeShape`, `toggleShape`, `breakShape`.
-- Data: `data/{blocks,items,loot,recipes}/shapes.json`, 376 new state IDs (145–520).
+- Data: `data/{blocks,items,loot,recipes}/shapes.json`, 376 new state IDs (158–533, after M10b's chest).
 
 ## Decisions (links to decisions/ files)
 
@@ -44,7 +44,7 @@ Owner-requested task, so there is no SPEC row. The brief's goals and where they 
 - Stairs are straight only: no inner or outer corner shapes.
 - Fences connect to fences and full opaque cubes only (not to doors or stairs).
 - The model bucket now grows on demand, so a section of only shapes uses more worker memory than before.
-- Existing test changed: `tests/unit/m08c-glass-foliage.test.ts` ("appends the stained glass states…") now ignores state IDs above 144, because it asserted that the stained glass states are the highest IDs in the table. The owner should confirm this.
+- Existing test changed: `tests/unit/m10b-crafting-chests.test.ts` line 42 asserted `getMaxStateId()` equals 157 (the last chest state); it is now `toBeGreaterThanOrEqual(157)`. The exact workbench and chest state IDs it checks are unchanged. The owner should confirm this.
 - m04.spec.ts:221 and m04.spec.ts:276 timed out in the full verify; both are on the known 2-core container list and are not related to this task. CI on the PR is the check.
 
 ## Notes for dependent tasks

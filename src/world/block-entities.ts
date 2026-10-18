@@ -20,6 +20,9 @@ export interface BlockEntityTypeDefinition<TState extends BlockEntityState = Blo
   readonly tickInterval?: number;
   create: (x: number, y: number, z: number, stateId: number) => TState;
   tick?: (entity: BlockEntityInstance<TState>, world: World) => void;
+  afterPlaced?: (entity: BlockEntityInstance<TState>, world: World) => void;
+  afterStateChanged?: (entity: BlockEntityInstance<TState>, world: World) => void;
+  afterRemoved?: (entity: BlockEntityInstance<TState>, world: World) => void;
 }
 
 export function isPlainJsonObject(value: unknown): value is BlockEntityState {
@@ -127,13 +130,21 @@ export class BlockEntityManager {
     oldBlockId: string,
     newBlockId: string,
     newStateId: number,
+    oldStateId = 0,
   ): void {
     const k = BlockEntityManager.key(x, y, z);
-    if (oldBlockId === newBlockId && this.entities.has(k)) {
+    const existing = this.entities.get(k);
+    if (oldBlockId === newBlockId && existing) {
+      if (oldStateId !== newStateId) {
+        blockEntityRegistry.get(newBlockId)?.afterStateChanged?.(existing, this.world);
+      }
       return;
     }
 
-    this.entities.delete(k);
+    if (existing) {
+      this.entities.delete(k);
+      blockEntityRegistry.get(oldBlockId)?.afterRemoved?.(existing, this.world);
+    }
 
     const typeDef = blockEntityRegistry.get(newBlockId);
     if (!typeDef) return;
@@ -151,6 +162,7 @@ export class BlockEntityManager {
       state: initialState,
     };
     this.entities.set(k, instance);
+    typeDef.afterPlaced?.(instance, this.world);
 
     if (typeDef.tick) {
       this.world.ticks.schedule(
