@@ -49,7 +49,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M10c kiln & tool wear | PR #57 open, CI running (session_018MnMXAYrZYkVyhcs854hHa) | agy built; Sonnet finished on claude/m10c (11 commits over agy/m10c) | none yet (round 1 = new reviewer) | #57 (supersedes #56; owner closing #56) | Full verify: 790 unit, 112 e2e. Kiln 534-541, m08c test = master, hooks via onUse/onBreakBeforeRemove, flame teardrop + yellow core + tongues. Reviewer to check: e2e spec keeps its own copy of flame frames (flame screenshot may not come from game code); one kiln-specific facing branch in block-interaction. |
+| M10c kiln & tool wear | PR #57 CI green on 9236db9; round 1 reviewer prompt given (builder session_018MnMXAYrZYkVyhcs854hHa) | agy built; Sonnet finished on claude/m10c (11 commits over agy/m10c) | none yet (round 1 = new reviewer) | #57 (supersedes #56; owner closing #56) | Full verify: 790 unit, 112 e2e. Kiln 534-541, m08c test = master, hooks via onUse/onBreakBeforeRemove, flame teardrop + yellow core + tongues. Reviewer to check: e2e spec keeps its own copy of flame frames (flame screenshot may not come from game code); one kiln-specific facing branch in block-interaction. |
 
 Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards) and M15a (Current core & logic) both need M10b+M10c. M17b needs M15b or an owner SPEC change.
 
@@ -81,6 +81,7 @@ Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards)
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #57 M10c CI green (9236db9). Checked: IDs 534-541 appended, only m10c tests in tests/ diff, screenshots viewed (flame = red edge/orange body/small yellow core, tongues shift; core still smallish and blocky; owner to judge). Gave round 1 reviewer prompt.
 - 2026-10-18: M10c Sonnet takeover reached the publish gate: merged master, kiln 534-541, m08c test identical to master, flame teardrop with yellow core and tongues, 790 unit / 112 e2e passed, unrelated screenshot rewrites restored. Told owner to approve; reviewer to check the flame-frame copy in the e2e spec.
 - 2026-10-18: #54 merged (fcaaa1f; master IDs end at 533). agy M10c fix bda76dc: kiln back to append (145-152), registration in main.ts, lightEmissionWhen, flame now a teardrop but with a plus-shaped core and no tongues; agy re-edited the m08c test (undisclosed). A trial merge with master conflicts in 6 files. Gave a Sonnet takeover prompt: claude/m10c from agy/m10c, merge master, kiln 534-541, master's m08c test, keep the hooks from all 3 tasks, teardrop core + tongues, full verify, gate; the new PR supersedes #56.
 - 2026-10-18: Owner approved the m10b-crafting-chests.test.ts:42 edit (≥ 157). #54 CI green on 57ef54d; told the owner to merge.
@@ -100,4 +101,3 @@ Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards)
 - 2026-10-18: BLOCKS-shapes gate (bfba567 on master 982aebe): unit 767; e2e 104 passed, failing only m04:221/276. 22 blocks, 22 recipes (crafting 119 + smelting 17), state IDs 145-520 (376). Existing test edit: m08c-glass-foliage 'stained glass are the highest IDs' now ignores IDs > 144 (breaks on any block addition); I recommended the owner approve. M10b/M10c inherit the fix if this merges first.
 - 2026-10-17: BLOCKS-shapes started (session_01G9eqJk3rGpFktxhridFMPD). M10b (Codex) and M10c (agy) also building.
 - 2026-10-17: The owner assigned M10b to Codex and M10c to agy. Gave the BLOCKS-shapes prompt for Claude: 5 woods × stairs/fence/door/trapdoor + stone/cobble stairs; multi-box shapes (block-shapes, raycast, physics); straight stairs only; fence connection states; 2-tall doors with hinge/open; 3/16 trapdoors; recipes to reach ≥ 120; e2e walk up stairs with the 0.6 step-up, door blocks/open passes.
-- 2026-10-17: #53 merged. Prompts given: Codex M10b (workbench/chest blocks, 2x2 + 3x3 grids, recipe book, chest + double chest block entities, UI-only craft e2e); agy M10c (kiln with facing/lit states, light 13, block entity, xp.ts addXp, kiln UI, tool damage on stacks + M17a serializer extension, harvest level, durability bar). Not started until the owner says.
