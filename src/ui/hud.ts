@@ -358,7 +358,7 @@ function drawHud(
   drawStatusMeter(ctx, 'orange', snapshot.hunger, 10, centerX + 5, statusY, s, 9);
   if (snapshot.armorPoints > 0)
     drawMeter(ctx, ARMOR, snapshot.armorPoints, 10, centerX - 44, statusY - 10, s, UI.light, 9);
-  if (snapshot.submerged || snapshot.air < 300)
+  if (snapshot.submerged)
     drawMeter(ctx, BUBBLE, snapshot.air / 15, 10, centerX + 52, statusY - 10, s, UI.light, 8);
 
   const barWidth = 180;
