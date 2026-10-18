@@ -222,138 +222,63 @@ test('Visual Review: m10-kiln mid-smelt with damaged tool durability bar', async
     path.join(docs, 'm10-kiln.png'),
   );
 
-  // Generate m10-kiln-flame.png showing zoomed flicker frames at full fuel vs half fuel
-  const flameWidth = 300;
-  const flameHeight = 204;
-  const flamePng = new PNG({ width: flameWidth, height: flameHeight });
-
-  const PALETTE = {
-    panel: [85, 90, 128],
-    outline: [21, 18, 31],
-    slot: [35, 37, 58],
-    red: [179, 43, 27],
-    orange: [217, 109, 26],
-    yellow: [242, 193, 46],
+  // m10-kiln-flame.png: crops of the real kiln screen's flame (no frame data lives in tests), three
+  // consecutive flicker frames at full fuel (top row) and at about half fuel (bottom row).
+  const KILN_FLAME_ZOOM = 6;
+  const captureFlame = async (): Promise<PNG> => {
+    const box = await page.evaluate(async () => {
+      const a = window.__blockcraft!;
+      a.openScreen!('kiln'); // re-render the open screen after ticking
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(0)));
+      return a.getScreen!().flameBox;
+    });
+    expect(box).not.toBeNull();
+    const clip = {
+      x: Math.floor(box!.x),
+      y: Math.floor(box!.y),
+      width: Math.ceil(box!.w),
+      height: Math.ceil(box!.h),
+    };
+    return PNG.sync.read(await page.screenshot({ clip }));
   };
-
-  for (let y = 0; y < flameHeight; y++) {
-    for (let x = 0; x < flameWidth; x++) {
-      const idx = (y * flameWidth + x) * 4;
-      flamePng.data[idx] = PALETTE.panel[0]!;
-      flamePng.data[idx + 1] = PALETTE.panel[1]!;
-      flamePng.data[idx + 2] = PALETTE.panel[2]!;
-      flamePng.data[idx + 3] = 255;
+  const flameRows: PNG[][] = [];
+  for (const row of ['full', 'half']) {
+    if (row === 'half') await page.evaluate(() => window.__blockcraft!.tick!(692));
+    const crops: PNG[] = [];
+    for (let frame = 0; frame < 3; frame++) {
+      crops.push(await captureFlame());
+      await page.evaluate(() => window.__blockcraft!.tick!(4)); // the flame changes frame every 4 ticks
     }
+    flameRows.push(crops);
   }
-
-  // Copy of FLAME_FRAMES in src/ui/kiln-screen.ts (the spec cannot import src modules that load JSON).
-  const FLAME_FRAMES: readonly (readonly string[])[] = [
-    [
-      '......R.......',
-      '.....ROR......',
-      '.....ROR......',
-      '....ROOORR....',
-      '..RROOOOOR....',
-      '..ROOOOOOR....',
-      '..ROOOOOOOR...',
-      '..ROOOYOOOR...',
-      '.ROOOYYYOOR...',
-      '.ROOOYYYOOORR.',
-      'RRROOOOOOOOR..',
-      '...ROOOOOOR...',
-      '...ROOOOOR....',
-      '....RRRRR.....',
-    ],
-    [
-      '.......R......',
-      '.....RRR......',
-      '.....ROR.R....',
-      '....ROOOR.R...',
-      '...ROOOOORR...',
-      '...ROOOOOR....',
-      '...ROOOOOOR...',
-      '..ROOOYOOOR...',
-      'RROOOYYYOOOR..',
-      'ROOOOYYYOOOR..',
-      '.ROOOOOOOOR...',
-      '..ROOOOOOOR...',
-      '...ROOOOOR....',
-      '....RRRRR.....',
-    ],
-    [
-      '.....R........',
-      '.....RRR......',
-      '...R.ROR......',
-      '...RROOOR.....',
-      '...ROOOOOR....',
-      '...ROOOOOOR...',
-      '..ROOOOOOORR..',
-      '..ROOOYOOR....',
-      '.ROOOYYYOORR..',
-      '..ROOYYYOOOR..',
-      '.ROOOOOOOOORR.',
-      '..ROOOOOOOR...',
-      '...ROOOOOR....',
-      '....RRRRR.....',
-    ],
-  ];
-
-  const isFlameEdge = (frame: readonly string[], row: number, col: number): boolean => {
-    if (row === 0 || row === 13 || col === 0 || col === 13) return true;
-    return (
-      frame[row - 1]![col] === '.' ||
-      frame[row + 1]![col] === '.' ||
-      frame[row]![col - 1] === '.' ||
-      frame[row]![col + 1] === '.'
-    );
-  };
-
-  const renderSingleFlame = (
-    startX: number,
-    startY: number,
-    scale: number,
-    burnRemaining: number,
-    burnTotal: number,
-    frame: readonly string[],
-  ) => {
-    const ratio = burnTotal > 0 ? Math.max(0, Math.min(1, burnRemaining / burnTotal)) : 0;
-    const fillH = Math.round(14 * ratio);
-    const startFillRow = 14 - fillH;
-
-    for (let row = 0; row < 14; row++) {
-      const line = frame[row]!;
-      const isLitRow = row >= startFillRow && burnRemaining > 0;
-      for (let col = 0; col < 14; col++) {
-        const ch = line[col];
-        if (ch === '.') continue;
-        let rgb: number[];
-        if (isLitRow) {
-          rgb = ch === 'Y' ? PALETTE.yellow : ch === 'O' ? PALETTE.orange : PALETTE.red;
-        } else {
-          const isEdge = isFlameEdge(frame, row, col);
-          rgb = isEdge ? PALETTE.outline : PALETTE.slot;
-        }
-
-        for (let py = 0; py < scale; py++) {
-          for (let px = 0; px < scale; px++) {
-            const pxX = startX + col * scale + px;
-            const pxY = startY + row * scale + py;
-            const idx = (pxY * flameWidth + pxX) * 4;
-            flamePng.data[idx] = rgb[0]!;
-            flamePng.data[idx + 1] = rgb[1]!;
-            flamePng.data[idx + 2] = rgb[2]!;
-            flamePng.data[idx + 3] = 255;
-          }
+  const cell = flameRows[0]![0]!;
+  const gap = 6;
+  const tileW = cell.width * KILN_FLAME_ZOOM;
+  const tileH = cell.height * KILN_FLAME_ZOOM;
+  const flamePng = new PNG({
+    width: gap + 3 * (tileW + gap),
+    height: gap + 2 * (tileH + gap),
+  });
+  for (let i = 0; i < flamePng.data.length; i += 4) {
+    flamePng.data[i] = 85;
+    flamePng.data[i + 1] = 90;
+    flamePng.data[i + 2] = 128;
+    flamePng.data[i + 3] = 255;
+  }
+  flameRows.forEach((crops, rowIndex) =>
+    crops.forEach((crop, frame) => {
+      const originX = gap + frame * (tileW + gap);
+      const originY = gap + rowIndex * (tileH + gap);
+      for (let y = 0; y < tileH; y++) {
+        for (let x = 0; x < tileW; x++) {
+          const from =
+            (Math.floor(y / KILN_FLAME_ZOOM) * crop.width + Math.floor(x / KILN_FLAME_ZOOM)) * 4;
+          const to = ((originY + y) * flamePng.width + originX + x) * 4;
+          for (let c = 0; c < 4; c++) flamePng.data[to + c] = crop.data[from + c]!;
         }
       }
-    }
-  };
-
-  // Top row: the three flicker frames at full fuel; bottom row: the same frames at half fuel.
-  FLAME_FRAMES.forEach((frame, index) => {
-    renderSingleFlame(18 + index * 96, 12, 6, 1600, 1600, frame);
-    renderSingleFlame(18 + index * 96, 108, 6, 800, 1600, frame);
-  });
+    }),
+  );
 
   assertNotBlank(flamePng);
   assertNoMissingTexture(flamePng);

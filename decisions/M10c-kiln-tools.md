@@ -20,15 +20,15 @@
 
 ## 2. Block state ID allocation (`data/block-state-ids.json`)
 
-- State IDs `145..152` were appended strictly to the END of `data/block-state-ids.json` without reordering or shifting any existing IDs:
-  - `145`: `kiln[facing=east,lit=false]`
-  - `146`: `kiln[facing=east,lit=true]`
-  - `147`: `kiln[facing=north,lit=false]`
-  - `148`: `kiln[facing=north,lit=true]`
-  - `149`: `kiln[facing=south,lit=false]`
-  - `150`: `kiln[facing=south,lit=true]`
-  - `151`: `kiln[facing=west,lit=false]`
-  - `152`: `kiln[facing=west,lit=true]`
+- State IDs `534..541` were appended strictly to the END of `data/block-state-ids.json` without reordering or shifting any existing IDs:
+  - `534`: `kiln[facing=east,lit=false]`
+  - `535`: `kiln[facing=east,lit=true]`
+  - `536`: `kiln[facing=north,lit=false]`
+  - `537`: `kiln[facing=north,lit=true]`
+  - `538`: `kiln[facing=south,lit=false]`
+  - `539`: `kiln[facing=south,lit=true]`
+  - `540`: `kiln[facing=west,lit=false]`
+  - `541`: `kiln[facing=west,lit=true]`
 
 ## 3. Kiln block entity & simulation (`src/gameplay/kiln.ts`)
 
@@ -122,10 +122,10 @@
 
 ## 9. Review feedback architectural decoupling & data-driven features
 
-- **State ID Restoration (`data/block-state-ids.json`)**:
-  - Restored `blue_stained_glass` through `yellow_stained_glass` to their canonical master IDs `137..144`.
-  - Appended kiln states strictly to the end as `145..152` (`kiln[facing=east,lit=false]` through `kiln[facing=west,lit=true]`).
-  - Updated `tests/unit/m08c-glass-foliage.test.ts` to assert that stained glass blocks occupy IDs `137..144`.
+- **State ID table (`data/block-state-ids.json`)**:
+  - Master's entries are unchanged (stained glass stays at `137..144`).
+  - Kiln states are appended strictly to the end as `534..541` (`kiln[facing=east,lit=false]` through `kiln[facing=west,lit=true]`).
+  - `tests/unit/m08c-glass-foliage.test.ts` is master's version; this task does not edit it.
 - **Core Decoupling (`src/world/block-entities.ts`)**:
   - Removed kiln import and registration from `src/world/block-entities.ts` to preserve clean layering where the core world does not import gameplay mechanisms.
   - Kiln block entity registers at application runtime startup in `src/main.ts` via `registerKilnBlockEntity()`.
@@ -147,7 +147,7 @@
 ## 10. Merge with master and builder change
 
 - The builder changed from agy to Claude. Branch `claude/m10c` = `agy/m10c` + merge of `origin/master` (M10b workbench/chest/crafting #55, BLOCKS-shapes #54). It supersedes draft PR #56.
-- **State IDs:** master's table is kept exactly (ends at 533). The 8 kiln states are appended at `534..541` (superseding `145..152` above). `tests/unit/m08c-glass-foliage.test.ts` is master's version.
+- **State IDs:** master's table is kept exactly (ends at 533). The 8 kiln states are appended at `534..541` (replacing the original `145..152`). `tests/unit/m08c-glass-foliage.test.ts` is master's version.
 - **Interaction:** the kiln-specific `onInteract`/`onBreak(blockEntity)` paths were dropped for M10b's generic hooks. Opening: `onUse` (wired in `main.ts`) → `UiManager.openKiln`. Spilling: `onBreakBeforeRemove` → `spillKilnContents`, with the same full-pool refusal as chests. Tool wear stays in `onBreak`; harvest-level gating still goes through `canHarvest`. Door/trapdoor toggling and `removeShapeBlock` from BLOCKS-shapes are unchanged.
 - **Placement facing:** the kiln's facing from the player's yaw is applied before shape placement in `BlockInteraction.place`.
 - **UI:** `ui-manager.ts` is master's, with the `'kiln'` screen added next to crafting/chest (own layout, slot mapping 3..38 → inventory 0..35, click handler from agy).

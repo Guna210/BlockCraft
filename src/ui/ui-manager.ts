@@ -78,6 +78,8 @@ export interface ScreenSnapshot {
   searchText: string;
   craftableOnly: boolean;
   doubleChest: boolean;
+  /** The kiln's flame indicator in CSS pixels; null outside the kiln screen. */
+  flameBox: Rect | null;
 }
 
 const DOUBLE_CLICK_MS = 400;
@@ -831,6 +833,7 @@ export class UiManager {
       searchText: this.searchText,
       craftableOnly: this.craftableOnly,
       doubleChest: this.chestStorage?.double ?? false,
+      flameBox: this.screen === 'kiln' && this.kilnLayout ? css(this.kilnLayout.flame) : null,
     };
   }
 

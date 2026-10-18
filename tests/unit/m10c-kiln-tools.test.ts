@@ -14,6 +14,9 @@ import { pointsForLevel, addXp } from '../../src/gameplay/xp';
 import { Inventory } from '../../src/gameplay/inventory';
 import { serializeInventory, deserializeInventory } from '../../src/persist/serializers';
 import { World } from '../../src/world/world';
+import { PlayerController } from '../../src/engine/player-controller';
+import { Camera } from '../../src/render/camera';
+import { InputEngine } from '../../src/engine/input';
 import { ChunkColumn } from '../../src/world/column';
 import {
   FLAME_FRAMES,
@@ -210,6 +213,70 @@ describe('M10c — Kiln & tool wear unit tests', () => {
       expect(state.storedXp).toBeCloseTo(5.6);
       // Lit state is false after burning completes
       expect(world.getBlock(x, y, z).state.lit).toBe('false');
+    });
+
+    it('keeps smelting through the world tick with no UI open', () => {
+      const world = new World(false);
+      world.setColumn(new ChunkColumn(0, 0));
+      world.setBlock(5, 65, 5, 'kiln');
+      const state = world.blockEntities.get<KilnState>(5, 65, 5)!.state;
+      state.input = { id: 'iron_ore', count: 2, damage: null };
+      state.fuel = { id: 'coal', count: 1, damage: null };
+
+      for (let t = 0; t < 400; t++) world.tick();
+
+      expect(state.output).toEqual({ id: 'iron_ingot', count: 2, damage: null });
+      expect(state.input).toBeNull();
+      expect(world.getBlock(5, 65, 5).state.lit).toBe('true');
+    });
+
+    describe('breaking a kiln', () => {
+      const setup = () => {
+        const world = new World(false);
+        world.getColumn(0, 0, true);
+        world.fill(-4, 64, -4, 8, 64, 8, 'stone');
+        world.setBlock(2, 66, 0, 'kiln');
+        const state = world.getBlockEntity<KilnState>(2, 66, 0)!;
+        state.input = { id: 'iron_ore', count: 3, damage: null };
+        state.fuel = { id: 'coal', count: 2, damage: null };
+        state.output = { id: 'iron_ingot', count: 4, damage: null };
+        const controller = new PlayerController(
+          new Camera(1),
+          new InputEngine(document.createElement('canvas')),
+          () => true,
+        );
+        controller.spawn(world, 0.5, 65, 0.5, 'creative');
+        controller.loop.pause();
+        return { world, controller };
+      };
+
+      it('spills input, fuel and output as item entities and removes the block', () => {
+        const { world, controller } = setup();
+        controller.interaction!.input('attack', true);
+        controller.interaction!.tick();
+
+        const drops = controller.itemEntities!.pool.filter((entity) => entity.active);
+        expect(drops.map(({ item, count }) => [item.id, count]).sort()).toEqual([
+          ['coal', 2],
+          ['iron_ingot', 4],
+          ['iron_ore', 3],
+        ]);
+        expect(world.getBlock(2, 66, 0).id).toBe('air');
+      });
+
+      it('keeps the kiln intact when its contents cannot all become item entities', () => {
+        const { world, controller } = setup();
+        controller.itemEntities!.pool.forEach((entity) => (entity.active = true));
+        controller.interaction!.input('attack', true);
+        controller.interaction!.tick();
+
+        expect(world.getBlock(2, 66, 0).id).toBe('kiln');
+        expect(world.getBlockEntity<KilnState>(2, 66, 0)?.input).toEqual({
+          id: 'iron_ore',
+          count: 3,
+          damage: null,
+        });
+      });
     });
 
     it('emits light level 13 when lit and 0 when unlit', () => {
