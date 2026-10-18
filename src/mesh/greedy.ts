@@ -1,5 +1,8 @@
 import { emitFluidBlocks } from './fluids';
 import { MODEL_WALL_TORCH, emitWallTorch } from './wall-torch';
+import { SHAPE_VERTEX } from './vertex';
+import { MODEL_SHAPE, MAX_SHAPE_QUADS_PER_BLOCK, emitShapeBlock } from './shapes';
+import { doorFrontNormal, oppositeFacing, stateBoxes, type Facing } from '../world/shape-geometry';
 import {
   MODEL_BOTTOM_SLAB,
   MODEL_TOP_SLAB,
@@ -59,7 +62,14 @@ export interface MeshLookupTables {
   fluidHeight?: Uint8Array;
   fluidFalling?: Uint8Array;
   modelKind: Uint8Array; // numStates (cube, cross or slab, see models.ts)
+  /** Boxes of multi-box states (stairs, fences, doors, trapdoors); see shapes.ts. */
+  shapeStart?: Uint32Array;
+  shapeCount?: Uint8Array;
+  shapeBoxes?: Float32Array;
 }
+
+const FACING_FACE: Record<Facing, number> = { east: 0, west: 1, south: 4, north: 5 };
+const SHAPE_MODELS = new Set(['stairs', 'fence', 'door', 'trapdoor']);
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
 
@@ -85,6 +95,9 @@ export function buildMeshLookupTables(
   const fluidKind = new Uint8Array(numStates);
   const fluidHeight = new Uint8Array(numStates);
   const fluidFalling = new Uint8Array(numStates);
+  const shapeStart = new Uint32Array(numStates);
+  const shapeCount = new Uint8Array(numStates);
+  const shapeBoxList: number[] = [];
 
   const translucentTypeMap = new Map<string, number>();
   let nextTranslucentGroupId = 1;
@@ -106,8 +119,15 @@ export function buildMeshLookupTables(
     // Fast leaves are opaque cubes: their inner faces and faces behind them are never drawn.
     isOpaqueCube[stateId] =
       def.fullOpaqueCube || (options.fastLeaves && def.id.endsWith('_leaves')) ? 1 : 0;
-    modelKind[stateId] =
-      def.model === 'wall_torch'
+    const boxes = SHAPE_MODELS.has(String(def.model)) ? stateBoxes(resolved) : null;
+    if (boxes) {
+      shapeStart[stateId] = shapeBoxList.length / 6;
+      shapeCount[stateId] = boxes.length;
+      for (const box of boxes) shapeBoxList.push(...box);
+    }
+    modelKind[stateId] = boxes
+      ? MODEL_SHAPE
+      : def.model === 'wall_torch'
         ? MODEL_WALL_TORCH +
           ['north', 'south', 'east', 'west'].indexOf(String(resolved.properties.facing))
         : def.model === 'cross'
@@ -176,6 +196,12 @@ export function buildMeshLookupTables(
         tintIndices[stateId * 6 + f] = 0; // none
       }
     }
+
+    if (boxes && def.textures) applyShapeTiles(stateId, resolved, tileIndices, tileResolver);
+    if (boxes)
+      for (let f = 0; f < 6; f++)
+        if (tileIndices[stateId * 6 + f]! > SHAPE_VERTEX.tileMask)
+          throw new Error(`${resolved.blockId}: tile index exceeds the shape vertex's 10 bits`);
   }
 
   return {
@@ -189,7 +215,47 @@ export function buildMeshLookupTables(
     tileIndices,
     tintIndices,
     modelKind,
+    shapeStart,
+    shapeCount,
+    shapeBoxes: new Float32Array(shapeBoxList),
   };
+}
+
+/** Door and trapdoor faces pick their tile from the state: see decisions/BLOCKS-shapes.md. */
+function applyShapeTiles(
+  stateId: number,
+  resolved: NonNullable<ReturnType<BlockRegistry['getResolvedState']>>,
+  tileIndices: Uint16Array,
+  tileResolver: (texName: string) => number,
+): void {
+  const model = resolved.definition.model;
+  const tex = resolved.definition.textures!;
+  const props = resolved.properties;
+  const facing = String(props.facing) as Facing;
+  const open = String(props.open) === 'true';
+  if (model === 'door') {
+    const lower = String(props.half) !== 'upper';
+    const hinge = String(props.hinge);
+    const frontNormal = doorFrontNormal(facing, hinge, open);
+    const front = FACING_FACE[frontNormal];
+    const back = FACING_FACE[oppositeFacing(frontNormal)];
+    const base = lower ? tex.lower! : tex.upper!;
+    const flip = lower ? tex.lower_flip! : tex.upper_flip!;
+    tileIndices[stateId * 6 + front] = tileResolver(hinge === 'right' ? flip : base);
+    tileIndices[stateId * 6 + back] = tileResolver(hinge === 'left' ? flip : base);
+  } else if (model === 'trapdoor') {
+    const planks = tileResolver(tex.side!);
+    const leaf = tileResolver(tex.top!);
+    for (let f = 0; f < 6; f++) tileIndices[stateId * 6 + f] = planks;
+    if (open) {
+      const broad = FACING_FACE[facing];
+      tileIndices[stateId * 6 + broad] = leaf;
+      tileIndices[stateId * 6 + (broad ^ 1)] = leaf;
+    } else {
+      tileIndices[stateId * 6 + 2] = leaf;
+      tileIndices[stateId * 6 + 3] = leaf;
+    }
+  }
 }
 
 /**
@@ -266,6 +332,20 @@ const opaqueScratch = createBucketScratch();
 const cutoutScratch = createBucketScratch();
 const translucentScratch = createBucketScratch();
 const modelScratch = createBucketScratch();
+
+/** Model blocks are not bounded by 6 faces each, so the model bucket grows when a section needs it. */
+function reserveQuads(scratch: BucketScratch, quads: number): void {
+  const needed = scratch.quadCount + quads;
+  if (needed * 8 <= scratch.vertices.length) return;
+  let capacity = scratch.vertices.length / 8;
+  while (capacity < needed) capacity *= 2;
+  const vertices = new Uint32Array(capacity * 8);
+  const indices = new Uint32Array(capacity * 6);
+  vertices.set(scratch.vertices.subarray(0, scratch.vertOffset));
+  indices.set(scratch.indices.subarray(0, scratch.indexOffset));
+  scratch.vertices = vertices;
+  scratch.indices = indices;
+}
 
 function resetBucketScratch(scratch: BucketScratch): void {
   scratch.vertOffset = 0;
@@ -772,6 +852,29 @@ export function greedyMesh(
       const yzOff = py * 18 + zOff;
       for (let px = 1; px <= 16; px++) {
         const state = paddedSection[px + yzOff]!;
+        if (tables.modelKind[state] !== MODEL_CUBE)
+          reserveQuads(modelScratch, MAX_SHAPE_QUADS_PER_BLOCK);
+        if (tables.modelKind[state] === MODEL_SHAPE) {
+          const bucket = modelScratch;
+          const quads = emitShapeBlock(
+            tables as Required<MeshLookupTables>,
+            state,
+            paddedSection,
+            paddedLight,
+            px + yzOff,
+            px - 1,
+            py - 1,
+            pz - 1,
+            bucket.vertices,
+            bucket.vertOffset,
+            bucket.indices,
+            bucket.indexOffset,
+          );
+          bucket.vertOffset += quads * 8;
+          bucket.indexOffset += quads * 6;
+          bucket.quadCount += quads;
+          continue;
+        }
         if (
           tables.modelKind[state] === MODEL_BOTTOM_SLAB ||
           tables.modelKind[state] === MODEL_TOP_SLAB

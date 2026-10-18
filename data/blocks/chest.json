@@ -1,0 +1,27 @@
+{
+  "chest": {
+    "hardness": 2.5,
+    "blastResistance": 2.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "pair": {
+        "type": "enum",
+        "values": ["single", "left", "right"],
+        "default": "single"
+      }
+    },
+    "textures": {
+      "top": "chest_top",
+      "side": "chest_side",
+      "bottom": "chest_bottom"
+    }
+  }
+}

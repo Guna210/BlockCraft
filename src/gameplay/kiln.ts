@@ -7,6 +7,7 @@ import {
 } from '../world/block-entities';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { World } from '../world/world';
+import type { ItemEntityManager } from '../entity/item-entity';
 
 export const COOK_TICKS_PER_ITEM = 200; // 10 seconds at 20 tps
 
@@ -117,4 +118,24 @@ export function registerKilnBlockEntity(): void {
     create: (x, y, z, stateId) => createKilnState(x, y, z, stateId),
     tick: (entity, world) => tickKiln(entity, world),
   });
+}
+
+/** Spawns a kiln's input, fuel and output as item entities; false (nothing spawned) if the pool is short. */
+export function spillKilnContents(
+  world: World,
+  entities: ItemEntityManager,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  const state = world.getBlockEntity<KilnState>(x, y, z);
+  if (!state) return true;
+  const stacks = [state.input, state.fuel, state.output].filter(
+    (stack): stack is NonNullable<KilnState['input']> => !!stack && stack.count > 0,
+  );
+  const free = entities.pool.reduce((count, entity) => count + Number(!entity.active), 0);
+  if (stacks.length > free) return false;
+  for (const stack of stacks)
+    if (!entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5)) return false;
+  return true;
 }

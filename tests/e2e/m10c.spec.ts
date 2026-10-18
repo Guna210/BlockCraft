@@ -4,6 +4,7 @@ import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../harness/fixture';
 import { assertNotBlank, assertNoMissingTexture } from '../harness/pixels';
+import { FLAME_FRAMES, isFlameEdge } from '../../src/ui/kiln-screen';
 
 async function setupWorld(page: Page) {
   await page.evaluate(async () => {
@@ -222,9 +223,9 @@ test('Visual Review: m10-kiln mid-smelt with damaged tool durability bar', async
     path.join(docs, 'm10-kiln.png'),
   );
 
-  // Generate m10-kiln-flame.png showing zoomed comparison of flame at full fuel vs ~half fuel
-  const flameWidth = 240;
-  const flameHeight = 120;
+  // Generate m10-kiln-flame.png showing zoomed flicker frames at full fuel vs half fuel
+  const flameWidth = 300;
+  const flameHeight = 204;
   const flamePng = new PNG({ width: flameWidth, height: flameHeight });
 
   const PALETTE = {
@@ -246,41 +247,14 @@ test('Visual Review: m10-kiln mid-smelt with damaged tool durability bar', async
     }
   }
 
-  const FLAME_FRAME: readonly string[] = [
-    '......R.......',
-    '.....RRR......',
-    '....RROOR.....',
-    '...RROOORR....',
-    '..RROOOOOOR...',
-    '...ROOOOOOOR..',
-    '..RROOOOOOORR.',
-    '..RROOOYOOORR.',
-    '.RROOOYYYOOOR.',
-    '.RROOOYYYOOOR.',
-    '..RROOOYOOOR..',
-    '..RROOOOOORR..',
-    '...RRROOORR...',
-    '....RRRRR.....',
-  ];
-
-  const isFlameEdge = (frame: readonly string[], row: number, col: number): boolean => {
-    if (row === 0 || row === 13 || col === 0 || col === 13) return true;
-    return (
-      frame[row - 1]![col] === '.' ||
-      frame[row + 1]![col] === '.' ||
-      frame[row]![col - 1] === '.' ||
-      frame[row]![col + 1] === '.'
-    );
-  };
-
   const renderSingleFlame = (
     startX: number,
     startY: number,
     scale: number,
     burnRemaining: number,
     burnTotal: number,
+    frame: readonly string[],
   ) => {
-    const frame = FLAME_FRAME;
     const ratio = burnTotal > 0 ? Math.max(0, Math.min(1, burnRemaining / burnTotal)) : 0;
     const fillH = Math.round(14 * ratio);
     const startFillRow = 14 - fillH;
@@ -314,11 +288,11 @@ test('Visual Review: m10-kiln mid-smelt with damaged tool durability bar', async
     }
   };
 
-  // Left: Full Fuel (1600/1600 ticks, 100%)
-  renderSingleFlame(24, 18, 6, 1600, 1600);
-
-  // Right: ~Half Fuel (800/1600 ticks, 50%)
-  renderSingleFlame(132, 18, 6, 800, 1600);
+  // Top row: the three flicker frames at full fuel; bottom row: the same frames at half fuel.
+  FLAME_FRAMES.forEach((frame, index) => {
+    renderSingleFlame(18 + index * 96, 12, 6, 1600, 1600, frame);
+    renderSingleFlame(18 + index * 96, 108, 6, 800, 1600, frame);
+  });
 
   assertNotBlank(flamePng);
   assertNoMissingTexture(flamePng);

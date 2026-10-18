@@ -11,10 +11,10 @@ import { BreakParticles } from '../render/particles';
 import { canHarvest } from '../gameplay/mining';
 import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
+import type { RayHit } from '../world/raycast';
+import { spillChestContents } from '../gameplay/chests';
+import { spillKilnContents } from '../gameplay/kiln';
 import { getToolDurability } from '../gameplay/tools';
-import { activeUi } from '../ui/ui-manager';
-import type { BlockEntityInstance } from '../world/block-entities';
-import type { KilnState } from '../gameplay/kiln';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -23,6 +23,7 @@ export class PlayerController {
   public itemEntities: ItemEntityManager | null = null;
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
+  public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
   private perspectiveDown = false;
@@ -82,27 +83,18 @@ export class PlayerController {
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
-    this.interaction.onInteract = (blockEntity) => {
-      if (blockEntity.blockId === 'kiln') {
-        activeUi.manager?.open('kiln', blockEntity as BlockEntityInstance<KilnState>);
-      }
+    this.interaction.onUse = (blockId, target) => this.onUseBlock(blockId, target);
+    this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
+      const id = world.getBlock(x, y, z).id;
+      if (id !== 'chest' && id !== 'kiln') return true;
+      if (!this.itemEntities) return false;
+      return id === 'chest'
+        ? spillChestContents(world, this.itemEntities, x, y, z)
+        : spillKilnContents(world, this.itemEntities, x, y, z);
     };
-    this.interaction.onBreak = (state, x, y, z, tool, blockEntity) => {
+    this.interaction.onBreak = (state, x, y, z, tool) => {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
-
-      if (blockEntity && blockEntity.blockId === 'kiln') {
-        const ks = blockEntity.state as {
-          input?: { id: string; count: number } | null;
-          fuel?: { id: string; count: number } | null;
-          output?: { id: string; count: number } | null;
-        };
-        for (const stack of [ks.input, ks.fuel, ks.output]) {
-          if (stack && stack.count > 0) {
-            this.itemEntities!.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5);
-          }
-        }
-      }
 
       if (this.player!.mode === 'survival') {
         const held = this.player!.inventory.held;

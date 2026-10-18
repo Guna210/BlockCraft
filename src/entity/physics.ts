@@ -1,4 +1,4 @@
-import { BOTTOM_SLAB_BOX, TOP_SLAB_BOX } from '../world/block-shapes';
+import { collisionBoxes } from '../world/block-shapes';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { World } from '../world/world';
 
@@ -6,10 +6,17 @@ export const EPSILON = 1e-7;
 export const HALF_WIDTH = 0.3;
 export type Position = [number, number, number];
 
-/** Cached state shapes: no block objects or arrays are created during a collision query. */
+/** Highest a collision box reaches above its own cell (fences are 1.5 blocks tall). */
+const MAX_OVERHANG = 1;
+
+/**
+ * Cached state shapes: no block objects or arrays are created during a collision query. Every
+ * state owns a run of boxes in `boxData` (six numbers each, relative to its cell).
+ */
 export class BlockCollision {
-  private readonly heights: Float64Array;
-  private readonly bottoms: Float64Array;
+  private readonly boxStart: Int32Array;
+  private readonly boxCount: Uint8Array;
+  private readonly boxData: Float64Array;
   private readonly water: Uint8Array;
   private readonly hay: Uint8Array;
   private readonly mire: Uint8Array;
@@ -17,36 +24,27 @@ export class BlockCollision {
   constructor(public readonly world: World) {
     const registry = BlockRegistry.getInstance();
     const n = registry.getMaxStateId() + 1;
-    this.heights = new Float64Array(n);
-    this.bottoms = new Float64Array(n);
+    this.boxStart = new Int32Array(n);
+    this.boxCount = new Uint8Array(n);
     this.water = new Uint8Array(n);
     this.hay = new Uint8Array(n);
     this.mire = new Uint8Array(n);
     this.climbers = new Uint8Array(n);
+    const data: number[] = [];
     for (const id of registry.getAllStateIds()) {
       const state = registry.getResolvedState(id)!;
-      const def = state.definition;
       this.water[id] = state.blockId === 'water' ? 1 : 0;
       this.hay[id] = state.blockId === 'hay_bale' ? 1 : 0;
       this.mire[id] = state.blockId === 'mire' ? 1 : 0;
       if (state.blockId === 'ladder' || state.blockId === 'vine')
         this.climbers[id] =
           ['north', 'south', 'east', 'west'].indexOf(String(state.properties.facing)) + 1;
-      if (def.model === 'slab') {
-        const box = state.properties.half === 'top' ? TOP_SLAB_BOX : BOTTOM_SLAB_BOX;
-        this.heights[id] = box[4] - box[1];
-        this.bottoms[id] = box[1];
-      } else if (
-        state.blockId !== 'air' &&
-        state.blockId !== 'water' &&
-        state.blockId !== 'lava' &&
-        def.model !== 'cross' &&
-        def.model !== 'wall' &&
-        def.model !== 'wall_torch'
-      ) {
-        this.heights[id] = 1;
-      }
+      const boxes = collisionBoxes(state.blockId, state.definition.model, state.properties);
+      this.boxStart[id] = data.length / 6;
+      this.boxCount[id] = boxes.length;
+      for (const box of boxes) data.push(...box);
     }
+    this.boxData = Float64Array.from(data);
   }
 
   private state(x: number, y: number, z: number): number {
@@ -54,25 +52,30 @@ export class BlockCollision {
   }
 
   free(x: number, y: number, z: number, height: number): boolean {
-    for (let by = Math.floor(y + EPSILON); by <= Math.floor(y + height - EPSILON); by++)
-      for (
-        let bz = Math.floor(z - HALF_WIDTH + EPSILON);
-        bz <= Math.floor(z + HALF_WIDTH - EPSILON);
-        bz++
-      )
-        for (
-          let bx = Math.floor(x - HALF_WIDTH + EPSILON);
-          bx <= Math.floor(x + HALF_WIDTH - EPSILON);
-          bx++
-        ) {
+    const minX = x - HALF_WIDTH,
+      maxX = x + HALF_WIDTH,
+      minZ = z - HALF_WIDTH,
+      maxZ = z + HALF_WIDTH;
+    for (
+      let by = Math.floor(y + EPSILON) - MAX_OVERHANG;
+      by <= Math.floor(y + height - EPSILON);
+      by++
+    )
+      for (let bz = Math.floor(minZ + EPSILON); bz <= Math.floor(maxZ - EPSILON); bz++)
+        for (let bx = Math.floor(minX + EPSILON); bx <= Math.floor(maxX - EPSILON); bx++) {
           const id = this.state(bx, by, bz);
-          const bottom = by + this.bottoms[id]!;
-          if (
-            this.heights[id]! > 0 &&
-            y < bottom + this.heights[id]! - EPSILON &&
-            y + height > bottom + EPSILON
-          )
-            return false;
+          for (let i = 0, o = this.boxStart[id]! * 6; i < this.boxCount[id]!; i++, o += 6) {
+            const d = this.boxData;
+            if (
+              y < by + d[o + 4]! - EPSILON &&
+              y + height > by + d[o + 1]! + EPSILON &&
+              bx + d[o]! <= maxX - EPSILON &&
+              bx + d[o + 3]! > minX + EPSILON &&
+              bz + d[o + 2]! <= maxZ - EPSILON &&
+              bz + d[o + 5]! > minZ + EPSILON
+            )
+              return false;
+          }
         }
     return true;
   }
@@ -92,9 +95,10 @@ export class BlockCollision {
       maxY = pos[1] + height;
     const minZ = pos[2] - halfWidth,
       maxZ = pos[2] + halfWidth;
+    const d = this.boxData;
     let result = distance;
     for (
-      let y = Math.floor(minY + Math.min(axis === 1 ? distance : 0, 0) + EPSILON);
+      let y = Math.floor(minY + Math.min(axis === 1 ? distance : 0, 0) + EPSILON) - MAX_OVERHANG;
       y <= Math.floor(maxY + Math.max(axis === 1 ? distance : 0, 0) - EPSILON);
       y++
     )
@@ -109,20 +113,25 @@ export class BlockCollision {
           x++
         ) {
           const id = this.state(x, y, z);
-          const h = this.heights[id]!;
-          if (h === 0) continue;
-          const bottom = y + this.bottoms[id]!;
-          if (axis !== 0 && (maxX <= x + EPSILON || minX >= x + 1 - EPSILON)) continue;
-          if (axis !== 1 && (maxY <= bottom + EPSILON || minY >= bottom + h - EPSILON)) continue;
-          if (axis !== 2 && (maxZ <= z + EPSILON || minZ >= z + 1 - EPSILON)) continue;
-          const near = axis === 0 ? x : axis === 1 ? bottom : z;
-          const far = near + (axis === 1 ? h : 1);
-          const low = axis === 0 ? minX : axis === 1 ? minY : minZ;
-          const high = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
-          if (distance > 0 && high <= near + EPSILON)
-            result = Math.min(result, Math.max(0, near - high));
-          if (distance < 0 && low >= far - EPSILON)
-            result = Math.max(result, Math.min(0, far - low));
+          for (let i = 0, o = this.boxStart[id]! * 6; i < this.boxCount[id]!; i++, o += 6) {
+            const x0 = x + d[o]!,
+              y0 = y + d[o + 1]!,
+              z0 = z + d[o + 2]!;
+            const x1 = x + d[o + 3]!,
+              y1 = y + d[o + 4]!,
+              z1 = z + d[o + 5]!;
+            if (axis !== 0 && (maxX <= x0 + EPSILON || minX >= x1 - EPSILON)) continue;
+            if (axis !== 1 && (maxY <= y0 + EPSILON || minY >= y1 - EPSILON)) continue;
+            if (axis !== 2 && (maxZ <= z0 + EPSILON || minZ >= z1 - EPSILON)) continue;
+            const near = axis === 0 ? x0 : axis === 1 ? y0 : z0;
+            const far = axis === 0 ? x1 : axis === 1 ? y1 : z1;
+            const low = axis === 0 ? minX : axis === 1 ? minY : minZ;
+            const high = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
+            if (distance > 0 && high <= near + EPSILON)
+              result = Math.min(result, Math.max(0, near - high));
+            if (distance < 0 && low >= far - EPSILON)
+              result = Math.max(result, Math.min(0, far - low));
+          }
         }
     return result;
   }
@@ -216,7 +225,7 @@ export class BlockCollision {
     return false;
   }
 
-  /** Exact ray/solid-shape intersection, including slabs. No per-query allocations. */
+  /** Exact ray/solid-shape intersection, including slabs and stairs. No per-query allocations. */
   cameraDistance(
     x: number,
     y: number,
@@ -227,13 +236,14 @@ export class BlockCollision {
     distance = 4,
   ): number {
     let hit = distance;
+    const d = this.boxData;
     for (
       let bz = Math.floor(Math.min(z, z + dz * distance));
       bz <= Math.floor(Math.max(z, z + dz * distance));
       bz++
     )
       for (
-        let by = Math.floor(Math.min(y, y + dy * distance));
+        let by = Math.floor(Math.min(y, y + dy * distance)) - MAX_OVERHANG;
         by <= Math.floor(Math.max(y, y + dy * distance));
         by++
       )
@@ -242,29 +252,30 @@ export class BlockCollision {
           bx <= Math.floor(Math.max(x, x + dx * distance));
           bx++
         ) {
-          const id = this.state(bx, by, bz),
-            h = this.heights[id]!;
-          if (!h) continue;
-          let enter = 0,
-            leave = hit;
-          for (let axis = 0; axis < 3; axis++) {
-            const origin = axis === 0 ? x : axis === 1 ? y : z;
-            const dir = axis === 0 ? dx : axis === 1 ? dy : dz;
-            const low = axis === 0 ? bx : axis === 1 ? by + this.bottoms[id]! : bz;
-            const high = low + (axis === 1 ? h : 1);
-            if (Math.abs(dir) < EPSILON) {
-              if (origin < low || origin > high) {
-                leave = -1;
-                break;
+          const id = this.state(bx, by, bz);
+          for (let i = 0, o = this.boxStart[id]! * 6; i < this.boxCount[id]!; i++, o += 6) {
+            let enter = 0,
+              leave = hit;
+            for (let axis = 0; axis < 3; axis++) {
+              const origin = axis === 0 ? x : axis === 1 ? y : z;
+              const dir = axis === 0 ? dx : axis === 1 ? dy : dz;
+              const base = axis === 0 ? bx : axis === 1 ? by : bz;
+              const low = base + d[o + axis]!;
+              const high = base + d[o + axis + 3]!;
+              if (Math.abs(dir) < EPSILON) {
+                if (origin < low || origin > high) {
+                  leave = -1;
+                  break;
+                }
+              } else {
+                const a = (low - origin) / dir,
+                  b = (high - origin) / dir;
+                enter = Math.max(enter, Math.min(a, b));
+                leave = Math.min(leave, Math.max(a, b));
               }
-            } else {
-              const a = (low - origin) / dir,
-                b = (high - origin) / dir;
-              enter = Math.max(enter, Math.min(a, b));
-              leave = Math.min(leave, Math.max(a, b));
             }
+            if (enter <= leave) hit = Math.min(hit, enter);
           }
-          if (enter <= leave) hit = Math.min(hit, enter);
         }
     return hit < distance ? Math.max(0, hit - 0.2) : distance;
   }

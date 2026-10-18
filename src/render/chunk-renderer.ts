@@ -10,7 +10,7 @@ import {
 import { WALL_TORCH_GLSL } from '../mesh/wall-torch';
 import type { UnderwaterView } from './underwater';
 import { canonicalQuadVertices, quadIndices } from './shared-quads';
-import { VERTEX_LAYOUT } from '../mesh/vertex';
+import { SHAPE_VERTEX, VERTEX_LAYOUT, isShapeVertex } from '../mesh/vertex';
 import {
   LIGHT_MIN_BRIGHTNESS,
   LIGHT_BRIGHTNESS_RANGE,
@@ -66,6 +66,7 @@ flat out float v_flow;
 out vec3 v_normal;
 uniform float u_rainFactor;
 uniform float u_lightningFlash;
+uniform highp int u_isCutout;
 out vec2 v_unwrappedUV;
 flat out vec2 v_tileOrigin;
 out vec3 v_light;
@@ -85,11 +86,24 @@ ${WALL_TORCH_GLSL}
 #endif
 void main() {
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
-  uint material = a_word0 >> 28u;
+  // Shape vertices (stairs, fences, doors, trapdoors) live in the cutout bucket only, which is
+  // how they are told apart from fluid vertices whose two top word1 bits are also set.
+  #ifdef WALL_TORCH
+  bool shape = u_isCutout == 1 && (a_word1 >> ${SHAPE_VERTEX.flagShift}u) == ${SHAPE_VERTEX.flags}u && (a_word0 >> 28u) >= 8u;
+  #else
+  const bool shape = false;
+  #endif
+  uint material = shape ? 0u : a_word0 >> 28u;
   bool fluid = material == 4u || material == 5u;
   v_fluid = fluid ? float(material - 3u) : 0.0;
   v_flow = fluid ? float((a_word1 >> 18u) & 15u) : 0.0;
-  localPos.y += fluid ? -float((a_word1 >> 12u) & 63u) / 64.0 : float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5;
+  localPos.y += fluid ? -float((a_word1 >> 12u) & 63u) / 64.0 : (shape ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.halfYShift}u) & 1u) * 0.5);
+  vec3 shapeSub = vec3(0.0);
+  if (shape) {
+    uint packedSub = ((a_word0 >> 28u) & 7u) | (((a_word1 >> ${SHAPE_VERTEX.offsetShift}u) & 4095u) << 3u);
+    shapeSub = vec3(float(packedSub & 31u), float((packedSub >> 5u) & 31u), float((packedSub >> 10u) & 31u)) / 16.0;
+    localPos += shapeSub;
+  }
   vec3 worldPos = u_sectionOrigin + localPos;
   #ifdef WALL_TORCH
   uint normalIdx=(a_word0 >> 15u) & 7u;
@@ -103,8 +117,8 @@ void main() {
   if (material == 4u && ((a_word1 >> 12u) & 63u) != 0u) {
     worldPos.y += 0.018 * sin(worldPos.x * 1.1 + u_fluidTime * 1.2) * cos(worldPos.z * 0.9 + u_fluidTime * 0.8);
   }
-  worldPos += normal * (fluid ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u) / 32.0);
-  uint swayTile = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
+  worldPos += normal * (fluid ? 0.0 : (shape ? 0.0 : float((a_word1 >> ${VERTEX_LAYOUT.wallInsetShift}u) & 1u)) / 32.0);
+  uint swayTile = a_word1 & (shape ? ${SHAPE_VERTEX.tileMask}u : ${VERTEX_LAYOUT.tileMask}u);
   bool leaf = !fluid && ((u_swayLeaf[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
   bool plant = !fluid && ((u_swayPlant[swayTile >> 7u][(swayTile >> 5u) & 3u] >> (swayTile & 31u)) & 1u) == 1u;
   v_leaf = leaf ? 1.0 : 0.0;
@@ -131,7 +145,7 @@ void main() {
 #endif
   v_light = (u_debugLight ? vec3(1.0) : max(light, vec3(u_underwaterFloor))) * ao * faceShade;
   #ifdef WALL_TORCH
-  uint tintIdx = wallTorch ? 0u : (a_word0 >> 28u) & 15u;
+  uint tintIdx = wallTorch || shape ? 0u : (a_word0 >> 28u) & 15u;
   #else
   uint tintIdx = (a_word0 >> 28u) & 15u;
   #endif
@@ -141,11 +155,21 @@ void main() {
   if (tintIdx == 1u || tintIdx == 3u) v_tint = texelFetch(u_grassTintMap, tintTexel, 0).rgb;
   else if (tintIdx == 2u) v_tint = texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
   v_grassSide = tintIdx == 3u ? 1.0 : 0.0;
-  uint tileIdx = a_word1 & ${VERTEX_LAYOUT.tileMask}u;
+  uint tileIdx = a_word1 & (shape ? ${SHAPE_VERTEX.tileMask}u : ${VERTEX_LAYOUT.tileMask}u);
   if (fluid) tileIdx = uint(material == 4u ? u_waterTile : u_lavaTile) + uint(mod(floor(u_fluidTime * 8.0), 32.0));
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
+  if (shape) {
+    // Box faces show the part of the tile they cover (see SHAPE_VERTEX in mesh/vertex.ts).
+    uint face = (a_word0 >> 15u) & 7u;
+    v_unwrappedUV = face == 0u ? vec2(1.0 - shapeSub.z, 1.0 - shapeSub.y)
+      : face == 1u ? vec2(shapeSub.z, 1.0 - shapeSub.y)
+      : face == 2u ? vec2(shapeSub.x, 1.0 - shapeSub.z)
+      : face == 3u ? vec2(shapeSub.x, shapeSub.z)
+      : face == 4u ? vec2(shapeSub.x, 1.0 - shapeSub.y)
+      : vec2(1.0 - shapeSub.x, 1.0 - shapeSub.y);
+  }
   // Puddle darkening on outdoor top faces while raining (Decision 3)
   float isTopFace = normal.y > 0.5 ? 1.0 : 0.0;
   float isOutdoor = ((a_word0 >> 20u) & 15u) >= 14u ? 1.0 : 0.0;
@@ -194,7 +218,7 @@ uniform sampler2D u_atlasSampler;
 uniform vec2 u_atlasSize;
 uniform bool u_underwater;
 uniform vec3 u_waterFogColor;
-uniform int u_isCutout;
+uniform highp int u_isCutout;
 uniform int u_isWireframe;
 uniform float u_fade;
 const float BAYER_4X4[16] = ${bayerGlsl()};
@@ -545,7 +569,10 @@ export class ChunkRenderer {
 
     let hasWallTorch = false;
     for (let i = 0; i < meshData.models.vertices.length; i += 2) {
-      if (((meshData.models.vertices[i]! >>> 15) & 7) >= 6) {
+      if (
+        ((meshData.models.vertices[i]! >>> 15) & 7) >= 6 ||
+        isShapeVertex(meshData.models.vertices[i]!, meshData.models.vertices[i + 1]!)
+      ) {
         hasWallTorch = true;
         break;
       }

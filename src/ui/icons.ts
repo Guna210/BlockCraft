@@ -2,6 +2,7 @@ import { items, type ItemDefinition } from '../gameplay/items';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { TextureAtlas } from '../render/atlas';
 import { inventoryItemGenerators } from '../render/textures/inventory-items';
+import { stateBoxes, type Box } from '../world/shape-geometry';
 
 export const ICON_SIZE = 16;
 const COLUMNS = 16;
@@ -182,7 +183,12 @@ function renderBox(
       covered[y * ICON_SIZE + x] = 1;
       icon.set([px[0]!, px[1]!, px[2]!, px[3]!], (y * ICON_SIZE + x) * 4);
     }
-  // Darken the silhouette so each icon has a firm edge against any background.
+  darkenSilhouette(icon, covered);
+  return icon;
+}
+
+/** Darkens the silhouette so each icon has a firm edge against any background. */
+function darkenSilhouette(icon: Uint8ClampedArray, covered: Uint8Array): void {
   const solid = (x: number, y: number) =>
     x >= 0 && y >= 0 && x < ICON_SIZE && y < ICON_SIZE && covered[y * ICON_SIZE + x] === 1;
   for (let y = 0; y < ICON_SIZE; y++)
@@ -198,6 +204,64 @@ function renderBox(
       icon[i + 2] = icon[i + 2]! * 0.6;
       icon[i + 3] = 255;
     }
+}
+
+/**
+ * Isometric view of several boxes (stairs, fences, trapdoors), drawn with the same projection as
+ * `renderBox`: x = 8 + 8 (bx - bz), y = 4 (bx + bz) - 8 by + 8 for a point (bx, by, bz) of the unit
+ * block. Each pixel follows the view ray (1, 1, 1) back to the nearest box surface.
+ */
+function renderBoxes(boxes: readonly Box[], top: Face, left: Face, right: Face): Uint8ClampedArray {
+  const icon = new Uint8ClampedArray(ICON_SIZE * ICON_SIZE * 4);
+  const covered = new Uint8Array(ICON_SIZE * ICON_SIZE);
+  const px = [0, 0, 0, 0];
+  for (let y = 0; y < ICON_SIZE; y++)
+    for (let x = 0; x < ICON_SIZE; x++) {
+      const a = (x + 0.5 - 8) / 8;
+      const b = (y + 0.5 - 8) / 4;
+      const ox = (a + b) / 2;
+      const oz = (b - a) / 2;
+      let best = -Infinity;
+      let face: Face | null = null;
+      let factor = 1;
+      let u = 0;
+      let v = 0;
+      for (const box of boxes) {
+        const tx = box[3] - ox;
+        const ty = box[4];
+        const tz = box[5] - oz;
+        const exit = Math.min(tx, ty, tz);
+        const enter = Math.max(box[0] - ox, box[1], box[2] - oz);
+        if (enter >= exit || exit <= best) continue;
+        best = exit;
+        const hx = ox + exit;
+        const hy = exit;
+        const hz = oz + exit;
+        if (exit === ty) {
+          face = top;
+          factor = SHADE.top;
+          u = hx;
+          v = hz;
+        } else if (exit === tz) {
+          face = left;
+          factor = SHADE.left;
+          u = hx;
+          v = 1 - hy;
+        } else {
+          face = right;
+          factor = SHADE.right;
+          u = 1 - hz;
+          v = 1 - hy;
+        }
+      }
+      if (!face) continue;
+      samplePixel(face, u, v, px);
+      px[3] = 255;
+      shade(px, factor);
+      covered[y * ICON_SIZE + x] = 1;
+      icon.set([px[0]!, px[1]!, px[2]!, px[3]!], (y * ICON_SIZE + x) * 4);
+    }
+  darkenSilhouette(icon, covered);
   return icon;
 }
 
@@ -223,6 +287,21 @@ function renderBlockIcon(
   if (def.model === 'cross' || def.model === 'wall' || def.model === 'wall_torch') {
     const tint: Tint = foliage ? 'foliage' : def.id === 'tall_grass' ? 'grass' : 'none';
     return renderFlat(faceFor(lookup, def.textures.side ?? def.textures.top, tint, missing));
+  }
+  if (def.model === 'door')
+    return renderFlat(faceFor(lookup, def.textures.item ?? def.textures.side, 'none', missing));
+  if (def.model === 'stairs' || def.model === 'fence' || def.model === 'trapdoor') {
+    // A fence shows its arms in the icon.
+    const iconState =
+      def.model === 'fence'
+        ? registry.getStateId(def.id, { east: 'true', west: 'true' })!
+        : stateId;
+    return renderBoxes(
+      stateBoxes(registry.getResolvedState(iconState)!)!,
+      faceFor(lookup, faceName('top'), 'none', missing),
+      faceFor(lookup, faceName('south'), 'none', missing),
+      faceFor(lookup, faceName('east'), 'none', missing),
+    );
   }
   const grass = def.id === 'grass_block';
   const topTint: Tint = grass ? 'grass' : foliage ? 'foliage' : 'none';

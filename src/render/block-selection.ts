@@ -100,35 +100,37 @@ export class BlockSelectionRenderer {
   render(i: BlockInteraction | null, vp: mat4): number {
     if (!i?.target.hit || i.player.detached) return 0;
     const t = i.target,
-      box = i.raycaster.shapes.boxes[t.stateId];
-    if (!box) return 0;
+      parts = i.raycaster.shapes.parts[t.stateId];
+    if (!parts) return 0;
     const gl = this.wrapper.gl;
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     gl.uniformMatrix4fv(this.vp, false, vp);
-    gl.uniform3f(this.min, t.x + box[0] - 0.001, t.y + box[1] - 0.001, t.z + box[2] - 0.001);
-    gl.uniform3f(
-      this.size,
-      box[3] - box[0] + 0.002,
-      box[4] - box[1] + 0.002,
-      box[5] - box[2] + 0.002,
-    );
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     let draws = 0;
-    if (i.progress > 0) {
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
-      gl.uniform1i(this.stage, Math.min(9, Math.floor(i.progress * 10)));
-      this.wrapper.drawArrays(gl.TRIANGLES, 0, 36);
+    for (const box of parts) {
+      gl.uniform3f(this.min, t.x + box[0] - 0.001, t.y + box[1] - 0.001, t.z + box[2] - 0.001);
+      gl.uniform3f(
+        this.size,
+        box[3] - box[0] + 0.002,
+        box[4] - box[1] + 0.002,
+        box[5] - box[2] + 0.002,
+      );
+      if (i.progress > 0) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.texture);
+        gl.uniform1i(this.stage, Math.min(9, Math.floor(i.progress * 10)));
+        this.wrapper.drawArrays(gl.TRIANGLES, 0, 36);
+        draws++;
+      }
+      gl.uniform1i(this.stage, -1);
+      this.wrapper.drawArrays(gl.LINES, 36, 24);
       draws++;
     }
-    gl.uniform1i(this.stage, -1);
-    this.wrapper.drawArrays(gl.LINES, 36, 24);
-    draws++;
     gl.depthMask(true);
     gl.enable(gl.CULL_FACE);
     gl.disable(gl.BLEND);
