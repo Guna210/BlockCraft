@@ -49,7 +49,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M10c kiln & tool wear | Publish gate reached (session_018MnMXAYrZYkVyhcs854hHa), awaiting owner approval | agy built; Sonnet finished on claude/m10c (11 commits over agy/m10c) | none yet (round 1 = new reviewer) | #56 draft (close once the new PR is green) | Full verify: 790 unit, 112 e2e. Kiln 534-541, m08c test = master, hooks via onUse/onBreakBeforeRemove, flame teardrop + yellow core + tongues. Reviewer to check: e2e spec keeps its own copy of flame frames (flame screenshot may not come from game code); one kiln-specific facing branch in block-interaction. |
+| M10c kiln & tool wear | PR #57 open, CI running (session_018MnMXAYrZYkVyhcs854hHa) | agy built; Sonnet finished on claude/m10c (11 commits over agy/m10c) | none yet (round 1 = new reviewer) | #57 (supersedes #56; owner closing #56) | Full verify: 790 unit, 112 e2e. Kiln 534-541, m08c test = master, hooks via onUse/onBreakBeforeRemove, flame teardrop + yellow core + tongues. Reviewer to check: e2e spec keeps its own copy of flame frames (flame screenshot may not come from game code); one kiln-specific facing branch in block-interaction. |
 
 Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards) and M15a (Current core & logic) both need M10b+M10c. M17b needs M15b or an owner SPEC change.
 
