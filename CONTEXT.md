@@ -43,7 +43,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
 - 2026-10-18: Merge order changed: M10b (#55) → BLOCKS-shapes (#54, renumber to 158-533 and take master's m08c test) → M10c (#56, renumber once at the end, after master's last ID, probably 534-541).
 - 2026-10-18: M10b round 2 PASS on 76c4776 (slot mapping verified by the e2e test; non-blocking: RESULT label touches a count, unexplained READY button). Told the owner to merge #55; then M10c renumbers after 157 and takes Codex's m08c test, and BLOCKS-shapes renumbers last.
 - 2026-10-18: M10b fix 76c4776 (CI green per the owner): the double-chest screenshot now fits (one-line title, 27 slots + separate hotbar, margins). Sent round 2 to session_01CVaVvTgfoBEWzTvk2QPuyd.
