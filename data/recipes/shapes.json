@@ -1,0 +1,249 @@
+{
+  "oak_stairs": {
+    "type": "shaped",
+    "key": {
+      "P": "oak_planks"
+    },
+    "pattern": ["P  ", "PP ", "PPP"],
+    "result": {
+      "id": "oak_stairs",
+      "count": 4
+    }
+  },
+  "oak_fence": {
+    "type": "shaped",
+    "pattern": ["PSP", "PSP"],
+    "key": {
+      "P": "oak_planks",
+      "S": "stick"
+    },
+    "result": {
+      "id": "oak_fence",
+      "count": 3
+    }
+  },
+  "oak_door": {
+    "type": "shaped",
+    "key": {
+      "P": "oak_planks"
+    },
+    "pattern": ["PP", "PP", "PP"],
+    "result": {
+      "id": "oak_door",
+      "count": 3
+    }
+  },
+  "oak_trapdoor": {
+    "type": "shaped",
+    "key": {
+      "P": "oak_planks"
+    },
+    "pattern": ["PPP", "PPP"],
+    "result": {
+      "id": "oak_trapdoor",
+      "count": 2
+    }
+  },
+  "birch_stairs": {
+    "type": "shaped",
+    "key": {
+      "P": "birch_planks"
+    },
+    "pattern": ["P  ", "PP ", "PPP"],
+    "result": {
+      "id": "birch_stairs",
+      "count": 4
+    }
+  },
+  "birch_fence": {
+    "type": "shaped",
+    "pattern": ["PSP", "PSP"],
+    "key": {
+      "P": "birch_planks",
+      "S": "stick"
+    },
+    "result": {
+      "id": "birch_fence",
+      "count": 3
+    }
+  },
+  "birch_door": {
+    "type": "shaped",
+    "key": {
+      "P": "birch_planks"
+    },
+    "pattern": ["PP", "PP", "PP"],
+    "result": {
+      "id": "birch_door",
+      "count": 3
+    }
+  },
+  "birch_trapdoor": {
+    "type": "shaped",
+    "key": {
+      "P": "birch_planks"
+    },
+    "pattern": ["PPP", "PPP"],
+    "result": {
+      "id": "birch_trapdoor",
+      "count": 2
+    }
+  },
+  "pine_stairs": {
+    "type": "shaped",
+    "key": {
+      "P": "pine_planks"
+    },
+    "pattern": ["P  ", "PP ", "PPP"],
+    "result": {
+      "id": "pine_stairs",
+      "count": 4
+    }
+  },
+  "pine_fence": {
+    "type": "shaped",
+    "pattern": ["PSP", "PSP"],
+    "key": {
+      "P": "pine_planks",
+      "S": "stick"
+    },
+    "result": {
+      "id": "pine_fence",
+      "count": 3
+    }
+  },
+  "pine_door": {
+    "type": "shaped",
+    "key": {
+      "P": "pine_planks"
+    },
+    "pattern": ["PP", "PP", "PP"],
+    "result": {
+      "id": "pine_door",
+      "count": 3
+    }
+  },
+  "pine_trapdoor": {
+    "type": "shaped",
+    "key": {
+      "P": "pine_planks"
+    },
+    "pattern": ["PPP", "PPP"],
+    "result": {
+      "id": "pine_trapdoor",
+      "count": 2
+    }
+  },
+  "acacia_stairs": {
+    "type": "shaped",
+    "key": {
+      "P": "acacia_planks"
+    },
+    "pattern": ["P  ", "PP ", "PPP"],
+    "result": {
+      "id": "acacia_stairs",
+      "count": 4
+    }
+  },
+  "acacia_fence": {
+    "type": "shaped",
+    "pattern": ["PSP", "PSP"],
+    "key": {
+      "P": "acacia_planks",
+      "S": "stick"
+    },
+    "result": {
+      "id": "acacia_fence",
+      "count": 3
+    }
+  },
+  "acacia_door": {
+    "type": "shaped",
+    "key": {
+      "P": "acacia_planks"
+    },
+    "pattern": ["PP", "PP", "PP"],
+    "result": {
+      "id": "acacia_door",
+      "count": 3
+    }
+  },
+  "acacia_trapdoor": {
+    "type": "shaped",
+    "key": {
+      "P": "acacia_planks"
+    },
+    "pattern": ["PPP", "PPP"],
+    "result": {
+      "id": "acacia_trapdoor",
+      "count": 2
+    }
+  },
+  "rainwood_stairs": {
+    "type": "shaped",
+    "key": {
+      "P": "rainwood_planks"
+    },
+    "pattern": ["P  ", "PP ", "PPP"],
+    "result": {
+      "id": "rainwood_stairs",
+      "count": 4
+    }
+  },
+  "rainwood_fence": {
+    "type": "shaped",
+    "pattern": ["PSP", "PSP"],
+    "key": {
+      "P": "rainwood_planks",
+      "S": "stick"
+    },
+    "result": {
+      "id": "rainwood_fence",
+      "count": 3
+    }
+  },
+  "rainwood_door": {
+    "type": "shaped",
+    "key": {
+      "P": "rainwood_planks"
+    },
+    "pattern": ["PP", "PP", "PP"],
+    "result": {
+      "id": "rainwood_door",
+      "count": 3
+    }
+  },
+  "rainwood_trapdoor": {
+    "type": "shaped",
+    "key": {
+      "P": "rainwood_planks"
+    },
+    "pattern": ["PPP", "PPP"],
+    "result": {
+      "id": "rainwood_trapdoor",
+      "count": 2
+    }
+  },
+  "stone_stairs": {
+    "type": "shaped",
+    "pattern": ["S  ", "SS ", "SSS"],
+    "key": {
+      "S": "stone"
+    },
+    "result": {
+      "id": "stone_stairs",
+      "count": 4
+    }
+  },
+  "cobblestone_stairs": {
+    "type": "shaped",
+    "pattern": ["S  ", "SS ", "SSS"],
+    "key": {
+      "S": "cobblestone"
+    },
+    "result": {
+      "id": "cobblestone_stairs",
+      "count": 4
+    }
+  }
+}

@@ -1,0 +1,725 @@
+{
+  "oak_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "oak_planks",
+      "side": "oak_planks",
+      "bottom": "oak_planks"
+    }
+  },
+  "oak_fence": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "fence",
+    "tool": "axe",
+    "states": {
+      "north": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "south": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "east": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "west": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "oak_planks",
+      "side": "oak_planks",
+      "bottom": "oak_planks"
+    }
+  },
+  "oak_door": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "door",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["lower", "upper"],
+        "default": "lower"
+      },
+      "hinge": {
+        "type": "enum",
+        "values": ["left", "right"],
+        "default": "left"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "oak_planks",
+      "side": "oak_planks",
+      "bottom": "oak_planks",
+      "lower": "oak_door_lower",
+      "upper": "oak_door_upper",
+      "lower_flip": "oak_door_lower_flip",
+      "upper_flip": "oak_door_upper_flip",
+      "item": "oak_door_item"
+    }
+  },
+  "oak_trapdoor": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "trapdoor",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "oak_trapdoor",
+      "bottom": "oak_trapdoor",
+      "side": "oak_planks"
+    }
+  },
+  "birch_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "birch_planks",
+      "side": "birch_planks",
+      "bottom": "birch_planks"
+    }
+  },
+  "birch_fence": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "fence",
+    "tool": "axe",
+    "states": {
+      "north": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "south": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "east": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "west": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "birch_planks",
+      "side": "birch_planks",
+      "bottom": "birch_planks"
+    }
+  },
+  "birch_door": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "door",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["lower", "upper"],
+        "default": "lower"
+      },
+      "hinge": {
+        "type": "enum",
+        "values": ["left", "right"],
+        "default": "left"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "birch_planks",
+      "side": "birch_planks",
+      "bottom": "birch_planks",
+      "lower": "birch_door_lower",
+      "upper": "birch_door_upper",
+      "lower_flip": "birch_door_lower_flip",
+      "upper_flip": "birch_door_upper_flip",
+      "item": "birch_door_item"
+    }
+  },
+  "birch_trapdoor": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "trapdoor",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "birch_trapdoor",
+      "bottom": "birch_trapdoor",
+      "side": "birch_planks"
+    }
+  },
+  "pine_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "pine_planks",
+      "side": "pine_planks",
+      "bottom": "pine_planks"
+    }
+  },
+  "pine_fence": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "fence",
+    "tool": "axe",
+    "states": {
+      "north": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "south": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "east": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "west": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "pine_planks",
+      "side": "pine_planks",
+      "bottom": "pine_planks"
+    }
+  },
+  "pine_door": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "door",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["lower", "upper"],
+        "default": "lower"
+      },
+      "hinge": {
+        "type": "enum",
+        "values": ["left", "right"],
+        "default": "left"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "pine_planks",
+      "side": "pine_planks",
+      "bottom": "pine_planks",
+      "lower": "pine_door_lower",
+      "upper": "pine_door_upper",
+      "lower_flip": "pine_door_lower_flip",
+      "upper_flip": "pine_door_upper_flip",
+      "item": "pine_door_item"
+    }
+  },
+  "pine_trapdoor": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "trapdoor",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "pine_trapdoor",
+      "bottom": "pine_trapdoor",
+      "side": "pine_planks"
+    }
+  },
+  "acacia_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "acacia_planks",
+      "side": "acacia_planks",
+      "bottom": "acacia_planks"
+    }
+  },
+  "acacia_fence": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "fence",
+    "tool": "axe",
+    "states": {
+      "north": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "south": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "east": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "west": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "acacia_planks",
+      "side": "acacia_planks",
+      "bottom": "acacia_planks"
+    }
+  },
+  "acacia_door": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "door",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["lower", "upper"],
+        "default": "lower"
+      },
+      "hinge": {
+        "type": "enum",
+        "values": ["left", "right"],
+        "default": "left"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "acacia_planks",
+      "side": "acacia_planks",
+      "bottom": "acacia_planks",
+      "lower": "acacia_door_lower",
+      "upper": "acacia_door_upper",
+      "lower_flip": "acacia_door_lower_flip",
+      "upper_flip": "acacia_door_upper_flip",
+      "item": "acacia_door_item"
+    }
+  },
+  "acacia_trapdoor": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "trapdoor",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "acacia_trapdoor",
+      "bottom": "acacia_trapdoor",
+      "side": "acacia_planks"
+    }
+  },
+  "rainwood_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "rainwood_planks",
+      "side": "rainwood_planks",
+      "bottom": "rainwood_planks"
+    }
+  },
+  "rainwood_fence": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "fence",
+    "tool": "axe",
+    "states": {
+      "north": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "south": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "east": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      },
+      "west": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "rainwood_planks",
+      "side": "rainwood_planks",
+      "bottom": "rainwood_planks"
+    }
+  },
+  "rainwood_door": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "door",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["lower", "upper"],
+        "default": "lower"
+      },
+      "hinge": {
+        "type": "enum",
+        "values": ["left", "right"],
+        "default": "left"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "rainwood_planks",
+      "side": "rainwood_planks",
+      "bottom": "rainwood_planks",
+      "lower": "rainwood_door_lower",
+      "upper": "rainwood_door_upper",
+      "lower_flip": "rainwood_door_lower_flip",
+      "upper_flip": "rainwood_door_upper_flip",
+      "item": "rainwood_door_item"
+    }
+  },
+  "rainwood_trapdoor": {
+    "hardness": 2.0,
+    "blastResistance": 3.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "trapdoor",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      },
+      "open": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "rainwood_trapdoor",
+      "bottom": "rainwood_trapdoor",
+      "side": "rainwood_planks"
+    }
+  },
+  "stone_stairs": {
+    "hardness": 1.5,
+    "blastResistance": 6.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "stone",
+      "side": "stone",
+      "bottom": "stone"
+    }
+  },
+  "cobblestone_stairs": {
+    "hardness": 2.0,
+    "blastResistance": 6.0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "stairs",
+    "tool": "pickaxe",
+    "minTier": 0,
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "half": {
+        "type": "enum",
+        "values": ["bottom", "top"],
+        "default": "bottom"
+      }
+    },
+    "textures": {
+      "top": "cobblestone",
+      "side": "cobblestone",
+      "bottom": "cobblestone"
+    }
+  }
+}

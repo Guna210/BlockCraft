@@ -39,7 +39,7 @@ describe('M10b blocks, crafting sessions and chests', () => {
     expect(blocks.getStateId('workbench')).toBe(145);
     expect(blocks.getStateId('chest', { facing: 'north', pair: 'single' })).toBe(146);
     expect(blocks.getStateId('chest', { facing: 'west', pair: 'right' })).toBe(157);
-    expect(blocks.getMaxStateId()).toBe(157);
+    expect(blocks.getMaxStateId()).toBeGreaterThanOrEqual(157); // later blocks append after the chest
   });
 
   it('uses the 2x2 plank recipe and keeps the chest ring recipe 3x3-only', () => {

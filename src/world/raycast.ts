@@ -65,6 +65,7 @@ export function intersectBox(
 export class VoxelRaycaster {
   readonly shapes = new BlockShapes();
   private readonly boxHit = createRayHit();
+  private bestFace: BlockFaceDirection = 'west';
   constructor(private readonly world: Pick<World, 'getBlockStateId'>) {}
   cast(
     ox: number,
@@ -98,21 +99,28 @@ export class VoxelRaycaster {
     let entered = 0;
     while (entered <= reach) {
       const id = this.world.getBlockStateId(x, y, z),
-        box = this.shapes.boxes[id];
-      if (
-        box &&
-        intersectBox(ox, oy, oz, dx, dy, dz, x, y, z, box, this.boxHit) &&
-        this.boxHit.distance <= reach &&
-        this.boxHit.distance <= Math.min(nx, ny, nz) + 1e-10
-      ) {
-        out.hit = true;
-        out.x = x;
-        out.y = y;
-        out.z = z;
-        out.stateId = id;
-        out.face = this.boxHit.face;
-        out.distance = this.boxHit.distance;
-        return out;
+        parts = this.shapes.parts[id];
+      if (parts) {
+        // Nearest hit across the state's boxes: the empty part of a stair lets the ray pass.
+        let best = Infinity;
+        for (let i = 0; i < parts.length; i++)
+          if (
+            intersectBox(ox, oy, oz, dx, dy, dz, x, y, z, parts[i]!, this.boxHit) &&
+            this.boxHit.distance < best
+          ) {
+            best = this.boxHit.distance;
+            this.bestFace = this.boxHit.face;
+          }
+        if (best <= reach && best <= Math.min(nx, ny, nz) + 1e-10) {
+          out.hit = true;
+          out.x = x;
+          out.y = y;
+          out.z = z;
+          out.stateId = id;
+          out.face = this.bestFace;
+          out.distance = best;
+          return out;
+        }
       }
       if (nx <= ny && nx <= nz) {
         entered = nx;

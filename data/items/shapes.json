@@ -1,0 +1,112 @@
+{
+  "oak_stairs": {
+    "kind": "block",
+    "block": "oak_stairs",
+    "maxStack": 64
+  },
+  "oak_fence": {
+    "kind": "block",
+    "block": "oak_fence",
+    "maxStack": 64
+  },
+  "oak_door": {
+    "kind": "block",
+    "block": "oak_door",
+    "maxStack": 64
+  },
+  "oak_trapdoor": {
+    "kind": "block",
+    "block": "oak_trapdoor",
+    "maxStack": 64
+  },
+  "birch_stairs": {
+    "kind": "block",
+    "block": "birch_stairs",
+    "maxStack": 64
+  },
+  "birch_fence": {
+    "kind": "block",
+    "block": "birch_fence",
+    "maxStack": 64
+  },
+  "birch_door": {
+    "kind": "block",
+    "block": "birch_door",
+    "maxStack": 64
+  },
+  "birch_trapdoor": {
+    "kind": "block",
+    "block": "birch_trapdoor",
+    "maxStack": 64
+  },
+  "pine_stairs": {
+    "kind": "block",
+    "block": "pine_stairs",
+    "maxStack": 64
+  },
+  "pine_fence": {
+    "kind": "block",
+    "block": "pine_fence",
+    "maxStack": 64
+  },
+  "pine_door": {
+    "kind": "block",
+    "block": "pine_door",
+    "maxStack": 64
+  },
+  "pine_trapdoor": {
+    "kind": "block",
+    "block": "pine_trapdoor",
+    "maxStack": 64
+  },
+  "acacia_stairs": {
+    "kind": "block",
+    "block": "acacia_stairs",
+    "maxStack": 64
+  },
+  "acacia_fence": {
+    "kind": "block",
+    "block": "acacia_fence",
+    "maxStack": 64
+  },
+  "acacia_door": {
+    "kind": "block",
+    "block": "acacia_door",
+    "maxStack": 64
+  },
+  "acacia_trapdoor": {
+    "kind": "block",
+    "block": "acacia_trapdoor",
+    "maxStack": 64
+  },
+  "rainwood_stairs": {
+    "kind": "block",
+    "block": "rainwood_stairs",
+    "maxStack": 64
+  },
+  "rainwood_fence": {
+    "kind": "block",
+    "block": "rainwood_fence",
+    "maxStack": 64
+  },
+  "rainwood_door": {
+    "kind": "block",
+    "block": "rainwood_door",
+    "maxStack": 64
+  },
+  "rainwood_trapdoor": {
+    "kind": "block",
+    "block": "rainwood_trapdoor",
+    "maxStack": 64
+  },
+  "stone_stairs": {
+    "kind": "block",
+    "block": "stone_stairs",
+    "maxStack": 64
+  },
+  "cobblestone_stairs": {
+    "kind": "block",
+    "block": "cobblestone_stairs",
+    "maxStack": 64
+  }
+}

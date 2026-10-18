@@ -27,6 +27,19 @@ export interface BlockCraftDebugAPI {
     distance?: number;
   };
   setHeldBlock?: (id: string, state?: Record<string, string | number>) => void;
+  placeShape?: (
+    id: string,
+    x: number,
+    y: number,
+    z: number,
+    opts?: {
+      face?: 'top' | 'bottom' | 'north' | 'south' | 'east' | 'west';
+      hit?: [number, number, number];
+      look?: [number, number];
+    },
+  ) => Array<{ x: number; y: number; z: number; block: string }> | null;
+  toggleShape?: (x: number, y: number, z: number) => number;
+  breakShape?: (x: number, y: number, z: number) => number;
   getInteraction?: () => {
     editFrame: number;
     meshFrame: number;

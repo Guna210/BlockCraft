@@ -5,6 +5,14 @@ import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { breakSeconds, BARE_HAND, type MiningTool } from './mining';
 import { HALF_WIDTH } from '../entity/physics';
 import { items } from './items';
+import {
+  removeShapeBlock,
+  shapeModel,
+  shapePlacement,
+  toggleOpenable,
+  updateFenceNeighbours,
+  type PlacedCell,
+} from './shape-blocks';
 import { chestFacingFromYaw } from './chests';
 import type { RayHit } from '../world/raycast';
 const NORMALS = {
@@ -32,6 +40,8 @@ export class BlockInteraction {
   private by = NaN;
   private bz = NaN;
   private state = -1;
+  private readonly eye = new Float64Array(3);
+  private readonly look = new Float64Array(3);
   private readonly registry = BlockRegistry.getInstance();
   constructor(
     readonly player: Player,
@@ -69,13 +79,19 @@ export class BlockInteraction {
       this.target.hit = false;
       return;
     }
-    this.raycaster.cast(
-      p.pos[0],
-      p.pos[1] + p.eye,
-      p.pos[2],
+    this.eye.set([p.pos[0], p.pos[1] + p.eye, p.pos[2]]);
+    this.look.set([
       Math.cos(p.yaw) * Math.cos(p.pitch),
       Math.sin(p.pitch),
       Math.sin(p.yaw) * Math.cos(p.pitch),
+    ]);
+    this.raycaster.cast(
+      this.eye[0]!,
+      this.eye[1]!,
+      this.eye[2]!,
+      this.look[0]!,
+      this.look[1]!,
+      this.look[2]!,
       p.mode === 'creative' ? 5 : 4.5,
       this.target,
     );
@@ -97,7 +113,7 @@ export class BlockInteraction {
     this.pickPressed = false;
     if (this.usePressed && t.hit) {
       const blockId = this.registry.getResolvedState(t.stateId)!.blockId;
-      if (!this.onUse?.(blockId, t)) this.place();
+      if (!this.onUse?.(blockId, t) && !this.toggle()) this.place();
     }
     this.usePressed = false;
     if (!t.hit || !this.attack || p.detached) {
@@ -116,12 +132,21 @@ export class BlockInteraction {
     if (this.progress >= 1 - 1e-10) {
       const brokenState = t.stateId;
       if (this.onBreakBeforeRemove?.(brokenState, t.x, t.y, t.z) === false) return;
-      p.collision.world.setBlockStateId(t.x, t.y, t.z, 0);
-      this.edited(t.x, t.y, t.z);
+      for (const cell of removeShapeBlock(this.registry, p.collision.world, t.x, t.y, t.z))
+        this.edited(cell.x, cell.y, cell.z);
       this.onBreak?.(brokenState, t.x, t.y, t.z, this.tool);
       this.reset();
       t.hit = false;
     }
+  }
+  /** Right-clicking a door or trapdoor opens or closes it instead of placing a block. */
+  private toggle(): boolean {
+    const t = this.target;
+    const model = shapeModel(this.registry, t.stateId);
+    if (model !== 'door' && model !== 'trapdoor') return false;
+    for (const cell of toggleOpenable(this.registry, this.player.collision.world, t.x, t.y, t.z))
+      this.edited(cell.x, cell.y, cell.z);
+    return true;
   }
   private place(): boolean {
     const t = this.target,
@@ -165,20 +190,53 @@ export class BlockInteraction {
           ? this.registry.getDefaultStateId('torch')!
           : this.registry.getStateId('wall_torch', { facing: t.face })!;
     }
-    const box = shapes.boxes[held];
-    if (!box) return false;
-    if (
-      p.pos[0] + HALF_WIDTH > x + box[0] &&
-      p.pos[0] - HALF_WIDTH < x + box[3] &&
-      p.pos[1] + p.height > y + box[1] &&
-      p.pos[1] < y + box[4] &&
-      p.pos[2] + HALF_WIDTH > z + box[2] &&
-      p.pos[2] - HALF_WIDTH < z + box[5]
-    )
-      return false;
-    world.setBlockStateId(x, y, z, held);
+    let cells: PlacedCell[] = [{ x, y, z, state: held }];
+    if (shapeModel(this.registry, held)) {
+      const px = this.eye[0]! + this.look[0]! * t.distance - t.x;
+      const py = this.eye[1]! + this.look[1]! * t.distance - t.y;
+      const pz = this.eye[2]! + this.look[2]! * t.distance - t.z;
+      const placed = shapePlacement(
+        this.registry,
+        world,
+        s.blockId,
+        {
+          x,
+          y,
+          z,
+          face: t.face,
+          hitX: px,
+          hitY: py,
+          hitZ: pz,
+          lookX: Math.cos(p.yaw),
+          lookZ: Math.sin(p.yaw),
+        },
+        (fx, fy, fz) =>
+          fy >= 0 && fy < 320 && shapes.replaceable[world.getBlockStateId(fx, fy, fz)] === 1,
+      );
+      if (!placed) return false;
+      cells = placed;
+    }
+    for (const cell of cells) {
+      const parts = shapes.parts[cell.state];
+      if (!parts) return false;
+      for (const box of parts)
+        if (
+          p.pos[0] + HALF_WIDTH > cell.x + box[0] &&
+          p.pos[0] - HALF_WIDTH < cell.x + box[3] &&
+          p.pos[1] + p.height > cell.y + box[1] &&
+          p.pos[1] < cell.y + box[4] &&
+          p.pos[2] + HALF_WIDTH > cell.z + box[2] &&
+          p.pos[2] - HALF_WIDTH < cell.z + box[5]
+        )
+          return false;
+    }
+    for (const cell of cells) world.setBlockStateId(cell.x, cell.y, cell.z, cell.state);
     if (selected && p.mode === 'survival') p.inventory.consumeSelected();
-    this.edited(x, y, z);
+    for (const cell of cells) {
+      this.edited(cell.x, cell.y, cell.z);
+      for (const n of updateFenceNeighbours(this.registry, world, cell.x, cell.y, cell.z))
+        this.edited(n.x, n.y, n.z);
+    }
     return true;
   }
 }
