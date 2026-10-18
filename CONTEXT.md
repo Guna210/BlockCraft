@@ -25,7 +25,7 @@ Last updated: 2026-10-16 (before compaction)
     - Its chat reports have been inaccurate (M12c screenshot, M10a exemption table), so the orchestrator checks the pushed code itself.
 - No local full verify (owner, 2026-10-18): every builder prompt and fix message says, as an explicit owner override of AGENTS.md §3 step 4 / §4 and CLAUDE.md's publish-gate verify table, to run only `MILESTONE=<Mxx> npm run verify:quick` (plus the e2e specs of other milestones whose code it touched); the PR's GitHub CI Verify is the full-verify evidence. The handoff line says "Full verify: PR CI". The '— verified' title is allowed once CI is green. Suggested the owner write this into CLAUDE.md/AGENTS.md (owner files).
 - Reviewers: new Sonnet session per task; rounds 2–3 in the same session; at most 3 rounds, then ask the owner.
-- Known 2-core container-only failures (list them in every builder prompt; CI decides):
+- Known 2-core container-only failures (list them in EVERY builder and fix prompt, Codex especially (owner, 2026-10-18): say they are expected, don't retry, investigate or write blockers for them; CI decides):
   - m02:54 mesh p95
   - m04:66 pump > 50 ms
   - m04:221 heap timeout
@@ -51,7 +51,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M11a survival & hazards | CI red on 8a56ef4: m09c:183 air bubbles (agy's hud.ts:361 `|| air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
-| M15a current & logic | prompt given (Codex recommended) | ? | - | - | IDs from 542 |
+| M15a current & logic | Codex at publish gate (local 3810619, unpushed); asked for atlas.test.ts diff, delete blocker (m04:66 known), verified status | Codex | - | - | IDs from 542; undisclosed tests/unit/atlas.test.ts edit pending owner approval |
 
 Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a). M17b needs M15b or an owner SPEC change.
 
@@ -83,6 +83,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: Codex M15a gate: unit 807, e2e 110 passed / 1 failed (m04:66 pump 56-61 ms, known) / 2 flaky (m04 heap and horizon); it wrote blockers/M15a.md and marked progress incomplete. Changed tests/unit/atlas.test.ts without disclosing it. Gave the owner a message: show the atlas diff, delete the blocker, mark verified, confirm IDs from 542, no more local full verify. Owner preference: every builder prompt lists the known container failures so Codex doesn't keep retrying.
 - 2026-10-18: Owner reverted the sky-holes timeout on agy/m11a (8a56ef4). CI shard 4 failed m09c:183 ('air bubbles appear only while head underwater'): agy changed hud.ts:361 to `submerged || air < 300`; the test teleports out without a tick, so air stays 180 and the bubbles stay. A real regression of M09c behaviour. Told the owner to revert line 361 to `if (snapshot.submerged)`; it's unnecessary because M11a refills air instantly on surfacing.
 - 2026-10-18: agy M11a PR #58 (f573ea8, draft). Checked code: survival.ts matches the prompt's rates; dead flag only; burning in getPlayer; e2e drowning + lava. Issues: sky-holes.test.ts timeout raised to 60000 (another task's test; owner decides, recommend revert); handoff says full verify this session (only quick); saturation default 0 vs 5; crumbs use mapped block states. Gave reviewer prompt for after CI.
 - 2026-10-18: Owner preference: builders skip the local full verify and run only verify:quick; CI is the full verify. Gave an add-on block for the M11a/M15a prompts.
@@ -102,4 +103,3 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - 2026-10-18: M10b round 2 PASS on 76c4776 (slot mapping verified by the e2e test; non-blocking: RESULT label touches a count, unexplained READY button). Told the owner to merge #55; then M10c renumbers after 157 and takes Codex's m08c test, and BLOCKS-shapes renumbers last.
 - 2026-10-18: M10b fix 76c4776 (CI green per the owner): the double-chest screenshot now fits (one-line title, 27 slots + separate hotbar, margins). Sent round 2 to session_01CVaVvTgfoBEWzTvk2QPuyd.
 - 2026-10-18: BLOCKS-shapes #54 review 1 (session_01RmTZW4vQiYRGCxtUG6TBvr) PASS; non-blocking: tile<1024 guard, door drop and fence collision tests, mesher allocation, weak fence icons. Merge after renumbering post M10b/M10c. Slow shard 2 = m04:221/276 time out then pass on retry (~12 min), also on master: a follow-up idea.
-- 2026-10-18: M10b #55 review 1 (session_01CVaVvTgfoBEWzTvk2QPuyd) CHANGES NEEDED: double-chest screen title wraps, panel overflows the viewport, shows armor/offhand slots, hotbar not separated. Polish: displayName tooltips, '1/1' page indicator, RESULT label clipped. Fix prompt given for Codex. M10b IDs: workbench 145, chest 146-157.
