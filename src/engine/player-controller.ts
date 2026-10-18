@@ -79,7 +79,11 @@ export class PlayerController {
     this.camera.updateProjection();
     this.world = world;
     this.player = new Player(new BlockCollision(world), this.ready);
-    this.itemEntities = new ItemEntityManager(world);
+    const itemEntities = new ItemEntityManager(world);
+    this.itemEntities = itemEntities;
+    world.itemSpawner = (id, count, x, y, z, velocity, pickupDelay) => {
+      itemEntities.spawn(id, count, x, y, z, { velocity, pickupDelay });
+    };
     world.entityQuery.addProvider('player', () => {
       const player = this.player;
       if (!player || this.world !== world) return [];
@@ -169,6 +173,7 @@ export class PlayerController {
   reset(): void {
     this.world?.entityQuery.removeProvider('player');
     this.world?.entityQuery.removeProvider('items');
+    if (this.world) this.world.itemSpawner = null;
     this.world = null;
     this.player = null;
     this.interaction = null;

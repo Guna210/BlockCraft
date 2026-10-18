@@ -147,9 +147,40 @@ export function selectionBoxes(
       return [doorBox(props.facing as Facing, String(props.hinge), props.open === 'true')];
     case 'trapdoor':
       return [trapdoorBox(props.facing as Facing, String(props.half), props.open === 'true')];
+    case 'piston_head':
+      return pistonHeadBoxes(String(props.facing));
     default:
       return [CUBE_BOX];
   }
+}
+
+/** Unit vectors of the six piston and dispenser facings. */
+const PISTON_FACING_VECTOR: Record<string, readonly [number, number, number]> = {
+  north: [0, 0, -1],
+  east: [1, 0, 0],
+  south: [0, 0, 1],
+  west: [-1, 0, 0],
+  up: [0, 1, 0],
+  down: [0, -1, 0],
+};
+
+/** A 4/16 plate on the front of the cell and a 4/16 square shaft running back to the piston. */
+function pistonHeadBoxes(facing: string): readonly Box[] {
+  const vector = PISTON_FACING_VECTOR[facing] ?? PISTON_FACING_VECTOR.north!;
+  const axis = vector[0] !== 0 ? 0 : vector[1] !== 0 ? 1 : 2;
+  const positive = vector[axis]! > 0;
+  const plate = [0, 0, 0, 1, 1, 1];
+  const shaft = [6 / 16, 6 / 16, 6 / 16, 10 / 16, 10 / 16, 10 / 16];
+  if (positive) {
+    plate[axis] = 12 / 16;
+    shaft[axis] = 0;
+    shaft[axis + 3] = 12 / 16;
+  } else {
+    plate[axis + 3] = 4 / 16;
+    shaft[axis] = 4 / 16;
+    shaft[axis + 3] = 1;
+  }
+  return [plate as unknown as Box, shaft as unknown as Box];
 }
 
 /** Solid boxes entities collide with; they may extend above the cell (fences). */

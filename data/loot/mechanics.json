@@ -1,0 +1,9 @@
+{
+  "dispenser": [{ "id": "dispenser", "count": 1 }],
+  "note_block": [{ "id": "note_block", "count": 1 }],
+  "piston": [{ "id": "piston", "count": 1 }],
+  "piston_head": [{ "id": "piston", "count": 1 }],
+  "piston_moving": [],
+  "sticky_piston": [{ "id": "sticky_piston", "count": 1 }],
+  "sticky_piston_head": [{ "id": "sticky_piston", "count": 1 }]
+}

@@ -249,7 +249,11 @@ export class BlockRegistry {
 
     if (tex.front) {
       const facing = (state.properties['facing'] as string) || 'north';
-      if (face === facing) {
+      // Vertical blocks (pistons, dispensers) face up or down, which are the top and bottom faces.
+      const frontFace = facing === 'up' ? 'top' : facing === 'down' ? 'bottom' : facing;
+      if (face === frontFace) {
+        if (String(state.properties['extended']) === 'true' && tex.front_extended)
+          return tex.front_extended;
         const lit = String(state.properties['lit']) === 'true';
         return lit && tex.front_lit ? tex.front_lit : tex.front;
       }

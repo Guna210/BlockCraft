@@ -1,0 +1,25 @@
+{
+  "piston": {
+    "type": "shaped",
+    "pattern": ["PPP", "CIC", "CTC"],
+    "key": { "P": "#any_planks", "C": "cobblestone", "I": "iron_ingot", "T": "copper_ingot" },
+    "result": { "id": "piston", "count": 1 }
+  },
+  "sticky_piston": {
+    "type": "shapeless",
+    "ingredients": ["piston", "clay_lump"],
+    "result": { "id": "sticky_piston", "count": 1 }
+  },
+  "dispenser": {
+    "type": "shaped",
+    "pattern": ["CCC", "CSC", "CTC"],
+    "key": { "C": "cobblestone", "S": "stick", "T": "copper_ingot" },
+    "result": { "id": "dispenser", "count": 1 }
+  },
+  "note_block": {
+    "type": "shaped",
+    "pattern": ["PPP", "PTP", "PPP"],
+    "key": { "P": "#any_planks", "T": "copper_ingot" },
+    "result": { "id": "note_block", "count": 1 }
+  }
+}

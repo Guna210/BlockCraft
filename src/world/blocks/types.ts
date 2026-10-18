@@ -37,7 +37,9 @@ export type BlockModel =
   | 'trapdoor'
   | 'trace'
   | 'tripwire'
-  | 'pressure_plate';
+  | 'pressure_plate'
+  | 'piston_head'
+  | 'none';
 
 export interface BlockDefinition {
   id: string;

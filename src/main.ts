@@ -111,6 +111,20 @@ function main() {
       ui.openChest(target.x, target.y, target.z);
       return true;
     }
+    if (blockId === 'dispenser') {
+      // Without a screen of its own, using a dispenser loads one held item into it.
+      const player = worldManager.playerController?.player;
+      const held = player?.inventory.held;
+      const world = worldManager.world;
+      if (
+        player &&
+        held &&
+        world?.current.mechanics.insertItem(target.x, target.y, target.z, held.id)
+      ) {
+        if (player.mode === 'survival') player.inventory.consumeSelected();
+      }
+      return true;
+    }
     return false;
   };
   const hud = new Hud(

@@ -1,0 +1,9 @@
+{
+  "dispenser": { "kind": "block", "block": "dispenser", "maxStack": 64 },
+  "note_block": { "kind": "block", "block": "note_block", "maxStack": 64 },
+  "piston": { "kind": "block", "block": "piston", "maxStack": 64 },
+  "piston_head": { "kind": "block", "block": "piston_head", "maxStack": 64 },
+  "piston_moving": { "kind": "block", "block": "piston_moving", "maxStack": 64 },
+  "sticky_piston": { "kind": "block", "block": "sticky_piston", "maxStack": 64 },
+  "sticky_piston_head": { "kind": "block", "block": "sticky_piston_head", "maxStack": 64 }
+}
