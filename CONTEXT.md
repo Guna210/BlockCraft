@@ -43,7 +43,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, plus earlier fix tasks.
 
 In flight:
 
@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #54 merged (fcaaa1f; master IDs end at 533). agy M10c fix bda76dc: kiln back to append (145-152), registration in main.ts, lightEmissionWhen, flame now a teardrop but with a plus-shaped core and no tongues; agy re-edited the m08c test (undisclosed). A trial merge with master conflicts in 6 files. Gave a Sonnet takeover prompt: claude/m10c from agy/m10c, merge master, kiln 534-541, master's m08c test, keep the hooks from all 3 tasks, teardrop core + tongues, full verify, gate; the new PR supersedes #56.
 - 2026-10-18: Owner approved the m10b-crafting-chests.test.ts:42 edit (≥ 157). #54 CI green on 57ef54d; told the owner to merge.
 - 2026-10-18: BLOCKS-shapes catch-up 57ef54d: merged master, IDs 158-533, m08c test identical to master, crafting 121 + smelting 17, tile ≥ 1024 guard + door-drop test. Needs owner approval for a test edit: m10b-crafting-chests.test.ts:42 getMaxStateId() toBe(157) → ≥ 157 (exact workbench/chest IDs still pinned); I recommended approval. Merge #54 when CI is green; then M10c kiln = 534-541.
 - 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
