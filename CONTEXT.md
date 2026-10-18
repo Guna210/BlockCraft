@@ -49,9 +49,8 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M10c kiln & tool wear | Round 2 PASS on 72b4976; owner to merge #57 | agy built; Sonnet finished on claude/m10c (11 commits over agy/m10c) | session_017hxoR9pRWVocku9pgtrLa3 (rounds 2-3 go here) | #57 (supersedes #56; owner closing #56) | Full verify: 790 unit, 112 e2e. Kiln 534-541, m08c test = master, hooks via onUse/onBreakBeforeRemove, flame teardrop + yellow core + tongues. Reviewer to check: e2e spec keeps its own copy of flame frames (flame screenshot may not come from game code); one kiln-specific facing branch in block-interaction. |
 
-Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards) and M15a (Current core & logic) both need M10b+M10c. M17b needs M15b or an owner SPEC change.
+Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a). M17b needs M15b or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -74,13 +73,14 @@ Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards)
 - M17b prompt (from M17a review 2 non-blocking): make weather-timer meta fields (manualOverride, strikeCounter, lastTick, elapsed) required on read and write (no ?? defaults; v1 never shipped); BlockTicks.addTicks must rebase due by (current clock - saved column time) or M17b documents a single world clock; actually call LightEngine recompute on load (progress/M17a claims it, persist/ doesn't do it); World.setColumn is the restore hook (only tests call it today).
 - M13c prompt: call PathSearch.dispose() on abandoned searches; adapter.invalidate() or a chunk-load hook (M13b review).
 - Weather migrated onto ticks.ts random ticks: later follow-up (M12c kept its own tick).
-- Armor values are duplicated: M10a ARMOR_DEFENSE in tools.ts and M09c armorPoints in data/items/armor.json (values match today). M11a should use one source.
+- Armor values are duplicated: M10a ARMOR_DEFENSE in tools.ts and M09c armorPoints in data/items/armor.json (values match today). M11a applies no armor (decided 2026-10-18), so M13c (combat) must unify them to one source.
 - Leftovers:
   - M12c: precipitation stat vs shader mismatch on mountains; lightning buffer re-allocated per frame during a strike; rain factor formula copied 3×; fire doesn't spread or burn out; snow lands on leaves and glass.
   - M08a: no test forces every registry state into data/block-state-ids.json; BlockTicks.removeColumn is O(n).
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #57 M10c merged (00aefea), master green; IDs end at 541. Gave M11a and M15a builder prompts. M11a decisions: survival.ts at 20 TPS; 1 health = 1 half-heart; drowning 2/20 ticks after air 0; lava 4/10 ticks + burning 300 ticks; fire 1/10 + burning 160; burning 1/20; water extinguishes; cactus 1/10; suffocation 1/10; void y<-64 4/10; starvation floor 1 (easy rule, no difficulty until M18b); health 0 → dead flag only (screen is M11b); no armor; getPlayer gains burning; eating 32 ticks, hunger<20; no new blocks. M15a decisions: state holds power only (trace connections computed at mesh time); IDs from 542; BlockTicks with (due, priority, seq) order; no quasi-connectivity; lamp via lightEmissionWhen; pressure plate/tripwire detect player + item entities; gauge reads chest/kiln; items, recipes, textures, icons; no doors/pistons (M15b).
 - 2026-10-18: #57 M10c round 2 PASS (72b4976). Dark tip pixel = flame fill rounding at ~94% fuel (Math.round); owner is fine with it. Told owner to merge #57 and close #56; then M11a + M15a are ready.
 - 2026-10-18: #57 CI green on 72b4976; sent round 2 to session_017hxoR9pRWVocku9pgtrLa3 (check flame from game code, the 3 new unit tests, decisions IDs; dark tip pixel non-blocking).
 - 2026-10-18: M10c 72b4976 commits regenerated PNGs (flame 4099 B). Viewed: tall pointed yellow core, red edge, orange body, moving tongues, half fuel dark top. Odd single dark pixel above the tip in the full-fuel frames; owner to judge. Round 2 after CI is green.
@@ -100,4 +100,3 @@ Ready next: nothing else until M10c merges. Then M11a (Survival model & hazards)
 - 2026-10-18: Open PRs: #55 M10b (fd56c66, CI green), #54 BLOCKS-shapes (bfba567, CI green; shard 2 took 28 min, check for retries), #56 M10c draft (agy fixing). Reviewer prompts given for #55 and #54 (in parallel). Merge order: M10b → M10c → BLOCKS-shapes.
 - 2026-10-18: Owner wants the kiln flame redone: teardrop shape with ragged tongues, red outer / orange / yellow teardrop core (no box), subtle 2-3 frame flicker, shrinks with fuel, plus a zoomed crop screenshot. Added as point 4 of the agy M10c fix prompt.
 - 2026-10-18: Checked agy M10c PR #56 (cb3fad0). BLOCKING: kiln inserted at IDs 137-144 and stained glass shifted to 145-152 (append-only violated; breaks Codex's pinned test). Also: block-entities.ts imports gameplay/kiln (layering); kiln-only branches in registry texture lookup, icons.ts and lighting.ts (make them data-driven: front/front_lit by facing, per-state emission); flame icon is an oval. OK: iron/copper/gold ore smelting (SPEC literal), durability bar, damage serialization. Gave the owner an agy fix prompt. After M10b merges, kiln IDs need renumbering again.
-- 2026-10-18: agy reports M10c done (verify:quick ok; 2 unit timeouts in untouched lighting tests; one screenshot combining the kiln UI + durability bar). To check after the push: unexplained edits to light-curve.ts / lighting.ts / registry.ts / block-entities.ts / hud.ts; how m08c-glass-foliage still passes (silent edit or IDs not appended?); 'added ore smelting recipes' may duplicate M10a. Merge order: M10b → M10c → BLOCKS-shapes (each later one renumbers and takes Codex's m08c test version).
