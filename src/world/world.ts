@@ -261,7 +261,7 @@ export class World {
 
     const oldBlockId = this.registry.getResolvedState(oldStateId)?.blockId ?? 'air';
     const newBlockId = this.registry.getResolvedState(stateId)?.blockId ?? 'air';
-    this.blockEntities.onBlockChanged(x, y, z, oldBlockId, newBlockId, stateId);
+    this.blockEntities.onBlockChanged(x, y, z, oldBlockId, newBlockId, stateId, oldStateId);
 
     if (this.lightEngine) {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);

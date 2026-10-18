@@ -143,5 +143,18 @@
   "pink_stained_glass": 141,
   "purple_stained_glass": 142,
   "red_stained_glass": 143,
-  "yellow_stained_glass": 144
+  "yellow_stained_glass": 144,
+  "workbench": 145,
+  "chest[facing=north,pair=single]": 146,
+  "chest[facing=north,pair=left]": 147,
+  "chest[facing=north,pair=right]": 148,
+  "chest[facing=south,pair=single]": 149,
+  "chest[facing=south,pair=left]": 150,
+  "chest[facing=south,pair=right]": 151,
+  "chest[facing=east,pair=single]": 152,
+  "chest[facing=east,pair=left]": 153,
+  "chest[facing=east,pair=right]": 154,
+  "chest[facing=west,pair=single]": 155,
+  "chest[facing=west,pair=left]": 156,
+  "chest[facing=west,pair=right]": 157
 }

@@ -14,6 +14,7 @@ import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { createSentinelTile } from './render/texture-resolve';
+import './gameplay/chests';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -92,6 +93,17 @@ function main() {
   const ui = new UiManager(input, () => worldManager.playerController, icons);
   ui.attach();
   activeUi.manager = ui;
+  playerController.onUseBlock = (blockId, target) => {
+    if (blockId === 'workbench') {
+      ui.open('crafting');
+      return true;
+    }
+    if (blockId === 'chest') {
+      ui.openChest(target.x, target.y, target.z);
+      return true;
+    }
+    return false;
+  };
   const hud = new Hud(
     input,
     () => worldManager.playerController,
