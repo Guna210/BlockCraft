@@ -58,6 +58,64 @@ describe('M15a — Current logic', () => {
     expect(world.getBlock(19, 65, 0).state.power).toBe('0');
   });
 
+  it('lets a strongly powered solid block power adjacent traces and lamps', () => {
+    const world = makeWorld();
+    world.setBlock(0, 65, 0, 'stone');
+    setLever(world, 1, 65, 0, true, 'wall_west');
+    world.setBlock(0, 65, 1, 'copper_trace');
+    world.setBlock(0, 65, -1, 'lamp');
+
+    expect(world.current.getStrongPower(0, 65, 0)).toBe(15);
+    expect(state(world, 0, 65, 1, 'power')).toBe('15');
+    expect(state(world, 0, 65, -1, 'lit')).toBe('true');
+  });
+
+  it('lets a torch power a solid block which powers an adjacent lamp', () => {
+    const world = makeWorld();
+    world.setBlock(0, 63, 0, 'stone');
+    world.setBlock(0, 64, 0, 'inverter_torch', { attachment: 'floor', lit: 'true' });
+    world.setBlock(0, 65, 0, 'stone');
+    world.setBlock(1, 65, 0, 'lamp');
+
+    expect(world.current.getStrongPower(0, 65, 0)).toBe(15);
+    expect(state(world, 1, 65, 0, 'lit')).toBe('true');
+  });
+
+  it('lets relays and gauges read strong power from their solid input block', () => {
+    const relayWorld = makeWorld();
+    relayWorld.setBlock(0, 65, 0, 'stone');
+    setLever(relayWorld, 1, 65, 0, true, 'wall_west');
+    relayWorld.setBlock(-1, 65, 0, 'relay', {
+      facing: 'west',
+      delay: '1',
+      locked: 'false',
+      powered: 'false',
+    });
+    relayWorld.tick();
+    expect(state(relayWorld, -1, 65, 0, 'powered')).toBe('true');
+
+    const gaugeWorld = makeWorld();
+    gaugeWorld.setBlock(0, 65, 0, 'stone');
+    setLever(gaugeWorld, 1, 65, 0, true, 'wall_west');
+    gaugeWorld.setBlock(0, 65, 1, 'gauge', {
+      facing: 'south',
+      mode: 'compare',
+      powered: 'false',
+    });
+    expect(gaugeWorld.blockEntities.get<GaugeState>(0, 65, 1)!.state.outputLevel).toBe(15);
+  });
+
+  it('does not re-emit weak power from a solid block into a trace', () => {
+    const world = makeWorld();
+    world.setBlock(0, 65, 0, 'stone');
+    setLever(world, -1, 65, 0, true);
+    world.setBlock(1, 65, 0, 'copper_trace');
+
+    expect(world.current.getWeakPower(0, 65, 0)).toBe(15);
+    expect(world.current.getStrongPower(0, 65, 0)).toBe(0);
+    expect(state(world, 1, 65, 0, 'power')).toBe('0');
+  });
+
   it('meshes both arms of ascending and descending trace steps', () => {
     const world = makeWorld();
     world.setBlock(5, 65, 5, 'copper_trace');

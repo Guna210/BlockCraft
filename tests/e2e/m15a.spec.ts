@@ -56,10 +56,47 @@ test('M15a: a 16-block trace lights its lamp only with a middle relay', async ({
       expect(result.unpoweredTrace.state.power).toBe('0');
     });
 
-  await page.evaluate(async () => {
-    await window.__blockcraft!.waitForTerrain!(1);
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  });
+  await page
+    .evaluate(async () => {
+      const api = window.__blockcraft!;
+      await api.createWorld!({
+        name: 'M15a Circuit Visual Review',
+        seed: 'blockcraft-m15a-circuit-visual',
+        mode: 'creative',
+        type: 'flat',
+      });
+      api.pause!();
+      api.setRenderDistance!(4);
+      api.setClouds!('off');
+      api.setTimeOfDay!(18000);
+      api.teleport!(2.5, 67.2, 9, -Math.PI / 2, -0.24);
+      await api.tick!(1);
+      await api.waitForTerrain!(1);
+
+      api.setBlock!(-1, 65, 0, 'lever', { face: 'floor', powered: 'true' });
+      for (let x = 0; x <= 5; x++) api.setBlock!(x, 65, 0, 'copper_trace');
+      for (let x = 0; x <= 5; x++) api.setBlock!(x, 65, 2, 'copper_trace');
+      api.setBlock!(6, 65, 0, 'lamp');
+      api.setBlock!(6, 65, 2, 'lamp');
+      await api.tick!(1);
+      await api.waitForTerrain!(1);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+      return {
+        poweredTrace: api.getBlock!(3, 65, 0),
+        unpoweredTrace: api.getBlock!(3, 65, 2),
+        litLamp: api.getBlock!(6, 65, 0),
+        unlitLamp: api.getBlock!(6, 65, 2),
+      };
+    })
+    .then((result) => {
+      expect(Number(result.poweredTrace.state.power)).toBeGreaterThan(0);
+      expect(result.unpoweredTrace.state.power).toBe('0');
+      expect(result.litLamp.state.lit).toBe('true');
+      expect(result.unlitLamp.state.lit).toBe('false');
+    });
   const image = await assertAndSaveScreenshot({ name: 'm15-circuit', milestone: MILESTONE });
   assertNotBlank(image);
   assertNoMissingTexture(image);

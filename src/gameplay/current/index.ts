@@ -358,8 +358,7 @@ export class CurrentEngine {
       for (const offset of NEIGHBOR_OFFSETS) {
         const source = offsetPosition(position, offset);
         if (this.world.getBlock(source.x, source.y, source.z).id === 'copper_trace') continue;
-        if (this.canPowerTarget(source, position))
-          initial = Math.max(initial, this.outputAt(source));
+        initial = Math.max(initial, this.powerToward(source, position));
       }
       levels.set(key, initial);
       if (initial > 0) queue.push(position);
@@ -490,23 +489,43 @@ export class CurrentEngine {
   }
 
   private receivedPower(position: BlockPosition): number {
-    return Math.max(this.outputAt(position), this.weakPowerAt(position));
+    const block = this.world.getBlock(position.x, position.y, position.z);
+    if (CURRENT_BLOCK_IDS.has(block.id)) return this.outputAt(position);
+    if (this.registry.getBlockDefinition(block.id)?.fullOpaqueCube)
+      return this.strongPowerAt(position);
+    return this.weakPowerAt(position);
   }
 
   private weakPowerAt(position: BlockPosition): number {
     let power = 0;
     for (const offset of NEIGHBOR_OFFSETS) {
       const source = offsetPosition(position, offset);
-      if (!this.canPowerTarget(source, position)) continue;
-      power = Math.max(power, this.outputAt(source));
+      power = Math.max(power, this.powerToward(source, position));
     }
     return power;
   }
 
-  private strongPowerAt(position: BlockPosition): number {
+  private powerToward(source: BlockPosition, target: BlockPosition): number {
+    if (!this.canPowerTarget(source, target)) return 0;
+    const block = this.world.getBlock(source.x, source.y, source.z);
+    const definition = this.registry.getBlockDefinition(block.id);
+    if (!CURRENT_BLOCK_IDS.has(block.id) && definition?.fullOpaqueCube)
+      return this.strongPowerAt(source, target);
+    return this.outputAt(source);
+  }
+
+  private strongPowerAt(position: BlockPosition, excludingSource?: BlockPosition): number {
     let power = 0;
     for (const offset of NEIGHBOR_OFFSETS) {
       const source = offsetPosition(position, offset);
+      // A conductor does not reflect a component's own output straight back to it.
+      if (
+        excludingSource &&
+        source.x === excludingSource.x &&
+        source.y === excludingSource.y &&
+        source.z === excludingSource.z
+      )
+        continue;
       const block = this.world.getBlock(source.x, source.y, source.z);
       const output = this.outputAt(source);
       if (output <= 0) continue;
@@ -526,10 +545,7 @@ export class CurrentEngine {
         power = Math.max(power, output);
       }
     }
-    const definition = this.world.getBlockDefinition(
-      this.world.getBlock(position.x, position.y, position.z).id,
-    );
-    return definition?.fullOpaqueCube ? Math.max(power, this.weakPowerAt(position)) : power;
+    return power;
   }
 
   private canPowerTarget(source: BlockPosition, target: BlockPosition): boolean {
