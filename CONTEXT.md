@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: Merge order changed: M10b (#55) → BLOCKS-shapes (#54, renumber to 158-533 and take master's m08c test) → M10c (#56, renumber once at the end, after master's last ID, probably 534-541).
 - 2026-10-18: M10b round 2 PASS on 76c4776 (slot mapping verified by the e2e test; non-blocking: RESULT label touches a count, unexplained READY button). Told the owner to merge #55; then M10c renumbers after 157 and takes Codex's m08c test, and BLOCKS-shapes renumbers last.
 - 2026-10-18: M10b fix 76c4776 (CI green per the owner): the double-chest screenshot now fits (one-line title, 27 slots + separate hotbar, margins). Sent round 2 to session_01CVaVvTgfoBEWzTvk2QPuyd.
 - 2026-10-18: BLOCKS-shapes #54 review 1 (session_01RmTZW4vQiYRGCxtUG6TBvr) PASS; non-blocking: tile<1024 guard, door drop and fence collision tests, mesher allocation, weak fence icons. Merge after renumbering post M10b/M10c. Slow shard 2 = m04:221/276 time out then pass on retry (~12 min), also on master: a follow-up idea.
