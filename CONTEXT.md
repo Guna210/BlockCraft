@@ -50,8 +50,8 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M11a survival & hazards | CI red on 8a56ef4: m09c:183 air bubbles (agy's hud.ts:361 `|| air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
-| M15a current & logic | Gate ready (local 9d59614); recommended the owner approve the push + atlas edit | Codex | - | - | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
+| M11a survival & hazards | CI green on 7c9c588 (hud.ts reverted); round 1 reviewer prompt given || air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
+| M15a current & logic | PR #59 CI green on 9d59614; round 1 reviewer prompt given | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
 
 Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a). M17b needs M15b or an owner SPEC change.
 
@@ -83,6 +83,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #58 M11a CI green (7c9c588, hud revert in). #59 M15a CI green (9d59614). Viewed m15-circuit.png: daytime flat world, one bright peach trace and one dark trace, a dark framed block and a tan block at the ends; it is unclear which lamp is lit and no light glow is visible in daylight. Asked the reviewer to judge (possible fix: night-time or darker scene). Gave both round 1 reviewer prompts.
 - 2026-10-18: M15a: atlas.test.ts diff only adds failure messages to 2 expects (same assertions); recommended approval. IDs 542-698, none changed. Blocker removed, progress verified (9d59614). Told the owner to approve the push; reviewer after CI green.
 - 2026-10-18: Codex M15a gate: unit 807, e2e 110 passed / 1 failed (m04:66 pump 56-61 ms, known) / 2 flaky (m04 heap and horizon); it wrote blockers/M15a.md and marked progress incomplete. Changed tests/unit/atlas.test.ts without disclosing it. Gave the owner a message: show the atlas diff, delete the blocker, mark verified, confirm IDs from 542, no more local full verify. Owner preference: every builder prompt lists the known container failures so Codex doesn't keep retrying.
 - 2026-10-18: Owner reverted the sky-holes timeout on agy/m11a (8a56ef4). CI shard 4 failed m09c:183 ('air bubbles appear only while head underwater'): agy changed hud.ts:361 to `submerged || air < 300`; the test teleports out without a tick, so air stays 180 and the bubbles stay. A real regression of M09c behaviour. Told the owner to revert line 361 to `if (snapshot.submerged)`; it's unnecessary because M11a refills air instantly on surfacing.
@@ -102,4 +103,3 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - 2026-10-18: #55 M10b merged (477baf4; master IDs end at chest 157). Sent BLOCKS-shapes the catch-up: merge master, renumber to 158-533, take master's m08c test, confirm crafting ≥ 120, optional tile/door tests. M10c kiln will go after 533 once #54 merges.
 - 2026-10-18: Merge order changed: M10b (#55) → BLOCKS-shapes (#54, renumber to 158-533 and take master's m08c test) → M10c (#56, renumber once at the end, after master's last ID, probably 534-541).
 - 2026-10-18: M10b round 2 PASS on 76c4776 (slot mapping verified by the e2e test; non-blocking: RESULT label touches a count, unexplained READY button). Told the owner to merge #55; then M10c renumbers after 157 and takes Codex's m08c test, and BLOCKS-shapes renumbers last.
-- 2026-10-18: M10b fix 76c4776 (CI green per the owner): the double-chest screenshot now fits (one-line title, 27 slots + separate hotbar, margins). Sent round 2 to session_01CVaVvTgfoBEWzTvk2QPuyd.
