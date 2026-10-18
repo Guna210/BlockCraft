@@ -117,6 +117,9 @@ export function registerKilnBlockEntity(): void {
     tickInterval: 1,
     create: (x, y, z, stateId) => createKilnState(x, y, z, stateId),
     tick: (entity, world) => tickKiln(entity, world),
+    container: (entity) => ({
+      slots: [entity.state.input, entity.state.fuel, entity.state.output],
+    }),
   });
 }
 

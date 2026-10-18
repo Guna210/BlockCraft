@@ -15,6 +15,7 @@ import type { RayHit } from '../world/raycast';
 import { spillChestContents } from '../gameplay/chests';
 import { spillKilnContents } from '../gameplay/kiln';
 import { getToolDurability } from '../gameplay/tools';
+import type { QueriedEntity } from '../entity/query';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -79,11 +80,42 @@ export class PlayerController {
     this.world = world;
     this.player = new Player(new BlockCollision(world), this.ready);
     this.itemEntities = new ItemEntityManager(world);
+    world.entityQuery.addProvider('player', () => {
+      const player = this.player;
+      if (!player || this.world !== world) return [];
+      return [
+        {
+          id: 'player',
+          type: 'player',
+          minX: player.pos[0] - 0.3,
+          minY: player.pos[1],
+          minZ: player.pos[2] - 0.3,
+          maxX: player.pos[0] + 0.3,
+          maxY: player.pos[1] + player.height,
+          maxZ: player.pos[2] + 0.3,
+        },
+      ] satisfies QueriedEntity[];
+    });
+    world.entityQuery.addProvider('items', () =>
+      (this.itemEntities?.pool ?? [])
+        .filter((entity) => entity.active)
+        .map((entity) => ({
+          id: entity.id,
+          type: 'item',
+          minX: entity.pos[0] - 0.125,
+          minY: entity.pos[1] - 0.125,
+          minZ: entity.pos[2] - 0.125,
+          maxX: entity.pos[0] + 0.125,
+          maxY: entity.pos[1] + 0.125,
+          maxZ: entity.pos[2] + 0.125,
+        })),
+    );
     this.particles = new BreakParticles(world);
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
-    this.interaction.onUse = (blockId, target) => this.onUseBlock(blockId, target);
+    this.interaction.onUse = (blockId, target) =>
+      world.current.useBlock(target.x, target.y, target.z) || this.onUseBlock(blockId, target);
     this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
       const id = world.getBlock(x, y, z).id;
       if (id !== 'chest' && id !== 'kiln') return true;
@@ -135,6 +167,8 @@ export class PlayerController {
     else this.render(1);
   }
   reset(): void {
+    this.world?.entityQuery.removeProvider('player');
+    this.world?.entityQuery.removeProvider('items');
     this.world = null;
     this.player = null;
     this.interaction = null;
