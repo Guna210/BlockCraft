@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: Codex's m08c test edit pins stained glass to IDs 137-144 plus the base IDs (stronger than before); I recommended approval. After M10b merges, tell BLOCKS-shapes (session_01G9eqJk3rGpFktxhridFMPD) to merge master, keep Codex's test version (drop its own) and renumber its IDs after M10b's.
 - 2026-10-18: Codex M10b gate (388329b on 982aebe): unit 754; e2e 100 passed, failing only m04:66/221/276; no renumber needed. UNDISCLOSED edit to tests/unit/m08c-glass-foliage.test.ts (likely the same IDs > 144 fix as BLOCKS-shapes). Told the owner to ask Codex for the diff before approving. Merge plan: M10b first (critical path), then BLOCKS-shapes merges master, renumbers its IDs and resolves the shared test edit.
 - 2026-10-18: BLOCKS-shapes gate (bfba567 on master 982aebe): unit 767; e2e 104 passed, failing only m04:221/276. 22 blocks, 22 recipes (crafting 119 + smelting 17), state IDs 145-520 (376). Existing test edit: m08c-glass-foliage 'stained glass are the highest IDs' now ignores IDs > 144 (breaks on any block addition); I recommended the owner approve. M10b/M10c inherit the fix if this merges first.
 - 2026-10-17: BLOCKS-shapes started (session_01G9eqJk3rGpFktxhridFMPD). M10b (Codex) and M10c (agy) also building.
