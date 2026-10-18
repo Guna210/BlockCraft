@@ -19,6 +19,7 @@ export const BOOK_PANEL_W = 132;
 export const BOOK_PANEL_H = 186;
 export const CHEST_PANEL_W = 178;
 export const CHEST_PANEL_H = 240;
+const CHEST_CONTENTS_START_Y = 24;
 export const CRAFT_GRID_START = 28;
 export const CRAFT_OUTPUT = { x: 77, y: 48, w: 18, h: 18 };
 export const CRAFT_BOOK_BUTTON = { x: 8, y: 94, w: 38, h: 12 };
@@ -90,18 +91,17 @@ export function bookRowRects(): Rect[] {
 export function chestRects(count: number): Rect[] {
   return Array.from({ length: count }, (_, slot) => ({
     x: 8 + (slot % 9) * 18,
-    y: 22 + Math.floor(slot / 9) * 18,
+    y: CHEST_CONTENTS_START_Y + Math.floor(slot / 9) * 18,
     w: 18,
     h: 18,
   }));
 }
 
 export function chestPlayerRects(): Rect[] {
-  const rects = new Array<Rect>(41);
+  const rects = new Array<Rect>(36);
   for (let i = 0; i < 27; i++)
     rects[9 + i] = { x: 8 + (i % 9) * 18, y: 148 + Math.floor(i / 9) * 18, w: 18, h: 18 };
-  for (let i = 0; i < 9; i++) rects[i] = { x: 8 + i * 18, y: 202, w: 18, h: 18 };
-  for (let i = 0; i < 5; i++) rects[36 + i] = { x: 8 + i * 18, y: 220, w: 18, h: 18 };
+  for (let i = 0; i < 9; i++) rects[i] = { x: 8 + i * 18, y: 208, w: 18, h: 18 };
   return rects;
 }
 
@@ -148,7 +148,7 @@ export function drawCraftPanel(
   });
 
   const output = { ...CRAFT_OUTPUT, x: CRAFT_OUTPUT.x + x, y: CRAFT_OUTPUT.y + y };
-  drawText(ctx, 'RESULT', (x + 74) * s, (y + 36) * s, s, UI.text, UI.outline);
+  drawText(ctx, 'RESULT', (x + 68) * s, (y + 36) * s, s, UI.text, UI.outline);
   drawSlot(ctx, output.x, output.y, s);
   drawStack(ctx, icons, sheet, view.output, output, s);
   if (view.hoverSlots.has(dimension * dimension)) drawSlotHighlight(ctx, output.x, output.y, s);
@@ -250,7 +250,6 @@ export function drawChestScreen(
   ctx.translate(originX, originY);
   drawPanel(ctx, { x: 0, y: 0, w: CHEST_PANEL_W, h: CHEST_PANEL_H }, s);
   drawText(ctx, options.double ? 'DOUBLE CHEST' : 'CHEST', 8 * s, 6 * s, s, UI.text, UI.outline);
-  drawText(ctx, 'CONTENTS', 8 * s, 14 * s, s, UI.text, UI.outline);
   chest.forEach((rect, index) => {
     drawSlot(ctx, rect.x, rect.y, s);
     drawStack(ctx, options.icons, options.sheet, options.chestSlots[index] ?? null, rect, s);

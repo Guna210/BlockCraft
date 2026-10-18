@@ -589,23 +589,30 @@ export class UiManager {
     if (this.hoverSlot === null || !this.screen) return null;
     if (this.screen === 'inventory') {
       if (this.hoverSlot < 41) return tooltipFor(this.requirePlayer().inventory, this.hoverSlot);
-      if (this.hoverSlot < INVENTORY_OUTPUT_SLOT)
-        return (
-          this.grid[this.hoverSlot - INVENTORY_CRAFT_BASE]?.id.replace(/_/g, ' ').toUpperCase() ??
-          null
-        );
-      if (this.hoverSlot === INVENTORY_OUTPUT_SLOT)
-        return this.outputStack()?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      if (this.hoverSlot < INVENTORY_OUTPUT_SLOT) {
+        const stack = this.grid[this.hoverSlot - INVENTORY_CRAFT_BASE];
+        return stack ? displayName(stack.id) : null;
+      }
+      if (this.hoverSlot === INVENTORY_OUTPUT_SLOT) {
+        const output = this.outputStack();
+        return output ? displayName(output.id) : null;
+      }
     } else if (this.screen === 'crafting') {
-      if (this.hoverSlot < CRAFTING_OUTPUT_SLOT)
-        return this.grid[this.hoverSlot]?.id.replace(/_/g, ' ').toUpperCase() ?? null;
-      if (this.hoverSlot === CRAFTING_OUTPUT_SLOT)
-        return this.outputStack()?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      if (this.hoverSlot < CRAFTING_OUTPUT_SLOT) {
+        const stack = this.grid[this.hoverSlot];
+        return stack ? displayName(stack.id) : null;
+      }
+      if (this.hoverSlot === CRAFTING_OUTPUT_SLOT) {
+        const output = this.outputStack();
+        return output ? displayName(output.id) : null;
+      }
       if (this.hoverSlot < RECIPE_BASE_CRAFTING)
         return tooltipFor(this.requirePlayer().inventory, this.hoverSlot - 10);
     } else {
-      if (this.hoverSlot < this.chestSlotCount)
-        return this.getChestSlot(this.hoverSlot)?.id.replace(/_/g, ' ').toUpperCase() ?? null;
+      if (this.hoverSlot < this.chestSlotCount) {
+        const stack = this.getChestSlot(this.hoverSlot);
+        return stack ? displayName(stack.id) : null;
+      }
       return tooltipFor(this.requirePlayer().inventory, this.hoverSlot - this.chestSlotCount);
     }
     return null;
@@ -812,10 +819,11 @@ export class UiManager {
   private renderChest(player: Player): void {
     const storage = this.chestStorage;
     if (!storage) return;
-    const scale = Math.min(
-      Math.max(1, Math.floor(this.canvas.width / CHEST_PANEL_W)),
-      Math.max(1, Math.floor(this.canvas.height / CHEST_PANEL_H)),
+    const fitScale = Math.min(
+      Math.floor(this.canvas.width / CHEST_PANEL_W),
+      Math.floor(this.canvas.height / CHEST_PANEL_H),
     );
+    const scale = Math.max(1, fitScale - 1);
     const originX = Math.floor((this.canvas.width - CHEST_PANEL_W * scale) / 2);
     const originY = Math.floor((this.canvas.height - CHEST_PANEL_H * scale) / 2);
     const chestSlots = storage.halves.flatMap((half) => half.slots);
