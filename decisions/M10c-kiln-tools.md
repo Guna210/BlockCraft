@@ -143,3 +143,13 @@
 - **Visual Review Screenshots**:
   - `docs/screenshots/M10c/m10-kiln.png`: Mid-smelt kiln UI with new teardrop flame and damaged wooden pickaxe wear bar in hotbar.
   - `docs/screenshots/M10c/m10-kiln-flame.png`: Side-by-side zoomed comparison of the flame at full fuel vs ~half fuel.
+
+## 10. Merge with master and builder change
+
+- The builder changed from agy to Claude. Branch `claude/m10c` = `agy/m10c` + merge of `origin/master` (M10b workbench/chest/crafting #55, BLOCKS-shapes #54). It supersedes draft PR #56.
+- **State IDs:** master's table is kept exactly (ends at 533). The 8 kiln states are appended at `534..541` (superseding `145..152` above). `tests/unit/m08c-glass-foliage.test.ts` is master's version.
+- **Interaction:** the kiln-specific `onInteract`/`onBreak(blockEntity)` paths were dropped for M10b's generic hooks. Opening: `onUse` (wired in `main.ts`) → `UiManager.openKiln`. Spilling: `onBreakBeforeRemove` → `spillKilnContents`, with the same full-pool refusal as chests. Tool wear stays in `onBreak`; harvest-level gating still goes through `canHarvest`. Door/trapdoor toggling and `removeShapeBlock` from BLOCKS-shapes are unchanged.
+- **Placement facing:** the kiln's facing from the player's yaw is applied before shape placement in `BlockInteraction.place`.
+- **UI:** `ui-manager.ts` is master's, with the `'kiln'` screen added next to crafting/chest (own layout, slot mapping 3..38 → inventory 0..35, click handler from agy).
+- **Flame:** now a ragged teardrop (red edge, orange body, small yellow teardrop core) with 3 frames moving the tip and 1–2 edge tongues.
+- Fix-round items re-checked after the merge: kiln registered in `main.ts` not `world/block-entities.ts`; front/front_lit textures data-driven (no `'kiln'` in the registry or icons); per-state light via `lightEmissionWhen`; iron/copper/gold smelting recipes kept.
