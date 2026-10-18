@@ -48,22 +48,23 @@ class SmeltingRegistry {
     return this.byInput.get(inputId) ?? null;
   }
 
-  isFuel(itemId: string): boolean {
-    if (itemId === 'coal' || itemId === 'stick' || itemId === 'bowl' || itemId === 'ladder') {
-      return true;
-    }
-    if (
-      crafting.matchesIngredient('#any_log', itemId) ||
-      crafting.matchesIngredient('#any_planks', itemId) ||
-      crafting.matchesIngredient('#any_wood_slab', itemId)
-    ) {
-      return true;
-    }
-    if (itemId.startsWith('wooden_')) {
-      return true;
-    }
-    return false;
+  getBurnTime(itemId: string): number {
+    if (itemId === 'coal') return 1600;
+    if (crafting.matchesIngredient('#any_log', itemId)) return 300;
+    if (crafting.matchesIngredient('#any_planks', itemId)) return 300;
+    if (crafting.matchesIngredient('#any_wood_slab', itemId)) return 150;
+    if (itemId === 'stick' || itemId === 'bowl' || itemId === 'ladder') return 100;
+    if (itemId.startsWith('wooden_')) return 200;
+    return 0;
   }
+
+  isFuel(itemId: string): boolean {
+    return this.getBurnTime(itemId) > 0;
+  }
+}
+
+export function getBurnTime(itemId: string): number {
+  return smelting.getBurnTime(itemId);
 }
 
 export const smelting = new SmeltingRegistry();

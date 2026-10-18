@@ -24,7 +24,20 @@ import {
 import { genLadder, genVine, PAL_LADDER, PAL_VINE } from './climbing';
 import { genHayTop, genHaySide, PAL_HAY } from './hay';
 import { genTorch, genLumiteBlock, PAL_TORCH } from './light-sources';
+import {
+  genKilnFront,
+  genKilnFrontLit,
+  genKilnTop,
+  genKilnSide,
+  genKilnBottom,
+  PAL_KILN_FRONT,
+  PAL_KILN_FRONT_LIT,
+  PAL_KILN_TOP,
+  PAL_KILN_SIDE,
+  PAL_KILN_BOTTOM,
+} from './kiln';
 // src/render/textures/index.ts
+
 import { TextureData } from './noise';
 import { terrainToolGenerators, terrainToolPalettes } from './tools';
 import {
@@ -215,8 +228,14 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   sand: genSand,
   gravel: genGravel,
   glass: genGlass,
+  kiln_front: genKilnFront,
+  kiln_front_lit: genKilnFrontLit,
+  kiln_top: genKilnTop,
+  kiln_side: genKilnSide,
+  kiln_bottom: genKilnBottom,
 
   // Biome surface additions
+
   red_sand: genRedSand,
   clay: genClay,
   snow: genSnow,
@@ -476,4 +495,11 @@ export const texturePalettes: Record<string, RGBA[]> = {
   // Weather (M12c)
   ice: PAL_ICE,
   fire: PAL_FIRE,
+
+  // Kiln (M10c)
+  kiln_front: PAL_KILN_FRONT,
+  kiln_front_lit: PAL_KILN_FRONT_LIT,
+  kiln_top: PAL_KILN_TOP,
+  kiln_side: PAL_KILN_SIDE,
+  kiln_bottom: PAL_KILN_BOTTOM,
 };

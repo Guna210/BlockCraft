@@ -243,6 +243,17 @@ export class BlockRegistry {
       }
     }
 
+    if (state.blockId === 'kiln') {
+      const facing = (state.properties['facing'] as string) || 'north';
+      const lit = state.properties['lit'] === 'true';
+      if (face === 'top') return tex.top || 'kiln_top';
+      if (face === 'bottom') return tex.bottom || 'kiln_bottom';
+      if (face === facing) {
+        return lit ? tex.front_lit || 'kiln_front_lit' : tex.front || 'kiln_front';
+      }
+      return tex.side || 'kiln_side';
+    }
+
     // Default face fallback order:
     // 1. Explicit face (e.g. north)
     // 2. top/bottom/side generic faces

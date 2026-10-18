@@ -1,0 +1,29 @@
+{
+  "kiln": {
+    "hardness": 3.5,
+    "blastResistance": 3.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "south", "east", "west"],
+        "default": "north"
+      },
+      "lit": {
+        "type": "enum",
+        "values": ["false", "true"],
+        "default": "false"
+      }
+    },
+    "textures": {
+      "top": "kiln_top",
+      "side": "kiln_side",
+      "bottom": "kiln_bottom",
+      "front": "kiln_front",
+      "front_lit": "kiln_front_lit"
+    }
+  }
+}

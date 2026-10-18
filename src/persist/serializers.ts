@@ -57,11 +57,12 @@ export interface SerializedItemStack {
   slot: number;
   id: string;
   count: number;
+  damage?: number | null;
 }
 
 export interface SerializedInventory {
   slots: Array<SerializedItemStack | null>;
-  cursor: { id: string; count: number } | null;
+  cursor: { id: string; count: number; damage?: number | null } | null;
   selectedSlot: number;
 }
 
@@ -127,6 +128,13 @@ export function deserializeInventory(
           `Invalid stack count at slot ${i}: ${stack.count} (max ${itemDef.maxStack})`,
         );
       }
+      if (
+        stack.damage !== undefined &&
+        stack.damage !== null &&
+        (!Number.isSafeInteger(stack.damage) || stack.damage < 0)
+      ) {
+        throw new Error(`Invalid damage at slot ${i}: ${stack.damage}`);
+      }
       // Check armor constraints
       if (i >= 36 && i <= 39) {
         const armorSlot = ARMOR_SLOTS[i - 36];
@@ -156,13 +164,37 @@ export function deserializeInventory(
     ) {
       throw new Error(`Invalid cursor stack count: ${cursor.count}`);
     }
+    if (
+      cursor.damage !== undefined &&
+      cursor.damage !== null &&
+      (!Number.isSafeInteger(cursor.damage) || cursor.damage < 0)
+    ) {
+      throw new Error(`Invalid cursor damage: ${cursor.damage}`);
+    }
   } else {
     invData.cursor = null;
   }
 
   const result: SerializedInventory = {
-    slots: invData.slots.map((s, idx) => (s ? { slot: idx, id: s.id, count: s.count } : null)),
-    cursor: invData.cursor ? { id: invData.cursor.id, count: invData.cursor.count } : null,
+    slots: invData.slots.map((s, idx) =>
+      s
+        ? {
+            slot: idx,
+            id: s.id,
+            count: s.count,
+            ...(s.damage !== undefined && s.damage !== null ? { damage: s.damage } : {}),
+          }
+        : null,
+    ),
+    cursor: invData.cursor
+      ? {
+          id: invData.cursor.id,
+          count: invData.cursor.count,
+          ...(invData.cursor.damage !== undefined && invData.cursor.damage !== null
+            ? { damage: invData.cursor.damage }
+            : {}),
+        }
+      : null,
     selectedSlot: invData.selectedSlot,
   };
 

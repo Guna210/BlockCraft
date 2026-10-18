@@ -1,0 +1,13 @@
+{
+  "kiln": {
+    "type": "shaped",
+    "pattern": ["###", "# #", "###"],
+    "key": {
+      "#": "cobblestone"
+    },
+    "result": {
+      "id": "kiln",
+      "count": 1
+    }
+  }
+}

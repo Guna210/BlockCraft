@@ -1,0 +1,7 @@
+{
+  "kiln": {
+    "kind": "block",
+    "block": "kiln",
+    "maxStack": 64
+  }
+}

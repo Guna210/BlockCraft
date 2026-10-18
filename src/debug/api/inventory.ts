@@ -12,5 +12,9 @@ api.getInventory = () => controller().player!.inventory.snapshot(true);
 api.selectHotbarSlot = (slot) => {
   controller().player!.selectedSlot = slot;
 };
+api.setItemDamage = (slot, damage) => {
+  const stack = controller().player!.inventory.slots[slot];
+  if (stack) stack.damage = damage;
+};
 
 api.getInventoryCursor = () => controller().player!.inventory.cursorSnapshot();

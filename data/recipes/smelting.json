@@ -100,5 +100,23 @@
     "output": "dirt",
     "count": 1,
     "xp": 0.1
+  },
+  "iron_ingot_from_ore": {
+    "input": "iron_ore",
+    "output": "iron_ingot",
+    "count": 1,
+    "xp": 0.7
+  },
+  "copper_ingot_from_ore": {
+    "input": "copper_ore",
+    "output": "copper_ingot",
+    "count": 1,
+    "xp": 0.7
+  },
+  "gold_ingot_from_ore": {
+    "input": "gold_ore",
+    "output": "gold_ingot",
+    "count": 1,
+    "xp": 1.0
   }
 }

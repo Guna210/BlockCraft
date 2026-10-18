@@ -130,3 +130,26 @@ export function drawTooltip(
   drawText(ctx, text, (box.x + 4) * s, (box.y + 4) * s, s, UI.text, UI.outline);
   return box;
 }
+
+/** Small durability bar drawn across the bottom of an item slot for damaged tools. */
+export function drawDurabilityBar(
+  ctx: CanvasRenderingContext2D,
+  damage: number,
+  durability: number,
+  x: number,
+  y: number,
+  s: number,
+): void {
+  if (damage <= 0 || durability <= 0) return;
+  const remaining = Math.max(0, durability - damage);
+  const ratio = Math.max(0, Math.min(1, remaining / durability));
+  const barWidth = 14;
+  const filled = Math.max(1, Math.round(barWidth * ratio));
+  const barX = x + 2;
+  const barY = y + 14;
+  // Dark border/backing: width 14, height 2
+  fillRect(ctx, barX, barY, barWidth, 2, UI.outline, s);
+  // Bar fill color: green when ratio > 0.6, orange/yellow when > 0.25, red when low
+  const color = ratio > 0.6 ? '#63a038' : ratio > 0.25 ? '#e2b43a' : '#c1412b';
+  fillRect(ctx, barX, barY, filled, 1, color, s);
+}

@@ -51,6 +51,8 @@ export function buildLightLookupTables(registry: BlockRegistry): LightLookupTabl
     let emission = def.lightEmission ?? 0;
     if (blockId === 'lava') {
       emission = 15;
+    } else if (blockId === 'kiln') {
+      emission = resolved.properties.lit === 'true' ? 13 : 0;
     }
 
     opacityTable[s] = opacity;

@@ -12,9 +12,16 @@ import {
   type InventoryLayout,
 } from './inventory-layout';
 import { drawInventoryScreen, tooltipFor } from './inventory-screen';
+import { computeKilnLayout, kilnSlotAt, KILN_SLOT_COUNT, type KilnLayout } from './kiln-layout';
+import { drawKilnScreen, kilnTooltipFor } from './kiln-screen';
+import type { BlockEntityInstance } from '../world/block-entities';
+import { createKilnState, type KilnState } from '../gameplay/kiln';
+import { items } from '../gameplay/items';
+import { smelting } from '../gameplay/smelting';
+import { addXp } from '../gameplay/xp';
 import type { Rect } from './ui-kit';
 
-export type ScreenName = 'inventory';
+export type ScreenName = 'inventory' | 'kiln';
 export type ClickButton = 'left' | 'right';
 
 export interface ScreenSnapshot {
@@ -36,12 +43,14 @@ const THROW_PICKUP_DELAY_TICKS = 40;
 /** The UI overlay: a 2D canvas above the game canvas that owns screens and their input. */
 export class UiManager {
   screen: ScreenName | null = null;
+  activeKiln: BlockEntityInstance<KilnState> | null = null;
   // The 2D canvases are created on first open, so startup does not pay for them.
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
   private sheet!: HTMLCanvasElement;
   private icons!: IconSheet;
   private layout: InventoryLayout | null = null;
+  private kilnLayout: KilnLayout | null = null;
   private dpr = 1;
   private mouse = { x: 0, y: 0 };
   private hoverSlot: number | null = null;
@@ -99,12 +108,38 @@ export class UiManager {
     return player;
   }
 
-  open(name: ScreenName): void {
-    if (name !== 'inventory') throw new Error(`Unknown screen: ${name}`);
+  open(name: ScreenName, entity?: BlockEntityInstance<KilnState>): void {
+    if (name !== 'inventory' && name !== 'kiln') throw new Error(`Unknown screen: ${name}`);
     this.requirePlayer();
     if (this.screen) return;
     this.ensureCanvases();
     this.screen = name;
+    if (name === 'kiln') {
+      if (entity) {
+        this.activeKiln = entity;
+      } else {
+        const ctrl = this.controller();
+        let found: BlockEntityInstance<KilnState> | null = null;
+        const player = ctrl?.player;
+        if (ctrl?.interaction?.target.hit && player) {
+          const hit = ctrl.interaction.target;
+          const be = player.collision.world.blockEntities.get<KilnState>(hit.x, hit.y, hit.z);
+          if (be && be.blockId === 'kiln') found = be;
+        }
+        if (!found && player) {
+          const all = player.collision.world.blockEntities.getAll();
+          const be = all.find((e) => e.blockId === 'kiln');
+          if (be) found = be as BlockEntityInstance<KilnState>;
+        }
+        this.activeKiln = found ?? {
+          blockId: 'kiln',
+          x: 0,
+          y: 0,
+          z: 0,
+          state: createKilnState(0, 0, 0, 0),
+        };
+      }
+    }
     this.wasLocked = this.input.pointerLocked;
     this.input.setCapture(true);
     if (this.wasLocked) document.exitPointerLock();
@@ -125,6 +160,9 @@ export class UiManager {
       if (player.inventory.cursor) this.throwStack('cursor', true);
     }
     this.screen = null;
+    this.activeKiln = null;
+    this.layout = null;
+    this.kilnLayout = null;
     this.drag = null;
     this.canvas.style.display = 'none';
     this.input.setCapture(false);
@@ -141,12 +179,220 @@ export class UiManager {
 
   /** The same operation a mouse click performs; shift-click quick-moves. */
   clickSlot(slot: number, button: ClickButton, shift = false): void {
+    const player = this.requirePlayer();
+    if (this.screen === 'kiln') {
+      if (!Number.isInteger(slot) || slot < 0 || slot >= KILN_SLOT_COUNT) {
+        throw new Error('Invalid kiln slot');
+      }
+      this.handleKilnSlot(slot, button, shift, player);
+      return;
+    }
     if (!Number.isInteger(slot) || slot < 0 || slot >= SLOT_COUNT)
       throw new Error('Invalid inventory slot');
-    const inventory = this.requirePlayer().inventory;
+    const inventory = player.inventory;
     if (shift) inventory.shiftClick(slot);
     else if (button === 'left') inventory.leftClick(slot);
     else inventory.rightClick(slot);
+  }
+
+  private handleKilnSlot(slot: number, button: ClickButton, shift: boolean, player: Player): void {
+    if (!this.activeKiln) return;
+    const kiln = this.activeKiln.state;
+    const inv = player.inventory;
+
+    if (slot === 0 || slot === 1) {
+      const slotKey = slot === 0 ? 'input' : 'fuel';
+      const current = kiln[slotKey];
+      if (shift) {
+        if (current) {
+          inv.route(current);
+          if (current.count <= 0) kiln[slotKey] = null;
+        }
+        return;
+      }
+
+      if (button === 'left') {
+        if (!inv.cursor) {
+          if (current) {
+            inv.cursor = {
+              id: current.id,
+              count: current.count,
+              damage: current.damage ?? undefined,
+            };
+            kiln[slotKey] = null;
+          }
+        } else {
+          const cursor = inv.cursor;
+          if (!current) {
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: cursor.count,
+              damage: cursor.damage ?? null,
+            };
+            inv.cursor = null;
+          } else if (current.id === cursor.id) {
+            const max = items.get(current.id).maxStack;
+            const canAdd = Math.min(cursor.count, max - current.count);
+            current.count += canAdd;
+            cursor.count -= canAdd;
+            if (cursor.count <= 0) inv.cursor = null;
+          } else {
+            const temp = {
+              id: current.id,
+              count: current.count,
+              damage: current.damage ?? undefined,
+            };
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: cursor.count,
+              damage: cursor.damage ?? null,
+            };
+            inv.cursor = temp;
+          }
+        }
+      } else if (button === 'right') {
+        if (!inv.cursor) {
+          if (current) {
+            const take = Math.ceil(current.count / 2);
+            inv.cursor = {
+              id: current.id,
+              count: take,
+              damage: current.damage ?? undefined,
+            };
+            current.count -= take;
+            if (current.count <= 0) kiln[slotKey] = null;
+          }
+        } else {
+          const cursor = inv.cursor;
+          if (!current) {
+            kiln[slotKey] = {
+              id: cursor.id,
+              count: 1,
+              damage: cursor.damage ?? null,
+            };
+            cursor.count--;
+            if (cursor.count <= 0) inv.cursor = null;
+          } else if (current.id === cursor.id) {
+            const max = items.get(current.id).maxStack;
+            if (current.count < max) {
+              current.count++;
+              cursor.count--;
+              if (cursor.count <= 0) inv.cursor = null;
+            }
+          }
+        }
+      }
+    } else if (slot === 2) {
+      if (!kiln.output) return;
+      if (shift) {
+        const before = kiln.output.count;
+        inv.route(kiln.output);
+        const moved = before - (kiln.output ? kiln.output.count : 0);
+        if (moved > 0) {
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+        }
+        if (kiln.output.count <= 0) kiln.output = null;
+        return;
+      }
+
+      if (button === 'left') {
+        if (!inv.cursor) {
+          inv.cursor = {
+            id: kiln.output.id,
+            count: kiln.output.count,
+            damage: kiln.output.damage ?? undefined,
+          };
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+          kiln.output = null;
+        } else if (inv.cursor.id === kiln.output.id) {
+          const max = items.get(kiln.output.id).maxStack;
+          const canAdd = Math.min(kiln.output.count, max - inv.cursor.count);
+          if (canAdd > 0) {
+            inv.cursor.count += canAdd;
+            kiln.output.count -= canAdd;
+            addXp(player, kiln.storedXp);
+            kiln.storedXp = 0;
+            if (kiln.output.count <= 0) kiln.output = null;
+          }
+        }
+      } else if (button === 'right') {
+        if (!inv.cursor) {
+          const take = Math.ceil(kiln.output.count / 2);
+          inv.cursor = {
+            id: kiln.output.id,
+            count: take,
+            damage: kiln.output.damage ?? undefined,
+          };
+          kiln.output.count -= take;
+          addXp(player, kiln.storedXp);
+          kiln.storedXp = 0;
+          if (kiln.output.count <= 0) kiln.output = null;
+        } else if (inv.cursor.id === kiln.output.id) {
+          const max = items.get(kiln.output.id).maxStack;
+          if (inv.cursor.count < max) {
+            inv.cursor.count++;
+            kiln.output.count--;
+            addXp(player, kiln.storedXp);
+            kiln.storedXp = 0;
+            if (kiln.output.count <= 0) kiln.output = null;
+          }
+        }
+      }
+    } else {
+      const pSlot = slot <= 11 ? slot - 3 : slot - 12 + 9;
+      if (!shift) {
+        if (button === 'left') inv.leftClick(pSlot);
+        else inv.rightClick(pSlot);
+      } else {
+        const stack = inv.slots[pSlot];
+        if (!stack) return;
+        const isFuel = smelting.isFuel(stack.id);
+        const isSmeltable = smelting.getByInput(stack.id) !== undefined;
+        if (
+          isFuel &&
+          (!kiln.fuel ||
+            (kiln.fuel.id === stack.id && kiln.fuel.count < items.get(stack.id).maxStack))
+        ) {
+          if (!kiln.fuel) {
+            kiln.fuel = {
+              id: stack.id,
+              count: stack.count,
+              damage: stack.damage ?? null,
+            };
+            inv.slots[pSlot] = null;
+          } else {
+            const max = items.get(stack.id).maxStack;
+            const add = Math.min(stack.count, max - kiln.fuel.count);
+            kiln.fuel.count += add;
+            stack.count -= add;
+            if (stack.count <= 0) inv.slots[pSlot] = null;
+          }
+        } else if (
+          isSmeltable &&
+          (!kiln.input ||
+            (kiln.input.id === stack.id && kiln.input.count < items.get(stack.id).maxStack))
+        ) {
+          if (!kiln.input) {
+            kiln.input = {
+              id: stack.id,
+              count: stack.count,
+              damage: stack.damage ?? null,
+            };
+            inv.slots[pSlot] = null;
+          } else {
+            const max = items.get(stack.id).maxStack;
+            const add = Math.min(stack.count, max - kiln.input.count);
+            kiln.input.count += add;
+            stack.count -= add;
+            if (stack.count <= 0) inv.slots[pSlot] = null;
+          }
+        } else {
+          inv.shiftClick(pSlot);
+        }
+      }
+    }
   }
 
   /** Throws a stack from the player's eye along the view direction; a full pool keeps the stack. */
@@ -175,14 +421,28 @@ export class UiManager {
   }
 
   snapshot(): ScreenSnapshot {
-    const layout = this.screen ? this.layout : null;
-    const inv = this.player?.inventory;
     const css = (r: Rect): Rect => ({
       x: r.x / this.dpr,
       y: r.y / this.dpr,
       w: r.w / this.dpr,
       h: r.h / this.dpr,
     });
+    if (this.screen === 'kiln') {
+      const layout = this.kilnLayout;
+      const inv = this.player?.inventory;
+      const kiln = this.activeKiln?.state ?? createKilnState(0, 0, 0, 0);
+      return {
+        name: this.screen,
+        scale: layout?.scale ?? 0,
+        panel: layout ? css(layout.panel) : null,
+        slots: layout ? layout.slots.map(css) : [],
+        closeButton: layout ? css(layout.closeButton) : null,
+        hoverSlot: this.hoverSlot,
+        tooltip: inv ? kilnTooltipFor(inv, kiln, this.hoverSlot) : null,
+      };
+    }
+    const layout = this.screen ? this.layout : null;
+    const inv = this.player?.inventory;
     return {
       name: this.screen,
       scale: layout?.scale ?? 0,
@@ -202,6 +462,25 @@ export class UiManager {
   render(): void {
     const player = this.player;
     if (!this.screen || !player) return;
+    if (this.screen === 'kiln') {
+      this.kilnLayout = computeKilnLayout(this.canvas.width, this.canvas.height);
+      drawKilnScreen(
+        this.ctx,
+        {
+          layout: this.kilnLayout,
+          inventory: player.inventory,
+          kiln: this.activeKiln ? this.activeKiln.state : createKilnState(0, 0, 0, 0),
+          hoverSlot: this.hoverSlot,
+          hoverClose: this.hoverClose,
+          mouse: this.mouse,
+          width: this.canvas.width,
+          height: this.canvas.height,
+        },
+        this.icons,
+        this.sheet,
+      );
+      return;
+    }
     this.layout = computeLayout(this.canvas.width, this.canvas.height);
     drawInventoryScreen(
       this.ctx,
@@ -233,9 +512,15 @@ export class UiManager {
 
   private updateMouse(e: MouseEvent): void {
     this.mouse = { x: e.clientX * this.dpr, y: e.clientY * this.dpr };
-    if (!this.layout) return;
-    this.hoverSlot = slotAt(this.layout, this.mouse.x, this.mouse.y);
-    this.hoverClose = contains(this.layout.closeButton, this.mouse.x, this.mouse.y);
+    if (this.screen === 'kiln') {
+      if (!this.kilnLayout) return;
+      this.hoverSlot = kilnSlotAt(this.kilnLayout, this.mouse.x, this.mouse.y);
+      this.hoverClose = contains(this.kilnLayout.closeButton, this.mouse.x, this.mouse.y);
+    } else {
+      if (!this.layout) return;
+      this.hoverSlot = slotAt(this.layout, this.mouse.x, this.mouse.y);
+      this.hoverClose = contains(this.layout.closeButton, this.mouse.x, this.mouse.y);
+    }
   }
 
   private readonly onMouseMove = (e: MouseEvent): void => {
@@ -246,7 +531,7 @@ export class UiManager {
 
   private readonly onMouseDown = (e: MouseEvent): void => {
     e.preventDefault();
-    if (!this.screen || !this.layout) return;
+    if (!this.screen) return;
     this.updateMouse(e);
     const button: ClickButton | null = e.button === 0 ? 'left' : e.button === 2 ? 'right' : null;
     const player = this.player;
@@ -256,13 +541,15 @@ export class UiManager {
     const slot = this.hoverSlot;
     if (slot === null) {
       // Outside the panel, a click throws the cursor stack (all with left, one with right).
-      if (inventory.cursor && !contains(this.layout.panel, this.mouse.x, this.mouse.y))
+      const panel = this.screen === 'kiln' ? this.kilnLayout?.panel : this.layout?.panel;
+      if (inventory.cursor && panel && !contains(panel, this.mouse.x, this.mouse.y))
         this.throwStack('cursor', button === 'left');
       return;
     }
     if (e.shiftKey) return this.clickSlot(slot, button, true);
     const now = performance.now();
     if (
+      this.screen === 'inventory' &&
       button === 'left' &&
       inventory.cursor &&
       this.lastPick.slot === slot &&
@@ -285,8 +572,23 @@ export class UiManager {
     this.drag = null;
     const player = this.player;
     if (!drag || !player) return;
-    if (drag.slots.length === 1) this.clickSlot(drag.slots[0]!, drag.button);
-    else player.inventory.drag(drag.slots, drag.button);
+    if (drag.slots.length === 1) {
+      this.clickSlot(drag.slots[0]!, drag.button);
+      return;
+    }
+    if (this.screen === 'kiln') {
+      const playerSlots: number[] = [];
+      for (const s of drag.slots) {
+        if (s >= 3 && s <= 38) {
+          playerSlots.push(s <= 11 ? s - 3 : s - 12 + 9);
+        }
+      }
+      if (playerSlots.length > 0) {
+        player.inventory.drag(playerSlots, drag.button);
+      }
+    } else {
+      player.inventory.drag(drag.slots, drag.button);
+    }
   };
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {

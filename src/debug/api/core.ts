@@ -6,6 +6,7 @@ export interface BlockCraftDebugAPI {
   getInventory?: () => Array<import('../../gameplay/inventory').ItemStack | null>;
   getInventoryCursor?: () => import('../../gameplay/inventory').CursorStack | null;
   selectHotbarSlot?: (slot: number) => void;
+  setItemDamage?: (slot: number, damage: number) => void;
   openScreen?: (name: import('../../ui/ui-manager').ScreenName | 'none') => void;
   getScreen?: () => import('../../ui/ui-manager').ScreenSnapshot;
   uiClickSlot?: (slot: number, button: 'left' | 'right', shift?: boolean) => void;

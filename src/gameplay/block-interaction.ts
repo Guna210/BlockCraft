@@ -18,7 +18,15 @@ export class BlockInteraction {
   readonly target = createRayHit();
   progress = 0;
   tool: MiningTool = BARE_HAND;
-  onBreak?: (state: number, x: number, y: number, z: number, tool: MiningTool) => void;
+  onBreak?: (
+    state: number,
+    x: number,
+    y: number,
+    z: number,
+    tool: MiningTool,
+    blockEntity?: import('../world/block-entities').BlockEntityInstance | null,
+  ) => void;
+  onInteract?: (blockEntity: import('../world/block-entities').BlockEntityInstance) => void;
   private attack = false;
   private use = false;
   private pick = false;
@@ -91,7 +99,17 @@ export class BlockInteraction {
       p.inventory.pickBlock(id);
     }
     this.pickPressed = false;
-    if (this.usePressed && t.hit) this.place();
+    if (this.usePressed && t.hit) {
+      const resolved = this.registry.getResolvedState(t.stateId);
+      if (resolved && resolved.blockId === 'kiln') {
+        const be = p.collision.world.blockEntities.get(t.x, t.y, t.z);
+        if (be) {
+          this.onInteract?.(be);
+        }
+      } else {
+        this.place();
+      }
+    }
     this.usePressed = false;
     if (!t.hit || !this.attack || p.detached) {
       this.reset();
@@ -107,9 +125,10 @@ export class BlockInteraction {
     this.progress =
       p.mode === 'creative' || seconds === 0 ? 1 : Math.min(1, this.progress + 0.05 / seconds);
     if (this.progress >= 1 - 1e-10) {
+      const blockEntity = p.collision.world.blockEntities.get(t.x, t.y, t.z);
       p.collision.world.setBlockStateId(t.x, t.y, t.z, 0);
       this.edited(t.x, t.y, t.z);
-      this.onBreak?.(t.stateId, t.x, t.y, t.z, this.tool);
+      this.onBreak?.(t.stateId, t.x, t.y, t.z, this.tool, blockEntity);
       this.reset();
       t.hit = false;
     }
@@ -150,6 +169,18 @@ export class BlockInteraction {
         t.face === 'top'
           ? this.registry.getDefaultStateId('torch')!
           : this.registry.getStateId('wall_torch', { facing: t.face })!;
+    }
+    if (s.blockId === 'kiln') {
+      const angle = (((p.yaw / (Math.PI / 4)) % 8) + 8) % 8;
+      const facing =
+        angle >= 7 || angle < 1
+          ? 'west'
+          : angle >= 1 && angle < 3
+            ? 'north'
+            : angle >= 3 && angle < 5
+              ? 'east'
+              : 'south';
+      held = this.registry.getStateId('kiln', { facing, lit: 'false' })!;
     }
     const box = shapes.boxes[held];
     if (!box) return false;

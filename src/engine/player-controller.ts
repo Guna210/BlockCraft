@@ -11,6 +11,10 @@ import { BreakParticles } from '../render/particles';
 import { canHarvest } from '../gameplay/mining';
 import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
+import { getToolDurability } from '../gameplay/tools';
+import { activeUi } from '../ui/ui-manager';
+import type { BlockEntityInstance } from '../world/block-entities';
+import type { KilnState } from '../gameplay/kiln';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -78,9 +82,47 @@ export class PlayerController {
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
-    this.interaction.onBreak = (state, x, y, z, tool) => {
+    this.interaction.onInteract = (blockEntity) => {
+      if (blockEntity.blockId === 'kiln') {
+        activeUi.manager?.open('kiln', blockEntity as BlockEntityInstance<KilnState>);
+      }
+    };
+    this.interaction.onBreak = (state, x, y, z, tool, blockEntity) => {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
+
+      if (blockEntity && blockEntity.blockId === 'kiln') {
+        const ks = blockEntity.state as {
+          input?: { id: string; count: number } | null;
+          fuel?: { id: string; count: number } | null;
+          output?: { id: string; count: number } | null;
+        };
+        for (const stack of [ks.input, ks.fuel, ks.output]) {
+          if (stack && stack.count > 0) {
+            this.itemEntities!.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5);
+          }
+        }
+      }
+
+      if (this.player!.mode === 'survival') {
+        const held = this.player!.inventory.held;
+        if (held) {
+          const durability = getToolDurability(held.id);
+          if (durability !== null && durability > 0) {
+            held.damage = (held.damage ?? 0) + 1;
+            if (held.damage >= durability) {
+              this.particles!.spawn(
+                state,
+                this.player!.pos[0],
+                this.player!.pos[1] + this.player!.eye,
+                this.player!.pos[2],
+              );
+              this.player!.inventory.slots[this.player!.inventory.selectedSlot] = null;
+            }
+          }
+        }
+      }
+
       if (this.player!.mode === 'creative' || !canHarvest(block.definition, tool)) return;
       const breakCount = world.breakCount++;
       const loot = rollBlockLoot(block.blockId, world.worldSeed, x, y, z, breakCount);
