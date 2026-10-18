@@ -52,9 +52,9 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M11a survival & hazards | Round 1 CHANGES NEEDED (reviewer session_01MU4uejbhaYeR9Xt79ouucZ); fix prompt for agy given || air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
-| M15a current & logic | Round 2 sent (head 9300e40 = owner's Update-branch merge; CI green) | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
+| M15a current & logic | Round 2 PASS on 9300e40; owner to merge #59 | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
 
-Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a). M17b needs M15b or an owner SPEC change.
+Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a; prompt given 2026-10-18 for Codex). M17b needs M15b or an owner SPEC change.
 
 ## Open items for the owner
 
@@ -85,6 +85,7 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: #59 M15a round 2 PASS. Non-blocking: strongPowerAt no longer counts neighbours' weak power (a floor lever beside a block doesn't turn off a torch on it; vanilla-like, should be noted in decisions); clock edge interval 10. Told the owner to merge #59, then Update branch on #58 (player-controller overlap). Gave the M15b prompt (IDs after 698; pistons ≤ 12, immovable Foundation Stone/Blackglass/block entities; powered doors/trapdoors through the existing open state; dispenser drops item entities; note block emits a tone event only).
 - 2026-10-18: Owner raised the sky-holes timeout on master (bc376d5) and clicked Update branch on #59 (9300e40); CI green. Sent M15a round 2 to session_01Qh8guTsjL7Pm8sXzx8Xb4b. Codex must git pull before any further push.
 - 2026-10-18: Owner decided to raise the sky-holes.test.ts:168 timeout to 120000 directly on master (web edit). Open PRs pick it up on their next push (a re-run reuses the old merge commit).
 - 2026-10-18: M15a round 1 fixes 0f2befa (strong power through blocks + tests, night screenshot). Viewed the new m15-circuit.png: night, the far trace bright and the near one dark, the far lamp lit with a light pool on the grass, the near lamp unlit, a lever at left. Looks right. CI shard 1 failed only on the sky-holes unit timeout (34.5 s vs 30 s) plus an m02:54 retry. Told the owner to re-run failed jobs once and Codex not to change anything; offered the owner a timeout raise as the permanent fix.
@@ -104,4 +105,3 @@ Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), bot
 - 2026-10-18: #57 M10c CI green (9236db9). Checked: IDs 534-541 appended, only m10c tests in tests/ diff, screenshots viewed (flame = red edge/orange body/small yellow core, tongues shift; core still smallish and blocky; owner to judge). Gave round 1 reviewer prompt.
 - 2026-10-18: M10c Sonnet takeover reached the publish gate: merged master, kiln 534-541, m08c test identical to master, flame teardrop with yellow core and tongues, 790 unit / 112 e2e passed, unrelated screenshot rewrites restored. Told owner to approve; reviewer to check the flame-frame copy in the e2e spec.
 - 2026-10-18: #54 merged (fcaaa1f; master IDs end at 533). agy M10c fix bda76dc: kiln back to append (145-152), registration in main.ts, lightEmissionWhen, flame now a teardrop but with a plus-shaped core and no tongues; agy re-edited the m08c test (undisclosed). A trial merge with master conflicts in 6 files. Gave a Sonnet takeover prompt: claude/m10c from agy/m10c, merge master, kiln 534-541, master's m08c test, keep the hooks from all 3 tasks, teardrop core + tongues, full verify, gate; the new PR supersedes #56.
-- 2026-10-18: Owner approved the m10b-crafting-chests.test.ts:42 edit (≥ 157). #54 CI green on 57ef54d; told the owner to merge.
