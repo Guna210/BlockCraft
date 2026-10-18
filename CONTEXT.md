@@ -54,7 +54,7 @@ In flight:
 | M11a survival & hazards | Round 1 CHANGES NEEDED (reviewer session_01MU4uejbhaYeR9Xt79ouucZ); fix prompt for agy given || air < 300`); owner reverting that line | agy (agy/m11a) | not started (round 1 = new reviewer) | #58 | sky-holes timeout edit reverted by owner (8a56ef4). Handoff claims 'Full verify (this session)' but only quick ran → say 'PR CI'. Survival default saturation 0 (master had 5). Fold into round 1 fixes. |
 | M15a current & logic | Round 2 PASS on 9300e40; owner to merge #59 | Codex | not started (new reviewer) | #59 | IDs 542-698 (157 new, none changed); atlas.test.ts edit = assertion messages only (recommended approval) |
 
-Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a; prompt given 2026-10-18 for Codex). M17b needs M15b or an owner SPEC change.
+Ready next: M11a (Survival model & hazards) and M15a (Current core & logic), both unblocked by M10c (#57, 00aefea). Prompts given 2026-10-18; recommended Codex → M15a, agy → M11a. Afterwards: M11b (after M11a), M15b (after M15a; prompt given 2026-10-18; owner may run it on Sonnet). M17b needs M15b or an owner SPEC change.
 
 ## Open items for the owner
 
