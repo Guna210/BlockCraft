@@ -80,6 +80,7 @@ Ready next: M10b (prompt given for Codex), M10c (prompt given for agy). Both app
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-18: BLOCKS-shapes gate (bfba567 on master 982aebe): unit 767; e2e 104 passed, failing only m04:221/276. 22 blocks, 22 recipes (crafting 119 + smelting 17), state IDs 145-520 (376). Existing test edit: m08c-glass-foliage 'stained glass are the highest IDs' now ignores IDs > 144 (breaks on any block addition); I recommended the owner approve. M10b/M10c inherit the fix if this merges first.
 - 2026-10-17: BLOCKS-shapes started (session_01G9eqJk3rGpFktxhridFMPD). M10b (Codex) and M10c (agy) also building.
 - 2026-10-17: The owner assigned M10b to Codex and M10c to agy. Gave the BLOCKS-shapes prompt for Claude: 5 woods × stairs/fence/door/trapdoor + stone/cobble stairs; multi-box shapes (block-shapes, raycast, physics); straight stairs only; fence connection states; 2-tall doors with hinge/open; 3/16 trapdoors; recipes to reach ≥ 120; e2e walk up stairs with the 0.6 step-up, door blocks/open passes.
 - 2026-10-17: #53 merged. Prompts given: Codex M10b (workbench/chest blocks, 2x2 + 3x3 grids, recipe book, chest + double chest block entities, UI-only craft e2e); agy M10c (kiln with facing/lit states, light 13, block entity, xp.ts addXp, kiln UI, tool damage on stacks + M17a serializer extension, harvest level, durability bar). Not started until the owner says.
