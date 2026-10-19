@@ -51,10 +51,9 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M11b death, respawn & beds | Round 2 PASS on da79a14; owner to merge #61 now | Codex (claude/m11b) | session_01MXT8Q3tjSp2VtrjcAWMLhu | #61 | Bed IDs from 803; kill(0) = player; Player.spawnPoint: [x,y,z] \| null shared with M17b |
-| M17b IndexedDB & saving | Round 1 fixes bcbd273, CI green; round 2 sent; after #61 merges the builder merges master (player.ts conflict), I check that merge | Sonnet (claude/m17b, session_01JU8DGxqKsi469qtuv2TfQ4) | session_01NDaTGLrD5CVbMTyyyJejCS | #62 | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
+| M17b IndexedDB & saving | Round 2 of bcbd273 running; builder told to merge master (M11b) now + spawnPoint save/load test | Sonnet (claude/m17b, session_01JU8DGxqKsi469qtuv2TfQ4) | session_01NDaTGLrD5CVbMTyyyJejCS | #62 | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
 
-Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a needs M11b + M12b + M12c (M12b/M12c merged) → ready after M11b.
+Ready next: M13a (ECS & entity rendering; needs M11b, M12b, M12c, all merged). After M17b: M17c (world list).
 
 ## Open items for the owner
 
@@ -89,6 +88,7 @@ Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a need
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-19: #61 M11b merged. Told the M17b builder to merge master now (single spawnPoint, sleep-time round trip, a spawnPoint save/load + respawn test) while round 2 runs. M13a is now ready.
 - 2026-10-19: #61 M11b round 2 PASS (sleep → next multiple of 24000; tests for bed break, hostile 8/9, armor/offhand drops, double kill). Non-blocking: double-Respawn-click untested. Told the owner to merge #61; then the M17b builder merges master.
 - 2026-10-19: Owner chose to fix M11b's sleep-day bug plus 4 tests before merge (da79a14). M17b round 1 fixes bcbd273. Both CI green; sent round 2 to both reviewers. Order: #61 merges, then M17b merges master (player.ts) before #62 merges.
 - 2026-10-19: #61 M11b round 1 PASS (non-blocking: sleep sets absolute time 0 = day-counter bug, several untested behaviours; recorded as follow-ups). #62 M17b round 1 CHANGES NEEDED: tests for light on load, weather through the real path, save triggers (pause/visibility/pagehide/createWorld), overlapping saves plus the 'not compressed yet' abort, XP/spawnPoint end to end, corrupt data. Sent to the builder with the merge-master-after-#61 note, a compress large-input test, a terrain-heavy autosave variant, the stray pixel.
@@ -108,4 +108,3 @@ Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a need
 - 2026-10-18: Owner decided to raise the sky-holes.test.ts:168 timeout to 120000 directly on master (web edit). Open PRs pick it up on their next push (a re-run reuses the old merge commit).
 - 2026-10-18: M15a round 1 fixes 0f2befa (strong power through blocks + tests, night screenshot). Viewed the new m15-circuit.png: night, the far trace bright and the near one dark, the far lamp lit with a light pool on the grass, the near lamp unlit, a lever at left. Looks right. CI shard 1 failed only on the sky-holes unit timeout (34.5 s vs 30 s) plus an m02:54 retry. Told the owner to re-run failed jobs once and Codex not to change anything; offered the owner a timeout raise as the permanent fix.
 - 2026-10-18: Round 1 results. M11a CHANGES NEEDED: the sprint test bypasses Player (hooks and creative untested); progress/decisions inaccurate (hud, sky-holes listed, verify line, swim 3D vs horizontal). I added: drowning first hit at tick 320 (currently 319), no eating when the use press went to block use, gate regen/starvation to survival, health <= 0 dead, drop duplicate eatFood, suffocation test for glass/leaves/slab/stairs. Keep saturation 0 (reviewer: 5 makes M06 fall test see fast regen). M15a CHANGES NEEDED: strongly powered blocks don't power adjacent traces/lamps/relays (lever on wall + trace = 0); screenshot fails (night, close, lit vs unlit lamp). Plus decisions notes for O(n^2) settle and M17b re-registering components on load.
-- 2026-10-18: #58 M11a CI green (7c9c588, hud revert in). #59 M15a CI green (9d59614). Viewed m15-circuit.png: daytime flat world, one bright peach trace and one dark trace, a dark framed block and a tan block at the ends; it is unclear which lamp is lit and no light glow is visible in daylight. Asked the reviewer to judge (possible fix: night-time or darker scene). Gave both round 1 reviewer prompts.
