@@ -39,6 +39,14 @@ import { BlockRegistry } from './blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
 import { collectBlockPadding, snapshotBlocks, type BlockColumnsSnapshot } from './block-snapshot';
 import { findSpawnPoint } from './spawn';
+import { readPlayerData } from '../persist/restore';
+import { SaveManager, type LoadedWorld, type RestoredColumn } from '../persist/save-manager';
+import {
+  applyEntityRecord,
+  applyPlayerRecord,
+  applyRestoredColumn,
+  applyWorldRecord,
+} from '../persist/restore';
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
@@ -61,11 +69,23 @@ const PERIMETER_RING = 1;
 /** Main-thread time per frame that may be spent uploading meshes. */
 const UPLOAD_BUDGET_MS = 3;
 
+/** A generation result, or a saved column standing in for one (`restored`). */
+type StreamedGenResult = GenResult & { restored?: RestoredColumn };
+
 /**
  * The steps that store a generation result in a world column: the column with its biome data, then
  * one step per section. The streamer runs them a few milliseconds at a time.
  */
 function applyGenSteps(world: World, res: GenResult): Array<() => void> {
+  const restored = (res as StreamedGenResult).restored;
+  if (restored) {
+    // A saved column replaces generation: it is adopted whole, with its block entities and ticks.
+    return [
+      () => applyRestoredColumn(world, restored),
+      () => weatherManager.heightmap.updateColumn(world, res.cx, res.cz),
+      () => world.current.settleRestored(),
+    ];
+  }
   const steps: Array<() => void> = [
     () => {
       const col = world.getColumn(res.cx, res.cz, true)!;
@@ -98,6 +118,8 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
   steps.push(() => {
     weatherManager.heightmap.updateColumn(world, res.cx, res.cz);
   });
+  // A generated column can complete the neighbourhood a restored column was waiting for.
+  steps.push(() => world.current.settleRestored());
   return steps;
 }
 
@@ -157,6 +179,8 @@ export class WorldManager {
   public tables: MeshLookupTables | null = null;
   private tileResolver: ((texName: string) => number) | null = null;
   private tablesFastLeaves = false;
+
+  public readonly saves = new SaveManager();
 
   public worldSeedStr: string = 'blockcraft-test-seed-42';
   public worldSeed: number = hashString('blockcraft-test-seed-42');
@@ -299,11 +323,37 @@ export class WorldManager {
     });
   }
 
+  /** A saved column if the world has one at (cx, cz), otherwise generation from the seed. */
+  private requestColumn(cx: number, cz: number): Promise<GenResult> {
+    const saved = this.saves.has(cx, cz) ? this.saves.restoreColumn(cx, cz) : null;
+    if (saved) {
+      return saved.then(
+        (restored): StreamedGenResult => ({
+          cx,
+          cz,
+          sections: [],
+          biomes: restored.column.biomeIndices,
+          grassTints: restored.column.grassTints,
+          foliageTints: restored.column.foliageTints,
+          columnMs: 0,
+          sectionCount: 0,
+          perSectionMs: 0,
+          restored,
+        }),
+        (error) => {
+          // A column that cannot be read is regenerated rather than leaving a hole in the world.
+          console.warn(`[saves] column ${cx},${cz} unreadable, regenerating:`, error);
+          return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType);
+        },
+      );
+    }
+    return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType);
+  }
+
   /** What the streamer needs from the world, the worker pools and the GPU. */
   private makeStreamerHost(): StreamerHost<GenResult, MeshResult> {
     return {
-      requestGen: (cx, cz) =>
-        this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType),
+      requestGen: (cx, cz) => this.requestColumn(cx, cz),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
@@ -341,6 +391,8 @@ export class WorldManager {
       },
       freeData: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
+        // A column that changed is stored before it goes, so walking away never loses an edit.
+        if (this.world) this.saves.onColumnUnload(this.world, cx, cz);
         this.world?.removeColumn(cx, cz);
         weatherManager.heightmap.removeColumn(cx, cz);
       },
@@ -524,6 +576,8 @@ export class WorldManager {
     seed = 'blockcraft-test-seed-42',
     type: 'default' | 'flat' = 'default',
   ): void {
+    // A hand-built test world is thrown away, not saved.
+    this.saves.detach();
     resetWorldTime();
     resetWeather();
     this.editMeshes.length = 0;
@@ -697,11 +751,61 @@ export class WorldManager {
     mode?: 'survival' | 'creative';
     type?: 'default' | 'flat';
   }): Promise<void> {
+    // Leaving a world saves it first (the old world is gone once the new one starts loading).
+    await this.exitWorld();
+    await this.startWorld(opts);
+  }
+
+  /**
+   * Loads a saved world by name: its seed and type, every edited column, block entities, the
+   * player, inventory, ground items, clocks and weather. Columns nobody edited regenerate from
+   * the seed.
+   */
+  public async loadWorld(name: string): Promise<void> {
+    await this.exitWorld();
+    const loaded = await this.saves.load(name);
+    const player = loaded.player ? readPlayerData(loaded.player) : undefined;
+    await this.startWorld(
+      {
+        name,
+        seed: loaded.record.seedString,
+        type: loaded.record.worldType,
+        mode: player?.mode ?? 'survival',
+      },
+      loaded,
+    );
+  }
+
+  /** Saves the open world, if it is a named one, and lets go of it. A failed save is logged, not fatal. */
+  private async exitWorld(): Promise<void> {
+    try {
+      await this.saves.exit();
+    } catch (error) {
+      console.warn('[saves] could not save the world being left:', error);
+      this.saves.detach();
+    }
+  }
+
+  /** Saves the open world now (SPEC §4 `save()`). */
+  public async save(): Promise<void> {
+    if (!this.saves.session) throw new Error('Only a named world can be saved; create one first');
+    await this.saves.save('manual');
+  }
+
+  private async startWorld(
+    opts?: {
+      name?: string;
+      seed?: string;
+      mode?: 'survival' | 'creative';
+      type?: 'default' | 'flat';
+    },
+    restore?: LoadedWorld,
+  ): Promise<void> {
     this.initialLoadCount++;
     // The streamer loads only what the barrier below pins until the barrier is done.
     this.streamer.backgroundEnabled = false;
     try {
-      const completed = await this.loadInitialWorld(opts);
+      const completed = await this.loadInitialWorld(opts, restore);
       // The frame loop skipped terrain while loading. Draw the first frame with terrain now, in
       // this task, so it is presented before anything that awaits createWorld can look at the canvas.
       // A superseded call draws nothing: the newer call draws for its own world.
@@ -712,12 +816,15 @@ export class WorldManager {
     }
   }
 
-  private async loadInitialWorld(opts?: {
-    name?: string;
-    seed?: string;
-    mode?: 'survival' | 'creative';
-    type?: 'default' | 'flat';
-  }): Promise<boolean> {
+  private async loadInitialWorld(
+    opts?: {
+      name?: string;
+      seed?: string;
+      mode?: 'survival' | 'creative';
+      type?: 'default' | 'flat';
+    },
+    restore?: LoadedWorld,
+  ): Promise<boolean> {
     const radiusChunks = 4;
     // One more ring of columns is generated and lit than is meshed, so that every meshed section
     // has real neighbour columns (decisions/M03g-mesh-perimeter.md).
@@ -727,6 +834,18 @@ export class WorldManager {
     this.worldSeed = hashString(this.worldSeedStr);
     this.worldType = opts?.type ?? 'default';
     const worldType = this.worldType;
+    // A named world is saved. Its store is opened (or emptied, for a new world) before anything streams.
+    let store = restore?.store ?? null;
+    if (opts?.name && !store) {
+      try {
+        store = await this.saves.create(opts.name);
+      } catch (error) {
+        console.warn('[saves] saving is unavailable for this world:', error);
+      }
+    }
+    const savedPlayer = restore?.player ? readPlayerData(restore.player) : undefined;
+    const centerCX = savedPlayer ? Math.floor(savedPlayer.position[0] / 16) : 0;
+    const centerCZ = savedPlayer ? Math.floor(savedPlayer.position[2] / 16) : 0;
 
     // Dispose old GPU section meshes
     if (this.chunkRenderer) {
@@ -747,14 +866,71 @@ export class WorldManager {
     this.world.worldSeed = this.worldSeed;
     this.world.worldType = this.worldType;
     setWorldInstance(this.world);
-    this.streamer.reset(0, 0);
+    this.saves.detach();
+    if (restore) applyWorldRecord(world, restore.record);
+    if (opts?.name && store) {
+      this.saves.attach(
+        {
+          name: opts.name,
+          seedString: this.worldSeedStr,
+          worldType: this.worldType,
+          world,
+          player: () => this.playerController?.player ?? null,
+          items: () => this.playerController?.itemEntities ?? null,
+        },
+        store,
+        restore?.record.createdAt,
+      );
+      this.saves.installPageHooks();
+      if (this.playerController)
+        this.playerController.loop.onPause = () => this.saves.saveSoon('pause');
+    }
+    this.streamer.reset(centerCX, centerCZ);
     this.streamer.active = true;
     this.updateStreamerLimits();
 
     // Generate the columns within the load radius through the streamer, at top priority.
-    await this.streamer.requestRegion({ cx: 0, cz: 0, genRadius: loadRadius, meshRadius: -1 });
+    await this.streamer.requestRegion({
+      cx: centerCX,
+      cz: centerCZ,
+      genRadius: loadRadius,
+      meshRadius: -1,
+    });
     // A newer createWorld (or resetWorldToEmpty) replaced this world while it was generating.
     if (epoch !== this.worldEpoch) return false;
+
+    if (savedPlayer && restore?.player) {
+      // The saved player stands where it was saved; the streamer lights and meshes the terrain
+      // around it, exactly as for streamed columns.
+      if (this.camera) {
+        this.camera.position = vec3.fromValues(
+          savedPlayer.position[0],
+          savedPlayer.position[1] + 1.62,
+          savedPlayer.position[2],
+        );
+        this.camera.yaw = savedPlayer.rotation[0];
+        this.camera.pitch = savedPlayer.rotation[1];
+        this.camera.updateView();
+      }
+      if (this.playerController) {
+        this.playerController.spawn(
+          world,
+          savedPlayer.position[0],
+          savedPlayer.position[1],
+          savedPlayer.position[2],
+          savedPlayer.mode,
+        );
+        const player = this.playerController.player!;
+        applyPlayerRecord(player, restore.player);
+        if (restore.entities && this.playerController.itemEntities)
+          applyEntityRecord(this.playerController.itemEntities, restore.entities);
+        this.playerController.render(1);
+        this.playerController.onInteractionEdit = (x, y, z) => this.requestInteractionMesh(x, y, z);
+      }
+      this.setTimeOfDay(getWorldTime());
+      await this.waitForTerrain(radiusChunks);
+      return epoch === this.worldEpoch;
+    }
 
     // Light terrain within the load radius using a single region LightWorkerPool job
     const { blocks: regionColumns } = await this.copyLightColumns({
@@ -969,6 +1145,7 @@ export class WorldManager {
    */
   public render(): boolean {
     this.lastUploadMs = 0;
+    this.saves.frame();
     if (this.initialLoadCount > 0) return false;
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());

@@ -3,6 +3,7 @@ import { blockEntityRegistry, type BlockEntityState } from '../../world/block-en
 import { BlockRegistry } from '../../world/blocks/registry';
 import type { BlockTick } from '../../world/ticks';
 import type { World } from '../../world/world';
+import { ChunkColumn } from '../../world/column';
 import { Mechanics } from '../mechanics';
 import {
   CURRENT_BLOCK_IDS,
@@ -80,7 +81,67 @@ export class CurrentEngine {
 
   /** Called before a column is dropped from the world. */
   removeColumn(cx: number, cz: number): void {
+    this.restoredPending.delete(`${cx},${cz}`);
     this.mechanics.removeColumn(cx, cz);
+  }
+
+  private readonly restoredPending = new Map<string, ChunkColumn>();
+
+  /**
+   * Registers the components of a column that came from a save. Nothing is evaluated here: the
+   * saved states are already settled, and a half-loaded neighbourhood would look unpowered.
+   * `settleRestored` settles once the column's neighbours are present.
+   */
+  restoreColumn(column: ChunkColumn): number {
+    let found = 0;
+    for (let sy = 0; sy < ChunkColumn.SECTION_COUNT; sy++) {
+      const section = column.getSection(sy);
+      if (!section) continue;
+      let relevant = false;
+      for (const stateId of section.getPalette()) {
+        const id = this.registry.getResolvedState(stateId)?.blockId;
+        if (id && (CURRENT_BLOCK_IDS.has(id) || this.mechanics.isReceiverId(id))) {
+          relevant = true;
+          break;
+        }
+      }
+      if (!relevant) continue;
+      for (let i = 0; i < 4096; i++) {
+        const lx = i & 15;
+        const lz = (i >> 4) & 15;
+        const ly = i >> 8;
+        const id = this.registry.getResolvedState(section.getBlockStateId(lx, ly, lz))?.blockId;
+        if (!id) continue;
+        const isCurrent = CURRENT_BLOCK_IDS.has(id);
+        if (!isCurrent && !this.mechanics.isReceiverId(id)) continue;
+        const position = { x: column.cx * 16 + lx, y: sy * 16 + ly, z: column.cz * 16 + lz };
+        if (isCurrent) this.blocks.set(positionKey(position), position);
+        this.mechanics.adopt(position, id);
+        found++;
+      }
+    }
+    if (found > 0) this.restoredPending.set(`${column.cx},${column.cz}`, column);
+    return found;
+  }
+
+  /** Settles once for every restored column whose eight neighbours are loaded. */
+  settleRestored(): boolean {
+    if (this.restoredPending.size === 0) return false;
+    let ready = false;
+    for (const [key, column] of this.restoredPending) {
+      let complete = true;
+      for (let dz = -1; dz <= 1 && complete; dz++)
+        for (let dx = -1; dx <= 1; dx++)
+          if (!this.world.hasColumn(column.cx + dx, column.cz + dz)) {
+            complete = false;
+            break;
+          }
+      if (!complete) continue;
+      this.restoredPending.delete(key);
+      ready = true;
+    }
+    if (ready) this.recompute();
+    return ready;
   }
 
   get hasComponents(): boolean {

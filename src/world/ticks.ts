@@ -85,6 +85,32 @@ export class BlockTicks {
     this.order = Math.max(this.order, maxOrder);
   }
 
+  /**
+   * Adds ticks saved when the clock read `savedTime`, re-based so each keeps its remaining delay
+   * against this clock (a tick due 7 ticks after the save fires 7 ticks after the load, however
+   * far apart the two clocks are). Relative order is kept; the entries get fresh insertion orders.
+   * A key that is already pending keeps its entry.
+   */
+  addRebased(ticks: ScheduledTick[], savedTime: number): void {
+    const ordered = [...ticks].sort((a, b) => a.order - b.order);
+    for (const t of ordered) {
+      const key = `${t.type}:${t.x},${t.y},${t.z}`;
+      if (this.pending.has(key)) continue;
+      const entry: Entry = {
+        x: t.x,
+        y: t.y,
+        z: t.z,
+        type: t.type,
+        due: this.time + Math.max(1, t.due - savedTime),
+        priority: t.priority,
+        order: this.order++,
+        key,
+      };
+      this.pending.set(key, entry);
+      this.push(entry);
+    }
+  }
+
   addTicks(ticks: ScheduledTick[]): void {
     this.loadTicks(ticks, undefined, false);
   }

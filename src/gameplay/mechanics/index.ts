@@ -168,6 +168,39 @@ export class Mechanics {
     }
   }
 
+  /**
+   * Registers a receiver that was loaded from a save, without asking for an evaluation: its saved
+   * state is already settled, and it reacts when a neighbour next changes.
+   */
+  adopt(position: BlockPosition, id: string): void {
+    if (this.isReceiverId(id)) this.receivers.set(positionKey(position), position);
+  }
+
+  /** Powered doors and trapdoors of one column: the edge memory that tells a hand toggle from a power change. */
+  poweredOpenables(cx: number, cz: number): BlockPosition[] {
+    const out: BlockPosition[] = [];
+    for (const [key, powered] of this.doorPower) {
+      const position = this.receivers.get(key);
+      if (!powered || !position) continue;
+      if (Math.floor(position.x / 16) === cx && Math.floor(position.z / 16) === cz)
+        out.push(position);
+    }
+    return out.sort(comparePositions);
+  }
+
+  restorePoweredOpenables(positions: ReadonlyArray<BlockPosition>): void {
+    for (const position of positions) this.doorPower.set(positionKey(position), true);
+  }
+
+  /**
+   * Ends every move in flight at once, so the world can be saved in a settled state. The landing
+   * ticks stay queued and find nothing to do.
+   */
+  landAll(): void {
+    if (this.moving.size === 0) return;
+    for (const position of [...this.moving.values()].sort(comparePositions)) this.land(position);
+  }
+
   /** Subscribes to note block tones; returns the unsubscribe function. */
   onTone(listener: (event: ToneEvent) => void): () => void {
     this.listeners.add(listener);

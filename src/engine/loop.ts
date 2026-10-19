@@ -6,6 +6,8 @@ export const MAX_CATCH_UP_TICKS = 5;
 /** A bounded accumulator; manual and real-time advancement share the same tick callback. */
 export class TickLoop {
   public paused = false;
+  /** Called when the loop goes from running to paused (the game saves then). */
+  public onPause: (() => void) | null = null;
   private accumulator = 0;
   constructor(private readonly simulate: () => void) {}
 
@@ -31,8 +33,10 @@ export class TickLoop {
   }
 
   pause(): void {
+    const wasRunning = !this.paused;
     this.paused = true;
     this.accumulator = 0;
+    if (wasRunning) this.onPause?.();
   }
   resume(): void {
     this.paused = false;

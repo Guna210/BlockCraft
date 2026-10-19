@@ -324,6 +324,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
         air: 280,
         flying: false,
         dimension: 'overworld',
+        xpLevel: 0,
+        xpProgress: 0,
+        spawnPoint: null,
       };
 
       const serialized = serializePlayerData(playerData);
@@ -701,6 +704,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
           air: 300,
           flying: false,
           dimension: 'overworld',
+          xpLevel: 0,
+          xpProgress: 0,
+          spawnPoint: null,
         },
         inventory: {
           slots: Array.from({ length: 41 }, () => null),
@@ -805,6 +811,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
         air: 300,
         flying: false,
         dimension: 'overworld',
+        xpLevel: 0,
+        xpProgress: 0,
+        spawnPoint: null,
       };
 
       // 6. Inventory
@@ -924,6 +933,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
           air: 300,
           flying: false,
           dimension: 'overworld',
+          xpLevel: 0,
+          xpProgress: 0,
+          spawnPoint: null,
         },
         inventory: {
           slots: Array.from({ length: 41 }, () => null),
@@ -986,6 +998,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
           air: 300,
           flying: false,
           dimension: 'overworld',
+          xpLevel: 0,
+          xpProgress: 0,
+          spawnPoint: null,
         },
         inventory: {
           slots: Array.from({ length: 41 }, () => null),
@@ -1044,6 +1059,9 @@ describe('M17a — Serializers (Block Entities, Inventory, Entities, Player, Met
           air: 300,
           flying: false,
           dimension: 'overworld',
+          xpLevel: 0,
+          xpProgress: 0,
+          spawnPoint: null,
         },
         inventory: {
           slots: Array.from({ length: 41 }, () => null),

@@ -85,6 +85,23 @@ export interface BlockCraftDebugAPI {
     type?: 'default' | 'flat';
   }) => Promise<void>;
   waitForTerrain?: (radiusChunks: number) => Promise<void>;
+  loadWorld?: (name: string) => Promise<void>;
+  save?: () => Promise<void>;
+  /** Starts the incremental autosave now (it normally runs every 60 s); resolves when written. */
+  autosaveNow?: () => Promise<void>;
+  getSaveStats?: () => Promise<{
+    stats: import('../../persist/save-manager').SaveStats;
+    usage: {
+      regions: Array<{ rx: number; rz: number; columns: number; bytes: number }>;
+      blockEntities: number;
+      totalBytes: number;
+    } | null;
+  }>;
+  getBlockEntity?: (
+    x: number,
+    y: number,
+    z: number,
+  ) => { blockId: string; state: Record<string, unknown> } | null;
   getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
   wireframe?: (enabled?: boolean) => boolean;
   setWireframe?: (enabled: boolean) => void;

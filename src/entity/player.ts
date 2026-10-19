@@ -77,6 +77,8 @@ export class Player {
   public xpLevel = 0;
   public xpProgress = 0;
   public dimension = 'overworld';
+  /** Where the player respawns; null means the world spawn. */
+  public spawnPoint: [number, number, number] | null = null;
   public readonly inventory = new Inventory();
   get selectedSlot(): number {
     return this.inventory.selectedSlot;
