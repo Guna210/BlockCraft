@@ -33,9 +33,11 @@ export class PlayerController {
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
+    this.interaction?.tick();
+    if (this.world && this.player)
+      this.player.survival.tick(this.world, this.player, this.particles);
     if (this.player) this.itemEntities?.tick(this.player);
     this.particles?.tick();
-    this.interaction?.tick();
   });
   private x = 0;
   private y = 0;
@@ -133,6 +135,7 @@ export class PlayerController {
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
 
       if (this.player!.mode === 'survival') {
+        this.player!.survival.addExhaustion(0.005);
         const held = this.player!.inventory.held;
         if (held) {
           const durability = getToolDurability(held.id);

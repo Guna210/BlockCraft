@@ -70,6 +70,7 @@ export class BlockInteraction {
   }
   clear(): void {
     this.attack = this.use = this.pick = this.usePressed = this.pickPressed = false;
+    this.player.survival.useConsumed = false;
     this.reset();
     this.target.hit = false;
   }
@@ -113,7 +114,12 @@ export class BlockInteraction {
     this.pickPressed = false;
     if (this.usePressed && t.hit) {
       const blockId = this.registry.getResolvedState(t.stateId)!.blockId;
-      if (!this.onUse?.(blockId, t) && !this.toggle()) this.place();
+      const consumedByBlock = Boolean(this.onUse?.(blockId, t) || this.toggle());
+      if (consumedByBlock) {
+        this.player.survival.useConsumed = true;
+      } else {
+        this.place();
+      }
     }
     this.usePressed = false;
     if (!t.hit || !this.attack || p.detached) {
