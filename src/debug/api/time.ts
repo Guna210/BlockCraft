@@ -1,5 +1,5 @@
 import { api } from './core';
-import { setWorldTime } from '../../world/time';
+import { getWorldTime, setWorldTime, timeOfDay } from '../../world/time';
 import { WorldManager } from '../../world/world-manager';
 
 /**
@@ -11,3 +11,4 @@ export function setTimeOfDay(ticks: number): void {
 }
 
 api.setTimeOfDay = setTimeOfDay;
+api.getTimeOfDay = () => timeOfDay(getWorldTime());

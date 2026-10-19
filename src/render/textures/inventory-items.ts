@@ -1,6 +1,7 @@
 import { toolGenerators, toolPalettes, TERRAIN_TOOL_IDS } from './tools';
 import { items } from '../../gameplay/items';
 import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from './noise';
+import { BED_ITEM_PALETTE, genBedItem } from './bed';
 
 // World-drop sprites. Inventory icons and UI remain owned by M09b.
 const ramps = {
@@ -171,6 +172,9 @@ for (const item of items.items.values()) {
     return data;
   };
 }
+
+inventoryItemPalettes.bed_item = BED_ITEM_PALETTE;
+inventoryItemGenerators.bed_item = genBedItem;
 
 // Additional world sprites have their own atlas; M07b's original tools stay in terrain.
 for (const [id, generate] of Object.entries(toolGenerators))

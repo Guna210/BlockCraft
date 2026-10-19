@@ -214,6 +214,12 @@ export class BlockRegistry {
 
     const tex = state.definition.textures;
 
+    if (state.blockId === 'bed') {
+      if (face === 'top') return state.properties.part === 'head' ? tex.head : tex.foot;
+      if (face === 'bottom') return tex.bottom || tex.side;
+      return tex.side || tex.bottom;
+    }
+
     if (state.blockId === 'copper_trace') {
       return `copper_trace_${Number(state.properties.power ?? 0)}`;
     }

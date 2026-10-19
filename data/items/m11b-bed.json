@@ -1,0 +1,8 @@
+{
+  "bed": {
+    "kind": "block",
+    "maxStack": 1,
+    "block": "bed",
+    "texture": "bed_item"
+  }
+}

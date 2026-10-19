@@ -59,6 +59,26 @@ function stairBoxes(facing: Facing, top: boolean): readonly Box[] {
   return [slab, step];
 }
 
+function bedBoxes(props: Record<string, string | number>): readonly Box[] {
+  const boxes: Box[] = [
+    [0, 3 / 16, 0, 1, 9 / 16, 1],
+    [1 / 16, 0, 1 / 16, 3 / 16, 3 / 16, 3 / 16],
+    [13 / 16, 0, 1 / 16, 15 / 16, 3 / 16, 3 / 16],
+    [1 / 16, 0, 13 / 16, 3 / 16, 3 / 16, 15 / 16],
+    [13 / 16, 0, 13 / 16, 15 / 16, 3 / 16, 15 / 16],
+  ];
+  if (props.part !== 'head') return boxes;
+  const facing = props.facing as Facing;
+  const pillow: Record<Facing, Box> = {
+    north: [1 / 8, 9 / 16, 1 / 16, 7 / 8, 10 / 16, 5 / 16],
+    south: [1 / 8, 9 / 16, 11 / 16, 7 / 8, 10 / 16, 15 / 16],
+    east: [11 / 16, 9 / 16, 1 / 8, 15 / 16, 10 / 16, 7 / 8],
+    west: [1 / 16, 9 / 16, 1 / 8, 5 / 16, 10 / 16, 7 / 8],
+  };
+  boxes.push(pillow[facing] ?? pillow.north);
+  return boxes;
+}
+
 /** Direction (as a facing) from the cell centre to the hinge edge of an open door. */
 export function doorHingeSide(facing: Facing, hinge: string): Facing {
   const [fx, fz] = FACING_VECTOR[facing];
@@ -149,6 +169,8 @@ export function selectionBoxes(
       return [trapdoorBox(props.facing as Facing, String(props.half), props.open === 'true')];
     case 'piston_head':
       return pistonHeadBoxes(String(props.facing));
+    case 'bed':
+      return bedBoxes(props);
     default:
       return [CUBE_BOX];
   }
@@ -207,6 +229,7 @@ export function collisionBoxes(
     case 'door':
     case 'trapdoor':
     case 'piston_head':
+    case 'bed':
       return selectionBoxes(blockId, model, props)!;
     default:
       return [CUBE_BOX];

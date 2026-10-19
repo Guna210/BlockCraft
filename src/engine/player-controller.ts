@@ -16,6 +16,8 @@ import { spillChestContents } from '../gameplay/chests';
 import { spillKilnContents } from '../gameplay/kiln';
 import { getToolDurability } from '../gameplay/tools';
 import type { QueriedEntity } from '../entity/query';
+import type { DamageEvent } from '../gameplay/survival';
+import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -25,15 +27,20 @@ export class PlayerController {
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
+  public onDamage: (event: DamageEvent) => void = () => {};
+  public onDeath: (cause: string) => void = () => {};
   public perspective: 0 | 1 | 2 = 0;
   public renderAlpha = 1;
   private perspectiveDown = false;
   private world: World | null = null;
+  private worldSpawnPoint: [number, number, number] | null = null;
+  private hitRoll = 0;
+  private hitRollUntil = 0;
   public readonly loop = new TickLoop(() => {
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
-    this.interaction?.tick();
+    if (this.player && !this.player.dead) this.interaction?.tick();
     if (this.world && this.player)
       this.player.survival.tick(this.world, this.player, this.particles);
     if (this.player) this.itemEntities?.tick(this.player);
@@ -53,6 +60,11 @@ export class PlayerController {
   ) {
     this.rememberCamera();
     input.onAction = (action, down) => {
+      if (this.player?.dead) {
+        this.player.clearInput();
+        this.interaction?.clear();
+        return;
+      }
       this.attach();
       if (action === 'perspective') {
         if (down && !this.perspectiveDown) {
@@ -81,6 +93,15 @@ export class PlayerController {
     this.camera.updateProjection();
     this.world = world;
     this.player = new Player(new BlockCollision(world), this.ready);
+    this.worldSpawnPoint = [x, y, z];
+    this.hitRoll = 0;
+    this.hitRollUntil = 0;
+    this.player.survival.onDeath = (source) => this.handleDeath(source);
+    this.player.survival.onDamage = (event) => {
+      this.hitRoll = this.damageRoll(event.source);
+      this.hitRollUntil = performance.now() + 260;
+      this.onDamage(event);
+    };
     const itemEntities = new ItemEntityManager(world);
     this.itemEntities = itemEntities;
     world.itemSpawner = (id, count, x, y, z, velocity, pickupDelay) => {
@@ -178,6 +199,7 @@ export class PlayerController {
     this.world?.entityQuery.removeProvider('items');
     if (this.world) this.world.itemSpawner = null;
     this.world = null;
+    this.worldSpawnPoint = null;
     this.player = null;
     this.interaction = null;
     this.itemEntities = null;
@@ -188,6 +210,8 @@ export class PlayerController {
     this.camera.fov = (settings.fov * Math.PI) / 180;
     this.camera.updateProjection();
     this.spawnView = false;
+    this.hitRoll = 0;
+    this.hitRollUntil = 0;
     this.loop.resume();
     this.rememberCamera();
   }
@@ -242,6 +266,106 @@ export class PlayerController {
     this.previousEye = this.player?.eye ?? 1.62;
     this.render(1);
   }
+  private handleDeath(source: string): void {
+    const player = this.player;
+    if (!player || player.dead !== true) return;
+    player.clearInput();
+    this.interaction?.clear();
+    this.spawnView = false;
+    this.onDeath(deathCauseForDamageSource(source));
+    const [x, y, z] = player.pos;
+    const drops = this.itemEntities;
+    for (let slot = 0; slot < player.inventory.slots.length; slot++) {
+      const stack = player.inventory.slots[slot];
+      if (!stack || !drops) continue;
+      const entity = drops.spawn(
+        stack.id,
+        stack.count,
+        x + (Math.random() - 0.5) * 0.7,
+        y + Math.random() * 0.25,
+        z + (Math.random() - 0.5) * 0.7,
+        {
+          velocity: [(Math.random() - 0.5) * 1.2, 1.6 + Math.random(), (Math.random() - 0.5) * 1.2],
+          pickupDelay: 40,
+        },
+      );
+      if (entity) player.inventory.slots[slot] = null;
+    }
+    player.xpLevel = 0;
+    player.xpProgress = 0;
+  }
+
+  /** Derive the roll side from the nearby hazard block when the damage event has one. */
+  private damageRoll(source: string): number {
+    const player = this.player;
+    const world = this.world;
+    if (!player || !world) return 0.12;
+    const candidates: string[] =
+      source === 'lava'
+        ? ['lava']
+        : source === 'fire'
+          ? ['fire']
+          : source === 'burning'
+            ? ['fire', 'lava']
+            : source === 'cactus'
+              ? ['cactus']
+              : source === 'drowning'
+                ? ['water']
+                : source === 'suffocation'
+                  ? [
+                      world.getBlock(
+                        Math.floor(player.pos[0]),
+                        Math.floor(player.pos[1] + player.eye),
+                        Math.floor(player.pos[2]),
+                      ).id,
+                    ]
+                  : [];
+    let nearest: [number, number, number] | null = null;
+    let nearestDistance = Infinity;
+    const [px, py, pz] = player.pos;
+    for (const blockId of candidates) {
+      for (let y = Math.floor(py - 0.2); y <= Math.floor(py + player.height); y++)
+        for (let z = Math.floor(pz - 0.8); z <= Math.floor(pz + 0.8); z++)
+          for (let x = Math.floor(px - 0.8); x <= Math.floor(px + 0.8); x++) {
+            if (world.getBlock(x, y, z).id !== blockId) continue;
+            const dx = x + 0.5 - px;
+            const dy = y + 0.5 - (py + player.eye);
+            const dz = z + 0.5 - pz;
+            const distance = dx * dx + dy * dy + dz * dz;
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearest = [dx, dy, dz];
+            }
+          }
+    }
+    if (nearest) {
+      const side = -Math.sin(player.yaw) * nearest[0] + Math.cos(player.yaw) * nearest[2];
+      if (Math.abs(side) > 0.05) return Math.sign(side) * 0.12;
+    }
+    // Directionless sources such as falling and starvation still get a brief event-driven kick.
+    return source.length % 2 === 0 ? -0.12 : 0.12;
+  }
+
+  respawn(): void {
+    const player = this.player;
+    const world = this.world;
+    if (!player || !world || !player.dead) return;
+    const fallback = this.worldSpawnPoint ?? [0.5, 65, 0.5];
+    const position = resolveBedRespawn(world, player.spawnPoint, fallback, (x, y, z, height) =>
+      player.collision.free(x, y, z, height),
+    );
+    player.survival.reset();
+    player.clearInput();
+    player.detached = false;
+    this.spawnView = false;
+    this.interaction?.clear();
+    this.input.actionStates.forEach((_, action) => this.input.actionStates.set(action, false));
+    player.teleport(position[0], position[1], position[2]);
+    player.onGround = player.collision.supported(position[0], position[1], position[2], 1e-5);
+    this.previousEye = player.eye;
+    this.camera.roll = 0;
+    this.render(1);
+  }
   look(yaw: number, pitch: number): void {
     this.attach();
     if (this.player) {
@@ -294,7 +418,8 @@ export class PlayerController {
       this.camera.fov = fov;
       this.camera.updateProjection();
     }
-    this.camera.roll = 0;
+    const hitTimeLeft = this.hitRollUntil - performance.now();
+    this.camera.roll = hitTimeLeft > 0 ? this.hitRoll * Math.min(1, hitTimeLeft / 260) : 0;
     if (this.perspective !== 0) {
       const sign = this.perspective === 1 ? -1 : 1;
       const dx = Math.cos(p.yaw) * Math.cos(p.pitch) * sign;
