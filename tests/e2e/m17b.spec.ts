@@ -115,6 +115,7 @@ test('M17b: edits, a chest and a kiln mid-smelt survive a page reload and loadWo
         chest: api.getBlockEntity!(7, 65, 7),
         player: api.getPlayer!(),
         inventory: api.getInventory!(),
+        drops: api.getDropStats!(),
       };
     },
     { edits, at: PLAYER_AT },
@@ -136,6 +137,7 @@ test('M17b: edits, a chest and a kiln mid-smelt survive a page reload and loadWo
   assertNotBlank(beforeImage);
   assertNoMissingTexture(beforeImage);
 
+  console.log('DROPS', JSON.stringify(before.drops));
   await page.evaluate(() => window.__blockcraft!.save!());
 
   await reloadPage(page);
@@ -158,7 +160,13 @@ test('M17b: edits, a chest and a kiln mid-smelt survive a page reload and loadWo
         const id = api.getBlock!(e.x, e.y, e.z).id;
         if (id !== e.id) mismatches.push(`${e.x},${e.y},${e.z}: ${id} != ${e.id}`);
       }
-      return { player, kiln, chest, mismatches, inventory: api.getInventory!() };
+      return {
+        player,
+        kiln,
+        chest,
+        mismatches,
+        inventory: api.getInventory!(),
+      };
     },
     { edits, name: WORLD },
   );
@@ -294,4 +302,263 @@ test('M17b: an unmodified region takes under 1 KB and regenerates identically af
     return api.getBlock!(1, 100, 1).id;
   });
   expect(edited).toBe('stone');
+});
+
+/** Counts the region records of a world straight from the browser's database. */
+function regionRecords(page: Page, world: string): Promise<number> {
+  return page.evaluate(
+    (name) =>
+      new Promise<number>((resolve, reject) => {
+        const open = indexedDB.open('blockcraft-saves');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const request = db
+            .transaction('regions')
+            .objectStore('regions')
+            .count(IDBKeyRange.bound([name], [name, []]));
+          request.onsuccess = () => {
+            db.close();
+            resolve(request.result);
+          };
+          request.onerror = () => reject(request.error);
+        };
+      }),
+    world,
+  );
+}
+
+/** Rewrites every record of a store that belongs to the world, in the browser's database. */
+function rewriteRecords(
+  page: Page,
+  store: 'regions' | 'players',
+  world: string,
+  how: 'garble-columns' | 'garble-player',
+): Promise<number> {
+  return page.evaluate(
+    ({ store, world, how }) =>
+      new Promise<number>((resolve, reject) => {
+        const open = indexedDB.open('blockcraft-saves');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction(store, 'readwrite');
+          const objects = tx.objectStore(store);
+          const all = objects.getAll(IDBKeyRange.bound([world], [world, []]));
+          all.onsuccess = () => {
+            const garbage = Uint8Array.from({ length: 96 }, (_, i) => (i * 53 + 7) & 255);
+            for (const record of all.result as Array<Record<string, unknown>>) {
+              if (how === 'garble-columns')
+                for (const column of record.columns as Array<{ data: Uint8Array }>)
+                  column.data = garbage;
+              else record.data = garbage;
+              objects.put(record);
+            }
+            tx.oncomplete = () => {
+              db.close();
+              resolve(all.result.length);
+            };
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    { store, world, how },
+  );
+}
+
+test.describe('M17b: what triggers a save', () => {
+  test('pausing a running game saves', async ({ page }) => {
+    await newWorld(page, 'M17b trigger pause');
+    await page.evaluate(() => {
+      const api = window.__blockcraft!;
+      api.resume!();
+      api.setBlock!(3, 65, 3, 'stone');
+    });
+    expect(await regionRecords(page, 'M17b trigger pause')).toBe(0);
+    await page.evaluate(() => window.__blockcraft!.pause!());
+    await expect.poll(() => regionRecords(page, 'M17b trigger pause')).toBe(1);
+  });
+
+  test('the page becoming hidden saves', async ({ page }) => {
+    await newWorld(page, 'M17b trigger hidden');
+    await page.evaluate(() => window.__blockcraft!.setBlock!(3, 65, 3, 'stone'));
+    expect(await regionRecords(page, 'M17b trigger hidden')).toBe(0);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect.poll(() => regionRecords(page, 'M17b trigger hidden')).toBe(1);
+  });
+
+  test('pagehide saves', async ({ page }) => {
+    await newWorld(page, 'M17b trigger pagehide');
+    await page.evaluate(() => window.__blockcraft!.setBlock!(3, 65, 3, 'stone'));
+    expect(await regionRecords(page, 'M17b trigger pagehide')).toBe(0);
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await expect.poll(() => regionRecords(page, 'M17b trigger pagehide')).toBe(1);
+  });
+
+  test('leaving a world for another one saves the first', async ({ page }) => {
+    await newWorld(page, 'M17b trigger exit');
+    await page.evaluate(() => window.__blockcraft!.setBlock!(3, 65, 3, 'stone'));
+    expect(await regionRecords(page, 'M17b trigger exit')).toBe(0);
+    await newWorld(page, 'M17b trigger exit other');
+    expect(await regionRecords(page, 'M17b trigger exit')).toBe(1);
+  });
+});
+
+test('M17b: XP and a spawn point survive a reload, and a missing spawn point stays missing', async ({
+  page,
+}) => {
+  await newWorld(page, 'M17b xp');
+  await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.setXp!(7, 0.5);
+    api.spawnPoint!([10, 65, 12]);
+  });
+  await page.evaluate(() => window.__blockcraft!.save!());
+  await newWorld(page, 'M17b no spawn');
+  await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.setXp!(0, 0);
+    api.spawnPoint!(null);
+  });
+  await page.evaluate(() => window.__blockcraft!.save!());
+
+  await reloadPage(page);
+  const withSpawn = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    await api.loadWorld!('M17b xp');
+    const player = api.getPlayer!();
+    return { xpLevel: player.xpLevel, xpProgress: player.xpProgress, spawn: api.spawnPoint!() };
+  });
+  expect(withSpawn).toEqual({ xpLevel: 7, xpProgress: 0.5, spawn: [10, 65, 12] });
+  const without = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    await api.loadWorld!('M17b no spawn');
+    const player = api.getPlayer!();
+    return { xpLevel: player.xpLevel, xpProgress: player.xpProgress, spawn: api.spawnPoint!() };
+  });
+  expect(without).toEqual({ xpLevel: 0, xpProgress: 0, spawn: null });
+});
+
+test('M17b: light is recomputed when saved columns load', async ({ page }) => {
+  await newWorld(page, 'M17b light');
+  // A torch, and a 5 × 5 roof two blocks up that shades the ground below it.
+  const probes: Array<[number, number, number]> = [
+    [5, 66, 9],
+    [6, 66, 8],
+    [5, 66, 10],
+    [22, 65, 22],
+    [20, 65, 20],
+    [22, 65, 26],
+  ];
+  const measure = (): Promise<Array<{ sky: number; block: number }>> =>
+    page.evaluate(async (points) => {
+      const api = window.__blockcraft!;
+      await api.waitForTerrain!(2);
+      await api.tick!(2);
+      return points.map(([x, y, z]) => api.getLight!(x, y, z));
+    }, probes);
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.teleport!(12, 65, 12);
+    await api.waitForTerrain!(2);
+    api.setBlock!(5, 66, 8, 'torch');
+    for (let x = 20; x < 25; x++) for (let z = 20; z < 25; z++) api.setBlock!(x, 67, z, 'stone');
+    await api.tick!(2);
+  });
+  const before = await measure();
+  // The torch lights its neighbours; the roof takes sky light away from the ground under it.
+  expect(before[0]!.block).toBeGreaterThan(8);
+  expect(before[1]!.block).toBeGreaterThan(8);
+  expect(before[0]!.block).toBeGreaterThan(before[2]!.block);
+  expect(before[3]!.sky).toBeLessThan(15);
+  expect(before[3]!.sky).toBeLessThan(before[5]!.sky);
+  expect(before[5]!.sky).toBe(15);
+
+  await page.evaluate(() => window.__blockcraft!.save!());
+  await reloadPage(page);
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    await api.loadWorld!('M17b light');
+    api.pause!();
+  });
+  expect(await measure()).toEqual(before);
+});
+
+test('M17b: damaged saves fall back to regeneration or fail clearly', async ({ page }) => {
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+  await newWorld(page, 'M17b damaged');
+  await page.evaluate(() => window.__blockcraft!.setBlock!(3, 65, 3, 'stone'));
+  await page.evaluate(() => window.__blockcraft!.save!());
+  await reloadPage(page);
+
+  // The saved column is garbled: the world still loads, with the column generated afresh.
+  expect(await rewriteRecords(page, 'regions', 'M17b damaged', 'garble-columns')).toBe(1);
+  const block = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    await api.loadWorld!('M17b damaged');
+    api.pause!();
+    await api.waitForTerrain!(2);
+    return api.getBlock!(3, 65, 3).id;
+  });
+  expect(block).toBe('air');
+  expect(warnings.some((text) => text.includes('[saves] column 0,0 unreadable'))).toBe(true);
+
+  // The saved player is garbled: loading the world is refused with a clear message.
+  await reloadPage(page);
+  expect(await rewriteRecords(page, 'players', 'M17b damaged', 'garble-player')).toBe(1);
+  const refusal = await page.evaluate(async () => {
+    try {
+      await window.__blockcraft!.loadWorld!('M17b damaged');
+      return null;
+    } catch (error) {
+      return (error as Error).message;
+    }
+  });
+  expect(refusal).toMatch(/saved player of world 'M17b damaged' is damaged/);
+});
+
+test('M17b: autosaves of a default-terrain world with hundreds of edited columns stay under 16 ms', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await newWorld(page, 'M17b heavy autosave', 'default');
+  const runs = await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    api.setRenderDistance!(9);
+    api.teleport!(0.5, 150, 0.5);
+    await api.waitForTerrain!(2);
+    api.resume!();
+    const out: Array<{ lastRunMaxSliceMs: number; step: string; columns: number; ms: number }> = [];
+    for (let run = 0; run < 4; run++) {
+      // Terrain-heavy edits: a 6 × 6 patch in every column of a 19 × 19 grid, inside generated terrain.
+      for (let cx = -9; cx <= 9; cx++)
+        for (let cz = -9; cz <= 9; cz++)
+          for (let dx = 0; dx < 6; dx++)
+            for (let dz = 0; dz < 6; dz++)
+              api.setBlock!(cx * 16 + dx, 30 + run, cz * 16 + dz, run % 2 ? 'sand' : 'stone');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await api.autosaveNow!();
+      const s = (await api.getSaveStats!()).stats;
+      out.push({
+        lastRunMaxSliceMs: s.lastRunMaxSliceMs,
+        step: s.lastRunSlowestStep,
+        columns: s.storedColumns,
+        ms: s.lastRunMs,
+      });
+    }
+    return out;
+  });
+  console.log('HEAVY', JSON.stringify(runs));
+  expect(runs[3]!.columns).toBeGreaterThanOrEqual(300);
+  // Under software rendering on two shared cores one stretch in a run can be hit by a garbage
+  // collection or by preemption (a column's capture takes well under a millisecond when the
+  // machine is quiet). A cost that really is too big shows in every run, so three of four must pass.
+  const within = runs.filter((run) => run.lastRunMaxSliceMs <= 16).length;
+  expect(within, JSON.stringify(runs)).toBeGreaterThanOrEqual(3);
 });

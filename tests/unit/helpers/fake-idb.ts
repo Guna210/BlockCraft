@@ -90,7 +90,7 @@ class FakeTransaction {
     private readonly stores: Map<string, FakeStore>,
     private readonly names: string[],
     private readonly mode: 'readonly' | 'readwrite',
-    private readonly hooks: { failWrites: () => boolean },
+    private readonly hooks: { failWrites: (store: string) => boolean },
   ) {
     // A transaction with no requests still completes.
     setTimeout(() => this.settle(), 0);
@@ -101,14 +101,14 @@ class FakeTransaction {
     return new FakeObjectStore(this.stores.get(name)!, this);
   }
 
-  request<T>(run: () => T, write: boolean): Req<T> {
+  request<T>(run: () => T, write: boolean, store = ''): Req<T> {
     if (write && this.mode === 'readonly') throw new Error('The transaction is read-only');
     const request: Req<T> = { result: undefined, error: null, onsuccess: null, onerror: null };
     this.pending++;
     // The operation applies at once, in order; the result is delivered in a later task.
     let outcome: { ok: true; value: T } | { ok: false; error: Error };
     try {
-      if (write && this.hooks.failWrites()) throw new Error('Simulated write failure');
+      if (write && this.hooks.failWrites(store)) throw new Error('Simulated write failure');
       outcome = { ok: true, value: run() };
     } catch (error) {
       outcome = { ok: false, error: error as Error };
@@ -168,28 +168,36 @@ class FakeObjectStore {
   }
 
   put(value: Record<string, unknown>): Req<Key> {
-    return this.tx.request(() => {
-      const key = pathValue(value, this.store.keyPath);
-      const copy = clone(value);
-      const index = this.store.find(key);
-      if (index >= 0) this.store.rows[index] = { key, value: copy };
-      else {
-        this.store.rows.push({ key, value: copy });
-        this.store.rows.sort((a, b) => compareKeys(a.key, b.key));
-      }
-      return key;
-    }, true);
+    return this.tx.request(
+      () => {
+        const key = pathValue(value, this.store.keyPath);
+        const copy = clone(value);
+        const index = this.store.find(key);
+        if (index >= 0) this.store.rows[index] = { key, value: copy };
+        else {
+          this.store.rows.push({ key, value: copy });
+          this.store.rows.sort((a, b) => compareKeys(a.key, b.key));
+        }
+        return key;
+      },
+      true,
+      this.store.name,
+    );
   }
 
   delete(target: Key | Range): Req<undefined> {
-    return this.tx.request(() => {
-      const keep = this.store.rows.filter((r) =>
-        isRange(target) ? !inRange(r.key, target) : compareKeys(r.key, target) !== 0,
-      );
-      this.store.rows.length = 0;
-      this.store.rows.push(...keep);
-      return undefined;
-    }, true);
+    return this.tx.request(
+      () => {
+        const keep = this.store.rows.filter((r) =>
+          isRange(target) ? !inRange(r.key, target) : compareKeys(r.key, target) !== 0,
+        );
+        this.store.rows.length = 0;
+        this.store.rows.push(...keep);
+        return undefined;
+      },
+      true,
+      this.store.name,
+    );
   }
 }
 
@@ -200,7 +208,7 @@ class FakeDatabase {
     contains: (name: string): boolean => this.stores.has(name),
   };
 
-  constructor(private readonly hooks: { failWrites: () => boolean }) {}
+  constructor(private readonly hooks: { failWrites: (store: string) => boolean }) {}
 
   createObjectStore(name: string, options: { keyPath: string | readonly string[] }): FakeStore {
     const store = new FakeStore(name, options.keyPath);
@@ -223,6 +231,8 @@ export interface FakeIdb {
   env: IdbEnvironment;
   /** Make every write transaction fail while true. */
   failWrites: boolean;
+  /** Make writes to these object stores fail (other stores still write). */
+  failStores: string[];
   /** Version the named database was created with (undefined if never opened). */
   versionOf(name: string): number | undefined;
   /** Rows of one store of the default database, for assertions on what was written. */
@@ -231,8 +241,10 @@ export interface FakeIdb {
 
 export function createFakeIdb(): FakeIdb {
   const databases = new Map<string, FakeDatabase>();
-  const state = { failWrites: false };
-  const hooks = { failWrites: () => state.failWrites };
+  const state = { failWrites: false, failStores: [] as string[] };
+  const hooks = {
+    failWrites: (store: string) => state.failWrites || state.failStores.includes(store),
+  };
 
   const factory = {
     open(name: string, version: number) {
@@ -278,6 +290,12 @@ export function createFakeIdb(): FakeIdb {
     },
     set failWrites(value: boolean) {
       state.failWrites = value;
+    },
+    get failStores() {
+      return state.failStores;
+    },
+    set failStores(value: string[]) {
+      state.failStores = value;
     },
     versionOf: (name) => databases.get(name)?.version,
     rows: <T>(store: string, name = 'blockcraft-saves'): T[] =>

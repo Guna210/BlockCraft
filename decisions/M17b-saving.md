@@ -32,6 +32,7 @@ These are the owner's decisions for M17b plus the choices made while building it
 - **M15a (Current).** The engine's tracked set is only filled through `setBlock`, so `CurrentEngine.restoreColumn` registers the components of a restored column, and `settleRestored()` settles once a column's 3×3 neighbourhood is loaded (never against half-loaded neighbours).
 - **M15b (Mechanics).** Receivers are re-registered with `Mechanics.adopt`, which does not mark them dirty (so no reconcile runs against a half-loaded neighbourhood). The powered-door memory comes back through `restorePoweredOpenables`.
 - Before a save and before a column unloads, `Mechanics.landAll()` lands any piston moves in flight, so a `piston_moving` cell is never written. `piston_land` ticks are not saved.
+- A save run does not stop at the first region that cannot be written: every region is tried, the world, player and ground-item records are always written, and the first error is then thrown (the failed region stays dirty and is retried by the next save).
 - A column that cannot be read falls back to regeneration, with a `console.warn`.
 - Block entities come back through `BlockEntities.restore`, which does not call `create`/`afterPlaced` and gives the entity its tick unless a restored tick already covers it.
 
@@ -44,9 +45,11 @@ These are the owner's decisions for M17b plus the choices made while building it
 - `SaveManager.stats` reports `maxSliceMs`, `lastRunMaxSliceMs` and `lastRunSlowestStep` so the "no stretch over 16 ms" claim is measurable.
 - A warm-up on attach runs each save step once on throwaway data so the first real save does not pay for cold code inside a frame.
 
+- A damaged player record makes `loadWorld` fail with `The saved player of world '<name>' is damaged: …` instead of starting with a default player. A record with a newer `formatVersion` (regions, worlds, players, entities) is refused with the migration registry's error.
+
 ## 5. Debug API (SPEC §4)
 
-`save()`, `loadWorld(name)`, and for tests `autosaveNow()`, `getSaveStats()` (stats plus the real database's per-region usage) and `getBlockEntity(x, y, z)`.
+`save()`, `loadWorld(name)`, and for tests `autosaveNow()`, `getSaveStats()` (stats plus the real database's per-region usage) and `getBlockEntity(x, y, z)` and `spawnPoint(set?)`.
 
 `loadWorld` centres streaming on the saved player's chunk, spawns the player at the saved position, applies the player, inventory and ground-item records, and waits for terrain.
 

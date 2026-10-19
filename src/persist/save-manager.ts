@@ -376,16 +376,27 @@ export class SaveManager {
 
       await this.suspend('capture', Promise.all([...this.compressing]));
 
+      // One region failing must not stop the player and world records from being written.
+      let regionError: unknown;
       for (const { rx, rz } of store.pendingRegions()) {
-        await this.suspend('region', this.yieldSlice(mode));
-        await this.suspend(
-          'region',
-          store.flushRegion(rx, rz, () => this.suspend('region-build', this.yieldSlice(mode))),
-        );
+        try {
+          await this.suspend('region', this.yieldSlice(mode));
+          // Columns captured by the unload hook meanwhile are still compressing. The check and the
+          // call that builds the region's records follow each other with no wait in between.
+          while (this.compressing.size > 0)
+            await this.suspend('capture', Promise.all([...this.compressing]));
+          await this.suspend(
+            'region',
+            store.flushRegion(rx, rz, () => this.suspend('region-build', this.yieldSlice(mode))),
+          );
+        } catch (error) {
+          regionError ??= error;
+        }
       }
 
       await this.suspend('region', this.yieldSlice(mode));
       await this.suspend('world', store.db.write(this.sessionWrites(active)));
+      if (regionError) throw regionError;
     } catch (error) {
       this.stats.failures++;
       throw error;

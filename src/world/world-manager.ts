@@ -764,7 +764,15 @@ export class WorldManager {
   public async loadWorld(name: string): Promise<void> {
     await this.exitWorld();
     const loaded = await this.saves.load(name);
-    const player = loaded.player ? readPlayerData(loaded.player) : undefined;
+    let player: ReturnType<typeof readPlayerData> | undefined;
+    try {
+      player = loaded.player ? readPlayerData(loaded.player) : undefined;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`The saved player of world '${name}' is damaged: ${reason}`, {
+        cause: error,
+      });
+    }
     await this.startWorld(
       {
         name,

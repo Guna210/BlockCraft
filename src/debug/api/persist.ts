@@ -30,3 +30,10 @@ api.getBlockEntity = (x, y, z) => {
     ? JSON.parse(JSON.stringify({ blockId: entity.blockId, state: entity.state }))
     : null;
 };
+
+api.spawnPoint = (set) => {
+  const player = WorldManager.getInstance().playerController?.player;
+  if (!player) throw new Error('Create a world first');
+  if (set !== undefined) player.spawnPoint = set === null ? null : [set[0], set[1], set[2]];
+  return player.spawnPoint ? [...player.spawnPoint] : null;
+};

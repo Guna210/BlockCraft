@@ -102,6 +102,8 @@ export interface BlockCraftDebugAPI {
     y: number,
     z: number,
   ) => { blockId: string; state: Record<string, unknown> } | null;
+  /** The player's respawn point (null = world spawn); `set` replaces it. */
+  spawnPoint?: (set?: [number, number, number] | null) => [number, number, number] | null;
   getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
   wireframe?: (enabled?: boolean) => boolean;
   setWireframe?: (enabled: boolean) => void;
