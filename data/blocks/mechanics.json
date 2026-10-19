@@ -110,7 +110,7 @@
     }
   },
   "piston_moving": {
-    "hardness": 1000000000.0,
+    "hardness": -1,
     "blastResistance": 1000000000.0,
     "lightEmission": 0,
     "renderLayer": "cutout",

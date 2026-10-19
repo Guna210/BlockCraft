@@ -10,6 +10,8 @@ import {
 } from '../../src/gameplay/mechanics';
 import { toggleOpenable } from '../../src/gameplay/shape-blocks';
 import { BlockRegistry } from '../../src/world/blocks/registry';
+import { breakSeconds } from '../../src/gameplay/mining';
+import { collisionBoxes } from '../../src/world/shape-geometry';
 import { World } from '../../src/world/world';
 
 const Y = 65;
@@ -109,6 +111,75 @@ describe('M15b — Pistons and mechanical outputs', () => {
       expect(blockId(world, 1)).toBe(id === 'piston' ? 'air' : 'stone');
       expect(blockId(world, 2)).toBe(id === 'piston' ? 'stone' : 'air');
     }
+  });
+
+  it('releases the piston when a moving cell is removed mid-move, and it keeps working', () => {
+    const world = makeWorld();
+    world.setBlock(0, Y, 0, 'sticky_piston', { facing: 'east', extended: 'false' });
+    world.setBlock(1, Y, 0, 'stone');
+    lever(world, 0, Y + 1, 0, true);
+    expect(blockId(world, 1)).toBe('piston_moving');
+    expect(world.current.mechanics.isBusy(0, Y, 0)).toBe(true);
+
+    world.setBlock(1, Y, 0, 'air');
+    world.setBlock(2, Y, 0, 'air');
+    tick(world, 5);
+
+    expect(world.current.mechanics.isBusy(0, Y, 0)).toBe(false);
+    expect(world.current.mechanics.movingBlocks()).toEqual([]);
+    // the carried block is lost, never duplicated
+    expect(blockId(world, 2)).not.toBe('stone');
+
+    setLever(world, 0, Y + 1, 0, false);
+    tick(world, 5);
+    expect(world.getBlock(0, Y, 0).state.extended).toBe('false');
+    expect(blockId(world, 1)).toBe('air');
+
+    world.setBlock(1, Y, 0, 'stone');
+    setLever(world, 0, Y + 1, 0, true);
+    tick(world, 5);
+    expect(world.getBlock(0, Y, 0).state.extended).toBe('true');
+    expect(blockId(world, 1)).toBe('sticky_piston_head');
+    expect(blockId(world, 2)).toBe('stone');
+    setLever(world, 0, Y + 1, 0, false);
+    tick(world, 5);
+    expect(blockId(world, 1)).toBe('stone');
+    expect(blockId(world, 2)).toBe('air');
+  });
+
+  it('finishes in-flight moves when their column unloads and leaves nothing stale', () => {
+    const world = makeWorld();
+    world.setBlock(0, Y, 0, 'sticky_piston', { facing: 'east', extended: 'false' });
+    world.setBlock(1, Y, 0, 'stone');
+    lever(world, 0, Y + 1, 0, true);
+    expect(world.current.mechanics.isBusy(0, Y, 0)).toBe(true);
+    expect(world.current.mechanics.movingBlocks().length).toBeGreaterThan(0);
+
+    world.removeColumn(0, 0);
+    expect(world.current.mechanics.isBusy(0, Y, 0)).toBe(false);
+    expect(world.current.mechanics.movingBlocks()).toEqual([]);
+
+    // the column comes back and the piston works as new
+    world.setBlock(0, Y, 0, 'sticky_piston', { facing: 'east', extended: 'false' });
+    world.setBlock(1, Y, 0, 'stone');
+    lever(world, 0, Y + 1, 0, true);
+    tick(world, 5);
+    expect(world.getBlock(0, Y, 0).state.extended).toBe('true');
+    expect(blockId(world, 1)).toBe('sticky_piston_head');
+    expect(blockId(world, 2)).toBe('stone');
+    setLever(world, 0, Y + 1, 0, false);
+    tick(world, 5);
+    expect(blockId(world, 1)).toBe('stone');
+    expect(world.current.mechanics.isBusy(0, Y, 0)).toBe(false);
+  });
+
+  it('a piston head collides with its plate and shaft, a moving block has no collision, and neither can be mined', () => {
+    const registry = BlockRegistry.getInstance();
+    const head = registry.getBlockDefinition('piston_head')!;
+    const moving = registry.getBlockDefinition('piston_moving')!;
+    expect(collisionBoxes('piston_head', head.model, { facing: 'east' }).length).toBe(2);
+    expect(collisionBoxes('piston_moving', moving.model, { facing: 'east' })).toEqual([]);
+    expect(breakSeconds(moving)).toBe(Infinity);
   });
 
   it('does not push immovable blocks', () => {

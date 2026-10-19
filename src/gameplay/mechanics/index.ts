@@ -121,6 +121,8 @@ export class Mechanics {
   private readonly receivers = new Map<string, BlockPosition>();
   private readonly moving = new Map<string, BlockPosition>();
   private readonly owners = new Map<string, number>();
+  /** The piston that owns each moving cell, so a cell that vanished can still release it. */
+  private readonly movingOwner = new Map<string, string>();
   private readonly doorPower = new Map<string, boolean>();
   /** Receivers whose inputs may have changed since the last reconcile. */
   private readonly dirty = new Set<string>();
@@ -239,21 +241,62 @@ export class Mechanics {
 
   handleScheduledTick(tick: BlockTick): boolean {
     if (tick.type !== PISTON_LAND_TICK) return false;
-    const key = positionKey(tick);
-    this.moving.delete(key);
-    if (this.world.getBlock(tick.x, tick.y, tick.z).id !== 'piston_moving') return true;
-    const entity = this.world.blockEntities.get<MovingBlockState>(tick.x, tick.y, tick.z);
-    const landState = entity?.state.landState ?? 0;
-    const owner = entity ? positionKey(arrayPosition(entity.state.owner)) : '';
-    const left = (this.owners.get(owner) ?? 1) - 1;
-    if (left > 0) this.owners.set(owner, left);
-    else {
-      this.owners.delete(owner);
-      this.dirty.add(owner);
-    }
-    this.world.setBlockStateId(tick.x, tick.y, tick.z, landState);
-    if (left <= 0) this.refresh();
+    this.land(tick);
     return true;
+  }
+
+  /**
+   * Ends one moving cell. If something external replaced or removed the cell mid-move, the block
+   * it carried is lost (never duplicated) and the piston is still released, so it keeps working.
+   */
+  private land(position: BlockPosition): void {
+    const owner = this.release(positionKey(position));
+    if (this.world.getBlock(position.x, position.y, position.z).id === 'piston_moving') {
+      const entity = this.world.blockEntities.get<MovingBlockState>(
+        position.x,
+        position.y,
+        position.z,
+      );
+      this.world.setBlockStateId(position.x, position.y, position.z, entity?.state.landState ?? 0);
+    }
+    if (owner) this.refresh();
+  }
+
+  /** Drops a moving cell from the books; returns the owner key once it has no cells left. */
+  private release(cell: string): string | null {
+    this.moving.delete(cell);
+    const owner = this.movingOwner.get(cell);
+    if (owner === undefined) return null;
+    this.movingOwner.delete(cell);
+    const left = (this.owners.get(owner) ?? 1) - 1;
+    if (left > 0) {
+      this.owners.set(owner, left);
+      return null;
+    }
+    this.owners.delete(owner);
+    this.dirty.add(owner);
+    return owner;
+  }
+
+  /**
+   * An unloading column finishes its in-flight moves at once, so no `piston_moving` cell is left
+   * without a landing tick, and forgets the receivers it held.
+   */
+  removeColumn(cx: number, cz: number): void {
+    const inside = (p: BlockPosition): boolean =>
+      Math.floor(p.x / 16) === cx && Math.floor(p.z / 16) === cz;
+    let landed = false;
+    for (const position of [...this.moving.values()].filter(inside).sort(comparePositions)) {
+      this.land(position);
+      landed = true;
+    }
+    for (const [key, position] of [...this.receivers]) {
+      if (!inside(position)) continue;
+      this.receivers.delete(key);
+      this.doorPower.delete(key);
+      this.dirty.delete(key);
+    }
+    if (landed) this.refresh();
   }
 
   /** Using a note block steps its pitch and plays it. */
@@ -442,8 +485,10 @@ export class Mechanics {
     entity.state.landState = landState;
     entity.state.owner = owner;
     const ownerKey = positionKey(arrayPosition(owner));
+    this.release(positionKey(cell));
     this.owners.set(ownerKey, (this.owners.get(ownerKey) ?? 0) + 1);
     this.moving.set(positionKey(cell), cell);
+    this.movingOwner.set(positionKey(cell), ownerKey);
     this.world.ticks.schedule(
       { ...cell, type: PISTON_LAND_TICK },
       PISTON_MOVE_TICKS,

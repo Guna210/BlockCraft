@@ -40,3 +40,10 @@
 ## Visual Review wording
 
 - "Door open with pistons extended" cannot be built from this task's pieces. A piston's head always fills the cell the piston pushed into, and a sliding block can only move one cell per push, so extended pistons cannot clear a doorway. The test door therefore closes when its sticky pistons extend (their heads and the panels they push fill the doorway) and opens when they retract. `m15-piston-door.png` shows the open door at night, and `m15-piston-door-closed.png` shows the extended pistons with the door shut.
+
+## Interrupted moves
+
+- Every moving cell is tracked with its owning piston. When a cell's landing tick fires, or its column unloads, the owner is released whether or not the cell is still `piston_moving`.
+- If something else replaced or removed a moving cell, the block it carried is lost (never duplicated) and the piston carries on.
+- Unloading a column lands its moving cells immediately, so no `piston_moving` cell is left without a landing tick, and forgets its receivers.
+- `piston_moving` has negative hardness (unbreakable by mining) and no collision. `piston_head` collides with its plate and shaft.

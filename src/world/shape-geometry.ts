@@ -200,10 +200,13 @@ export function collisionBoxes(
       return [];
     case 'fence':
       return fenceBoxes(props, true);
+    case 'none':
+      return [];
     case 'slab':
     case 'stairs':
     case 'door':
     case 'trapdoor':
+    case 'piston_head':
       return selectionBoxes(blockId, model, props)!;
     default:
       return [CUBE_BOX];

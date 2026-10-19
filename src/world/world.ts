@@ -117,6 +117,7 @@ export class World {
    * the removal cannot return the deleted column.
    */
   public removeColumn(cx: number, cz: number): boolean {
+    this.current.removeColumn(cx, cz);
     const removed = this.columns.delete(World.getChunkKey(cx, cz));
     if (cx === this.lastCX && cz === this.lastCZ) {
       this.lastCX = 0x7fffffff;

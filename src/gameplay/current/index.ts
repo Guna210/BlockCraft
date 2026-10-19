@@ -78,6 +78,11 @@ export class CurrentEngine {
     );
   }
 
+  /** Called before a column is dropped from the world. */
+  removeColumn(cx: number, cz: number): void {
+    this.mechanics.removeColumn(cx, cz);
+  }
+
   get hasComponents(): boolean {
     return this.blocks.size > 0 || this.mechanics.active;
   }
