@@ -74,6 +74,7 @@ export interface BlockCraftDebugAPI {
   setGameMode?: (mode: 'survival' | 'creative') => void;
   setTimeOfDay?: (ticks: number) => void;
   getTimeOfDay?: () => number;
+  getWorldTime?: () => number;
   setClouds?: (mode: 'fancy' | 'fast' | 'off') => void;
   setLeaves?: (mode: 'fancy' | 'fast') => void;
   setWeather?: (state: 'clear' | 'rain' | 'thunder') => void;

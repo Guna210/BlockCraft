@@ -32,6 +32,26 @@ test('kill opens a cause screen, drops inventory at death, and respawns at world
     const api = window.__blockcraft!;
     api.giveItem!('stone', 6);
     api.setXp!(12, 0.75);
+    api.giveItem!('iron_helmet', 1);
+    api.giveItem!('iron_chestplate', 1);
+    api.giveItem!('iron_leggings', 1);
+    api.giveItem!('iron_boots', 1);
+    api.giveItem!('shield', 1);
+    api.openScreen!('inventory');
+    const inventory = api.getInventory!();
+    const equip: Array<[string, number]> = [
+      ['iron_helmet', 36],
+      ['iron_chestplate', 37],
+      ['iron_leggings', 38],
+      ['iron_boots', 39],
+      ['shield', 40],
+    ];
+    for (const [id, target] of equip) {
+      const source = inventory.find((stack) => stack?.id === id)!.slot;
+      api.uiClickSlot!(source, 'left');
+      api.uiClickSlot!(target, 'left');
+    }
+    api.openScreen!('none');
     return api.getPlayer!().pos;
   });
 
@@ -45,6 +65,18 @@ test('kill opens a cause screen, drops inventory at death, and respawns at world
     window.__blockcraft!.getEntities!({ type: 'item', radius: 4 }),
   );
   expect(dropped.some((entity) => entity.item === 'stone' && entity.count === 6)).toBe(true);
+  for (const item of ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'shield'])
+    expect(dropped.some((entity) => entity.item === item && entity.count === 1)).toBe(true);
+  const afterRepeatedKill = await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.kill!(0);
+    return api.getEntities!({ type: 'item', radius: 4 }).map(({ id, item, count }) => ({
+      id,
+      item,
+      count,
+    }));
+  });
+  expect(afterRepeatedKill).toEqual(dropped.map(({ id, item, count }) => ({ id, item, count })));
   expect(
     dropped
       .filter((entity) => entity.item === 'stone')
@@ -69,7 +101,7 @@ test('sleeping at night advances to morning and respawn uses the bed spawn', asy
     const api = window.__blockcraft!;
     api.setBlock!(1, 65, 0, 'bed', { facing: 'east', part: 'foot' });
     api.setBlock!(2, 65, 0, 'bed', { facing: 'east', part: 'head' });
-    api.setTimeOfDay!(13000);
+    api.setTimeOfDay!(5 * 24000 + 13000);
     api.look!(0, -0.84);
     api.input!('use', true);
     await api.tick!(1);
@@ -79,6 +111,7 @@ test('sleeping at night advances to morning and respawn uses the bed spawn', asy
   await expect
     .poll(() => page.evaluate(() => window.__blockcraft!.getTimeOfDay!()), { timeout: 2500 })
     .toBe(0);
+  expect(await page.evaluate(() => window.__blockcraft!.getWorldTime!())).toBe(6 * 24000);
   const spawnPoint = await page.evaluate(() => window.__blockcraft!.getPlayer!().spawnPoint);
   expect(spawnPoint).toEqual([1.5, 65 + 9 / 16, 0.5]);
 

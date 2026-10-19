@@ -17,7 +17,12 @@ import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
 import './gameplay/chests';
-import { bedPairAt, hostileWithin, sleepRefusalReason } from './gameplay/death-beds';
+import {
+  bedPairAt,
+  hostileWithin,
+  nextMorningAbsoluteTime,
+  sleepRefusalReason,
+} from './gameplay/death-beds';
 import { getWorldTime } from './world/time';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
@@ -113,7 +118,10 @@ function main() {
       const refusal = sleepRefusalReason(getWorldTime(), hostileWithin(world, player.pos, 8));
       if (refusal === 'day') ui.showMessage('You can only sleep at night');
       else if (refusal === 'hostile') ui.showMessage('Monsters are nearby');
-      else ui.fadeToBlackThen(() => worldManager.setTimeOfDay(0));
+      else
+        ui.fadeToBlackThen(() =>
+          worldManager.setTimeOfDay(nextMorningAbsoluteTime(getWorldTime())),
+        );
       return true;
     }
     if (blockId === 'workbench') {

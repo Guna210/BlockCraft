@@ -2,7 +2,12 @@ import type { Position } from '../entity/physics';
 import type { World } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
 import { FACING_VECTOR, type Facing } from '../world/shape-geometry';
-import { timeOfDay } from '../world/time';
+import { TICKS_PER_DAY, timeOfDay } from '../world/time';
+
+/** Returns the first sunrise tick after the current absolute world time. */
+export function nextMorningAbsoluteTime(ticks: number): number {
+  return (Math.floor(ticks / TICKS_PER_DAY) + 1) * TICKS_PER_DAY;
+}
 
 export function deathCauseForDamageSource(source: string | null | undefined): string {
   switch (source) {

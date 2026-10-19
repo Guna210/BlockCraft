@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Camera } from '../../src/render/camera';
+import { InputEngine } from '../../src/engine/input';
+import { PlayerController } from '../../src/engine/player-controller';
 import { BlockRegistry } from '../../src/world/blocks/registry';
+import { World } from '../../src/world/world';
+import { TICKS_PER_DAY, dayNumber, timeOfDay } from '../../src/world/time';
 import {
   deathCauseForDamageSource,
+  hostileWithin,
+  nextMorningAbsoluteTime,
   resolveBedRespawn,
   sleepRefusalReason,
 } from '../../src/gameplay/death-beds';
@@ -56,4 +63,91 @@ describe('M11b death causes and bed respawn', () => {
     expect(sleepRefusalReason(1000, false)).toBe('day');
     expect(sleepRefusalReason(13000, false)).toBeNull();
   });
+
+  it('advances sleep from day 5 at 13000 to sunrise on day 6 without resetting the day count', () => {
+    const nextMorning = nextMorningAbsoluteTime(5 * TICKS_PER_DAY + 13000);
+
+    expect(nextMorning).toBe(6 * TICKS_PER_DAY);
+    expect(dayNumber(nextMorning)).toBe(6);
+    expect(timeOfDay(nextMorning)).toBeCloseTo(0);
+  });
+
+  it('refuses sleep for hostiles within 8 blocks and allows sleep at 9 blocks', () => {
+    const world = new World(false);
+    let hostileX = 8;
+    world.entityQuery.addProvider('m11b-sleep-test', () => [
+      {
+        id: 'test-hostile',
+        type: 'hostile',
+        minX: hostileX - 0.1,
+        minY: -0.1,
+        minZ: -0.1,
+        maxX: hostileX + 0.1,
+        maxY: 0.1,
+        maxZ: 0.1,
+      },
+    ]);
+
+    expect(sleepRefusalReason(5 * TICKS_PER_DAY + 13000, hostileWithin(world, [0, 0, 0], 8))).toBe(
+      'hostile',
+    );
+
+    hostileX = 9;
+    const hostileNearby = hostileWithin(world, [0, 0, 0], 8);
+    expect(hostileNearby).toBe(false);
+    expect(sleepRefusalReason(5 * TICKS_PER_DAY + 13000, hostileNearby)).toBeNull();
+  });
+
+  it.each([2, 3])(
+    'breaking bed half x=%i removes both halves and drops exactly one bed',
+    (breakX) => {
+      const world = new World(false);
+      world.fill(-2, 64, -2, 6, 64, 2, 'stone');
+      world.setBlockStateId(
+        2,
+        65,
+        0,
+        registry.getStateId('bed', { facing: 'east', part: 'foot' })!,
+      );
+      world.setBlockStateId(
+        3,
+        65,
+        0,
+        registry.getStateId('bed', { facing: 'east', part: 'head' })!,
+      );
+
+      const controller = new PlayerController(
+        new Camera(1),
+        new InputEngine(document.createElement('canvas')),
+        () => true,
+      );
+      controller.spawn(world, 0.5, 65, 0.5, 'survival');
+      controller.loop.pause();
+      const interaction = controller.interaction!;
+      vi.spyOn(interaction.raycaster, 'cast').mockImplementation(
+        (_ox, _oy, _oz, _dx, _dy, _dz, _reach, out) => {
+          const stateId = world.getBlockStateId(breakX, 65, 0);
+          out.hit = stateId !== 0;
+          out.x = breakX;
+          out.y = 65;
+          out.z = 0;
+          out.stateId = stateId;
+          out.face = 'top';
+          out.distance = 2;
+          return out;
+        },
+      );
+      interaction.input('attack', true);
+      for (let tick = 0; tick < 12; tick++) interaction.tick();
+
+      expect(world.getBlockStateId(2, 65, 0)).toBe(0);
+      expect(world.getBlockStateId(3, 65, 0)).toBe(0);
+      expect(
+        controller
+          .itemEntities!.pool.filter((entity) => entity.active)
+          .map((entity) => ({ id: entity.item.id, count: entity.count })),
+      ).toEqual([{ id: 'bed', count: 1 }]);
+      controller.reset();
+    },
+  );
 });

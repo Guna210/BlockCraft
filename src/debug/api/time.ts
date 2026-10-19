@@ -12,3 +12,4 @@ export function setTimeOfDay(ticks: number): void {
 
 api.setTimeOfDay = setTimeOfDay;
 api.getTimeOfDay = () => timeOfDay(getWorldTime());
+api.getWorldTime = () => getWorldTime();

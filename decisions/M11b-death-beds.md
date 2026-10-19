@@ -8,8 +8,8 @@
 - Beds use a foot/head pair with four horizontal facing states. New block states append at IDs 803–810; prior IDs remain unchanged.
 - The existing `wool` item is the wool-like crafting material. A bed recipe uses three wool and three planks; no new wool material is introduced.
 - Wool is currently obtained from the M13e Tuftbuck, so the bed remains listed as M13e-gated in M10a's reachability exemptions until that creature is implemented.
-- Sleeping can start only from time 12500 through 23500 and only when the world entity query has no `hostile` entity within eight blocks. A successful sleep fades to black, advances time to morning (0), then fades back in. The bed spawn point remains set.
+- Sleeping can start only from time 12500 through 23500 and only when the world entity query has no `hostile` entity within eight blocks. A successful sleep fades to black, advances absolute world time to the next morning tick (the next multiple of 24000), then fades back in; this preserves the day counter and moon phase. The bed spawn point remains set.
 - A bed use sets its spawn point even when sleeping is refused for daytime or a nearby hostile.
 - Damage feedback is event-driven from survival damage callbacks: a red vignette, a brief roll toward the hit, and a heart shake at health 4 or below.
-- Cause labels map M11a sources to player-facing text: drowning → “Drowned”, lava → “Burned in lava”, fire/burning → “Burned”, fall → “Fell from a height”, starvation → “Starved”; other M11a sources receive direct readable labels.
+- Cause labels map M11a sources to player-facing text: drowning → “Drowned”, lava → “Burned in lava”, fire → “Burned in fire”, burning → “Burned”, fall → “Fell from a height”, starvation → “Starved”; other M11a sources receive direct readable labels.
 - The bed block and item receive deterministic generated textures, registry definitions, a bed icon, recipe, and a breaking loot entry.
