@@ -40,6 +40,14 @@ export interface BlockCraftDebugAPI {
     },
   ) => Array<{ x: number; y: number; z: number; block: string }> | null;
   toggleShape?: (x: number, y: number, z: number) => number;
+  /** Uses the block as a player would: pulls a lever, presses a button, steps a note block. */
+  useBlock?: (x: number, y: number, z: number) => boolean;
+  /** Blocks currently sliding between cells (piston moves). */
+  getMovingBlocks?: () => Array<{ x: number; y: number; z: number; blocks: string[] }>;
+  /** Puts items into a dispenser; false when it has no room. */
+  loadDispenser?: (x: number, y: number, z: number, id: string, count?: number) => boolean;
+  /** Note block tones emitted since the world was created. */
+  getTones?: () => Array<{ x: number; y: number; z: number; note: number; pitch: number }>;
   breakShape?: (x: number, y: number, z: number) => number;
   getInteraction?: () => {
     editFrame: number;

@@ -208,6 +208,18 @@ export class BlockInteraction {
               : 'south';
       held = this.registry.getStateId('kiln', { facing, lit: 'false' })!;
     }
+    if (s.blockId === 'piston' || s.blockId === 'sticky_piston' || s.blockId === 'dispenser') {
+      const look = Math.cos(p.pitch);
+      const facing =
+        look < 0.5
+          ? p.pitch > 0
+            ? 'up'
+            : 'down'
+          : (['east', 'south', 'west', 'north'] as const)[
+              Math.floor(((((p.yaw + Math.PI / 4) / (Math.PI / 2)) % 4) + 4) % 4)
+            ]!;
+      held = this.registry.getStateId(s.blockId, { ...s.properties, facing })!;
+    }
     let cells: PlacedCell[] = [{ x, y, z, state: held }];
     if (shapeModel(this.registry, held)) {
       const px = this.eye[0]! + this.look[0]! * t.distance - t.x;

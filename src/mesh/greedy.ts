@@ -9,6 +9,7 @@ import {
   MODEL_WALL_NORTH,
   MODEL_TRACE,
   MODEL_TRIPWIRE,
+  MODEL_NONE,
   emitWallBlock,
   emitSlabBlock,
 } from './models';
@@ -72,7 +73,14 @@ export interface MeshLookupTables {
 }
 
 const FACING_FACE: Record<Facing, number> = { east: 0, west: 1, south: 4, north: 5 };
-const SHAPE_MODELS = new Set(['stairs', 'fence', 'door', 'trapdoor', 'pressure_plate']);
+const SHAPE_MODELS = new Set([
+  'stairs',
+  'fence',
+  'door',
+  'trapdoor',
+  'pressure_plate',
+  'piston_head',
+]);
 
 const FACE_NAMES: BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
 
@@ -870,6 +878,7 @@ export function greedyMesh(
       const yzOff = py * 18 + zOff;
       for (let px = 1; px <= 16; px++) {
         const state = paddedSection[px + yzOff]!;
+        if (tables.modelKind[state] === MODEL_NONE) continue;
         if (tables.modelKind[state] !== MODEL_CUBE)
           reserveQuads(modelScratch, MAX_SHAPE_QUADS_PER_BLOCK);
         if (tables.modelKind[state] === MODEL_SHAPE) {

@@ -13,6 +13,7 @@ import './leaves';
 import './weather';
 import './raycast';
 import './shapes';
+import './mechanics';
 import './inventory';
 import './ui';
 import './entities';

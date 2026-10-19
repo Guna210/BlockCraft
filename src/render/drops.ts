@@ -10,18 +10,25 @@ import { ITEM_CAPACITY } from '../entity/item-entity';
 import { PARTICLE_CAPACITY } from './particles';
 import type { World } from '../world/world';
 
-const VS = `#version 300 es
+export const VS = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 a_pos;layout(location=1) in vec2 a_uv;
 layout(location=2) in float a_light;layout(location=3) in float a_cutoff;
 uniform mat4 u_vp;out vec2 v_uv;out float v_light;flat out float v_cutoff;
 void main(){v_uv=a_uv;v_light=a_light;v_cutoff=a_cutoff;gl_Position=u_vp*vec4(a_pos,1.0);}`;
-const FS = `#version 300 es
+export const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;in float v_light;flat in float v_cutoff;uniform sampler2D u_atlas;out vec4 color;
 void main(){vec4 tex=texture(u_atlas,v_uv);if(tex.a<v_cutoff)discard;color=vec4(tex.rgb*v_light,1.0);}`;
-const FACES: readonly BlockFaceDirection[] = ['east', 'west', 'top', 'bottom', 'south', 'north'];
-const CORNERS = [
+export const FACES: readonly BlockFaceDirection[] = [
+  'east',
+  'west',
+  'top',
+  'bottom',
+  'south',
+  'north',
+];
+export const CORNERS = [
   [
     [1, 0, 0],
     [1, 1, 0],
@@ -59,7 +66,30 @@ const CORNERS = [
     [1, 0, 0],
   ],
 ] as const;
-const INDICES = [0, 1, 2, 0, 2, 3];
+export const INDICES = [0, 1, 2, 0, 2, 3];
+
+/** Light level 0.04..1 at a world position, as the drawn sprites and moving blocks use it. */
+export function worldLight(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  skyBrightness: number,
+): number {
+  x = Math.floor(x);
+  y = Math.floor(y);
+  z = Math.floor(z);
+  if (y > 319) return Math.max(0.04, skyBrightness);
+  if (y < 0) return 0.04;
+  const cx = Math.floor(x / 16),
+    cz = Math.floor(z / 16),
+    lx = ((x % 16) + 16) % 16,
+    lz = ((z % 16) + 16) % 16;
+  const storage = world.lightEngine.storage;
+  const sky = storage.getSkyLight(cx, y >> 4, cz, lx, y & 15, lz);
+  const block = storage.getBlockLight(cx, y >> 4, cz, lx, y & 15, lz);
+  return Math.max(0.04, (0.04 + (0.96 * sky) / 15) * skyBrightness, 0.04 + (0.96 * block) / 15);
+}
 
 /** Persistent batches; additional world sprites allocate their atlas only on first use. */
 export class DropRenderer {
@@ -161,19 +191,7 @@ export class DropRenderer {
     this.wrapper.deleteProgram(this.program);
   }
   private light(world: World, x: number, y: number, z: number, skyBrightness: number): number {
-    x = Math.floor(x);
-    y = Math.floor(y);
-    z = Math.floor(z);
-    if (y > 319) return Math.max(0.04, skyBrightness);
-    if (y < 0) return 0.04;
-    const cx = Math.floor(x / 16),
-      cz = Math.floor(z / 16),
-      lx = ((x % 16) + 16) % 16,
-      lz = ((z % 16) + 16) % 16;
-    const storage = world.lightEngine.storage;
-    const sky = storage.getSkyLight(cx, y >> 4, cz, lx, y & 15, lz);
-    const block = storage.getBlockLight(cx, y >> 4, cz, lx, y & 15, lz);
-    return Math.max(0.04, (0.04 + (0.96 * sky) / 15) * skyBrightness, 0.04 + (0.96 * block) / 15);
+    return worldLight(world, x, y, z, skyBrightness);
   }
   private vertex(
     x: number,

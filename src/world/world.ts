@@ -6,6 +6,7 @@ import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
 import { EntityQuery } from '../entity/query';
 import { CurrentEngine } from '../gameplay/current';
+import type { ItemSpawner } from '../gameplay/mechanics';
 import {
   BlockEntityManager,
   BLOCK_ENTITY_TICK_TYPE,
@@ -18,6 +19,8 @@ export class World {
   public readonly blockEntities: BlockEntityManager;
   public readonly entityQuery = new EntityQuery();
   public readonly current: CurrentEngine;
+  /** Set by whoever owns the item entities; the dispenser drops items through it. */
+  public itemSpawner: ItemSpawner | null = null;
 
   public *getTickSections(): Iterable<TickSection> {
     for (const col of this.columns.values()) {
@@ -114,6 +117,7 @@ export class World {
    * the removal cannot return the deleted column.
    */
   public removeColumn(cx: number, cz: number): boolean {
+    this.current.removeColumn(cx, cz);
     const removed = this.columns.delete(World.getChunkKey(cx, cz));
     if (cx === this.lastCX && cz === this.lastCZ) {
       this.lastCX = 0x7fffffff;

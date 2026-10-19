@@ -247,6 +247,37 @@ export function toggleOpenable(
 }
 
 /**
+ * Drives the `open` state of the door or trapdoor at this cell (both halves of a door) to `open`.
+ * Returns the changed cells; empty when the block is neither or already in that state.
+ */
+export function setOpenable(
+  registry: BlockRegistry,
+  world: ShapeWorld,
+  x: number,
+  y: number,
+  z: number,
+  open: boolean,
+): PlacedCell[] {
+  const s = registry.getResolvedState(world.getBlockStateId(x, y, z));
+  if (!s) return [];
+  const cells =
+    s.definition.model === 'door'
+      ? doorCells(registry, world, x, y, z)!
+      : s.definition.model === 'trapdoor'
+        ? [{ x, y, z, state: world.getBlockStateId(x, y, z) }]
+        : [];
+  const changed: PlacedCell[] = [];
+  for (const cell of cells) {
+    const r = registry.getResolvedState(cell.state)!;
+    if ((r.properties.open === 'true') === open) continue;
+    const state = registry.getStateId(r.blockId, { ...r.properties, open: String(open) })!;
+    world.setBlockStateId(cell.x, cell.y, cell.z, state);
+    changed.push({ x: cell.x, y: cell.y, z: cell.z, state });
+  }
+  return changed;
+}
+
+/**
  * Removes the block at this cell, and the other half of a door, then refreshes neighbouring
  * fences. Returns every changed cell.
  */

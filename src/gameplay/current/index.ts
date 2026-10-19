@@ -3,6 +3,7 @@ import { blockEntityRegistry, type BlockEntityState } from '../../world/block-en
 import { BlockRegistry } from '../../world/blocks/registry';
 import type { BlockTick } from '../../world/ticks';
 import type { World } from '../../world/world';
+import { Mechanics } from '../mechanics';
 import {
   CURRENT_BLOCK_IDS,
   FACING_OFFSET,
@@ -65,35 +66,54 @@ export class CurrentEngine {
   private updating = false;
   private dirty = false;
   private readonly registry = BlockRegistry.getInstance();
+  /** Pistons, powered doors, dispensers and note blocks: receivers driven by this engine's power. */
+  readonly mechanics: Mechanics;
 
   constructor(private readonly world: World) {
     registerCurrentBlockEntities();
+    this.mechanics = new Mechanics(
+      world,
+      (position) => Math.max(this.weakPowerAt(position), this.strongPowerAt(position)),
+      () => this.recompute(),
+    );
+  }
+
+  /** Called before a column is dropped from the world. */
+  removeColumn(cx: number, cz: number): void {
+    this.mechanics.removeColumn(cx, cz);
   }
 
   get hasComponents(): boolean {
-    return this.blocks.size > 0;
+    return this.blocks.size > 0 || this.mechanics.active;
   }
 
   /** Skip world block-change dispatch entirely until a circuit is present. */
   shouldObserveBlockChange(newBlockId: string): boolean {
-    return this.blocks.size > 0 || CURRENT_BLOCK_IDS.has(newBlockId);
+    return (
+      this.blocks.size > 0 ||
+      this.mechanics.active ||
+      CURRENT_BLOCK_IDS.has(newBlockId) ||
+      this.mechanics.isReceiverId(newBlockId)
+    );
   }
 
   onBlockChanged(x: number, y: number, z: number, newBlockId: string): void {
     const position = { x, y, z };
     const key = positionKey(position);
-    const wasCurrent = this.blocks.has(key);
-    const isCurrent = CURRENT_BLOCK_IDS.has(newBlockId);
+    const wasCurrent = this.blocks.has(key) || this.mechanics.has(key);
+    const isCurrent = CURRENT_BLOCK_IDS.has(newBlockId) || this.mechanics.isReceiverId(newBlockId);
     if (!wasCurrent && !isCurrent) {
       // Ordinary terrain edits never enter the current simulation. Once a circuit exists,
       // only a changed block touching a tracked component can affect its state.
-      if (this.blocks.size === 0) return;
-      const touchesCurrent = NEIGHBOR_OFFSETS.some((offset) =>
-        this.blocks.has(positionKey(offsetPosition(position, offset))),
-      );
+      if (this.blocks.size === 0 && !this.mechanics.active) return;
+      const touchesCurrent = NEIGHBOR_OFFSETS.some((offset) => {
+        const neighbor = positionKey(offsetPosition(position, offset));
+        return this.blocks.has(neighbor) || this.mechanics.has(neighbor);
+      });
       if (!touchesCurrent) return;
     }
     this.track(position, newBlockId);
+    this.mechanics.markAround(position);
     // Enqueue neighbour invalidations in the documented fixed axis order.
     for (const offset of NEIGHBOR_OFFSETS)
       this.neighborQueue.push(offsetPosition(position, offset));
@@ -109,6 +129,7 @@ export class CurrentEngine {
     const id = knownBlockId ?? this.world.getBlock(position.x, position.y, position.z).id;
     if (CURRENT_BLOCK_IDS.has(id)) this.blocks.set(key, position);
     else this.blocks.delete(key);
+    this.mechanics.observe(position, id);
   }
 
   private drainNeighborUpdates(): void {
@@ -119,6 +140,7 @@ export class CurrentEngine {
         this.track(neighbor);
       }
       this.settle();
+      this.mechanics.reconcile();
     } finally {
       this.updating = false;
     }
@@ -173,6 +195,7 @@ export class CurrentEngine {
   }
 
   handleScheduledTick(tick: BlockTick): boolean {
+    if (this.mechanics.handleScheduledTick(tick)) return true;
     if (tick.type === CURRENT_BUTTON_RELEASE_TICK) {
       const id = this.world.getBlock(tick.x, tick.y, tick.z).id;
       if (id === 'stone_button' || id === 'wooden_button')
@@ -221,7 +244,7 @@ export class CurrentEngine {
       }
       return true;
     }
-    return false;
+    return this.mechanics.useBlock(x, y, z);
   }
 
   getOutputLevel(x: number, y: number, z: number): number {

@@ -1,4 +1,5 @@
 import { DropRenderer } from '../render/drops';
+import { MovingBlockRenderer } from '../render/moving-blocks';
 import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
 import type { PlayerController } from '../engine/player-controller';
@@ -147,6 +148,7 @@ export class WorldManager {
   public skyRenderer: SkyRenderer | null = null;
   public cloudRenderer: CloudRenderer | null = null;
   public dropRenderer: DropRenderer | null = null;
+  public movingBlockRenderer: MovingBlockRenderer | null = null;
   public weatherRenderer: WeatherRenderer | null = null;
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
@@ -672,6 +674,8 @@ export class WorldManager {
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
     this.dropRenderer?.dispose();
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
+    this.movingBlockRenderer?.dispose();
+    this.movingBlockRenderer = new MovingBlockRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
     this.weatherRenderer = new WeatherRenderer(this.glWrapper);
   }
@@ -1060,9 +1064,17 @@ export class WorldManager {
             this.viewProj,
             this.atlasTexture!,
             skyBrightness,
+          ) ?? 0) +
+          (this.movingBlockRenderer?.render(
+            this.world,
+            this.viewProj,
+            this.atlasTexture!,
+            skyBrightness,
+            this.playerController?.renderAlpha ?? 1,
           ) ?? 0)
         );
       });
+      if (this.movingBlockRenderer) renderStats.triangles += this.movingBlockRenderer.triangles;
       if (this.dropRenderer)
         renderStats.triangles +=
           this.dropRenderer.triangles -

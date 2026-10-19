@@ -1,0 +1,173 @@
+{
+  "dispenser": {
+    "hardness": 3,
+    "blastResistance": 3.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      },
+      "triggered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": {
+      "top": "dispenser_top",
+      "side": "dispenser_side",
+      "bottom": "dispenser_top",
+      "front": "dispenser_front"
+    }
+  },
+  "note_block": {
+    "hardness": 0.8,
+    "blastResistance": 0.8,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "states": {
+      "note": {
+        "type": "enum",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24"
+        ],
+        "default": "0"
+      },
+      "powered": { "type": "enum", "values": ["false", "true"], "default": "false" }
+    },
+    "textures": { "top": "note_block_top", "side": "note_block_side", "bottom": "note_block_top" }
+  },
+  "piston": {
+    "hardness": 1.5,
+    "blastResistance": 1.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "extended": { "type": "enum", "values": ["false", "true"], "default": "false" },
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "top": "piston_side",
+      "side": "piston_side",
+      "bottom": "piston_side",
+      "front": "piston_front",
+      "front_extended": "piston_front_open"
+    }
+  },
+  "piston_head": {
+    "hardness": 1.5,
+    "blastResistance": 1.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "piston_head",
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "top": "piston_shaft",
+      "side": "piston_shaft",
+      "bottom": "piston_shaft",
+      "front": "piston_front"
+    }
+  },
+  "piston_moving": {
+    "hardness": -1,
+    "blastResistance": 1000000000.0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "none",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      }
+    },
+    "textures": { "top": "piston_side", "side": "piston_side", "bottom": "piston_side" }
+  },
+  "sticky_piston": {
+    "hardness": 1.5,
+    "blastResistance": 1.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "states": {
+      "extended": { "type": "enum", "values": ["false", "true"], "default": "false" },
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "top": "piston_side",
+      "side": "piston_side",
+      "bottom": "piston_side",
+      "front": "sticky_piston_front",
+      "front_extended": "sticky_piston_front_open"
+    }
+  },
+  "sticky_piston_head": {
+    "hardness": 1.5,
+    "blastResistance": 1.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "piston_head",
+    "tool": "pickaxe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west", "up", "down"],
+        "default": "north"
+      }
+    },
+    "textures": {
+      "top": "piston_shaft",
+      "side": "piston_shaft",
+      "bottom": "piston_shaft",
+      "front": "sticky_piston_front"
+    }
+  }
+}
