@@ -52,7 +52,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M11b death, respawn & beds | prompt given | Codex (claude/m11b) | - | - | Bed IDs from 803; kill(0) = player; Player.spawnPoint: [x,y,z] \| null shared with M17b |
-| M17b IndexedDB & saving | prompt given | Sonnet (claude/m17b) | - | - | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
+| M17b IndexedDB & saving | Publish gate (session_01JU8DGxqKsi469qtuv2TfQ4); recommended approval | Sonnet (claude/m17b) | - | - | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
 
 Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a needs M11b + M12b + M12c (M12b/M12c merged) → ready after M11b.
 
@@ -88,6 +88,7 @@ Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a need
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-19: M17b gate: quick unit 884, M17 e2e 3, other-milestone e2e 28. Test edit: m17a-serializers fixtures gain xpLevel/xpProgress/spawnPoint (additive; recommended approval). Fixed an M17a compress.ts deadlock (write before read hung in Chromium). Autosave-spike e2e is noise-sensitive (2 ms slices, warm-up; 12/12 locally); watch it on CI. Limits: only named worlds saved; unloaded columns' ticks freeze.
 - 2026-10-19: #60 M15b merged. Gave the M11b prompt (Codex) and the M17b prompt (Sonnet), both with the quick-verify and known-failures blocks. Shared contract: Player.spawnPoint: [number, number, number] | null (bed head position, null = world spawn); whichever lands second merges master. M17b player data adds xp level/progress + spawnPoint; format v1 extended in place (no shipped saves). M17b includes the pending M17a/M15a/M15b load notes.
 - 2026-10-19: #60 M15b round 2 PASS (6f733c6). hardness -1 → breakSeconds Infinity → unbreakable in both modes. Told the owner to merge. Then ready: M11b (needs M11a, merged) and M17b (needs M15b + M17a).
 - 2026-10-19: M15b builder fixes 6f733c6 (local): owners always released; a replaced moving cell's block is lost, never duplicated; column unload lands moves; piston_moving hardness -1 (unbreakable, reviewer to confirm mining treats -1 that way); head plate+shaft collision, moving has none; 3 new tests; notes. Quick: unit 859, e2e 2 + 21 other. Told the owner to approve the push.
@@ -107,4 +108,3 @@ Ready next: nothing new until M11b/M17b merge. Then M17c (needs M17b), M13a need
 - 2026-10-18: Codex M15a gate: unit 807, e2e 110 passed / 1 failed (m04:66 pump 56-61 ms, known) / 2 flaky (m04 heap and horizon); it wrote blockers/M15a.md and marked progress incomplete. Changed tests/unit/atlas.test.ts without disclosing it. Gave the owner a message: show the atlas diff, delete the blocker, mark verified, confirm IDs from 542, no more local full verify. Owner preference: every builder prompt lists the known container failures so Codex doesn't keep retrying.
 - 2026-10-18: Owner reverted the sky-holes timeout on agy/m11a (8a56ef4). CI shard 4 failed m09c:183 ('air bubbles appear only while head underwater'): agy changed hud.ts:361 to `submerged || air < 300`; the test teleports out without a tick, so air stays 180 and the bubbles stay. A real regression of M09c behaviour. Told the owner to revert line 361 to `if (snapshot.submerged)`; it's unnecessary because M11a refills air instantly on surfacing.
 - 2026-10-18: agy M11a PR #58 (f573ea8, draft). Checked code: survival.ts matches the prompt's rates; dead flag only; burning in getPlayer; e2e drowning + lava. Issues: sky-holes.test.ts timeout raised to 60000 (another task's test; owner decides, recommend revert); handoff says full verify this session (only quick); saturation default 0 vs 5; crumbs use mapped block states. Gave reviewer prompt for after CI.
-- 2026-10-18: Owner preference: builders skip the local full verify and run only verify:quick; CI is the full verify. Gave an add-on block for the M11a/M15a prompts.
