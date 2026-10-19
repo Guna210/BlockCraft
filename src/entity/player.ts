@@ -2,6 +2,7 @@ import { TICK_SECONDS } from '../engine/loop';
 import { Inventory } from '../gameplay/inventory';
 import type { Action } from '../engine/input';
 import { BlockCollision, EPSILON, type Position } from './physics';
+import { Survival } from '../gameplay/survival';
 
 export type GameMode = 'survival' | 'creative';
 export interface PlayerSnapshot {
@@ -20,6 +21,7 @@ export interface PlayerSnapshot {
   mode: string;
   dimension: string;
   selectedSlot: number;
+  burning: boolean;
 }
 
 export class Player {
@@ -28,10 +30,50 @@ export class Player {
   public readonly vel: Position = [0, 0, 0];
   public yaw = 0;
   public pitch = 0;
-  public health = 20;
-  public hunger = 20;
-  public saturation = 5;
-  public air = 300;
+  public readonly survival = new Survival();
+  get health(): number {
+    return this.survival.health;
+  }
+  set health(val: number) {
+    this.survival.health = val;
+  }
+  get hunger(): number {
+    return this.survival.hunger;
+  }
+  set hunger(val: number) {
+    this.survival.hunger = val;
+    this.survival.saturation = Math.min(this.survival.saturation, val);
+  }
+  get saturation(): number {
+    return this.survival.saturation;
+  }
+  set saturation(val: number) {
+    this.survival.saturation = Math.min(val, this.survival.hunger);
+  }
+  get air(): number {
+    return this.survival.air;
+  }
+  set air(val: number) {
+    this.survival.air = val;
+  }
+  get dead(): boolean {
+    return this.survival.dead;
+  }
+  set dead(val: boolean) {
+    this.survival.dead = val;
+  }
+  get burning(): boolean {
+    return this.survival.isBurning;
+  }
+  set burning(val: boolean) {
+    this.survival.burningTicks = val ? 160 : 0;
+  }
+  get isEating(): boolean {
+    return this.survival.isEating;
+  }
+  set isEating(val: boolean) {
+    this.survival.isEating = val;
+  }
   public xpLevel = 0;
   public xpProgress = 0;
   public dimension = 'overworld';
@@ -79,6 +121,9 @@ export class Player {
   }
 
   input(action: Action, down: boolean): void {
+    if (action === 'use' && !down) {
+      this.survival.useConsumed = false;
+    }
     if (down && !this.actions.get(action)) {
       if (action === 'forward') this.forwardPressed = true;
       if (action === 'jump') this.jumpPressed = true;
@@ -94,6 +139,7 @@ export class Player {
     this.lastForward = -Infinity;
     this.lastJump = -Infinity;
     this.sprinting = false;
+    this.survival.useConsumed = false;
   }
   teleport(x: number, y: number, z: number, yaw = this.yaw, pitch = this.pitch): void {
     this.pos[0] = x;
@@ -116,14 +162,16 @@ export class Player {
     this.walkDistance = this.previousWalkDistance = 0;
     this.walkAmount = this.previousWalkAmount = 0;
     this.detached = false;
+    this.survival.fastRegenTicks = 0;
+    this.survival.slowRegenTicks = 0;
   }
   setGameMode(mode: GameMode): void {
     this.mode = mode;
     if (mode !== 'creative') this.flying = false;
     this.highest = this.pos[1];
   }
-  private down(action: Action): boolean {
-    return this.actions.get(action) ?? false;
+  public down(action: Action | string): boolean {
+    return this.actions.get(action as Action) ?? false;
   }
   private readonly footprintReady = (x: number, z: number) => this.terrainReady(x, z);
 
@@ -173,8 +221,15 @@ export class Player {
     this.inFluid = this.collision.inWater(this.pos, this.height) ? 'water' : null;
     this.climbing = !this.flying && this.collision.climbing(this.pos, this.height);
     if (this.inFluid || this.climbing || this.flying || this.onGround) this.highest = this.pos[1];
-    const sprint = !this.sneaking && (this.down('sprint') || this.sprinting);
+    if (this.mode === 'survival' && this.hunger <= 6) {
+      this.sprinting = false;
+    }
+    const sprint =
+      this.mode === 'survival' && (this.hunger <= 6 || this.isEating)
+        ? false
+        : !this.sneaking && (this.down('sprint') || this.sprinting);
     let speed = this.flying ? 10.9 : this.sneaking ? 1.3 : sprint ? 5.6 : 4.3;
+    if (this.isEating && !this.flying) speed *= 0.2;
     if (this.inFluid && !this.flying) speed = sprint ? 3 : 2;
     if (this.onGround && !this.flying && this.collision.onMire(this.pos)) speed *= 0.4;
     const f = Number(forward) - Number(this.down('back'));
@@ -198,6 +253,9 @@ export class Player {
       if (jump && this.onGround) {
         this.vel[1] = 8.9;
         this.onGround = false;
+        if (this.mode === 'survival') {
+          this.survival.addExhaustion(sprint ? 0.2 : 0.05);
+        }
       }
       // Exact constant-acceleration displacement gives the specified jump apex (~1.24 blocks).
     }
@@ -284,8 +342,10 @@ export class Player {
         !this.inFluid &&
         !this.climbing &&
         !this.collision.onHay(this.pos)
-      )
-        this.health = Math.max(0, this.health - Math.max(0, this.highest - this.pos[1] - 3));
+      ) {
+        const fall = Math.max(0, this.highest - this.pos[1] - 3);
+        if (fall > 0) this.survival.damage(fall, 'fall');
+      }
       this.highest = this.pos[1];
     }
     this.onGround =
@@ -293,6 +353,18 @@ export class Player {
       this.vel[1] <= 0 &&
       this.collision.supported(this.pos[0], this.pos[1], this.pos[2], 1e-5);
     const walked = Math.hypot(this.pos[0] - this.previous[0], this.pos[2] - this.previous[2]);
+    if (this.mode === 'survival') {
+      if (this.inFluid === 'water') {
+        const moved3d = Math.hypot(
+          this.pos[0] - this.previous[0],
+          this.pos[1] - this.previous[1],
+          this.pos[2] - this.previous[2],
+        );
+        if (moved3d > 0) this.survival.addExhaustion(moved3d * 0.01);
+      } else if (sprint && walked > 0 && !this.flying && !this.climbing) {
+        this.survival.addExhaustion(walked * 0.1);
+      }
+    }
     this.walkAmount =
       this.onGround && !this.inFluid && !this.climbing && !this.flying
         ? Math.min(1, walked / (4.3 * TICK_SECONDS))
@@ -355,6 +427,7 @@ export class Player {
       mode: this.mode,
       dimension: this.dimension,
       selectedSlot: this.selectedSlot,
+      burning: this.burning,
     };
   }
 }
