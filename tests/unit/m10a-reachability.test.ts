@@ -102,6 +102,10 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
     reason: 'no task adds berry bushes yet (open SPEC gap)',
   },
   wool: { task: 'M13e', reason: 'Dropped or sheared from Tuftbuck passive creature' },
+  bed: {
+    task: 'M13e',
+    reason: 'Crafted from wool, which is obtained from the Tuftbuck passive creature',
+  },
   raw_tuftbuck_shank: {
     task: 'M13e',
     reason: 'Dropped by Tuftbuck passive creature',

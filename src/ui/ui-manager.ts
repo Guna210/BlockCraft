@@ -35,8 +35,8 @@ import {
   drawRecipeBookPanel,
   type BookRow,
 } from './crafting-screen';
-import { UI, type Rect } from './ui-kit';
-import { displayName } from './pixel-font';
+import { UI, drawButton, drawPanel, uiScaleFor, type Rect } from './ui-kit';
+import { displayName, drawText, textWidth } from './pixel-font';
 import { crafting } from '../gameplay/crafting';
 import {
   canFillRecipe,
@@ -53,7 +53,7 @@ import { smelting } from '../gameplay/smelting';
 import { addXp } from '../gameplay/xp';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 
-export type ScreenName = 'inventory' | 'crafting' | 'chest' | 'kiln';
+export type ScreenName = 'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping';
 export type ClickButton = 'left' | 'right';
 
 export interface ScreenSnapshot {
@@ -80,6 +80,9 @@ export interface ScreenSnapshot {
   doubleChest: boolean;
   /** The kiln's flame indicator in CSS pixels; null outside the kiln screen. */
   flameBox: Rect | null;
+  cause: string | null;
+  respawnButton: Rect | null;
+  message: string | null;
 }
 
 const DOUBLE_CLICK_MS = 400;
@@ -148,6 +151,15 @@ export class UiManager {
   private recipeSlotRects: Rect[] = [];
   private panelRect: Rect | null = null;
   private closeRect: Rect | null = null;
+  private deathCause: string | null = null;
+  private respawnRect: Rect | null = null;
+  private sleepFade = 0;
+  private messageText: string | null = null;
+  private messageTimer: number | undefined;
+  private damageOverlay: HTMLDivElement | null = null;
+  private damageTimer: number | undefined;
+  private messageElement: HTMLDivElement | null = null;
+  public onRespawn: () => void = () => {};
   private controls: ScreenControls = {
     close: null,
     book: null,
@@ -190,6 +202,7 @@ export class UiManager {
     style.display = 'none';
     style.imageRendering = 'pixelated';
     style.cursor = 'default';
+    style.zIndex = '6';
     this.canvas.id = 'ui-canvas';
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     this.canvas.addEventListener('mousemove', this.onMouseMove);
@@ -209,6 +222,8 @@ export class UiManager {
   }
 
   open(name: ScreenName): void {
+    if (name === 'death' || name === 'sleeping')
+      throw new Error('Death and sleeping screens are controlled by gameplay');
     if (name === 'chest') {
       const target = this.findNearbyChest();
       if (!target) throw new Error('No chest is within reach');
@@ -222,6 +237,152 @@ export class UiManager {
       return;
     }
     this.startOpen(name);
+  }
+
+  showDeath(cause: string): void {
+    const player = this.player;
+    const drops = this.controller()?.itemEntities;
+    if (!player || !drops) return;
+    this.ensureCanvases();
+    const [x, y, z] = player.pos;
+    const spill = (id: string, count: number) => {
+      drops.spawn(
+        id,
+        count,
+        x + (Math.random() - 0.5) * 0.5,
+        y + Math.random() * 0.2,
+        z + (Math.random() - 0.5) * 0.5,
+        {
+          velocity: [(Math.random() - 0.5) * 0.8, 1.4, (Math.random() - 0.5) * 0.8],
+          pickupDelay: 40,
+        },
+      );
+    };
+    for (const stack of this.grid) if (stack) spill(stack.id, stack.count);
+    this.grid = [];
+    if (player.inventory.cursor) {
+      spill(player.inventory.cursor.id, player.inventory.cursor.count);
+      player.inventory.cursor = null;
+    }
+    if (!this.screen) {
+      this.wasLocked = this.input.pointerLocked;
+      if (this.wasLocked) document.exitPointerLock();
+    }
+    this.input.setCapture(true);
+    this.screen = 'death';
+    this.deathCause = cause;
+    this.chestStorage = null;
+    this.activeKiln = null;
+    this.kilnLayout = null;
+    this.bookOpen = false;
+    this.searchFocused = false;
+    this.drag = null;
+    this.canvas.style.display = 'block';
+    this.resizeCanvas();
+    this.hoverSlot = null;
+    this.render();
+  }
+
+  showMessage(text: string, durationMs = 1800): void {
+    this.messageText = text;
+    if (!this.messageElement) {
+      this.messageElement = document.createElement('div');
+      this.messageElement.id = 'game-message';
+      Object.assign(this.messageElement.style, {
+        position: 'fixed',
+        left: '50%',
+        bottom: '22%',
+        transform: 'translateX(-50%)',
+        padding: '8px 14px',
+        color: UI.text,
+        background: UI.outline,
+        border: `2px solid ${UI.accent}`,
+        font: 'bold 16px monospace',
+        textAlign: 'center',
+        pointerEvents: 'none',
+        zIndex: '7',
+        display: 'none',
+      });
+      document.body.appendChild(this.messageElement);
+    }
+    this.messageElement.textContent = text;
+    this.messageElement.style.display = 'block';
+    if (this.messageTimer !== undefined) window.clearTimeout(this.messageTimer);
+    this.messageTimer = window.setTimeout(() => {
+      this.messageText = null;
+      if (this.messageElement) this.messageElement.style.display = 'none';
+    }, durationMs);
+  }
+
+  showDamageFlash(): void {
+    if (!this.damageOverlay) {
+      this.damageOverlay = document.createElement('div');
+      this.damageOverlay.id = 'damage-vignette';
+      Object.assign(this.damageOverlay.style, {
+        position: 'fixed',
+        inset: '0',
+        pointerEvents: 'none',
+        zIndex: '3',
+        opacity: '0',
+        background:
+          'radial-gradient(ellipse at center, rgba(175,16,36,0) 37%, rgba(175,16,36,.72) 100%), rgba(175,16,36,.12)',
+      });
+      document.body.appendChild(this.damageOverlay);
+    }
+    if (this.damageTimer !== undefined) window.clearTimeout(this.damageTimer);
+    this.damageOverlay.style.transition = 'none';
+    this.damageOverlay.style.opacity = '1';
+    this.damageTimer = window.setTimeout(() => {
+      if (!this.damageOverlay) return;
+      this.damageOverlay.style.transition = 'opacity 800ms linear';
+      this.damageOverlay.style.opacity = '0';
+    }, 700);
+  }
+
+  fadeToBlackThen(onBlack: () => void): void {
+    if (this.screen) return;
+    this.ensureCanvases();
+    this.wasLocked = this.input.pointerLocked;
+    this.input.setCapture(true);
+    if (this.wasLocked) document.exitPointerLock();
+    this.screen = 'sleeping';
+    this.sleepFade = 0;
+    this.canvas.style.display = 'block';
+    this.resizeCanvas();
+    const start = performance.now();
+    let applied = false;
+    const animate = (now: number) => {
+      if (this.screen !== 'sleeping') return;
+      const elapsed = now - start;
+      if (elapsed < 360) this.sleepFade = elapsed / 360;
+      else if (elapsed < 560) this.sleepFade = 1;
+      else this.sleepFade = Math.max(0, 1 - (elapsed - 560) / 360);
+      this.render();
+      if (!applied && elapsed >= 360) {
+        applied = true;
+        onBlack();
+      }
+      if (elapsed >= 920) this.finishOverlay();
+      else window.requestAnimationFrame(animate);
+    };
+    window.requestAnimationFrame(animate);
+  }
+
+  private finishOverlay(): void {
+    if (!this.screen) return;
+    this.screen = null;
+    this.deathCause = null;
+    this.respawnRect = null;
+    this.canvas.style.display = 'none';
+    this.input.setCapture(false);
+    if (this.wasLocked) {
+      try {
+        const lock = this.input.relock();
+        if (lock) lock.catch(() => {});
+      } catch {
+        /* the browser declined; clicking the game locks the pointer again */
+      }
+    }
   }
 
   openKiln(entity: BlockEntityInstance<KilnState>): void {
@@ -272,7 +433,7 @@ export class UiManager {
 
   /** Returns cursor and crafting-grid items before closing; a full drop pool leaves the screen open. */
   close(): void {
-    if (!this.screen) return;
+    if (!this.screen || this.screen === 'death' || this.screen === 'sleeping') return;
     const player = this.player;
     if (player) {
       if (this.grid.length && !this.returnCraftGrid()) {
@@ -834,6 +995,9 @@ export class UiManager {
       craftableOnly: this.craftableOnly,
       doubleChest: this.chestStorage?.double ?? false,
       flameBox: this.screen === 'kiln' && this.kilnLayout ? css(this.kilnLayout.flame) : null,
+      cause: this.screen === 'death' ? this.deathCause : null,
+      respawnButton: this.screen === 'death' ? css(this.respawnRect) : null,
+      message: this.messageText,
     };
   }
 
@@ -882,6 +1046,14 @@ export class UiManager {
   render(): void {
     const player = this.player;
     if (!this.screen || !player) return;
+    if (this.screen === 'death') {
+      this.renderDeath();
+      return;
+    }
+    if (this.screen === 'sleeping') {
+      this.renderSleeping();
+      return;
+    }
     this.bookRows = this.bookOpen ? this.filteredRecipes() : [];
     const pageCount = Math.max(1, Math.ceil(this.bookRows.length / BOOK_ROWS));
     this.bookPage = Math.max(0, Math.min(this.bookPage, pageCount - 1));
@@ -1075,6 +1247,68 @@ export class UiManager {
     this.ctx.restore();
     this.setBookTargetsVisible(visibleRows.length);
     this.closeRect = this.layout.closeButton;
+  }
+
+  private renderDeath(): void {
+    if (!this.canvas || !this.ctx) return;
+    const scale = uiScaleFor(this.canvas.width, this.canvas.height);
+    const width = Math.floor(this.canvas.width / scale);
+    const height = Math.floor(this.canvas.height / scale);
+    const panel = {
+      x: Math.floor((width - 188) / 2),
+      y: Math.floor((height - 112) / 2),
+      w: 188,
+      h: 112,
+    };
+    const button = { x: panel.x + 42, y: panel.y + 82, w: 104, h: 20 };
+    this.panelRect = {
+      x: panel.x * scale,
+      y: panel.y * scale,
+      w: panel.w * scale,
+      h: panel.h * scale,
+    };
+    this.respawnRect = {
+      x: button.x * scale,
+      y: button.y * scale,
+      w: button.w * scale,
+      h: button.h * scale,
+    };
+    this.closeRect = null;
+    this.controls.close = null;
+    this.screenSlots = [];
+    this.clickTargets = [];
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = 'rgba(35, 12, 24, 0.82)';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    drawPanel(this.ctx, panel, scale);
+    const title = 'YOU DIED';
+    drawText(
+      this.ctx,
+      title,
+      (panel.x + Math.floor((panel.w - textWidth(title)) / 2)) * scale,
+      (panel.y + 19) * scale,
+      scale,
+      '#ff6570',
+      UI.outline,
+    );
+    const cause = this.deathCause ?? 'Killed';
+    drawText(
+      this.ctx,
+      cause,
+      (panel.x + Math.floor((panel.w - textWidth(cause)) / 2)) * scale,
+      (panel.y + 49) * scale,
+      scale,
+      UI.text,
+      UI.outline,
+    );
+    drawButton(this.ctx, button, 'RESPAWN', scale, this.hoverButton(this.respawnRect));
+  }
+
+  private renderSleeping(): void {
+    if (!this.canvas || !this.ctx) return;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0, Math.min(1, this.sleepFade))})`;
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   private renderKiln(player: Player): void {
@@ -1291,6 +1525,14 @@ export class UiManager {
     event.preventDefault();
     if (!this.screen) return;
     this.updateMouse(event);
+    if (this.screen === 'death') {
+      if (event.button === 0 && this.hoverButton(this.respawnRect)) {
+        this.onRespawn();
+        if (!this.player?.dead) this.finishOverlay();
+      }
+      return;
+    }
+    if (this.screen === 'sleeping') return;
     const button: ClickButton | null =
       event.button === 0 ? 'left' : event.button === 2 ? 'right' : null;
     const player = this.player;
@@ -1440,6 +1682,10 @@ export class UiManager {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
+    if (this.screen === 'death' || this.screen === 'sleeping') {
+      event.preventDefault();
+      return;
+    }
     if (this.screen && this.bookOpen && this.searchFocused) {
       if (event.key === 'Escape') {
         this.searchFocused = false;

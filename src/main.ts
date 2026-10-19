@@ -17,6 +17,13 @@ import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
 import './gameplay/chests';
+import {
+  bedPairAt,
+  hostileWithin,
+  nextMorningAbsoluteTime,
+  sleepRefusalReason,
+} from './gameplay/death-beds';
+import { getWorldTime } from './world/time';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -96,7 +103,27 @@ function main() {
   const ui = new UiManager(input, () => worldManager.playerController, icons);
   ui.attach();
   activeUi.manager = ui;
+  playerController.onDeath = (cause) => ui.showDeath(cause);
+  ui.onRespawn = () => playerController.respawn();
   playerController.onUseBlock = (blockId, target) => {
+    if (blockId === 'bed') {
+      const player = playerController.player;
+      const world = worldManager.world;
+      const pair = world && bedPairAt(world, target.x, target.y, target.z);
+      if (!player || !world || !pair) {
+        ui.showMessage('This bed is incomplete');
+        return true;
+      }
+      player.spawnPoint = [pair.foot[0] + 0.5, pair.foot[1] + 9 / 16, pair.foot[2] + 0.5];
+      const refusal = sleepRefusalReason(getWorldTime(), hostileWithin(world, player.pos, 8));
+      if (refusal === 'day') ui.showMessage('You can only sleep at night');
+      else if (refusal === 'hostile') ui.showMessage('Monsters are nearby');
+      else
+        ui.fadeToBlackThen(() =>
+          worldManager.setTimeOfDay(nextMorningAbsoluteTime(getWorldTime())),
+        );
+      return true;
+    }
     if (blockId === 'workbench') {
       ui.open('crafting');
       return true;
@@ -185,6 +212,10 @@ function main() {
     () => ui.screen !== null,
   );
   hud.attach();
+  playerController.onDamage = (event) => {
+    ui.showDamageFlash();
+    if (event.healthAfter <= 4) hud.onDamage();
+  };
   let frameDrain: FencedErrorDrain | null = null;
   if (debug) {
     frameDrain = new FencedErrorDrain(

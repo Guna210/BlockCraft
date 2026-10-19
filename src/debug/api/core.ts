@@ -9,6 +9,7 @@ export interface BlockCraftDebugAPI {
   setItemDamage?: (slot: number, damage: number) => void;
   openScreen?: (name: import('../../ui/ui-manager').ScreenName | 'none') => void;
   getScreen?: () => import('../../ui/ui-manager').ScreenSnapshot;
+  kill?: (id: number) => void;
   uiClickSlot?: (slot: number, button: 'left' | 'right', shift?: boolean) => void;
   getEntities?: (filter?: {
     type?: string;
@@ -72,6 +73,8 @@ export interface BlockCraftDebugAPI {
   tick?: (n: number) => Promise<void>;
   setGameMode?: (mode: 'survival' | 'creative') => void;
   setTimeOfDay?: (ticks: number) => void;
+  getTimeOfDay?: () => number;
+  getWorldTime?: () => number;
   setClouds?: (mode: 'fancy' | 'fast' | 'off') => void;
   setLeaves?: (mode: 'fancy' | 'fast') => void;
   setWeather?: (state: 'clear' | 'rain' | 'thunder') => void;

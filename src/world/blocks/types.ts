@@ -38,6 +38,7 @@ export type BlockModel =
   | 'trace'
   | 'tripwire'
   | 'pressure_plate'
+  | 'bed'
   | 'piston_head'
   | 'none';
 

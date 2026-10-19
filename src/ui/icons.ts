@@ -288,6 +288,8 @@ function renderBlockIcon(
     const tint: Tint = foliage ? 'foliage' : def.id === 'tall_grass' ? 'grass' : 'none';
     return renderFlat(faceFor(lookup, def.textures.side ?? def.textures.top, tint, missing));
   }
+  if (def.model === 'bed')
+    return renderFlat(faceFor(lookup, item.texture ?? 'bed_item', 'none', missing));
   if (def.model === 'door')
     return renderFlat(faceFor(lookup, def.textures.item ?? def.textures.side, 'none', missing));
   if (def.model === 'stairs' || def.model === 'fence' || def.model === 'trapdoor') {

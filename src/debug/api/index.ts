@@ -16,6 +16,7 @@ import './shapes';
 import './mechanics';
 import './inventory';
 import './ui';
+import './death';
 import './entities';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';

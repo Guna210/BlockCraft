@@ -22,6 +22,7 @@ export interface PlayerSnapshot {
   dimension: string;
   selectedSlot: number;
   burning: boolean;
+  spawnPoint: Position | null;
 }
 
 export class Player {
@@ -77,6 +78,8 @@ export class Player {
   public xpLevel = 0;
   public xpProgress = 0;
   public dimension = 'overworld';
+  /** Runtime-only bed spawn; null uses the current world's spawn. M17b owns persistence. */
+  public spawnPoint: Position | null = null;
   public readonly inventory = new Inventory();
   get selectedSlot(): number {
     return this.inventory.selectedSlot;
@@ -185,7 +188,7 @@ export class Player {
     );
   }
   tick(): void {
-    if (this.detached) return;
+    if (this.detached || this.dead) return;
     this.ticks++;
     this.previousSprintFov = this.sprintFov;
     this.previousWalkDistance = this.walkDistance;
@@ -428,6 +431,7 @@ export class Player {
       dimension: this.dimension,
       selectedSlot: this.selectedSlot,
       burning: this.burning,
+      spawnPoint: this.spawnPoint ? [...this.spawnPoint] : null,
     };
   }
 }

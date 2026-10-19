@@ -38,6 +38,14 @@ export const STARVATION_DAMAGE = 1;
 
 export const EATING_DURATION_TICKS = 32;
 
+export interface DamageEvent {
+  amount: number;
+  source: string;
+  healthBefore: number;
+  healthAfter: number;
+  lethal: boolean;
+}
+
 /**
  * Procedural block state mappings for crumb particles that match each food item's primary colors.
  */
@@ -138,6 +146,10 @@ export interface SurvivalHost {
 
 export class Survival {
   private _health: number = MAX_HEALTH;
+  private _dead = false;
+  private deathSource: string | null = null;
+  public onDamage: (event: DamageEvent) => void = () => {};
+  public onDeath: (source: string) => void = () => {};
   get health(): number {
     return this._health;
   }
@@ -157,7 +169,14 @@ export class Survival {
   public exhaustion: number = 0;
   public air: number = MAX_AIR;
   public burningTicks: number = 0;
-  public dead: boolean = false;
+  get dead(): boolean {
+    return this._dead;
+  }
+  set dead(value: boolean) {
+    const wasDead = this._dead;
+    this._dead = Boolean(value);
+    if (!wasDead && this._dead) this.onDeath(this.deathSource ?? 'killed');
+  }
   public useConsumed: boolean = false;
 
   public eatingTicks: number = 0;
@@ -206,7 +225,11 @@ export class Survival {
 
   damage(amount: number, source?: string): void {
     if (this.dead || amount <= 0) return;
+    const healthBefore = this.health;
+    const actualSource = source ?? 'killed';
+    this.deathSource = actualSource;
     this.health = Math.max(0, this.health - amount);
+    this.deathSource = null;
     if (source !== 'starvation') {
       this.addExhaustion(0.1);
     }
@@ -214,6 +237,13 @@ export class Survival {
       this.health = 0;
       this.dead = true;
     }
+    this.onDamage({
+      amount,
+      source: actualSource,
+      healthBefore,
+      healthAfter: this.health,
+      lethal: this.dead,
+    });
   }
 
   heal(amount: number): void {

@@ -50,7 +50,11 @@ const FACE_NORMAL: Record<BlockFaceDirection, readonly [number, number, number]>
 
 export function shapeModel(registry: BlockRegistry, state: number): string | undefined {
   const model = registry.getResolvedState(state)?.definition.model;
-  return model === 'stairs' || model === 'fence' || model === 'door' || model === 'trapdoor'
+  return model === 'stairs' ||
+    model === 'fence' ||
+    model === 'door' ||
+    model === 'trapdoor' ||
+    model === 'bed'
     ? model
     : undefined;
 }
@@ -214,6 +218,31 @@ export function doorCells(
   return cells;
 }
 
+/** Both occupied cells for a bed pair, regardless of whether the foot or head was targeted. */
+export function bedCells(
+  registry: BlockRegistry,
+  world: ShapeWorld,
+  x: number,
+  y: number,
+  z: number,
+): PlacedCell[] | null {
+  const state = world.getBlockStateId(x, y, z);
+  const s = registry.getResolvedState(state);
+  if (!s || s.definition.model !== 'bed') return null;
+  const facing = s.properties.facing as Facing;
+  const [dx, dz] = FACING_VECTOR[facing];
+  const foot = s.properties.part === 'head' ? [x - dx, y, z - dz] : [x, y, z];
+  const head = s.properties.part === 'head' ? [x, y, z] : [x + dx, y, z + dz];
+  const cells: PlacedCell[] = [];
+  for (const [cx, cy, cz] of [foot, head]) {
+    const cellState = world.getBlockStateId(cx!, cy!, cz!);
+    const cell = registry.getResolvedState(cellState);
+    if (cell?.definition.model === 'bed' && cell.properties.facing === facing)
+      cells.push({ x: cx!, y: cy!, z: cz!, state: cellState });
+  }
+  return cells.length ? cells : [{ x, y, z, state }];
+}
+
 /**
  * Opens or closes the door or trapdoor at this cell; returns the changed cells, empty when the
  * block is neither.
@@ -288,7 +317,8 @@ export function removeShapeBlock(
   y: number,
   z: number,
 ): PlacedCell[] {
-  const cells = doorCells(registry, world, x, y, z) ?? [{ x, y, z, state: 0 }];
+  const cells = bedCells(registry, world, x, y, z) ??
+    doorCells(registry, world, x, y, z) ?? [{ x, y, z, state: 0 }];
   const changed: PlacedCell[] = [];
   for (const cell of cells) {
     world.setBlockStateId(cell.x, cell.y, cell.z, 0);
