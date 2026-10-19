@@ -248,10 +248,12 @@ function drawStatusMeter(
   y: number,
   s: number,
   step: number,
+  heartShake = 0,
 ): void {
   for (let i = 0; i < count; i++) {
     const fraction = Math.max(0, Math.min(1, amount / 2 - i));
-    if (glyph === 'heart') drawHeart(ctx, x + i * step, y, fraction, s);
+    if (glyph === 'heart')
+      drawHeart(ctx, x + i * step, y + (i % 2 === 0 ? -heartShake : heartShake), fraction, s);
     else drawOrange(ctx, x + i * step, y, fraction, s);
   }
 }
@@ -320,6 +322,7 @@ function drawHud(
   sheet: CanvasImageSource,
   width: number,
   height: number,
+  heartShake = 0,
 ): void {
   const s = uiScaleFor(width, height);
   const logicalWidth = Math.floor(width / s);
@@ -354,7 +357,7 @@ function drawHud(
   drawCrosshair(ctx, width, height);
   if (snapshot.mode === 'creative') return;
 
-  drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9);
+  drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9, heartShake);
   drawStatusMeter(ctx, 'orange', snapshot.hunger, 10, centerX + 5, statusY, s, 9);
   if (snapshot.armorPoints > 0)
     drawMeter(ctx, ARMOR, snapshot.armorPoints, 10, centerX - 44, statusY - 10, s, UI.light, 9);
@@ -486,6 +489,7 @@ export class Hud {
   private popupTimer: number | undefined;
   private debugOpen = false;
   private lastDebugUpdate = -Infinity;
+  private hurtAt = -Infinity;
 
   constructor(
     private readonly input: InputEngine,
@@ -501,6 +505,11 @@ export class Hud {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('resize', this.onResize);
+  }
+
+  onDamage(): void {
+    this.hurtAt = performance.now();
+    this.lastHudKey = '';
   }
 
   private ensureCanvases(): void {
@@ -636,7 +645,14 @@ export class Hud {
     }
     if (snapshot.mode === 'creative') this.popupCanvas.style.display = 'none';
     if (!screenOpen) {
-      const key = JSON.stringify([snapshot, this.size.width, this.size.height]);
+      const elapsed = time - this.hurtAt;
+      const heartShake =
+        snapshot.health <= 4 && elapsed >= 0 && elapsed < 320
+          ? Math.floor(elapsed / 42) % 2 === 0
+            ? 1
+            : -1
+          : 0;
+      const key = JSON.stringify([snapshot, this.size.width, this.size.height, heartShake]);
       if (key !== this.lastHudKey) {
         this.lastHudKey = key;
         drawHud(
@@ -646,6 +662,7 @@ export class Hud {
           this.sheet,
           this.size.width,
           this.size.height,
+          heartShake,
         );
       }
     }

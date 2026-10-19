@@ -1,0 +1,29 @@
+{
+  "bed": {
+    "hardness": 0.2,
+    "blastResistance": 0.2,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": false,
+    "model": "bed",
+    "tool": "axe",
+    "states": {
+      "facing": {
+        "type": "enum",
+        "values": ["north", "east", "south", "west"],
+        "default": "north"
+      },
+      "part": {
+        "type": "enum",
+        "values": ["foot", "head"],
+        "default": "foot"
+      }
+    },
+    "textures": {
+      "foot": "bed_foot_top",
+      "head": "bed_head_top",
+      "side": "bed_side",
+      "bottom": "bed_side"
+    }
+  }
+}

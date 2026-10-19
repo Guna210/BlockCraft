@@ -1,0 +1,8 @@
+{
+  "bed": {
+    "type": "shaped",
+    "pattern": ["WWW", "PPP"],
+    "key": { "W": "wool", "P": "#any_planks" },
+    "result": { "id": "bed", "count": 1 }
+  }
+}

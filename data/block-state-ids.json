@@ -801,5 +801,13 @@
   "sticky_piston_head[facing=south]": 799,
   "sticky_piston_head[facing=west]": 800,
   "sticky_piston_head[facing=up]": 801,
-  "sticky_piston_head[facing=down]": 802
+  "sticky_piston_head[facing=down]": 802,
+  "bed[facing=north,part=foot]": 803,
+  "bed[facing=north,part=head]": 804,
+  "bed[facing=east,part=foot]": 805,
+  "bed[facing=east,part=head]": 806,
+  "bed[facing=south,part=foot]": 807,
+  "bed[facing=south,part=head]": 808,
+  "bed[facing=west,part=foot]": 809,
+  "bed[facing=west,part=head]": 810
 }

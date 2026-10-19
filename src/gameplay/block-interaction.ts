@@ -14,6 +14,7 @@ import {
   type PlacedCell,
 } from './shape-blocks';
 import { chestFacingFromYaw } from './chests';
+import { FACING_VECTOR, facingFromVector } from '../world/shape-geometry';
 import type { RayHit } from '../world/raycast';
 const NORMALS = {
   top: [0, 1, 0],
@@ -221,30 +222,61 @@ export class BlockInteraction {
       held = this.registry.getStateId(s.blockId, { ...s.properties, facing })!;
     }
     let cells: PlacedCell[] = [{ x, y, z, state: held }];
+    if (s.blockId === 'bed') {
+      const facing = facingFromVector(Math.cos(p.yaw), Math.sin(p.yaw));
+      const [dx, dz] = FACING_VECTOR[facing];
+      const hx = x + dx;
+      const hz = z + dz;
+      if (
+        y <= 0 ||
+        y >= 319 ||
+        !world.hasColumn(Math.floor(hx / 16), Math.floor(hz / 16)) ||
+        !shapes.replaceable[world.getBlockStateId(hx, y, hz)]
+      )
+        return false;
+      for (const [bx, bz] of [
+        [x, z],
+        [hx, hz],
+      ]) {
+        const support = this.registry.getResolvedState(world.getBlockStateId(bx!, y - 1, bz!));
+        if (!support?.definition.fullOpaqueCube) return false;
+      }
+      const footState = this.registry.getStateId('bed', { facing, part: 'foot' });
+      const headState = this.registry.getStateId('bed', { facing, part: 'head' });
+      if (footState === undefined || headState === undefined) return false;
+      cells = [
+        { x, y, z, state: footState },
+        { x: hx, y, z: hz, state: headState },
+      ];
+    }
     if (shapeModel(this.registry, held)) {
-      const px = this.eye[0]! + this.look[0]! * t.distance - t.x;
-      const py = this.eye[1]! + this.look[1]! * t.distance - t.y;
-      const pz = this.eye[2]! + this.look[2]! * t.distance - t.z;
-      const placed = shapePlacement(
-        this.registry,
-        world,
-        s.blockId,
-        {
-          x,
-          y,
-          z,
-          face: t.face,
-          hitX: px,
-          hitY: py,
-          hitZ: pz,
-          lookX: Math.cos(p.yaw),
-          lookZ: Math.sin(p.yaw),
-        },
-        (fx, fy, fz) =>
-          fy >= 0 && fy < 320 && shapes.replaceable[world.getBlockStateId(fx, fy, fz)] === 1,
-      );
-      if (!placed) return false;
-      cells = placed;
+      if (s.blockId === 'bed') {
+        // The paired cells and facing were resolved above.
+      } else {
+        const px = this.eye[0]! + this.look[0]! * t.distance - t.x;
+        const py = this.eye[1]! + this.look[1]! * t.distance - t.y;
+        const pz = this.eye[2]! + this.look[2]! * t.distance - t.z;
+        const placed = shapePlacement(
+          this.registry,
+          world,
+          s.blockId,
+          {
+            x,
+            y,
+            z,
+            face: t.face,
+            hitX: px,
+            hitY: py,
+            hitZ: pz,
+            lookX: Math.cos(p.yaw),
+            lookZ: Math.sin(p.yaw),
+          },
+          (fx, fy, fz) =>
+            fy >= 0 && fy < 320 && shapes.replaceable[world.getBlockStateId(fx, fy, fz)] === 1,
+        );
+        if (!placed) return false;
+        cells = placed;
+      }
     }
     for (const cell of cells) {
       const parts = shapes.parts[cell.state];

@@ -79,6 +79,7 @@ const SHAPE_MODELS = new Set([
   'door',
   'trapdoor',
   'pressure_plate',
+  'bed',
   'piston_head',
 ]);
 

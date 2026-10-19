@@ -16,6 +16,7 @@ import './shapes';
 import './mechanics';
 import './inventory';
 import './ui';
+import './death';
 import './entities';
 import './persist';
 import { getLight, getBlockLightRGB } from './light';

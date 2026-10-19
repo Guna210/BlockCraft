@@ -128,7 +128,12 @@ export class ItemEntityManager {
           break;
         }
       }
-      if (!entity.active || entity.age < Math.max(4, entity.pickupDelay) || player.detached)
+      if (
+        !entity.active ||
+        entity.age < Math.max(4, entity.pickupDelay) ||
+        player.detached ||
+        player.dead
+      )
         continue;
       const dx = player.pos[0] - entity.pos[0],
         dy = player.pos[1] + 0.6 - (entity.pos[1] + 0.125),

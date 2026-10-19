@@ -39,6 +39,7 @@ import {
 // src/render/textures/index.ts
 
 import { TextureData } from './noise';
+import { genBedFootTop, genBedHeadTop, genBedSide, PAL_BED } from './bed';
 import { terrainToolGenerators, terrainToolPalettes } from './tools';
 import {
   genGrassTop,
@@ -315,6 +316,9 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   kiln_top: genKilnTop,
   kiln_side: genKilnSide,
   kiln_bottom: genKilnBottom,
+  bed_foot_top: genBedFootTop,
+  bed_head_top: genBedHeadTop,
+  bed_side: genBedSide,
 
   // Biome surface additions
 
@@ -627,4 +631,7 @@ export const texturePalettes: Record<string, RGBA[]> = {
   kiln_top: PAL_KILN_TOP,
   kiln_side: PAL_KILN_SIDE,
   kiln_bottom: PAL_KILN_BOTTOM,
+  bed_foot_top: PAL_BED,
+  bed_head_top: PAL_BED,
+  bed_side: PAL_BED,
 };
