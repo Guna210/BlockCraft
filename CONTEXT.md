@@ -87,6 +87,7 @@ Ready now: M18a, M19a; after #65 merges also M13d, M13e. Owner has 2 Codex + 1 C
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: M13c builder root cause: WorldAdapter redefined World.onBlockEdited as an accessor -> V8 dictionary mode, all World calls ~3x slower (195 vs 554 ms per 1.3M reads); uploads starved. Fix: adapter gets a view object; world.listeners (blockEdited, column load/unload) -> invalidate; spawner no-op without rules; regression test that onBlockEdited stays a data property. Gate pending. Lesson: never redefine properties on hot shared objects.
 - 2026-10-20: #65 Update branch (2553bca) red: m04:221 heap + m04:276 RD12 fail x3. Master+M17c green 13 min; #65 alone green but shard 2 27 min (retries). Cause: M13c per-column-load work (adapter.invalidate each load, unbounded unpopulatedColumns, spawn scans with no rules). Sent perf fix to builder. Lesson: compare shard durations, a 2x slower shard means retries.
 - 2026-10-20: #65 M13c round 1 PASS. Follow-ups: player has no 10-tick i-frames (decide in M13f); navigation MAX_ACTIVE_SEARCHES 3 and MAX_SEARCH_NODES 4000 (revisit if long chases fail); sweep fires when primary hit absorbed by i-frames; blast with no source sets attacker -1; runtime.dispose comment overstates. Told the owner to merge.
 - 2026-10-20: #65 M13c green (4f31479, 39 files, merges clean). Gave round 1 reviewer prompt.
