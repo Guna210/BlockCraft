@@ -188,6 +188,42 @@ export class BlockEntityManager {
     }
   }
 
+  /** The entities of one column, in a stable order (the persistence layer saves them). */
+  public getInColumn(cx: number, cz: number): BlockEntityInstance[] {
+    const out: BlockEntityInstance[] = [];
+    for (const entity of this.entities.values()) {
+      if (Math.floor(entity.x / 16) === cx && Math.floor(entity.z / 16) === cz) out.push(entity);
+    }
+    return out.sort((a, b) => a.y - b.y || a.z - b.z || a.x - b.x);
+  }
+
+  /**
+   * Re-creates a saved entity with its saved state: no `create`, no `afterPlaced`. A ticking
+   * type is given its first tick here unless a restored scheduled tick already covers it.
+   */
+  public restore(saved: BlockEntityInstance): BlockEntityInstance {
+    const typeDef = blockEntityRegistry.get(saved.blockId);
+    if (!typeDef) throw new Error(`No block entity type registered for '${saved.blockId}'`);
+    if (!isPlainJsonObject(saved.state)) {
+      throw new Error(`Saved state for '${saved.blockId}' must be a plain JSON object`);
+    }
+    const instance: BlockEntityInstance = {
+      blockId: saved.blockId,
+      x: saved.x,
+      y: saved.y,
+      z: saved.z,
+      state: saved.state,
+    };
+    this.entities.set(BlockEntityManager.key(saved.x, saved.y, saved.z), instance);
+    if (typeDef.tick) {
+      this.world.ticks.schedule(
+        { x: saved.x, y: saved.y, z: saved.z, type: BLOCK_ENTITY_TICK_TYPE },
+        typeDef.tickInterval ?? 1,
+      );
+    }
+    return instance;
+  }
+
   public removeColumn(cx: number, cz: number): void {
     for (const [k, entity] of this.entities.entries()) {
       if (Math.floor(entity.x / 16) === cx && Math.floor(entity.z / 16) === cz) {

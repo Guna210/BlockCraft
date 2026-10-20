@@ -18,6 +18,7 @@ import './inventory';
 import './ui';
 import './death';
 import './entities';
+import './persist';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';

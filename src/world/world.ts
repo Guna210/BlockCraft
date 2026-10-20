@@ -50,6 +50,21 @@ export class World {
   public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
   public worldType: 'default' | 'flat' = 'default';
 
+  /**
+   * Columns whose blocks changed through `setBlockStateId` since the persistence layer last took
+   * them. Generation writes sections directly and never lands here, so an untouched column is
+   * never saved and regenerates from the seed.
+   */
+  public readonly modifiedColumns = new Set<ChunkColumn>();
+  private lastModified: ChunkColumn | null = null;
+
+  /** Empties the modified set (the caller has captured or dropped those columns). */
+  public clearModified(column?: ChunkColumn): void {
+    if (column) this.modifiedColumns.delete(column);
+    else this.modifiedColumns.clear();
+    this.lastModified = null;
+  }
+
   private lastCX = 0x7fffffff;
   private lastCZ = 0x7fffffff;
   private lastCol: ChunkColumn | null = null;
@@ -118,6 +133,7 @@ export class World {
    */
   public removeColumn(cx: number, cz: number): boolean {
     this.current.removeColumn(cx, cz);
+    const removedColumn = this.columns.get(World.getChunkKey(cx, cz));
     const removed = this.columns.delete(World.getChunkKey(cx, cz));
     if (cx === this.lastCX && cz === this.lastCZ) {
       this.lastCX = 0x7fffffff;
@@ -127,6 +143,7 @@ export class World {
     if (this.lightEngine) this.lightEngine.removeColumn(cx, cz);
     this.ticks.removeColumn(cx, cz);
     this.blockEntities.removeColumn(cx, cz);
+    if (removedColumn) this.clearModified(removedColumn);
     return removed;
   }
 
@@ -269,6 +286,10 @@ export class World {
 
     const col = this.getColumn(cx, cz, true)!;
     col.setBlockStateId(localX, y, localZ, stateId);
+    if (col !== this.lastModified) {
+      this.modifiedColumns.add(col);
+      this.lastModified = col;
+    }
 
     const oldBlockId = this.registry.getResolvedState(oldStateId)?.blockId ?? 'air';
     const newBlockId = this.registry.getResolvedState(stateId)?.blockId ?? 'air';

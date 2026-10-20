@@ -309,6 +309,10 @@ export interface SerializedPlayerData {
   air: number;
   flying: boolean;
   dimension: string;
+  xpLevel: number;
+  xpProgress: number;
+  /** null means the world spawn. */
+  spawnPoint: [number, number, number] | null;
 }
 
 export function serializePlayerData(
@@ -331,6 +335,12 @@ export function serializePlayerData(
       air: player.air,
       flying,
       dimension: player.dimension,
+      xpLevel: player.xpLevel,
+      xpProgress: player.xpProgress,
+      spawnPoint:
+        'spawnPoint' in player && (player as { spawnPoint?: unknown }).spawnPoint
+          ? [...(player as { spawnPoint: [number, number, number] }).spawnPoint]
+          : null,
     };
   } else {
     serializable = player as SerializedPlayerData;
@@ -361,6 +371,9 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
   const air = d['air'];
   const flying = d['flying'];
   const dimension = d['dimension'];
+  const xpLevel = d['xpLevel'];
+  const xpProgress = d['xpProgress'];
+  const spawnPoint = d['spawnPoint'];
 
   if (
     !Array.isArray(pos) ||
@@ -388,7 +401,18 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     air < 0 ||
     typeof flying !== 'boolean' ||
     typeof dimension !== 'string' ||
-    dimension.length === 0
+    dimension.length === 0 ||
+    typeof xpLevel !== 'number' ||
+    !Number.isInteger(xpLevel) ||
+    xpLevel < 0 ||
+    typeof xpProgress !== 'number' ||
+    !Number.isFinite(xpProgress) ||
+    xpProgress < 0 ||
+    xpProgress > 1 ||
+    (spawnPoint !== null &&
+      (!Array.isArray(spawnPoint) ||
+        spawnPoint.length !== 3 ||
+        !spawnPoint.every((n) => typeof n === 'number' && Number.isFinite(n))))
   ) {
     throw new Error('Invalid player data');
   }
@@ -403,6 +427,11 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     air,
     flying,
     dimension,
+    xpLevel,
+    xpProgress,
+    spawnPoint: spawnPoint
+      ? [spawnPoint[0] as number, spawnPoint[1] as number, spawnPoint[2] as number]
+      : null,
   };
 }
 
@@ -422,6 +451,9 @@ export function applyPlayerData(player: Player, data: SerializedPlayerData): voi
   player.air = data.air;
   player.flying = data.flying;
   player.dimension = data.dimension;
+  player.xpLevel = data.xpLevel;
+  player.xpProgress = data.xpProgress;
+  player.spawnPoint = data.spawnPoint ? [...data.spawnPoint] : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -440,22 +472,15 @@ export interface SerializedWorldMetadata {
   worldType?: 'default' | 'flat';
 }
 
-export function serializeWorldMetadata(
-  meta: Partial<SerializedWorldMetadata> & {
-    seed: number;
-    timeOfDay: number;
-    weather: 'clear' | 'rain' | 'thunder';
-    breakCount: number;
-  },
-): Uint8Array {
+export function serializeWorldMetadata(meta: SerializedWorldMetadata): Uint8Array {
   const serializable: SerializedWorldMetadata = {
     seed: meta.seed,
     timeOfDay: meta.timeOfDay,
     weather: meta.weather,
-    manualOverride: meta.manualOverride ?? false,
-    strikeCounter: meta.strikeCounter ?? 0,
-    lastTick: meta.lastTick ?? -1,
-    elapsed: meta.elapsed ?? 0,
+    manualOverride: meta.manualOverride,
+    strikeCounter: meta.strikeCounter,
+    lastTick: meta.lastTick,
+    elapsed: meta.elapsed,
     breakCount: meta.breakCount,
     worldType: meta.worldType,
   };
@@ -478,10 +503,10 @@ export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMeta
   const seed = d['seed'];
   const timeOfDay = d['timeOfDay'];
   const weather = d['weather'];
-  const manualOverride = d['manualOverride'] ?? false;
-  const strikeCounter = d['strikeCounter'] ?? 0;
-  const lastTick = d['lastTick'] ?? -1;
-  const elapsed = d['elapsed'] ?? 0;
+  const manualOverride = d['manualOverride'];
+  const strikeCounter = d['strikeCounter'];
+  const lastTick = d['lastTick'];
+  const elapsed = d['elapsed'];
   const breakCount = d['breakCount'];
   const worldType = d['worldType'];
   if (

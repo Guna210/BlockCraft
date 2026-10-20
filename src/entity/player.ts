@@ -78,7 +78,7 @@ export class Player {
   public xpLevel = 0;
   public xpProgress = 0;
   public dimension = 'overworld';
-  /** Runtime-only bed spawn; null uses the current world's spawn. M17b owns persistence. */
+  /** Where the player respawns (a bed); null means the world spawn. Saved and restored by M17b. */
   public spawnPoint: Position | null = null;
   public readonly inventory = new Inventory();
   get selectedSlot(): number {
