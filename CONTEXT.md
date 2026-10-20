@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M17b IndexedDB & saving | Round 2 CHANGES NEEDED (1 item: compression-race test); master merged (37b82c0, single spawnPoint); fix sent to builder; round 3 = last | Sonnet (claude/m17b, session_01JU8DGxqKsi469qtuv2TfQ4) | session_01NDaTGLrD5CVbMTyyyJejCS | #62 | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
+| M17b IndexedDB & saving | Round 2 fix pushed (d809174, compression-race test, tests only), CI green; round 3 (last) sent to reviewer | Sonnet (claude/m17b, session_01JU8DGxqKsi469qtuv2TfQ4) | session_01NDaTGLrD5CVbMTyyyJejCS | #62 | Adds XP + spawnPoint to player data (format stays v1, never shipped); restores M15a components / lands M15b moves; weather meta required; ticks rebase; light recompute |
 
 Ready next: M13a (ECS & entity rendering; needs M11b, M12b, M12c, all merged). After M17b: M17c (world list).
 
@@ -86,6 +86,7 @@ Ready next: M13a (ECS & entity rendering; needs M11b, M12b, M12c, all merged). A
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #62 head d809174 green (fix adds m17b-inflight.test.ts + e2e warm-up only). Sent round 3 (last): prove the test fails without the wait, no weakening, spawnPoint once.
 - 2026-10-20: #62 M17b round 2 CHANGES NEEDED: the 'not compressed yet' wait in save-manager isn't covered by a test (the reviewer deleted it and the tests still passed). Everything else fixed. The builder already merged master (37b82c0) with a single spawnPoint field. Sent the fix (in-flight deflate test that must fail without the wait, optional warm-up). Round 3 is the last; if it fails, ask the owner.
 - 2026-10-19: #61 M11b merged. Told the M17b builder to merge master now (single spawnPoint, sleep-time round trip, a spawnPoint save/load + respawn test) while round 2 runs. M13a is now ready.
 - 2026-10-19: #61 M11b round 2 PASS (sleep → next multiple of 24000; tests for bed break, hostile 8/9, armor/offhand drops, double kill). Non-blocking: double-Respawn-click untested. Told the owner to merge #61; then the M17b builder merges master.
