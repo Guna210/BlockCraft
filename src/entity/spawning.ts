@@ -105,6 +105,9 @@ export class MobSpawner {
     this.clock++;
     this.despawn();
     const world = this.runtime.world;
+    // With no passive rules nothing could spawn, so nothing is recorded either.
+    const passive = this.rules.forCategory('passive').length > 0;
+    if (!passive) world.unpopulatedColumns.clear();
     let generated = 0;
     for (const key of world.unpopulatedColumns) {
       if (generated++ >= GENERATED_PER_TICK) break;
@@ -118,7 +121,7 @@ export class MobSpawner {
       this.annulusAttempt('hostile', i % 2 === 0);
       this.annulusAttempt('ambient', i % 2 === 0);
     }
-    if (this.clock % PASSIVE_INTERVAL === 0) {
+    if (passive && this.clock % PASSIVE_INTERVAL === 0) {
       const columns = world.loadedColumns().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
       for (const [cx, cz] of columns)
         if (this.runtime.random() < PASSIVE_CHANCE) this.passiveAttempt(cx, cz);
@@ -141,8 +144,8 @@ export class MobSpawner {
 
   /** One attempt for a category at a random spot 24–128 blocks from the player. */
   private annulusAttempt(category: 'hostile' | 'ambient', surface: boolean): void {
-    if (this.count(category) >= MOB_CAPS[category]) return;
     if (this.rules.forCategory(category).length === 0) return;
+    if (this.count(category) >= MOB_CAPS[category]) return;
     const runtime = this.runtime,
       world = runtime.world,
       player = runtime.player()!;
@@ -192,8 +195,8 @@ export class MobSpawner {
   }
 
   private passiveAttempt(cx: number, cz: number): void {
-    if (this.count('passive') >= MOB_CAPS.passive) return;
     if (this.rules.forCategory('passive').length === 0) return;
+    if (this.count('passive') >= MOB_CAPS.passive) return;
     const runtime = this.runtime;
     const x = cx * 16 + Math.floor(runtime.random() * 16);
     const z = cz * 16 + Math.floor(runtime.random() * 16);

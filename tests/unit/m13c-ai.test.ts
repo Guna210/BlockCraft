@@ -283,6 +283,22 @@ describe('M13c navigation and the path budget', () => {
     world.removeColumn(40, 40); // never loaded
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
+
+  it('leaves the World object untouched and still sees its block edits', () => {
+    const world = flatWorld();
+    const edits: number[][] = [];
+    world.onBlockEdited = (x, y, z) => edits.push([x, y, z]);
+    const { runtime } = scene(world);
+    // A redefined accessor would turn the World into a slow dictionary-mode object.
+    const descriptor = Object.getOwnPropertyDescriptor(world, 'onBlockEdited');
+    expect(descriptor && 'value' in descriptor).toBe(true);
+    expect(descriptor?.get).toBeUndefined();
+    const version = runtime.adapter.version;
+    world.setBlock(3, GROUND, 3, 'stone');
+    expect(runtime.adapter.version).toBeGreaterThan(version);
+    expect(runtime.classify(3, GROUND, 3)).toBe('solid');
+    expect(edits).toEqual([[3, GROUND, 3]]);
+  });
 });
 
 describe('M13c goals on a real world', () => {

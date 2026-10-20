@@ -13,9 +13,10 @@ import {
   type BlockEntityState,
 } from './block-entities';
 
-export interface ColumnListener {
+export interface WorldListener {
   loaded?(cx: number, cz: number, generated: boolean): void;
   unloaded?(cx: number, cz: number): void;
+  blockEdited?(x: number, y: number, z: number, state: number): void;
 }
 
 export class World {
@@ -53,8 +54,11 @@ export class World {
   public worldSeed: number = 42;
   public breakCount: number = 0;
   public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
-  /** Told when a column's blocks are all in place and just before a column is removed. */
-  public readonly columnListeners = new Set<ColumnListener>();
+  /**
+   * Told when a column's blocks are all in place, just before a column is removed and after each
+   * setBlock. Unlike `onBlockEdited`, adding one never redefines a property of this object.
+   */
+  public readonly listeners = new Set<WorldListener>();
   /** Keys (`cx,cz`) of generated columns that no mob spawner has populated yet. */
   public readonly unpopulatedColumns = new Set<string>();
   public worldType: 'default' | 'flat' = 'default';
@@ -139,7 +143,7 @@ export class World {
   /** Announces a streamed column; `generated` is false for one restored from a save. */
   public notifyColumnLoaded(cx: number, cz: number, generated: boolean): void {
     if (generated) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
-    for (const listener of this.columnListeners) listener.loaded?.(cx, cz, generated);
+    for (const listener of this.listeners) listener.loaded?.(cx, cz, generated);
   }
 
   /** Coordinates of every loaded column. */
@@ -152,8 +156,7 @@ export class World {
    * the removal cannot return the deleted column.
    */
   public removeColumn(cx: number, cz: number): boolean {
-    if (this.hasColumn(cx, cz))
-      for (const listener of this.columnListeners) listener.unloaded?.(cx, cz);
+    if (this.hasColumn(cx, cz)) for (const listener of this.listeners) listener.unloaded?.(cx, cz);
     this.unpopulatedColumns.delete(World.getChunkKey(cx, cz));
     this.current.removeColumn(cx, cz);
     const removedColumn = this.columns.get(World.getChunkKey(cx, cz));
@@ -325,6 +328,7 @@ export class World {
       this.lightEngine.onBlockChanged(this, x, y, z, oldStateId, stateId);
     }
     this.onBlockEdited?.(x, y, z, stateId);
+    for (const listener of this.listeners) listener.blockEdited?.(x, y, z, stateId);
     this.fluids.changed(x, y, z);
   }
 

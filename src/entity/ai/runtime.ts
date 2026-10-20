@@ -22,7 +22,7 @@ import {
 import { GoalSelector, type Goal } from './goal';
 import { Navigator, PathScheduler, type NavigationHost } from './navigation';
 import { moveMob } from './movement';
-import { Pathfinder, WorldAdapter, type NodeClassification } from './pathfinding';
+import { Pathfinder, WorldAdapter, type NodeClassification, type WorldLike } from './pathfinding';
 import { hurtMob } from '../../gameplay/combat';
 import { MobSpawner, spawnRules, type SpawnRuleRegistry } from '../spawning';
 
@@ -91,18 +91,26 @@ interface SharedPaths {
   pathfinder: Pathfinder;
 }
 
-/** One WorldAdapter per world: each adapter chains world.onBlockEdited, so never make two. */
+/** One WorldAdapter and Pathfinder per world, shared by every mob runtime on it. */
 const sharedPaths = new WeakMap<World, SharedPaths>();
 
 export function worldPaths(world: World): SharedPaths {
   let shared = sharedPaths.get(world);
   if (!shared) {
-    const adapter = new WorldAdapter(world);
+    // The adapter redefines `onBlockEdited` on the object it is given as an accessor, which turns
+    // that object into a slow dictionary-mode object. Give it a view so the World keeps its shape:
+    // otherwise every World call on the main thread gets about 3× slower and streaming stalls.
+    const view: WorldLike = {
+      getBlockStateId: (x, y, z) => world.getBlockStateId(x, y, z),
+      hasColumn: (cx, cz) => world.hasColumn(cx, cz),
+    };
+    const adapter = new WorldAdapter(view);
     shared = { adapter, pathfinder: new Pathfinder(adapter) };
-    // Loading or unloading a column changes what is solid, so cached paths go stale.
-    world.columnListeners.add({
+    // Edits and column loads and unloads change what is solid, so cached paths go stale.
+    world.listeners.add({
       loaded: () => adapter.invalidate(),
       unloaded: () => adapter.invalidate(),
+      blockEdited: () => adapter.invalidate(),
     });
     sharedPaths.set(world, shared);
   }

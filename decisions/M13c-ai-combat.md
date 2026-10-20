@@ -31,8 +31,9 @@ Decisions given by the orchestrator in the task prompt (1–6), followed by choi
   - swimming
   - wall climbing at 0.2 b/tick
 - A mob in an unloaded column freezes. The movement and AI systems skip it.
-- One shared `WorldAdapter` and `Pathfinder` per world (`worldPaths()` in `runtime.ts`), because each adapter chains `world.onBlockEdited`.
-- Column load and unload call `adapter.invalidate()` through a new `world.columnListeners` hook. `WorldManager` announces each applied column with `world.notifyColumnLoaded(cx, cz, generated)`, and `World.removeColumn` announces the unload.
+- One shared `WorldAdapter` and `Pathfinder` per world (`worldPaths()` in `runtime.ts`).
+- **Choice:** the adapter is built on a small view object (`getBlockStateId`, `hasColumn`), never on the `World` itself. M13b's adapter redefines `onBlockEdited` as an accessor on the object it is given, and doing that to the `World` puts it into V8 dictionary mode: every main-thread `World` call got about 3× slower (554 against 195 ms per 1.3M reads), which starved per-frame section uploads and made the M04b streaming e2e tests time out in CI.
+- Block edits, column loads and column unloads call `adapter.invalidate()` through a new `world.listeners` hook (`loaded`, `unloaded`, `blockEdited`). `WorldManager` announces each applied column with `world.notifyColumnLoaded(cx, cz, generated)`, `World.removeColumn` announces the unload, and `setBlockStateId` announces each edit.
 - `PathScheduler` (`navigation.ts`):
   - Runs M13b's incremental searches with a global budget of 2000 expanded nodes per tick (`PATH_NODE_BUDGET`), charged as `nodesExpanded` deltas.
   - Steps searches round-robin. Each pass splits the remaining budget evenly between the active searches, and the start of the rotation moves every pass.
@@ -97,6 +98,7 @@ Decisions given by the orchestrator in the task prompt (1–6), followed by choi
   - At 32–128, each has a 1/800 chance per tick.
   - Passive and ambient mobs never despawn.
 - **Choice:** the set of populated columns lives in memory only, because creature persistence is out of scope.
+- While a category has no rules the spawner does no work for it: no annulus attempts, no 400-tick column scan, and `world.unpopulatedColumns` is cleared each tick, so nothing accumulates while streaming.
 
 ## 5. Combat (`src/gameplay/combat.ts`)
 
