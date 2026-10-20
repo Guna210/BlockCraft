@@ -97,7 +97,13 @@ export interface BlockCraftDebugAPI {
     name?: string;
     seed?: string;
     mode?: 'survival' | 'creative';
-    type?: 'default' | 'flat';
+    type?: 'default' | 'flat' | 'amplified' | 'single_biome';
+    /** Single Biome only (an Appendix C overworld biome id); defaults to plains. */
+    biome?: import('../../gen/biomes').OverworldBiomeId;
+    /** Stored with the world; default true. */
+    structures?: boolean;
+    /** Places a chest of starting items next to the spawn; default false. */
+    startingChest?: boolean;
   }) => Promise<void>;
   openWorldList?: () => Promise<void>;
   listWorlds?: () => Promise<Array<{ name: string; lastPlayed: number; hasThumbnail: boolean }>>;

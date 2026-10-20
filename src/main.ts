@@ -14,6 +14,7 @@ import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
 import { WorldListScreen, activeWorldList } from './ui/world-list-screen';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
+import { MainMenu, activeMenu } from './ui/main-menu';
 import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
@@ -105,6 +106,17 @@ function main() {
   ui.attach();
   activeUi.manager = ui;
   activeWorldList.screen = new WorldListScreen(input, worldManager);
+  const menu = new MainMenu(glWrapper, camera, worldManager, () => {
+    void activeWorldList.screen?.open();
+  });
+  activeMenu.menu = menu;
+  // A world created with an empty seed field got a random seed; the player is told which.
+  activeWorldList.screen.onWorldCreated = (_name, seed) => ui.showMessage(`Seed: ${seed}`, 5000);
+  worldManager.onLeaveMenu = () => menu.hide();
+  ui.onSaveAndQuit = async () => {
+    await worldManager.quitToMenu();
+    menu.show();
+  };
   playerController.onDeath = (cause) => ui.showDeath(cause);
   ui.onRespawn = () => playerController.respawn();
   playerController.onUseBlock = (blockId, target) => {
@@ -237,6 +249,7 @@ function main() {
   let firstFrameResolve: (() => void) | null = null;
 
   setTestSceneInitializer(() => {
+    worldManager.leaveMenu();
     return new Promise<void>((resolve) => {
       testScene = new TestScene(glWrapper, window.innerWidth / window.innerHeight);
       firstFrameResolve = resolve;
@@ -282,8 +295,14 @@ function main() {
     const dt = time - lastTime;
     lastTime = time;
 
-    glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    // With no world and no test scene the only thing on the canvas is the static main menu: its
+    // frame stays presented until something on it changes (decisions/M18a-menus.md).
+    const idleMenu = !testScene && !worldManager.world && menu.visible && !menu.needsFrame;
+    if (!idleMenu)
+      glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
     let rendered = false;
+    // Menu frames (the panorama) are not game frames: they stay out of the frame statistics.
+    let measured = true;
 
     if (testScene) {
       testScene.render(dt / 1000, input);
@@ -292,12 +311,20 @@ function main() {
         firstFrameResolve();
         firstFrameResolve = null;
       }
+    } else if (worldManager.panorama) {
+      menu.updateCamera(time);
+      rendered = worldManager.render();
+      measured = false;
     } else if (worldManager.world) {
       playerController.frame(dt / 1000);
       rendered = worldManager.render();
     }
+    if (menu.visible) {
+      if (!idleMenu) menu.render();
+      measured = false;
+    }
 
-    if (rendered && !testScene && worldManager.saves.thumbnailCaptureRequested)
+    if (rendered && measured && !testScene && worldManager.saves.thumbnailCaptureRequested)
       worldManager.saves.captureThumbnailFrame(canvas);
 
     ui.frame();
@@ -305,9 +332,9 @@ function main() {
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
-    if (rendered) cpuTimes.push(frameCpuMs);
+    if (rendered && measured) cpuTimes.push(frameCpuMs);
     const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
-    if (rendered) uploadTimes.push(uploadMs);
+    if (rendered && measured) uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
     if (frameDrain) {
@@ -315,7 +342,7 @@ function main() {
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
-    if (rendered) {
+    if (rendered && measured) {
       frameStats.record(frameCpuMs, uploadMs, glCheckMs);
       frameCount++;
     }
@@ -340,6 +367,8 @@ function main() {
     requestAnimationFrame(render);
   }
 
+  // The page boots to the main menu; ready() resolves once it is shown and interactive.
+  menu.show();
   requestAnimationFrame((time) => {
     markReady();
     render(time);

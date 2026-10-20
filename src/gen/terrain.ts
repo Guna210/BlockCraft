@@ -3,6 +3,7 @@ import { deriveSeed, hash2 } from '../engine/rng';
 import { BlockRegistry } from '../world/blocks/registry';
 import { ChunkColumn } from '../world/column';
 import { TerrainStage } from './pipeline';
+import { densityCeiling, shapeHeight } from './world-options';
 
 export const SEA_LEVEL = 64;
 
@@ -180,7 +181,7 @@ export function sampleTerrainClimate(
   const baseH = splineContinentalness(cont);
   const erosionFactor = splineErosion(erosion);
 
-  const uncarvedHeight = baseH + (peaks * 25.0 - 10.0) * erosionFactor;
+  const uncarvedHeight = shapeHeight(baseH + (peaks * 25.0 - 10.0) * erosionFactor);
 
   // River calculation
   let riverStrength = 0;
@@ -274,9 +275,10 @@ export function terrainSolidAt(
   sampleTerrainClimate(terrainStageSeed, wx, wz, PROBE_CLIMATE);
   const targetH = Math.fround(PROBE_CLIMATE.surfaceHeight);
   const cont = PROBE_CLIMATE.continentalness;
-  const uncarved =
+  const uncarved = shapeHeight(
     splineContinentalness(cont) +
-    (PROBE_CLIMATE.peaks * 25.0 - 10.0) * splineErosion(PROBE_CLIMATE.erosion);
+      (PROBE_CLIMATE.peaks * 25.0 - 10.0) * splineErosion(PROBE_CLIMATE.erosion),
+  );
   const uncarvedH = Math.fround(uncarved);
 
   let d = 999;
@@ -313,7 +315,8 @@ export function terrainSolidAt(
         noiseAmp
       : 0.0;
   let density = targetH - y + n3d;
-  if (y > 220) density -= (y - 220) * 2.0;
+  const ceiling = densityCeiling();
+  if (y > ceiling) density -= (y - ceiling) * 2.0;
   return density > 0;
 }
 
@@ -333,6 +336,7 @@ export function generateTerrainShape(
 
   const baseWorldX = cx * 16;
   const baseWorldZ = cz * 16;
+  const ceiling = densityCeiling();
 
   // 1. Compute 2D heightmap using sampleTerrainClimate
   for (let z = 0; z < 16; z++) {
@@ -349,7 +353,7 @@ export function generateTerrainShape(
       const cont = SAMPLE_SCRATCH.continentalness;
       const erosionFactor = splineErosion(SAMPLE_SCRATCH.erosion);
       const baseH = splineContinentalness(cont);
-      const uncarved = baseH + (SAMPLE_SCRATCH.peaks * 25.0 - 10.0) * erosionFactor;
+      const uncarved = shapeHeight(baseH + (SAMPLE_SCRATCH.peaks * 25.0 - 10.0) * erosionFactor);
       UNCARVED_SCRATCH[idx] = uncarved;
 
       if (cont >= -0.15) {
@@ -455,8 +459,8 @@ export function generateTerrainShape(
               ? fbm3D((wx + offX) * 0.015, y * 0.025, (wz + offZ) * 0.015) * noiseAmp
               : 0.0;
           density = targetH - y + n3d;
-          if (y > 220) {
-            density -= (y - 220) * 2.0;
+          if (y > ceiling) {
+            density -= (y - ceiling) * 2.0;
           }
         }
 

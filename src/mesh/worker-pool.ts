@@ -57,8 +57,10 @@ export class WorkerPool {
         ? Math.max(2, navigator.hardwareConcurrency - 1)
         : 2;
 
-    const size = poolSize || defaultSize;
+    this.createWorkers(poolSize || defaultSize);
+  }
 
+  private createWorkers(size: number): void {
     for (let i = 0; i < size; i++) {
       const worker =
         this.sharedBudget?.createPort('mesh') ??
@@ -124,6 +126,18 @@ export class WorkerPool {
       this.workers.push(worker);
       this.idleWorkers.push(worker);
     }
+  }
+
+  /**
+   * Drops every queued job and, when jobs are running, replaces the workers so their work stops
+   * too. The jobs' promises never settle; their owner (the streamer) has already abandoned them.
+   */
+  public cancelAll(): void {
+    if (this.activeJobs.size > 0) {
+      const size = this.workers.length;
+      this.terminate();
+      this.createWorkers(size);
+    } else this.queue = [];
   }
 
   public get workerCount(): number {

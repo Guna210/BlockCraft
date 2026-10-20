@@ -41,6 +41,13 @@ const GLYPHS: Record<string, string> = {
   '/': '00001 00010 00100 01000 10000 00000 00000',
   ':': '00000 01100 01100 00000 01100 01100 00000',
   "'": '00100 00100 01000 00000 00000 00000 00000',
+  '!': '00100 00100 00100 00100 00100 00000 00100',
+  '?': '01110 10001 00001 00010 00100 00000 00100',
+  ',': '00000 00000 00000 00000 01100 00100 01000',
+  '&': '01100 10010 10100 01000 10101 10010 01101',
+  '+': '00000 00100 00100 11111 00100 00100 00000',
+  '(': '00010 00100 01000 01000 01000 00100 00010',
+  ')': '01000 00100 00010 00010 00010 00100 01000',
   ' ': '00000 00000 00000 00000 00000 00000 00000',
 };
 
@@ -59,6 +66,11 @@ for (const [char, text] of Object.entries(GLYPHS))
 /** Upper-cases an item id for display: `iron_helmet` → `IRON HELMET`. */
 export function displayName(id: string): string {
   return id.replace(/_/g, ' ').toUpperCase();
+}
+
+/** The seven row bitmasks of `char` (a space when the font has no such glyph). */
+export function glyphRows(char: string): readonly number[] {
+  return rows.get(char.toUpperCase()) ?? rows.get(' ')!;
 }
 
 export function hasGlyph(char: string): boolean {

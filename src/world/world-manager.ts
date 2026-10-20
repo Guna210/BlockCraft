@@ -16,7 +16,16 @@ import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
-import { OVERWORLD_BIOME_IDS } from '../gen/biomes';
+import { OVERWORLD_BIOME_IDS, type OverworldBiomeId } from '../gen/biomes';
+import {
+  DEFAULT_WORLD_OPTIONS,
+  normalizeWorldOptions,
+  setTerrainVariant,
+  type TerrainVariant,
+  type WorldOptions,
+  type WorldType,
+} from '../gen/world-options';
+import { placeStartingChest } from '../gameplay/starting-chest';
 import { hashString } from '../engine/rng';
 import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
@@ -66,6 +75,25 @@ import type { MeshResult } from '../mesh/worker-pool';
  * needs all eight neighbour columns of its own column, so the ring is one column wide.
  */
 const PERIMETER_RING = 1;
+
+/** The world behind the main menu (decisions/M18a-menus.md). */
+export const PANORAMA_SEED = 'blockcraft-panorama';
+const PANORAMA_RENDER_DISTANCE = 4;
+const PANORAMA_TIME = 6000;
+
+/** What a new world is created with: the debug `createWorld` options and the Create World screen. */
+export interface WorldStartOptions {
+  name?: string;
+  seed?: string;
+  mode?: 'survival' | 'creative';
+  type?: WorldType;
+  /** Single Biome only: the biome everywhere. Defaults to plains. */
+  biome?: OverworldBiomeId;
+  /** Stored with the world for the structure stage; default on. */
+  structures?: boolean;
+  /** A chest of starting items next to the spawn; default off. */
+  startingChest?: boolean;
+}
 
 /** Main-thread time per frame that may be spent uploading meshes. */
 const UPLOAD_BUDGET_MS = 3;
@@ -186,8 +214,16 @@ export class WorldManager {
 
   public worldSeedStr: string = 'blockcraft-test-seed-42';
   public worldSeed: number = hashString('blockcraft-test-seed-42');
-  public worldType: 'default' | 'flat' = 'default';
+  public worldType: WorldType = 'default';
+  public worldOptions: WorldOptions = { ...DEFAULT_WORLD_OPTIONS };
   public mainThreadGenCount: number = 0;
+
+  /** True while `world` is the main-menu panorama rather than a played world. */
+  public panorama = false;
+  // The render distance chosen for played worlds while the panorama streams at its own.
+  private panoramaSavedRenderDistance: number | null = null;
+  /** Called whenever a world starts (or a test takes over the renderer); main.ts hides the menu. */
+  public onLeaveMenu: (() => void) | null = null;
 
   // Re-mesh handle for tests, see StaleMeshHandle.
   public readonly pendingTerrainPromises: Map<string, Promise<void>> = new StaleMeshHandle(
@@ -345,11 +381,27 @@ export class WorldManager {
         (error) => {
           // A column that cannot be read is regenerated rather than leaving a hole in the world.
           console.warn(`[saves] column ${cx},${cz} unreadable, regenerating:`, error);
-          return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType);
+          return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.terrainVariant);
         },
       );
     }
-    return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.worldType);
+    return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.terrainVariant);
+  }
+
+  /** The generator variant of the open world: its type and, for Single Biome, its biome. */
+  public get terrainVariant(): TerrainVariant {
+    return this.worldType === 'single_biome'
+      ? { type: 'single_biome', biome: this.worldOptions.biome ?? 'plains' }
+      : { type: this.worldType };
+  }
+
+  /** Sets the open world's type and options and the main thread's generator variant to match. */
+  private setWorldKind(type: WorldType, options: WorldOptions): void {
+    this.worldType = type;
+    this.worldOptions =
+      type === 'single_biome' ? { ...options, biome: options.biome ?? 'plains' } : { ...options };
+    if (type !== 'single_biome') delete this.worldOptions.biome;
+    setTerrainVariant(this.terrainVariant);
   }
 
   /** What the streamer needs from the world, the worker pools and the GPU. */
@@ -540,7 +592,99 @@ export class WorldManager {
 
   /** Sets the render distance (rounded, clamped to 2..32), re-plans at once and returns the value used. */
   public setRenderDistance(n: number): number {
+    if (this.panorama) {
+      // The panorama keeps its own distance; the chosen one applies to the next played world.
+      this.panoramaSavedRenderDistance = clampRenderDistance(n);
+      return this.panoramaSavedRenderDistance;
+    }
     return this.streamer.setRenderDistance(clampRenderDistance(n));
+  }
+
+  /**
+   * Starts streaming the main-menu panorama: an unsaved world of the panorama seed at render
+   * distance 4, noon, with nothing simulated. The menu turns the camera (main.ts).
+   */
+  public startPanorama(): void {
+    if (this.panorama || this.world || !this.camera) return;
+    this.panorama = true;
+    this.saves.detach();
+    resetWorldTime();
+    setWorldTime(PANORAMA_TIME);
+    resetWeather();
+    this.worldSeedStr = PANORAMA_SEED;
+    this.worldSeed = hashString(PANORAMA_SEED);
+    this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
+    this.worldEpoch++;
+    this.chunkRenderer?.clearAllMeshes();
+    this.meshAttempts.clear();
+    const world = new World();
+    this.world = world;
+    this.configureLighting(world);
+    world.worldSeed = this.worldSeed;
+    world.worldType = this.worldType;
+    // Not the debug API's world: debug calls made in the menu keep addressing their own world.
+    this.panoramaSavedRenderDistance = this.streamer.renderDistance;
+    this.streamer.setRenderDistance(PANORAMA_RENDER_DISTANCE);
+    this.streamer.reset(0, 0);
+    this.streamer.active = true;
+    this.streamer.backgroundEnabled = true;
+    this.updateStreamerLimits();
+  }
+
+  /**
+   * Tears the panorama down completely: queued and running generation, light and mesh jobs are
+   * cancelled, its columns and GPU buffers freed, and the render distance restored.
+   */
+  public stopPanorama(): void {
+    if (!this.panorama) return;
+    this.panorama = false;
+    this.worldEpoch++;
+    this.streamer.reset();
+    this.streamer.active = false;
+    this.genWorkerPool.cancelAll();
+    this.lightWorkerPool.cancelAll();
+    this.workerPool.cancelAll();
+    this.updateStreamerLimits();
+    this.chunkRenderer?.clearAllMeshes();
+    this.meshAttempts.clear();
+    resetWeather();
+    this.world = null;
+    this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
+    if (this.panoramaSavedRenderDistance !== null)
+      this.streamer.setRenderDistance(this.panoramaSavedRenderDistance);
+    this.panoramaSavedRenderDistance = null;
+    resetWorldTime();
+  }
+
+  /** A world is starting: the panorama goes and the menu hides. */
+  public leaveMenu(): void {
+    this.stopPanorama();
+    this.onLeaveMenu?.();
+  }
+
+  /**
+   * Pause menu "Save & Quit": saves the open world, then lets go of it entirely (player, columns,
+   * meshes), leaving the renderer empty for the main menu.
+   */
+  public async quitToMenu(): Promise<void> {
+    if (this.panorama) return;
+    await this.exitWorld();
+    this.worldEpoch++;
+    this.streamer.reset();
+    this.streamer.active = false;
+    this.genWorkerPool.cancelAll();
+    this.lightWorkerPool.cancelAll();
+    this.workerPool.cancelAll();
+    this.updateStreamerLimits();
+    this.editMeshes.length = 0;
+    this.editVersions.clear();
+    this.playerController?.reset();
+    this.chunkRenderer?.clearAllMeshes();
+    this.meshAttempts.clear();
+    this.world = null;
+    this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
+    resetWorldTime();
+    resetWeather();
   }
 
   /** A createWorld or a region request (waitForTerrain) is waiting: its columns are not shown yet. */
@@ -574,10 +718,8 @@ export class WorldManager {
     this.mainThreadGenCount = 0;
   }
 
-  public resetWorldToEmpty(
-    seed = 'blockcraft-test-seed-42',
-    type: 'default' | 'flat' = 'default',
-  ): void {
+  public resetWorldToEmpty(seed = 'blockcraft-test-seed-42', type: WorldType = 'default'): void {
+    this.leaveMenu();
     // A hand-built test world is thrown away, not saved.
     this.saves.detach();
     resetWorldTime();
@@ -587,7 +729,7 @@ export class WorldManager {
     this.playerController?.reset();
     this.worldSeedStr = seed;
     this.worldSeed = hashString(seed);
-    this.worldType = type;
+    this.setWorldKind(type, { ...DEFAULT_WORLD_OPTIONS });
     this.worldEpoch++;
     this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
@@ -636,7 +778,7 @@ export class WorldManager {
         }
       }
     } else {
-      this.pipeline.generateColumn(this.worldSeed, cx, cz, col);
+      this.pipeline.generateColumn(this.worldSeed, cx, cz, col, this.terrainVariant);
     }
 
     weatherManager.heightmap.updateColumn(this.world, cx, cz);
@@ -749,12 +891,8 @@ export class WorldManager {
     this.streamer.invalidateAll();
   }
 
-  public async createWorld(opts?: {
-    name?: string;
-    seed?: string;
-    mode?: 'survival' | 'creative';
-    type?: 'default' | 'flat';
-  }): Promise<void> {
+  public async createWorld(opts?: WorldStartOptions): Promise<void> {
+    this.leaveMenu();
     // Leaving a world saves it first (the old world is gone once the new one starts loading).
     await this.exitWorld();
     await this.startWorld(opts);
@@ -766,6 +904,7 @@ export class WorldManager {
    * the seed.
    */
   public async loadWorld(name: string): Promise<void> {
+    this.leaveMenu();
     await this.exitWorld();
     const loaded = await this.saves.load(name);
     let player: ReturnType<typeof readPlayerData> | undefined;
@@ -777,12 +916,16 @@ export class WorldManager {
         cause: error,
       });
     }
+    const options = normalizeWorldOptions(loaded.record.options);
     await this.startWorld(
       {
         name,
         seed: loaded.record.seedString,
         type: loaded.record.worldType,
         mode: player?.mode ?? 'survival',
+        structures: options.structures,
+        startingChest: options.startingChest,
+        ...(options.biome ? { biome: options.biome } : {}),
       },
       loaded,
     );
@@ -805,12 +948,7 @@ export class WorldManager {
   }
 
   private async startWorld(
-    opts?: {
-      name?: string;
-      seed?: string;
-      mode?: 'survival' | 'creative';
-      type?: 'default' | 'flat';
-    },
+    opts?: WorldStartOptions,
     restore?: LoadedWorld,
   ): Promise<void> {
     this.initialLoadCount++;
@@ -829,12 +967,7 @@ export class WorldManager {
   }
 
   private async loadInitialWorld(
-    opts?: {
-      name?: string;
-      seed?: string;
-      mode?: 'survival' | 'creative';
-      type?: 'default' | 'flat';
-    },
+    opts?: WorldStartOptions,
     restore?: LoadedWorld,
   ): Promise<boolean> {
     const radiusChunks = 4;
@@ -844,7 +977,11 @@ export class WorldManager {
 
     this.worldSeedStr = opts?.seed ?? 'blockcraft-test-seed-42';
     this.worldSeed = hashString(this.worldSeedStr);
-    this.worldType = opts?.type ?? 'default';
+    this.setWorldKind(opts?.type ?? 'default', {
+      structures: opts?.structures ?? DEFAULT_WORLD_OPTIONS.structures,
+      startingChest: opts?.startingChest ?? DEFAULT_WORLD_OPTIONS.startingChest,
+      ...(opts?.biome ? { biome: opts.biome } : {}),
+    });
     const worldType = this.worldType;
     // A named world is saved. Its store is opened (or emptied, for a new world) before anything streams.
     let store = restore?.store ?? null;
@@ -886,6 +1023,7 @@ export class WorldManager {
           name: opts.name,
           seedString: this.worldSeedStr,
           worldType: this.worldType,
+          options: { ...this.worldOptions },
           world,
           player: () => this.playerController?.player ?? null,
           items: () => this.playerController?.itemEntities ?? null,
@@ -991,6 +1129,9 @@ export class WorldManager {
       this.camera.pitch = -0.05;
       this.camera.updateView();
     }
+
+    // A new world (never a loaded one: it already holds whatever became of its chest).
+    if (playerSpawn && this.worldOptions.startingChest) placeStartingChest(world, playerSpawn);
 
     if (playerSpawn)
       this.playerController?.spawn(

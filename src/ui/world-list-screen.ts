@@ -3,6 +3,8 @@ import type { WorldManager } from '../world/world-manager';
 import type { WorldRecord } from '../persist/world-store';
 import { drawButton, drawInset, drawPanel, fillRect, UI, uiScaleFor, type Rect } from './ui-kit';
 import { drawText, textWidth } from './pixel-font';
+import { OVERWORLD_BIOME_IDS, type OverworldBiomeId } from '../gen/biomes';
+import { WORLD_TYPES, type WorldType } from '../gen/world-options';
 
 const PANEL_W = 300;
 const PANEL_H = 226;
@@ -19,10 +21,52 @@ const BUTTONS = [
 ] as const;
 
 type Modal =
-  | { kind: 'create'; draft: string; error: string | null }
   | { kind: 'rename'; source: string; draft: string; error: string | null }
   | { kind: 'duplicate'; source: string; draft: string; error: string | null }
   | { kind: 'delete'; source: string; error: string | null };
+
+/** The Create World screen's fields (SPEC M18, decisions/M18a-menus.md). */
+interface CreateForm {
+  name: string;
+  /** The default name is selected: the first typed character replaces it. */
+  nameSelected: boolean;
+  seed: string;
+  focus: 'name' | 'seed';
+  mode: 'survival' | 'creative';
+  type: WorldType;
+  biome: OverworldBiomeId;
+  structures: boolean;
+  startingChest: boolean;
+  error: string | null;
+}
+
+type CreateToggle = 'mode' | 'type' | 'biome' | 'structures' | 'startingChest';
+
+interface CreateLayout {
+  panel: Rect;
+  name: Rect;
+  seed: Rect;
+  toggles: Partial<Record<CreateToggle, Rect>>;
+  cancel: Rect;
+  create: Rect;
+}
+
+export const DEFAULT_WORLD_NAME = 'New World';
+const SEED_MAX_CHARS = 64;
+
+const TYPE_LABELS: Record<WorldType, string> = {
+  default: 'DEFAULT',
+  flat: 'FLAT',
+  amplified: 'AMPLIFIED',
+  single_biome: 'SINGLE BIOME',
+};
+
+/** A random seed string for a Create World screen left with an empty seed. */
+export function randomSeedString(random: () => number = Math.random): string {
+  let digits = String(1 + Math.floor(random() * 9));
+  for (let i = 0; i < 11; i++) digits += String(Math.floor(random() * 10));
+  return digits;
+}
 
 interface WorldRowLayout {
   card: Rect;
@@ -104,7 +148,10 @@ export class WorldListScreen {
   private selectedName: string | null = null;
   private scrollOffset = 0;
   private modal: Modal | null = null;
+  private form: CreateForm | null = null;
   private busy = false;
+  /** Called with the seed text after the Create World screen made a world (main.ts shows it). */
+  public onWorldCreated: ((name: string, seed: string) => void) | null = null;
   private message: string | null = null;
   private dpr = 1;
   private scale = 1;
@@ -151,16 +198,22 @@ export class WorldListScreen {
       this.canvas.style.display = 'block';
       this.resize();
       this.modal = null;
+      this.form = null;
       this.message = null;
       this.scrollOffset = 0;
     }
     await this.refresh();
   }
 
+  get isOpen(): boolean {
+    return this.opened;
+  }
+
   close(): void {
     if (!this.opened) return;
     this.opened = false;
     this.modal = null;
+    this.form = null;
     this.busy = false;
     this.canvas.style.display = 'none';
     this.refreshId++;
@@ -271,6 +324,11 @@ export class WorldListScreen {
 
   private accessibleLabel(): string {
     const pending = this.busy ? 'Working. ' : '';
+    if (this.form) {
+      const f = this.form;
+      const type = f.type === 'single_biome' ? `single biome ${f.biome}` : f.type;
+      return `${pending}Create world name. ${f.name}. Seed ${f.seed || 'random'}. Mode ${f.mode}. Type ${type}. Structures ${f.structures ? 'on' : 'off'}. Starting chest ${f.startingChest ? 'on' : 'off'}${f.error ? `. ${f.error}` : ''}`;
+    }
     if (this.modal?.kind === 'delete')
       return `${pending}Confirm deleting world ${this.modal.source}. Cancel or delete.`;
     if (this.modal)
@@ -363,6 +421,223 @@ export class WorldListScreen {
 
     this.canvas.setAttribute('aria-label', this.accessibleLabel());
     if (this.modal) this.renderModal(this.modal);
+    if (this.form) this.renderCreate(this.form);
+  }
+
+  /**
+   * The Create World screen's layout. Cancel and Create sit where the M17c name prompt had its
+   * buttons, so clicking through that prompt keeps working.
+   */
+  private createLayout(): CreateLayout {
+    const panel = { x: this.originX, y: this.originY, w: PANEL_W, h: 190 };
+    const left = (y: number) => ({ x: panel.x + 9, y: panel.y + y, w: 138, h: 17 });
+    const right = (y: number) => ({ x: panel.x + 153, y: panel.y + y, w: 138, h: 17 });
+    const { cancel, confirm } = this.modalRects();
+    const toggles: CreateLayout['toggles'] = {
+      mode: left(84),
+      type: right(84),
+      structures: left(104),
+      startingChest: right(104),
+    };
+    if (this.form?.type === 'single_biome') toggles.biome = left(124);
+    return {
+      panel,
+      name: { x: panel.x + 9, y: panel.y + 31, w: PANEL_W - 18, h: 16 },
+      seed: { x: panel.x + 9, y: panel.y + 61, w: PANEL_W - 18, h: 16 },
+      toggles,
+      cancel,
+      create: confirm,
+    };
+  }
+
+  private toggleLabel(form: CreateForm, toggle: CreateToggle): string {
+    switch (toggle) {
+      case 'mode':
+        return `MODE: ${form.mode.toUpperCase()}`;
+      case 'type':
+        return `TYPE: ${TYPE_LABELS[form.type]}`;
+      case 'biome':
+        return `BIOME: ${form.biome.replace(/_/g, ' ').toUpperCase()}`;
+      case 'structures':
+        return `STRUCTURES: ${form.structures ? 'ON' : 'OFF'}`;
+      case 'startingChest':
+        return `START CHEST: ${form.startingChest ? 'ON' : 'OFF'}`;
+    }
+  }
+
+  private renderCreate(form: CreateForm): void {
+    const s = this.scale;
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const layout = this.createLayout();
+    drawPanel(this.ctx, layout.panel, s);
+    const label = (text: string, x: number, y: number, color: string = UI.text) =>
+      drawText(this.ctx, text, x * s, y * s, s, color, UI.outline);
+    label('CREATE NEW WORLD', layout.panel.x + 9, layout.panel.y + 9);
+    label('WORLD NAME', layout.name.x, layout.name.y - 9);
+    label('SEED (LEAVE EMPTY FOR RANDOM)', layout.seed.x, layout.seed.y - 9);
+
+    const field = (rect: Rect, text: string, focused: boolean, selected: boolean) => {
+      drawInset(this.ctx, rect, s);
+      if (focused) {
+        fillRect(this.ctx, rect.x, rect.y, rect.w, 1, UI.accent, s);
+        fillRect(this.ctx, rect.x, rect.y + rect.h - 1, rect.w, 1, UI.accent, s);
+      }
+      const maxChars = Math.floor((rect.w - 8) / 6);
+      const shown = [...text.toUpperCase()].slice(-maxChars).join('');
+      if (selected && shown)
+        fillRect(this.ctx, rect.x + 3, rect.y + 3, textWidth(shown) + 2, 11, UI.shade, s);
+      drawText(this.ctx, shown, (rect.x + 4) * s, (rect.y + 5) * s, s, UI.text, UI.outline);
+      if (focused && !selected && Math.floor(performance.now() / 500) % 2 === 0)
+        fillRect(this.ctx, rect.x + 4 + textWidth(shown) + 1, rect.y + 4, 1, 9, UI.accent, s);
+    };
+    field(layout.name, form.name, form.focus === 'name', form.nameSelected);
+    field(layout.seed, form.seed, form.focus === 'seed', false);
+
+    for (const [toggle, rect] of Object.entries(layout.toggles) as Array<[CreateToggle, Rect]>)
+      drawButton(
+        this.ctx,
+        rect,
+        this.toggleLabel(form, toggle),
+        s,
+        contains(rect, this.mouse.x, this.mouse.y),
+      );
+    drawButton(
+      this.ctx,
+      layout.cancel,
+      'CANCEL',
+      s,
+      contains(layout.cancel, this.mouse.x, this.mouse.y),
+    );
+    drawButton(
+      this.ctx,
+      layout.create,
+      this.busy ? 'WAIT' : 'CREATE',
+      s,
+      contains(layout.create, this.mouse.x, this.mouse.y),
+    );
+    if (form.error) {
+      wrapText(form.error.toUpperCase(), 46)
+        .slice(0, 2)
+        .forEach((line, index) =>
+          label(line, layout.panel.x + 9, layout.panel.y + 167 + index * 9, UI.accent),
+        );
+    }
+  }
+
+  private openCreate(): void {
+    this.form = {
+      name: DEFAULT_WORLD_NAME,
+      nameSelected: true,
+      seed: '',
+      focus: 'name',
+      mode: 'survival',
+      type: 'default',
+      biome: OVERWORLD_BIOME_IDS[0],
+      structures: true,
+      startingChest: false,
+      error: null,
+    };
+    this.message = null;
+    this.render();
+  }
+
+  private cycle(form: CreateForm, toggle: CreateToggle): void {
+    const next = <T>(values: readonly T[], value: T): T =>
+      values[(values.indexOf(value) + 1) % values.length]!;
+    if (toggle === 'mode') form.mode = form.mode === 'survival' ? 'creative' : 'survival';
+    else if (toggle === 'type') form.type = next(WORLD_TYPES, form.type);
+    else if (toggle === 'biome') form.biome = next(OVERWORLD_BIOME_IDS, form.biome);
+    else if (toggle === 'structures') form.structures = !form.structures;
+    else form.startingChest = !form.startingChest;
+    form.error = null;
+  }
+
+  private async submitCreate(): Promise<void> {
+    const form = this.form;
+    if (!form || this.busy) return;
+    const name = form.name.trim();
+    const length = Array.from(name).length;
+    if (length < 1 || length > 32) {
+      form.error = 'World names must be 1 to 32 characters.';
+      this.render();
+      return;
+    }
+    if (this.rows.some((record) => record.name === name)) {
+      form.error = `A world named '${name}' already exists.`;
+      this.render();
+      return;
+    }
+    const seed = form.seed.trim() || randomSeedString();
+    this.busy = true;
+    form.error = null;
+    this.render();
+    try {
+      await this.manager.createWorld({
+        name,
+        seed,
+        mode: form.mode,
+        type: form.type,
+        ...(form.type === 'single_biome' ? { biome: form.biome } : {}),
+        structures: form.structures,
+        startingChest: form.startingChest,
+      });
+      await this.manager.save();
+      this.close();
+      this.onWorldCreated?.(name, seed);
+    } catch (error) {
+      form.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private onCreateMouseDown(form: CreateForm, x: number, y: number): void {
+    const layout = this.createLayout();
+    if (contains(layout.cancel, x, y)) {
+      this.form = null;
+    } else if (contains(layout.create, x, y)) {
+      void this.submitCreate();
+      return;
+    } else if (contains(layout.name, x, y)) {
+      form.focus = 'name';
+      form.nameSelected = false;
+    } else if (contains(layout.seed, x, y)) {
+      form.focus = 'seed';
+      form.nameSelected = false;
+    } else {
+      for (const [toggle, rect] of Object.entries(layout.toggles) as Array<[CreateToggle, Rect]>)
+        if (contains(rect, x, y)) this.cycle(form, toggle);
+    }
+    this.render();
+  }
+
+  private onCreateKeyDown(form: CreateForm, event: KeyboardEvent): void {
+    event.preventDefault();
+    if (event.key === 'Escape' && !this.busy) {
+      this.form = null;
+      return this.render();
+    }
+    if (event.key === 'Enter') return void this.submitCreate();
+    if (this.busy) return;
+    if (event.key === 'Tab') {
+      form.focus = form.focus === 'name' ? 'seed' : 'name';
+      form.nameSelected = false;
+      return this.render();
+    }
+    const key = form.focus;
+    let text = form[key];
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') text = '';
+    else if (event.key === 'Backspace')
+      text = key === 'name' && form.nameSelected ? '' : Array.from(text).slice(0, -1).join('');
+    else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)
+      text = (key === 'name' && form.nameSelected ? '' : text) + event.key;
+    else return;
+    form[key] = key === 'seed' ? Array.from(text).slice(0, SEED_MAX_CHARS).join('') : text;
+    form.nameSelected = false;
+    form.error = null;
+    this.render();
   }
 
   private renderRow(record: WorldRecord, visibleIndex: number): void {
@@ -447,13 +722,11 @@ export class WorldListScreen {
     const rects = this.modalRects();
     drawPanel(this.ctx, rects.panel, this.scale);
     const title =
-      modal.kind === 'create'
-        ? 'CREATE WORLD'
-        : modal.kind === 'rename'
-          ? 'RENAME WORLD'
-          : modal.kind === 'duplicate'
-            ? 'DUPLICATE WORLD'
-            : 'DELETE WORLD?';
+      modal.kind === 'rename'
+        ? 'RENAME WORLD'
+        : modal.kind === 'duplicate'
+          ? 'DUPLICATE WORLD'
+          : 'DELETE WORLD?';
     drawText(
       this.ctx,
       title,
@@ -518,13 +791,7 @@ export class WorldListScreen {
       );
     }
     const confirmLabel =
-      modal.kind === 'delete'
-        ? 'DELETE'
-        : modal.kind === 'create'
-          ? 'CREATE'
-          : modal.kind === 'rename'
-            ? 'SAVE'
-            : 'COPY';
+      modal.kind === 'delete' ? 'DELETE' : modal.kind === 'rename' ? 'SAVE' : 'COPY';
     drawButton(
       this.ctx,
       rects.cancel,
@@ -551,12 +818,7 @@ export class WorldListScreen {
       this.render();
       return;
     }
-    if (
-      this.rows.some(
-        (record) =>
-          record.name === name && (modal.kind === 'create' || record.name !== modal.source),
-      )
-    ) {
+    if (this.rows.some((record) => record.name === name && record.name !== modal.source)) {
       modal.error = `A world named '${name}' already exists.`;
       this.render();
       return;
@@ -566,12 +828,6 @@ export class WorldListScreen {
     modal.error = null;
     this.render();
     try {
-      if (modal.kind === 'create') {
-        await this.manager.createWorld({ name, seed: name, mode: 'survival', type: 'default' });
-        await this.manager.save();
-        this.close();
-        return;
-      }
       if (modal.kind === 'rename') {
         await this.manager.saves.renameWorld(modal.source, name);
       } else {
@@ -663,6 +919,7 @@ export class WorldListScreen {
     event.preventDefault();
     if (!this.opened || event.button !== 0 || this.busy) return;
     const { x, y } = this.eventPosition(event);
+    if (this.form) return this.onCreateMouseDown(this.form, x, y);
     if (this.modal) {
       const modal = this.modal;
       const rects = this.modalRects();
@@ -677,11 +934,7 @@ export class WorldListScreen {
     }
 
     const footer = this.footerButtons();
-    if (contains(footer.create, x, y)) {
-      this.modal = { kind: 'create', draft: '', error: null };
-      this.render();
-      return;
-    }
+    if (contains(footer.create, x, y)) return this.openCreate();
     if (contains(footer.back, x, y)) return this.close();
 
     const visible = this.rows.slice(this.scrollOffset, this.scrollOffset + VISIBLE_ROWS);
@@ -703,7 +956,7 @@ export class WorldListScreen {
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
-    if (!this.opened || this.modal || this.rows.length <= VISIBLE_ROWS) return;
+    if (!this.opened || this.modal || this.form || this.rows.length <= VISIBLE_ROWS) return;
     event.preventDefault();
     this.scrollOffset = Math.max(
       0,
@@ -714,6 +967,7 @@ export class WorldListScreen {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.opened || event.repeat) return;
+    if (this.form) return this.onCreateKeyDown(this.form, event);
     if (this.modal) {
       event.preventDefault();
       const modal = this.modal;

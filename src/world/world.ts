@@ -4,6 +4,7 @@ import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
+import type { WorldType } from '../gen/world-options';
 import { EntityQuery } from '../entity/query';
 import { CurrentEngine } from '../gameplay/current';
 import type { ItemSpawner } from '../gameplay/mechanics';
@@ -48,7 +49,7 @@ export class World {
   public worldSeed: number = 42;
   public breakCount: number = 0;
   public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
-  public worldType: 'default' | 'flat' = 'default';
+  public worldType: WorldType = 'default';
 
   /**
    * Columns whose blocks changed through `setBlockStateId` since the persistence layer last took

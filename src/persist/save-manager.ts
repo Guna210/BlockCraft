@@ -36,6 +36,7 @@ import {
   type WorldRecord,
 } from './world-store';
 import type { BlockEntityInstance } from '../world/block-entities';
+import type { WorldOptions, WorldType } from '../gen/world-options';
 
 /** Time between incremental autosaves (SPEC M17). */
 export const AUTOSAVE_INTERVAL_MS = 60_000;
@@ -52,7 +53,9 @@ export type SaveReason = 'autosave' | 'pause' | 'hidden' | 'exit' | 'manual';
 export interface SaveSession {
   name: string;
   seedString: string;
-  worldType: 'default' | 'flat';
+  worldType: WorldType;
+  /** Create World options (M18a); stored with the world record. */
+  options?: WorldOptions;
   world: World;
   player(): Player | null;
   items(): ItemEntityManager | null;
@@ -607,6 +610,7 @@ export class SaveManager {
       formatVersion: FORMAT_VERSION,
       seedString: session.seedString,
       worldType: session.worldType,
+      ...(session.options ? { options: { ...session.options } } : {}),
       createdAt: active.createdAt,
       lastPlayed: Date.now(),
       ...(thumbnail ? { thumbnail } : {}),
