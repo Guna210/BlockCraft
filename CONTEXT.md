@@ -52,8 +52,8 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-| M13a ECS & entity rendering | Prompt given | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
-| M17c World list | PR #63 (codex/m17c-world-list) CI red: per-frame thumbnail drawImage in main.ts starves uploads (m04:221, m04:276 fail on CI). Fix sent: capture only on save request, 500 ms fallback | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
+| M13a ECS & entity rendering | PR #64 green (head a7e1e64); round 1 reviewer prompt given | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
+| M17c World list | #63 green after thumbnail fix (973fb83, head 339b96b); round 1 reviewer prompt given | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
 
 Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
 
@@ -88,6 +88,7 @@ Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #63 (339b96b) and #64 M13a (a7e1e64) CI green; they merge clean with each other. Gave both reviewer prompts.
 - 2026-10-20: #63 M17c CI red, shard 2: m04:221/276 streaming never idle (uploadsDeferred stuck). Cause: captureThumbnailFrame after every frame. Gave the owner a fix for Codex (capture on save request only); also the m17b:537 autosave timeout Codex called 'known' must pass.
 - 2026-10-20: #62 M17b merged (ae48baf). Owner asked me to assign: M13a to Claude Code cloud, M17c to Codex; prompts given.
 - 2026-10-20: #62 M17b round 3 PASS (probe: in-flight test fails without the wait; spawnPoint declared once). Open owner decision: autosave-spike e2e was loosened in 37b82c0 (retry up to 3 attempts, pass if one attempt of 3 autosaves stays <=16 ms; old total.maxSliceMs check removed; heavy test 2 of 4), threshold unchanged. Recommended accept and merge. Leftovers: stray console.log('DROPS') in m17b.spec.ts; newer-formatVersion tests only for regions/worlds; garbled column warns every load until edited.
