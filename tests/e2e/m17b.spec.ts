@@ -547,6 +547,11 @@ test('M17b: autosaves of a default-terrain world with hundreds of edited columns
     await api.waitForTerrain!(2);
     api.resume!();
     const out: Array<{ lastRunMaxSliceMs: number; step: string; columns: number; ms: number }> = [];
+    // A first autosave, not measured, so the measured runs do not include the cold one.
+    for (let cx = -9; cx <= 9; cx++)
+      for (let cz = -9; cz <= 9; cz++) api.setBlock!(cx * 16, 29, cz * 16, 'stone');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await api.autosaveNow!();
     for (let run = 0; run < 4; run++) {
       // Terrain-heavy edits: a 6 × 6 patch in every column of a 19 × 19 grid, inside generated terrain.
       for (let cx = -9; cx <= 9; cx++)
