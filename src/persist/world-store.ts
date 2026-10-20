@@ -22,6 +22,8 @@ export interface WorldRecord {
   worldType: 'default' | 'flat';
   createdAt: number;
   lastPlayed: number;
+  /** A 160×90 PNG of the last rendered game view, captured when this world saves. */
+  thumbnail?: Blob;
   /** `serializeWorldMetadata` bytes: seed hash, world time, weather, break counter. */
   meta: Uint8Array;
   /** The scheduled-block-tick clock. Saved ticks are re-based against it (see `BlockTicks.addRebased`). */

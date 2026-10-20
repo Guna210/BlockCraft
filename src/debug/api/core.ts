@@ -101,6 +101,8 @@ export interface BlockCraftDebugAPI {
     mode?: 'survival' | 'creative';
     type?: 'default' | 'flat';
   }) => Promise<void>;
+  openWorldList?: () => Promise<void>;
+  listWorlds?: () => Promise<Array<{ name: string; lastPlayed: number; hasThumbnail: boolean }>>;
   waitForTerrain?: (radiusChunks: number) => Promise<void>;
   loadWorld?: (name: string) => Promise<void>;
   save?: () => Promise<void>;

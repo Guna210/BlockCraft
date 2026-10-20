@@ -12,6 +12,7 @@ import { WorldManager } from './world/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
 import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
+import { WorldListScreen, activeWorldList } from './ui/world-list-screen';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
@@ -103,6 +104,7 @@ function main() {
   const ui = new UiManager(input, () => worldManager.playerController, icons);
   ui.attach();
   activeUi.manager = ui;
+  activeWorldList.screen = new WorldListScreen(input, worldManager);
   playerController.onDeath = (cause) => ui.showDeath(cause);
   ui.onRespawn = () => playerController.respawn();
   playerController.onUseBlock = (blockId, target) => {
@@ -294,6 +296,9 @@ function main() {
       playerController.frame(dt / 1000);
       rendered = worldManager.render();
     }
+
+    if (rendered && !testScene && worldManager.saves.thumbnailCaptureRequested)
+      worldManager.saves.captureThumbnailFrame(canvas);
 
     ui.frame();
     hud.frame(time);
