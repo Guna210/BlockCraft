@@ -13,7 +13,9 @@ These decisions define the world list work and follow the M17b persistence inter
 ## Thumbnails
 
 - When a save needs a thumbnail, request one rendered frame and immediately copy the WebGL canvas into a 160×90 2D canvas with image smoothing disabled. This samples the frame before the WebGL drawing buffer is discarded; the WebGL context does not request `preserveDrawingBuffer`.
-- `main.ts` checks the request flag after rendering and copies at most one frame per save. With no pending request, there is no `getContext` or `drawImage` work in the frame loop. If no frame renders within 500 ms (such as a hidden tab or page-hide save), keep the world's existing thumbnail, or omit the thumbnail when none exists.
+- `main.ts` checks the request flag after rendering and copies at most one frame per save. With no pending request, there is no `getContext` or `drawImage` work in the frame loop. If a visible save requests a frame but none renders within 500 ms, keep the world's existing thumbnail, or omit the thumbnail when none exists.
+- Saves triggered for `hidden` or `exit`, and any save that reaches its thumbnail step while the document is hidden, skip the frame request and write the player and world records immediately after region flush. They reuse the world's existing thumbnail, if any, so pagehide does not delay the latest position or inventory write. Visible pause and autosave runs still request a fresh frame.
+- Time spent in the render-loop `drawImage` call is recorded as the save's `thumbnail` stretch, alongside the thumbnail encoding request.
 - Convert the captured frame to a PNG Blob as the world record is written.
 - Draw a small code-generated landscape in the shared UI palette when a world has no thumbnail.
 

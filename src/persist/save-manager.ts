@@ -267,7 +267,12 @@ export class SaveManager {
       }
       context.imageSmoothingEnabled = false;
       context.clearRect(0, 0, 160, 90);
-      context.drawImage(source, 0, 0, 160, 90);
+      const drawStarted = this.now();
+      try {
+        context.drawImage(source, 0, 0, 160, 90);
+      } finally {
+        this.recordStretch('thumbnail', this.now() - drawStarted);
+      }
       this.thumbnailFrameReady = true;
       this.finishThumbnailCapture(true);
     } catch {
@@ -518,7 +523,7 @@ export class SaveManager {
     return thumbnail;
   }
 
-  private async execute(mode: RunMode, _reason: SaveReason): Promise<void> {
+  private async execute(mode: RunMode, reason: SaveReason): Promise<void> {
     const active = this.active;
     if (!active) return;
     const { session, store } = active;
@@ -571,7 +576,13 @@ export class SaveManager {
       }
 
       await this.suspend('region', this.yieldSlice(mode));
-      const thumbnail = (await this.thumbnailForSave()) ?? active.thumbnail;
+      const captureThumbnail =
+        reason !== 'hidden' &&
+        reason !== 'exit' &&
+        !(typeof document !== 'undefined' && document.visibilityState === 'hidden');
+      const thumbnail = captureThumbnail
+        ? ((await this.thumbnailForSave()) ?? active.thumbnail)
+        : active.thumbnail;
       if (thumbnail) active.thumbnail = thumbnail;
       await this.suspend('world', store.db.write(this.sessionWrites(active, thumbnail)));
       if (regionError) throw regionError;

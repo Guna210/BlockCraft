@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { api } from '../../src/debug/api/core';
+import '../../src/debug/api/persist';
 import { SaveDb, STORE_NAMES } from '../../src/persist/idb';
+import { SaveManager } from '../../src/persist/save-manager';
 import { createFakeIdb } from './helpers/fake-idb';
+import { World } from '../../src/world/world';
+import { WorldManager } from '../../src/world/world-manager';
 import { formatWorldListTime } from '../../src/ui/world-list-screen';
 
 async function saveWorldRecords(db: SaveDb, name: string, marker: string): Promise<void> {
@@ -25,6 +30,43 @@ describe('M17c — world record management', () => {
   it('formats last-played dates with the local 24-hour clock', () => {
     const localDate = new Date(2026, 8, 7, 4, 5);
     expect(formatWorldListTime(localDate.getTime())).toBe('2026-09-07 04:05');
+  });
+
+  it('lists a world without a thumbnail as hasThumbnail false and loads it', async () => {
+    const fake = createFakeIdb();
+    const saves = new SaveManager({ env: () => fake.env });
+    const world = new World(false);
+    saves.attach(
+      {
+        name: 'No Thumbnail',
+        seedString: 'seed',
+        worldType: 'default',
+        world,
+        player: () => null,
+        items: () => null,
+      },
+      await saves.create('No Thumbnail'),
+    );
+    await saves.save('hidden');
+
+    const getInstance = vi
+      .spyOn(WorldManager, 'getInstance')
+      .mockReturnValue({ saves } as unknown as WorldManager);
+    try {
+      await expect(api.listWorlds?.()).resolves.toEqual([
+        {
+          name: 'No Thumbnail',
+          lastPlayed: expect.any(Number),
+          hasThumbnail: false,
+        },
+      ]);
+    } finally {
+      getInstance.mockRestore();
+    }
+
+    const loaded = await new SaveManager({ env: () => fake.env }).load('No Thumbnail');
+    expect(loaded.record.name).toBe('No Thumbnail');
+    expect(loaded.record.thumbnail).toBeUndefined();
   });
 
   it('renames every store in one operation and preserves other worlds', async () => {
