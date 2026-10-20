@@ -53,7 +53,7 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 
 | M13a ECS & entity rendering | PR #64 green (head a7e1e64); round 1 reviewer prompt given | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
-| M17c World list | #63 green after thumbnail fix (973fb83, head 339b96b); round 1 reviewer prompt given | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
+| M17c World list | #63 round 1 CHANGES NEEDED (hidden/exit saves wait 500 ms for a frame); fix sent to Codex; reviewer session_01N4VC38S77qKPBTL8TTGban | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
 
 Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
 
@@ -88,6 +88,7 @@ Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #63 M17c round 1 CHANGES NEEDED: hidden/exit saves wait up to 500 ms for a thumbnail frame before writing player/world (pagehide data loss). Fix: skip frame wait on hidden/exit, tests; plus thumbnail-less record test. Non-blocking: duplicate keeps source lastPlayed, no name edge tests.
 - 2026-10-20: #63 (339b96b) and #64 M13a (a7e1e64) CI green; they merge clean with each other. Gave both reviewer prompts.
 - 2026-10-20: #63 M17c CI red, shard 2: m04:221/276 streaming never idle (uploadsDeferred stuck). Cause: captureThumbnailFrame after every frame. Gave the owner a fix for Codex (capture on save request only); also the m17b:537 autosave timeout Codex called 'known' must pass.
 - 2026-10-20: #62 M17b merged (ae48baf). Owner asked me to assign: M13a to Claude Code cloud, M17c to Codex; prompts given.
