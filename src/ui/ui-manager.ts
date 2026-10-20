@@ -54,13 +54,7 @@ import { addXp } from '../gameplay/xp';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 
 export type ScreenName =
-  | 'inventory'
-  | 'crafting'
-  | 'chest'
-  | 'kiln'
-  | 'death'
-  | 'sleeping'
-  | 'pause';
+  'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping' | 'pause';
 export type ClickButton = 'left' | 'right';
 
 export interface ScreenSnapshot {
@@ -1419,7 +1413,13 @@ export class UiManager {
       UI.text,
       UI.outline,
     );
-    drawButton(this.ctx, resume, 'RESUME', scale, !this.quitting && this.hoverButton(this.resumeRect));
+    drawButton(
+      this.ctx,
+      resume,
+      'RESUME',
+      scale,
+      !this.quitting && this.hoverButton(this.resumeRect),
+    );
     drawButton(
       this.ctx,
       saveQuit,

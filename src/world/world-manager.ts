@@ -947,10 +947,7 @@ export class WorldManager {
     await this.saves.save('manual');
   }
 
-  private async startWorld(
-    opts?: WorldStartOptions,
-    restore?: LoadedWorld,
-  ): Promise<void> {
+  private async startWorld(opts?: WorldStartOptions, restore?: LoadedWorld): Promise<void> {
     this.initialLoadCount++;
     // The streamer loads only what the barrier below pins until the barrier is done.
     this.streamer.backgroundEnabled = false;

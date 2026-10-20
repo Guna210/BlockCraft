@@ -51,11 +51,18 @@ describe('M18a world types', () => {
     // The generated blocks agree with the height probe: the peak column really is that tall.
     const world = new World();
     const pipeline = createDefaultPipeline();
-    pipeline.generateColumn(hashString('blockcraft-test-seed-42'), -2, 2, world.getColumn(-2, 2, true)!, {
-      type: 'amplified',
-    });
+    pipeline.generateColumn(
+      hashString('blockcraft-test-seed-42'),
+      -2,
+      2,
+      world.getColumn(-2, 2, true)!,
+      {
+        type: 'amplified',
+      },
+    );
     let peak = 0;
-    for (let x = -32; x < -16; x++) for (let z = 32; z < 48; z++) peak = Math.max(peak, world.getHeight(x, z));
+    for (let x = -32; x < -16; x++)
+      for (let z = 32; z < 48; z++) peak = Math.max(peak, world.getHeight(x, z));
     expect(peak).toBeGreaterThan(250);
     // The ambient variant is restored after the column.
     expect(terrainVariant().type).toBe('default');

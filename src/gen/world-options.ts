@@ -35,9 +35,7 @@ export function normalizeWorldOptions(value: unknown): WorldOptions {
   const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
   const options: WorldOptions = {
     structures:
-      typeof raw['structures'] === 'boolean'
-        ? raw['structures']
-        : DEFAULT_WORLD_OPTIONS.structures,
+      typeof raw['structures'] === 'boolean' ? raw['structures'] : DEFAULT_WORLD_OPTIONS.structures,
     startingChest:
       typeof raw['startingChest'] === 'boolean'
         ? raw['startingChest']
