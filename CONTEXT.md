@@ -54,7 +54,7 @@ In flight:
 
 | M13c AI, spawning & combat | #65 round 1 PASS, but red after Update branch (m04:221/276 streaming never idle; shard 2 was already 27 min before). Perf fix sent to builder; after green, round 2 (same reviewer session_01CowYQV8SW81itvuApPFqZR) checks only the fix | Sonnet (claude/m13c, session_019deLHc75p2JdT69Kz5LJ2Y) | - | #65 | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
 
-Ready now: M18a, M19a; after #65 merges also M13d, M13e. Proposed first: M13e Sonnet, M19a Codex; then M13d, M18a.
+Ready now: M18a, M19a; after #65 merges also M13d, M13e. Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
 ## Open items for the owner
 
