@@ -12,8 +12,9 @@ These decisions define the world list work and follow the M17b persistence inter
 
 ## Thumbnails
 
-- After a world frame renders, copy the WebGL canvas immediately into a 160×90 2D canvas with image smoothing disabled. This samples the frame before the WebGL drawing buffer is discarded; the WebGL context does not request `preserveDrawingBuffer`.
-- Convert the most recent sampled frame to a PNG Blob as the world record is written. A saved world with no captured frame keeps its prior thumbnail if it has one.
+- When a save needs a thumbnail, request one rendered frame and immediately copy the WebGL canvas into a 160×90 2D canvas with image smoothing disabled. This samples the frame before the WebGL drawing buffer is discarded; the WebGL context does not request `preserveDrawingBuffer`.
+- `main.ts` checks the request flag after rendering and copies at most one frame per save. With no pending request, there is no `getContext` or `drawImage` work in the frame loop. If no frame renders within 500 ms (such as a hidden tab or page-hide save), keep the world's existing thumbnail, or omit the thumbnail when none exists.
+- Convert the captured frame to a PNG Blob as the world record is written.
 - Draw a small code-generated landscape in the shared UI palette when a world has no thumbnail.
 
 ## Screen and debug API

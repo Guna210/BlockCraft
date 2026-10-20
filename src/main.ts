@@ -297,7 +297,8 @@ function main() {
       rendered = worldManager.render();
     }
 
-    if (rendered && !testScene) worldManager.saves.captureThumbnailFrame(canvas);
+    if (rendered && !testScene && worldManager.saves.thumbnailCaptureRequested)
+      worldManager.saves.captureThumbnailFrame(canvas);
 
     ui.frame();
     hud.frame(time);

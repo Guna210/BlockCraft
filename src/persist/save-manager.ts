@@ -43,6 +43,8 @@ export const AUTOSAVE_INTERVAL_MS = 60_000;
 export const SLICE_BUDGET_MS = 2;
 /** An autosave slice waits for a frame; if frames stop (a hidden tab) it carries on after this. */
 const FRAME_WAIT_FALLBACK_MS = 100;
+/** A thumbnail save waits briefly for one rendered frame, then keeps its previous thumbnail. */
+const THUMBNAIL_FRAME_WAIT_FALLBACK_MS = 500;
 
 export type SaveReason = 'autosave' | 'pause' | 'hidden' | 'exit' | 'manual';
 
@@ -128,6 +130,9 @@ export class SaveManager {
   private thumbnailCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
   private thumbnailWorker: Worker | null = null;
   private thumbnailFrameReady = false;
+  private thumbnailCaptureRequested_ = false;
+  private thumbnailCaptureResolve: ((captured: boolean) => void) | null = null;
+  private thumbnailCaptureTimeout: ReturnType<typeof setTimeout> | null = null;
   private stretchStart = 0;
   private runMaxSliceMs = 0;
   private runSlowestStep = '';
@@ -226,6 +231,7 @@ export class SaveManager {
     createdAt: number = Date.now(),
     thumbnail?: Blob,
   ): void {
+    this.finishThumbnailCapture(false);
     this.active = { session, store, createdAt, thumbnail };
     this.thumbnailFrameReady = false;
     this.openThumbnailWorker();
@@ -235,21 +241,62 @@ export class SaveManager {
     void this.warmUp(store);
   }
 
-  /** Downsamples a just-rendered WebGL frame while its drawing buffer is still available. */
+  /** Whether the next rendered frame should be copied for a save in progress. */
+  get thumbnailCaptureRequested(): boolean {
+    return this.thumbnailCaptureRequested_;
+  }
+
+  /** Downsamples one just-rendered frame only when a save has requested a thumbnail. */
   captureThumbnailFrame(source: HTMLCanvasElement): void {
-    if (!this.active || source.width === 0 || source.height === 0) return;
-    if (!this.thumbnailCanvas) {
-      this.thumbnailCanvas =
-        typeof OffscreenCanvas !== 'undefined'
-          ? new OffscreenCanvas(160, 90)
-          : Object.assign(document.createElement('canvas'), { width: 160, height: 90 });
+    if (!this.thumbnailCaptureRequested_) return;
+    if (!this.active || source.width === 0 || source.height === 0) {
+      this.finishThumbnailCapture(false);
+      return;
     }
-    const context = this.thumbnailCanvas.getContext('2d');
-    if (!context) return;
-    context.imageSmoothingEnabled = false;
-    context.clearRect(0, 0, 160, 90);
-    context.drawImage(source, 0, 0, 160, 90);
-    this.thumbnailFrameReady = true;
+    try {
+      if (!this.thumbnailCanvas) {
+        this.thumbnailCanvas =
+          typeof OffscreenCanvas !== 'undefined'
+            ? new OffscreenCanvas(160, 90)
+            : Object.assign(document.createElement('canvas'), { width: 160, height: 90 });
+      }
+      const context = this.thumbnailCanvas.getContext('2d');
+      if (!context) {
+        this.finishThumbnailCapture(false);
+        return;
+      }
+      context.imageSmoothingEnabled = false;
+      context.clearRect(0, 0, 160, 90);
+      context.drawImage(source, 0, 0, 160, 90);
+      this.thumbnailFrameReady = true;
+      this.finishThumbnailCapture(true);
+    } catch {
+      this.finishThumbnailCapture(false);
+    }
+  }
+
+  private waitForThumbnailFrame(): Promise<boolean> {
+    this.finishThumbnailCapture(false);
+    this.thumbnailFrameReady = false;
+    return new Promise((resolve) => {
+      this.thumbnailCaptureResolve = resolve;
+      this.thumbnailCaptureRequested_ = true;
+      this.thumbnailCaptureTimeout = setTimeout(
+        () => this.finishThumbnailCapture(false),
+        THUMBNAIL_FRAME_WAIT_FALLBACK_MS,
+      );
+    });
+  }
+
+  private finishThumbnailCapture(captured: boolean): void {
+    this.thumbnailCaptureRequested_ = false;
+    if (this.thumbnailCaptureTimeout !== null) {
+      clearTimeout(this.thumbnailCaptureTimeout);
+      this.thumbnailCaptureTimeout = null;
+    }
+    const resolve = this.thumbnailCaptureResolve;
+    this.thumbnailCaptureResolve = null;
+    resolve?.(captured);
   }
 
   private async readThumbnail(): Promise<Blob | undefined> {
@@ -331,6 +378,7 @@ export class SaveManager {
 
   /** Stops saving without writing anything (a world that is being thrown away). */
   detach(): void {
+    this.finishThumbnailCapture(false);
     this.active = null;
     this.stats.active = false;
     this.queued = null;
@@ -455,6 +503,13 @@ export class SaveManager {
 
   /** The Blob encoder is async; measure only its synchronous request, not time waiting for a callback. */
   private async thumbnailForSave(): Promise<Blob | undefined> {
+    this.stretchStart = this.now();
+    const framePending = this.waitForThumbnailFrame();
+    this.recordStretch('thumbnail-request', this.now() - this.stretchStart);
+    const captured = await framePending;
+    this.stretchStart = this.now();
+    if (!captured) return undefined;
+
     this.stretchStart = this.now();
     const pending = this.readThumbnail();
     this.recordStretch('thumbnail', this.now() - this.stretchStart);
