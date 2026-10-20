@@ -45,14 +45,14 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
+Done (merged; notes in `progress/`): M13a (#64), M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-| M13a ECS & entity rendering | #64 round 1 PASS (reviewer session_01XcMvbMXyrfPuK4iPcmqexb); owner to merge | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
+| M13c AI, spawning & combat | Prompt given | Sonnet (claude/m13c) | - | - | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
 | M17c World list | #63 round 1 CHANGES NEEDED (hidden/exit saves wait 500 ms for a frame); fix sent to Codex; reviewer session_01N4VC38S77qKPBTL8TTGban | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
 
 Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
@@ -88,6 +88,7 @@ Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #64 M13a merged. M13c given to Sonnet (prompt with decisions in the in-flight row).
 - 2026-10-20: #64 M13a round 1 PASS (probe: +1 drawCall per entity in the real game). Follow-ups: entityLight duplicates the terrain light formula in TS with no test linking them (M13e/f e2e should compare entity vs terrain brightness); distance-only culling. Told the owner to merge #64; M13c ready after.
 - 2026-10-20: #63 M17c round 1 CHANGES NEEDED: hidden/exit saves wait up to 500 ms for a thumbnail frame before writing player/world (pagehide data loss). Fix: skip frame wait on hidden/exit, tests; plus thumbnail-less record test. Non-blocking: duplicate keeps source lastPlayed, no name edge tests.
 - 2026-10-20: #63 (339b96b) and #64 M13a (a7e1e64) CI green; they merge clean with each other. Gave both reviewer prompts.
