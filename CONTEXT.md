@@ -52,8 +52,8 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-| M13c AI, spawning & combat | Prompt given | Sonnet (claude/m13c) | - | - | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
-| M17c World list | #63 fix 4bf917e pushed (head 76f22ab), CI green; round 2 sent; reviewer session_01N4VC38S77qKPBTL8TTGban | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
+| M13c AI, spawning & combat | PR #65 opened, CI running | Sonnet (claude/m13c, session_019deLHc75p2JdT69Kz5LJ2Y) | - | #65 | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
+| M17c World list | #63 round 2 PASS (head 76f22ab); owner to merge; reviewer session_01N4VC38S77qKPBTL8TTGban | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
 
 Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
 
@@ -88,6 +88,7 @@ Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #63 M17c round 2 PASS (probe: old code fails all 3 new tests). CI 271 had M04 heap/RD12 pass on retry (29 min) but 268/269/272 normal (11-15 min) -> noise. Watch: M17b heavy autosave slices 9/40/38/10 ms locally (2-of-4 rule). Told the owner to merge #63. M13c PR #65 opened.
 - 2026-10-20: #63 head 76f22ab green (hidden-save fix + tests); sent round 2 to the same reviewer. Merges clean with master.
 - 2026-10-20: #64 M13a merged. M13c given to Sonnet (prompt with decisions in the in-flight row).
 - 2026-10-20: #64 M13a round 1 PASS (probe: +1 drawCall per entity in the real game). Follow-ups: entityLight duplicates the terrain light formula in TS with no test linking them (M13e/f e2e should compare entity vs terrain brightness); distance-only culling. Told the owner to merge #64; M13c ready after.
