@@ -137,7 +137,6 @@ test('M17b: edits, a chest and a kiln mid-smelt survive a page reload and loadWo
   assertNotBlank(beforeImage);
   assertNoMissingTexture(beforeImage);
 
-  console.log('DROPS', JSON.stringify(before.drops));
   await page.evaluate(() => window.__blockcraft!.save!());
 
   await reloadPage(page);

@@ -1682,6 +1682,7 @@ export class UiManager {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
+    if (this.input.captured && !this.screen) return;
     if (this.screen === 'death' || this.screen === 'sleeping') {
       event.preventDefault();
       return;
