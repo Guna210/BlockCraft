@@ -2,6 +2,7 @@ import { DropRenderer } from '../render/drops';
 import { MovingBlockRenderer } from '../render/moving-blocks';
 import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
+import { EntityRenderer } from '../render/entities';
 import type { PlayerController } from '../engine/player-controller';
 import { SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
@@ -170,6 +171,7 @@ export class WorldManager {
   public skyRenderer: SkyRenderer | null = null;
   public cloudRenderer: CloudRenderer | null = null;
   public dropRenderer: DropRenderer | null = null;
+  public entityRenderer: EntityRenderer | null = null;
   public movingBlockRenderer: MovingBlockRenderer | null = null;
   public weatherRenderer: WeatherRenderer | null = null;
   public workerPool: WorkerPool;
@@ -726,6 +728,8 @@ export class WorldManager {
     this.underwaterTint = new UnderwaterTint(this.glWrapper);
     this.playerModelRenderer = new PlayerModelRenderer(this.glWrapper);
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
+    this.entityRenderer?.dispose();
+    this.entityRenderer = new EntityRenderer(this.glWrapper);
     this.dropRenderer?.dispose();
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.movingBlockRenderer?.dispose();
@@ -1242,8 +1246,24 @@ export class WorldManager {
             underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
             underwater.submerged ? underwater.fogEnd : maxFogDist,
           ) ?? 0;
+        const entityDraws =
+          this.entityRenderer?.render(this.playerController?.ecs ?? null, this.world, {
+            viewProj: this.viewProj,
+            atlasTexture: this.atlasTexture,
+            eye: this.camera!.position,
+            alpha: this.playerController?.renderAlpha ?? 1,
+            skyBrightness,
+            underwater,
+            sunDir: sunDirection(ticks),
+            day: dayFactor,
+            twilight: twilightFactor,
+            night: nightFactor,
+            fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
+            fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
+          }) ?? 0;
         return (
           playerDraws +
+          entityDraws +
           (this.dropRenderer?.render(
             this.playerController,
             this.viewProj,
@@ -1260,6 +1280,9 @@ export class WorldManager {
         );
       });
       if (this.movingBlockRenderer) renderStats.triangles += this.movingBlockRenderer.triangles;
+      // The terrain renderer counts 12 triangles per callback draw; replace them with the real count.
+      if (this.entityRenderer)
+        renderStats.triangles += this.entityRenderer.triangles - 12 * this.entityRenderer.draws;
       if (this.dropRenderer)
         renderStats.triangles +=
           this.dropRenderer.triangles -
