@@ -45,7 +45,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M13a (#64), M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
+Done (merged; notes in `progress/`): M13a (#64), M17c (#63, fa0bb62; Codex), M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
 
 In flight:
 
@@ -53,9 +53,8 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 
 | M13c AI, spawning & combat | PR #65 opened, CI running | Sonnet (claude/m13c, session_019deLHc75p2JdT69Kz5LJ2Y) | - | #65 | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
-| M17c World list | #63 round 2 PASS (head 76f22ab); owner to merge; reviewer session_01N4VC38S77qKPBTL8TTGban | Codex | - | #63 | builds on save-manager listWorlds/deleteWorld; delete/duplicate/rename transactional; thumbnail Blob on WorldRecord (v1 in place); debug openWorldList/listWorlds; delete e2e via real UI; removes stray console.log in m17b.spec (owner-approved via prompt) |
 
-Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
+Ready now: M18a, M19a (proposed: M18a Sonnet, M19a Codex). After M13c: M13d, M13e.
 
 ## Open items for the owner
 
@@ -88,6 +87,7 @@ Ready next after these: M13c needs M13a (+M13b done); M18a and M19a need M17c.
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-20: #63 M17c merged (fa0bb62). Proposed M18a and M19a; waiting for builder choice.
 - 2026-10-20: #63 M17c round 2 PASS (probe: old code fails all 3 new tests). CI 271 had M04 heap/RD12 pass on retry (29 min) but 268/269/272 normal (11-15 min) -> noise. Watch: M17b heavy autosave slices 9/40/38/10 ms locally (2-of-4 rule). Told the owner to merge #63. M13c PR #65 opened.
 - 2026-10-20: #63 head 76f22ab green (hidden-save fix + tests); sent round 2 to the same reviewer. Merges clean with master.
 - 2026-10-20: #64 M13a merged. M13c given to Sonnet (prompt with decisions in the in-flight row).
