@@ -8,8 +8,19 @@ export interface EntitySpawnContext {
   items: ItemEntityManager;
 }
 
+/** Spawn variations a type may support; breeding asks for `{ baby: true }`. */
+export interface EntitySpawnOptions {
+  baby?: boolean;
+}
+
 /** Creates one entity at the position and returns its id. */
-export type EntitySpawner = (ctx: EntitySpawnContext, x: number, y: number, z: number) => number;
+export type EntitySpawner = (
+  ctx: EntitySpawnContext,
+  x: number,
+  y: number,
+  z: number,
+  options?: EntitySpawnOptions,
+) => number;
 
 /** Spawner for a family of types `<prefix><name>`; returns null when `name` is not one of them. */
 export type EntityFamilySpawner = (
@@ -29,6 +40,10 @@ export function registerEntityType(type: string, spawner: EntitySpawner): void {
   types.set(type, spawner);
 }
 
+export function hasEntityType(type: string): boolean {
+  return types.has(type);
+}
+
 export function registerEntityFamily(prefix: string, spawner: EntityFamilySpawner): void {
   if (families.has(prefix)) throw new Error(`Duplicate entity family: ${prefix}`);
   families.set(prefix, spawner);
@@ -41,10 +56,11 @@ export function spawnEntity(
   x: number,
   y: number,
   z: number,
+  options?: EntitySpawnOptions,
 ): number {
   if (![x, y, z].every(Number.isFinite)) throw new Error('Spawn position must be finite');
   const spawner = types.get(type);
-  if (spawner) return spawner(ctx, x, y, z);
+  if (spawner) return spawner(ctx, x, y, z, options);
   for (const [prefix, family] of families)
     if (type.startsWith(prefix)) {
       const id = family(ctx, type.slice(prefix.length), x, y, z);

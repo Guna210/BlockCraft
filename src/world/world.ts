@@ -13,6 +13,11 @@ import {
   type BlockEntityState,
 } from './block-entities';
 
+export interface ColumnListener {
+  loaded?(cx: number, cz: number, generated: boolean): void;
+  unloaded?(cx: number, cz: number): void;
+}
+
 export class World {
   public readonly ticks = new BlockTicks();
   public readonly fluids: FluidSimulation;
@@ -48,6 +53,10 @@ export class World {
   public worldSeed: number = 42;
   public breakCount: number = 0;
   public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
+  /** Told when a column's blocks are all in place and just before a column is removed. */
+  public readonly columnListeners = new Set<ColumnListener>();
+  /** Keys (`cx,cz`) of generated columns that no mob spawner has populated yet. */
+  public readonly unpopulatedColumns = new Set<string>();
   public worldType: 'default' | 'flat' = 'default';
 
   /**
@@ -127,11 +136,25 @@ export class World {
     return this.columns.has(key);
   }
 
+  /** Announces a streamed column; `generated` is false for one restored from a save. */
+  public notifyColumnLoaded(cx: number, cz: number, generated: boolean): void {
+    if (generated) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
+    for (const listener of this.columnListeners) listener.loaded?.(cx, cz, generated);
+  }
+
+  /** Coordinates of every loaded column. */
+  public loadedColumns(): Array<[number, number]> {
+    return [...this.columns.values()].map((column) => [column.cx, column.cz]);
+  }
+
   /**
    * Deletes a column with its light data and invalidates the last-column cache, so a lookup after
    * the removal cannot return the deleted column.
    */
   public removeColumn(cx: number, cz: number): boolean {
+    if (this.hasColumn(cx, cz))
+      for (const listener of this.columnListeners) listener.unloaded?.(cx, cz);
+    this.unpopulatedColumns.delete(World.getChunkKey(cx, cz));
     this.current.removeColumn(cx, cz);
     const removedColumn = this.columns.get(World.getChunkKey(cx, cz));
     const removed = this.columns.delete(World.getChunkKey(cx, cz));

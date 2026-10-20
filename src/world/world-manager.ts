@@ -85,6 +85,7 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
       () => applyRestoredColumn(world, restored),
       () => weatherManager.heightmap.updateColumn(world, res.cx, res.cz),
       () => world.current.settleRestored(),
+      () => world.notifyColumnLoaded(res.cx, res.cz, false),
     ];
   }
   const steps: Array<() => void> = [
@@ -121,6 +122,7 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
   });
   // A generated column can complete the neighbourhood a restored column was waiting for.
   steps.push(() => world.current.settleRestored());
+  steps.push(() => world.notifyColumnLoaded(res.cx, res.cz, true));
   return steps;
 }
 
