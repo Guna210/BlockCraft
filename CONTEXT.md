@@ -45,7 +45,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), plus earlier fix tasks.
+Done (merged; notes in `progress/`): M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
 
 In flight:
 
