@@ -7,6 +7,8 @@ import type { World } from '../world/world';
 import { Player, type GameMode } from '../entity/player';
 import { BlockCollision } from '../entity/physics';
 import { ItemEntityManager } from '../entity/item-entity';
+import type { EntityWorld } from '../entity/ecs/world';
+import { createEntityWorld, queryEcsEntities } from '../entity/ecs/systems';
 import { BreakParticles } from '../render/particles';
 import { canHarvest } from '../gameplay/mining';
 import { rollBlockLoot } from '../gameplay/loot';
@@ -24,6 +26,8 @@ export class PlayerController {
   public player: Player | null = null;
   public interaction: BlockInteraction | null = null;
   public itemEntities: ItemEntityManager | null = null;
+  /** Creatures and other ECS entities of the current world. */
+  public ecs: EntityWorld | null = null;
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
@@ -44,6 +48,7 @@ export class PlayerController {
     if (this.world && this.player)
       this.player.survival.tick(this.world, this.player, this.particles);
     if (this.player) this.itemEntities?.tick(this.player);
+    this.ecs?.tick();
     this.particles?.tick();
   });
   private x = 0;
@@ -137,6 +142,9 @@ export class PlayerController {
           maxZ: entity.pos[2] + 0.125,
         })),
     );
+    const ecs = createEntityWorld();
+    this.ecs = ecs;
+    world.entityQuery.addProvider('ecs', () => (this.ecs === ecs ? queryEcsEntities(ecs) : []));
     this.particles = new BreakParticles(world);
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
@@ -197,12 +205,14 @@ export class PlayerController {
   reset(): void {
     this.world?.entityQuery.removeProvider('player');
     this.world?.entityQuery.removeProvider('items');
+    this.world?.entityQuery.removeProvider('ecs');
     if (this.world) this.world.itemSpawner = null;
     this.world = null;
     this.worldSpawnPoint = null;
     this.player = null;
     this.interaction = null;
     this.itemEntities = null;
+    this.ecs = null;
     this.particles = null;
     this.perspective = 0;
     this.perspectiveDown = false;

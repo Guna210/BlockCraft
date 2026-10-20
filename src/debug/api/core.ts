@@ -11,10 +11,22 @@ export interface BlockCraftDebugAPI {
   getScreen?: () => import('../../ui/ui-manager').ScreenSnapshot;
   kill?: (id: number) => void;
   uiClickSlot?: (slot: number, button: 'left' | 'right', shift?: boolean) => void;
-  getEntities?: (filter?: {
-    type?: string;
-    radius?: number;
-  }) => import('../../entity/item-entity').EntitySnapshot[];
+  /** Spawns a registered entity type ('item:<itemId>' drops one item) and returns its id. */
+  spawn?: (type: string, x: number, y: number, z: number) => number;
+  /** Item entities and ECS entities together, sorted by id. */
+  getEntities?: {
+    (filter: {
+      type: 'item';
+      radius?: number;
+    }): import('../../entity/item-entity').EntitySnapshot[];
+    (filter?: {
+      type?: string;
+      radius?: number;
+    }): Array<
+      | import('../../entity/item-entity').EntitySnapshot
+      | import('../../entity/ecs/systems').EcsEntitySnapshot
+    >;
+  };
   getDropStats?: () => {
     items: number;
     particles: number;
