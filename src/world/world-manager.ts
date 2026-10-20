@@ -888,6 +888,7 @@ export class WorldManager {
         },
         store,
         restore?.record.createdAt,
+        restore?.record.thumbnail,
       );
       this.saves.installPageHooks();
       if (this.playerController)

@@ -101,6 +101,13 @@ class FakeTransaction {
     return new FakeObjectStore(this.stores.get(name)!, this);
   }
 
+  abort(): void {
+    if (this.finished) return;
+    this.error = new Error('Transaction aborted');
+    this.finished = true;
+    this.onabort?.();
+  }
+
   request<T>(run: () => T, write: boolean, store = ''): Req<T> {
     if (write && this.mode === 'readonly') throw new Error('The transaction is read-only');
     const request: Req<T> = { result: undefined, error: null, onsuccess: null, onerror: null };

@@ -102,6 +102,7 @@ interface ActiveSession {
   session: SaveSession;
   store: WorldStore;
   createdAt: number;
+  thumbnail?: Blob;
 }
 
 type RunMode = 'frames' | 'timers';
@@ -124,6 +125,9 @@ export class SaveManager {
   private queued: Promise<void> | null = null;
   private frameWaiters: Array<() => void> = [];
   private readonly compressing = new Set<Promise<void>>();
+  private thumbnailCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+  private thumbnailWorker: Worker | null = null;
+  private thumbnailFrameReady = false;
   private stretchStart = 0;
   private runMaxSliceMs = 0;
   private runSlowestStep = '';
@@ -171,6 +175,37 @@ export class SaveManager {
     return new WorldStore(db, name);
   }
 
+  /** Renames all stored records and keeps an active session attached to the new key. */
+  async renameWorld(world: string, name: string): Promise<void> {
+    if (world === name) return;
+    const active = this.active?.session.name === world ? this.active : null;
+    if (active) await this.save('manual');
+    const db = await this.open();
+    await db.renameWorld(world, name);
+    if (active && this.active === active) {
+      active.session.name = name;
+      active.store = await WorldStore.load(db, name, active.store.dim);
+      this.refreshStoreStats();
+    }
+  }
+
+  /** Copies all stored records and includes current edits when the source is open. */
+  async duplicateWorld(world: string, name: string): Promise<void> {
+    if (this.active?.session.name === world) await this.save('manual');
+    await (await this.open()).duplicateWorld(world, name);
+  }
+
+  /** Deletes a world and detaches it first if it is the active saved session. */
+  async deleteWorld(world: string): Promise<void> {
+    const active = this.active?.session.name === world ? this.active : null;
+    if (active) {
+      const running = this.running;
+      if (running) await running.catch(() => {});
+      if (this.active === active) this.detach();
+    }
+    await (await this.open()).deleteWorld(world);
+  }
+
   /** Reads a world's records. Throws when no world has this name. */
   async load(name: string): Promise<LoadedWorld> {
     const db = await this.open();
@@ -185,12 +220,85 @@ export class SaveManager {
   }
 
   /** Begins saving `session`. A world that came from the database keeps its creation time. */
-  attach(session: SaveSession, store: WorldStore, createdAt: number = Date.now()): void {
-    this.active = { session, store, createdAt };
+  attach(
+    session: SaveSession,
+    store: WorldStore,
+    createdAt: number = Date.now(),
+    thumbnail?: Blob,
+  ): void {
+    this.active = { session, store, createdAt, thumbnail };
+    this.thumbnailFrameReady = false;
+    this.openThumbnailWorker();
     this.lastAutosave = this.now();
     this.stats.active = true;
     this.refreshStoreStats();
     void this.warmUp(store);
+  }
+
+  /** Downsamples a just-rendered WebGL frame while its drawing buffer is still available. */
+  captureThumbnailFrame(source: HTMLCanvasElement): void {
+    if (!this.active || source.width === 0 || source.height === 0) return;
+    if (!this.thumbnailCanvas) {
+      this.thumbnailCanvas =
+        typeof OffscreenCanvas !== 'undefined'
+          ? new OffscreenCanvas(160, 90)
+          : Object.assign(document.createElement('canvas'), { width: 160, height: 90 });
+    }
+    const context = this.thumbnailCanvas.getContext('2d');
+    if (!context) return;
+    context.imageSmoothingEnabled = false;
+    context.clearRect(0, 0, 160, 90);
+    context.drawImage(source, 0, 0, 160, 90);
+    this.thumbnailFrameReady = true;
+  }
+
+  private async readThumbnail(): Promise<Blob | undefined> {
+    if (!this.thumbnailCanvas || !this.thumbnailFrameReady) return undefined;
+    let bitmap: ImageBitmap;
+    try {
+      bitmap = await createImageBitmap(this.thumbnailCanvas);
+    } catch {
+      return undefined;
+    }
+    const worker = this.openThumbnailWorker();
+    if (!worker) {
+      bitmap.close();
+      return undefined;
+    }
+    return new Promise((resolve) => {
+      const finish = (blob?: Blob, failed = false): void => {
+        worker.onmessage = null;
+        worker.onerror = null;
+        if (failed) {
+          worker.terminate();
+          if (this.thumbnailWorker === worker) this.thumbnailWorker = null;
+        }
+        resolve(blob);
+      };
+      worker.onmessage = ({ data }: MessageEvent<{ blob?: Blob; error?: string }>): void => {
+        finish(data.blob);
+      };
+      worker.onerror = (): void => finish(undefined, true);
+      try {
+        worker.postMessage(bitmap, [bitmap]);
+      } catch {
+        bitmap.close();
+        finish(undefined, true);
+      }
+    });
+  }
+
+  private openThumbnailWorker(): Worker | null {
+    if (this.thumbnailWorker) return this.thumbnailWorker;
+    if (typeof Worker === 'undefined') return null;
+    try {
+      this.thumbnailWorker = new Worker(new URL('./thumbnail.worker.ts', import.meta.url), {
+        type: 'module',
+      });
+      return this.thumbnailWorker;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -332,14 +440,27 @@ export class SaveManager {
 
   /** Ends the current main-thread stretch, waits, and starts the next one. */
   private async suspend(step: string, wait: Promise<unknown>): Promise<void> {
-    const stretch = this.now() - this.stretchStart;
+    this.recordStretch(step, this.now() - this.stretchStart);
+    await wait;
+    this.stretchStart = this.now();
+  }
+
+  private recordStretch(step: string, stretch: number): void {
     if (stretch > this.runMaxSliceMs) {
       this.runMaxSliceMs = stretch;
       this.runSlowestStep = step;
     }
     this.stats.maxSliceMs = Math.max(this.stats.maxSliceMs, stretch);
-    await wait;
+  }
+
+  /** The Blob encoder is async; measure only its synchronous request, not time waiting for a callback. */
+  private async thumbnailForSave(): Promise<Blob | undefined> {
     this.stretchStart = this.now();
+    const pending = this.readThumbnail();
+    this.recordStretch('thumbnail', this.now() - this.stretchStart);
+    const thumbnail = await pending;
+    this.stretchStart = this.now();
+    return thumbnail;
   }
 
   private async execute(mode: RunMode, _reason: SaveReason): Promise<void> {
@@ -395,7 +516,9 @@ export class SaveManager {
       }
 
       await this.suspend('region', this.yieldSlice(mode));
-      await this.suspend('world', store.db.write(this.sessionWrites(active)));
+      const thumbnail = (await this.thumbnailForSave()) ?? active.thumbnail;
+      if (thumbnail) active.thumbnail = thumbnail;
+      await this.suspend('world', store.db.write(this.sessionWrites(active, thumbnail)));
       if (regionError) throw regionError;
     } catch (error) {
       this.stats.failures++;
@@ -409,7 +532,7 @@ export class SaveManager {
   }
 
   /** Snapshot of the player, inventory, ground items and world state. */
-  private sessionWrites(active: ActiveSession): DbWrite[] {
+  private sessionWrites(active: ActiveSession, thumbnail?: Blob): DbWrite[] {
     const { session, store } = active;
     const world = session.world;
     const weather = weatherManager.getState();
@@ -420,6 +543,7 @@ export class SaveManager {
       worldType: session.worldType,
       createdAt: active.createdAt,
       lastPlayed: Date.now(),
+      ...(thumbnail ? { thumbnail } : {}),
       meta: serializeWorldMetadata({
         seed: world.worldSeed,
         timeOfDay: getWorldTime(),

@@ -66,6 +66,13 @@ function prefixRange(env: IdbEnvironment, prefix: DbKey[]): IDBKeyRange {
   return env.keyRange.bound(prefix, [...prefix, []]);
 }
 
+function recordKey(store: StoreName, record: Record<string, unknown>): DbKey {
+  const keyPath = STORE_KEY_PATHS[store];
+  return typeof keyPath === 'string'
+    ? (record[keyPath] as DbKey)
+    : keyPath.map((part) => record[part] as DbKey);
+}
+
 export class SaveDb {
   private constructor(
     private readonly db: IDBDatabase,
@@ -144,13 +151,74 @@ export class SaveDb {
 
   /** Deletes every record of a world from every store. */
   async deleteWorld(world: string): Promise<void> {
-    await this.write([
-      { op: 'delete', store: 'worlds', key: world },
-      ...(['regions', 'players', 'entities', 'blockEntities'] as const).map((store): DbWrite => ({
-        op: 'deletePrefix',
-        store,
-        prefix: [world],
-      })),
-    ]);
+    await this.write(
+      STORE_NAMES.map((store): DbWrite =>
+        store === 'worlds'
+          ? { op: 'delete', store, key: world }
+          : { op: 'deletePrefix', store, prefix: [world] },
+      ),
+    );
+  }
+
+  /** Moves a world's records under a new unique name in one readwrite transaction. */
+  async renameWorld(world: string, name: string): Promise<void> {
+    if (world === name) return;
+    await this.transferWorld(world, name, true);
+  }
+
+  /** Copies every record of a world under a new unique name in one readwrite transaction. */
+  async duplicateWorld(world: string, name: string): Promise<void> {
+    await this.transferWorld(world, name, false);
+  }
+
+  private async transferWorld(world: string, name: string, move: boolean): Promise<void> {
+    const tx = this.db.transaction(STORE_NAMES, 'readwrite');
+    const done = transactionDone(tx);
+    // The separate handler marks the rejection handled while request callbacks are still pending.
+    void done.catch(() => {});
+    try {
+      const worlds = tx.objectStore('worlds');
+      const [target, source] = await Promise.all([
+        requestPromise<Record<string, unknown> | undefined>(worlds.get(name)),
+        requestPromise<Record<string, unknown> | undefined>(worlds.get(world)),
+      ]);
+      if (target) {
+        tx.abort();
+        await done.catch(() => {});
+        throw new Error(`A world named '${name}' already exists`);
+      }
+      if (!source) {
+        tx.abort();
+        await done.catch(() => {});
+        throw new Error(`No saved world named '${world}'`);
+      }
+
+      for (const storeName of STORE_NAMES) {
+        const store = tx.objectStore(storeName);
+        if (storeName === 'worlds') {
+          store.put({ ...source, name });
+          if (move) store.delete(world);
+          continue;
+        }
+        const query = prefixRange(this.env, [world]);
+        const request = store.getAll(query) as IDBRequest<Record<string, unknown>[]>;
+        request.onsuccess = () => {
+          for (const record of request.result) {
+            const renamed = { ...record, world: name };
+            store.put(renamed);
+            if (move) store.delete(recordKey(storeName, record));
+          }
+        };
+      }
+      await done;
+    } catch (error) {
+      try {
+        tx.abort();
+      } catch {
+        // The transaction may already have committed or aborted.
+      }
+      await done.catch(() => {});
+      throw error;
+    }
   }
 }

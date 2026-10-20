@@ -2,12 +2,33 @@ import { api } from './core';
 import { WorldManager } from '../../world/world-manager';
 import type { SaveStats } from '../../persist/save-manager';
 import { getWorldInstance } from '../../world/world-instance';
+import { activeUi } from '../../ui/ui-manager';
+import { activeWorldList } from '../../ui/world-list-screen';
 
 /** Saves the open world and resolves when it is written (SPEC §4). */
 api.save = () => WorldManager.getInstance().save();
 
 /** Replaces the open world with a saved one (SPEC §4). */
 api.loadWorld = (name) => WorldManager.getInstance().loadWorld(name);
+
+/** Opens the world list without changing the debug createWorld boot flow. */
+api.openWorldList = async () => {
+  if (activeUi.manager?.screen) activeUi.manager.close();
+  if (!activeWorldList.screen) throw new Error('The world list is not ready');
+  await activeWorldList.screen.open();
+};
+
+/** The saved-world list in plain JSON form for debug inspection. */
+api.listWorlds = async () => {
+  const records = await WorldManager.getInstance().saves.listWorlds();
+  return records
+    .sort((a, b) => b.lastPlayed - a.lastPlayed || a.name.localeCompare(b.name))
+    .map(({ name, lastPlayed, thumbnail }) => ({
+      name,
+      lastPlayed,
+      hasThumbnail: Boolean(thumbnail),
+    }));
+};
 
 /** Starts the incremental autosave now, spread across frames; resolves when it is written. */
 api.autosaveNow = () => {
