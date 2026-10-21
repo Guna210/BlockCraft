@@ -238,10 +238,4 @@ export const MOSSBACK_DEFINITION: CreatureDefinition = {
 registerCreature({
   definition: MOSSBACK_DEFINITION,
   models: [[MOSSBACK_MODEL, mossbackSkin]],
-  spawn: {
-    biomes: ['swampland', 'river', 'beach'],
-    groupSize: [2, 4],
-    weight: 6,
-    ground: ['grass_block', 'sand', 'dirt', 'gravel'],
-  },
 });

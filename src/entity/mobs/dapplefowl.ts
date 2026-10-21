@@ -230,5 +230,4 @@ export const DAPPLEFOWL_DEFINITION: CreatureDefinition = {
 registerCreature({
   definition: DAPPLEFOWL_DEFINITION,
   models: [[DAPPLEFOWL_MODEL, dapplefowlSkin]],
-  spawn: { biomes: ['plains', 'savanna'], groupSize: [2, 4], weight: 8 },
 });

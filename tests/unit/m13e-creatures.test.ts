@@ -29,7 +29,6 @@ import {
   GLIMMER_MOTH,
   GLIMMER_MOTH_DEFINITION,
   GLIMMER_MOTH_PALETTE,
-  mothSpawnSpot,
 } from '../../src/entity/mobs/glimmer-moth';
 import {
   MAX_MODEL_PARTS,
@@ -45,13 +44,10 @@ import { AgeC, AiC, LoveC, MobC } from '../../src/entity/ai/components';
 import { entityAI } from '../../src/entity/ai/runtime';
 import { feedMob } from '../../src/entity/ai/goals/breed';
 import { interactMob } from '../../src/entity/ai/interactions';
-import { spawnRules } from '../../src/entity/spawning';
-import { OVERWORLD_BIOME_IDS } from '../../src/gen/biomes';
 import { EntityRenderer, type EntityRenderView } from '../../src/render/entities';
 import type { GLWrapper } from '../../src/render/gl';
 import type { UnderwaterView } from '../../src/render/underwater';
-import { resetWorldTime, setWorldTime } from '../../src/world/time';
-import { BlockRegistry } from '../../src/world/blocks/registry';
+import { resetWorldTime } from '../../src/world/time';
 import { World } from '../../src/world/world';
 import { GROUND, flatWorld, run, scene, type Scene } from './helpers/m13c-mobs';
 
@@ -211,35 +207,6 @@ describe('M13e creature registration', () => {
     expect([...DAPPLEFOWL_DEFINITION.foods!]).toEqual(['seed']);
     expect(MOSSBACK_DEFINITION.foods).toBeUndefined();
     expect(GLIMMER_MOTH_DEFINITION.flying).toBe(true);
-  });
-
-  it('registers spawn rules only in biomes that exist, in groups of 2–4', () => {
-    const byType = Object.fromEntries(spawnRules.rules.map((rule) => [rule.type, rule]));
-    expect(byType[TUFTBUCK]!.biomes).toEqual(['plains', 'meadow', 'savanna']);
-    expect(byType[ROOTBOAR]!.biomes).toEqual(['oakwood_forest', 'birch_grove', 'pine_taiga']);
-    expect(byType[DAPPLEFOWL]!.biomes).toEqual(['plains', 'savanna']);
-    expect(byType[MOSSBACK]!.biomes).toEqual(['swampland', 'river', 'beach']);
-    expect(byType[GLIMMER_MOTH]!.biomes).toEqual([]);
-    expect(byType[GLIMMER_MOTH]!.category).toBe('ambient');
-    for (const type of Object.keys(DEFINITIONS)) {
-      const rule = byType[type]!;
-      expect(rule.groupSize).toEqual([2, 4]);
-      for (const biome of rule.biomes) expect(OVERWORLD_BIOME_IDS).toContain(biome);
-      for (const block of rule.ground ?? [])
-        expect(BlockRegistry.getInstance().getBlockDefinition(block)).toBeDefined();
-    }
-  });
-
-  it('spawns Glimmer Moths only at night in air lit by a light source', () => {
-    const world = flatWorld({ light: true });
-    world.setBlock(0, GROUND, 0, 'torch');
-    setWorldTime(18000);
-    expect(mothSpawnSpot(world, 1, GROUND, 0)).toBe(true);
-    // Far from the torch the air is dark; the torch block itself is not air.
-    expect(mothSpawnSpot(world, 20, GROUND, 20)).toBe(false);
-    expect(mothSpawnSpot(world, 0, GROUND, 0)).toBe(false);
-    setWorldTime(6000);
-    expect(mothSpawnSpot(world, 1, GROUND, 0)).toBe(false);
   });
 
   it('picks the Tuftbuck fleece by biome', () => {

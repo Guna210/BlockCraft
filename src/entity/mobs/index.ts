@@ -1,5 +1,5 @@
 // The passive and ambient creatures of Appendix B. Importing this module registers their models,
-// entity types, 'use' handlers and natural spawn rules.
+// entity types and 'use' handlers.
 import './tuftbuck';
 import './rootboar';
 import './dapplefowl';

@@ -243,9 +243,4 @@ export const ROOTBOAR_DEFINITION: CreatureDefinition = {
 registerCreature({
   definition: ROOTBOAR_DEFINITION,
   models: [[ROOTBOAR_MODEL, rootboarSkin]],
-  spawn: {
-    biomes: ['oakwood_forest', 'birch_grove', 'pine_taiga'],
-    groupSize: [2, 4],
-    weight: 10,
-  },
 });

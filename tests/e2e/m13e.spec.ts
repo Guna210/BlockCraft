@@ -19,8 +19,8 @@ test.beforeEach(async ({ page }) => {
     api.teleport!(0.5, api.getHeight!(0, 0) + 1, 0.5, 0, 0);
     await api.tick!(1);
   });
-  // Clear naturally spawned creatures so only the test's own are near the player. Their drops
-  // appear on the next tick; remove them before the player can pick any up.
+  // Clear any other creatures so only the test's own are near the player. Drops appear on the
+  // next tick; remove them before the player can pick any up.
   const inventory = await page.evaluate(async (first) => {
     const api = window.__blockcraft!;
     for (const entity of api.getEntities!()) if (entity.id >= first) api.kill!(entity.id);

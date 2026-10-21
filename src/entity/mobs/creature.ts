@@ -11,7 +11,6 @@ import { spawnModelEntity } from '../ecs/systems';
 import { AgeC, LoveC, MobC, type MobCategory } from '../ai/components';
 import { registerMobInteraction, type MobUse } from '../ai/interactions';
 import { AI_ORDER, addMob, type GoalFactory } from '../ai/runtime';
-import { registerSpawnRule, type SpawnRule } from '../spawning';
 import type { ItemEntityManager } from '../item-entity';
 
 /** Ticks for a baby to grow up: 20 minutes at 20 ticks per second. */
@@ -218,10 +217,9 @@ export interface CreatureRegistration {
   definition: CreatureDefinition;
   /** Every model of the creature (variants share geometry and differ in skin). */
   models: Array<[EntityModel, SkinGenerator]>;
-  spawn?: Omit<SpawnRule, 'type' | 'category'>;
 }
 
-/** Registers a creature's models, entity type, 'use' handler and natural spawn rule. */
+/** Registers a creature's models, entity type and 'use' handler. */
 export function registerCreature(registration: CreatureRegistration): void {
   const definition = registration.definition;
   for (const [model, skin] of registration.models) registerEntityModel(model, skin);
@@ -233,10 +231,4 @@ export function registerCreature(registration: CreatureRegistration): void {
     const used = ctx && definition.interact ? definition.interact(ctx, id, itemId) : null;
     return used ?? feedBaby(ecs, id, itemId);
   });
-  if (registration.spawn)
-    registerSpawnRule({
-      type: definition.type,
-      category: definition.category,
-      ...registration.spawn,
-    });
 }

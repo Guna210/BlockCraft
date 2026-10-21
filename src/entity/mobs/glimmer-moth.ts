@@ -1,14 +1,10 @@
 import type { EntityModel, KeyframeChannel } from '../ecs/model';
 import { playClip } from '../ecs/systems';
 import { FlockGoal } from '../ai/goals/flock';
-import { getWorldTime, sunElevationSin } from '../../world/time';
-import type { World } from '../../world/world';
 import { SkinPainter, buildModel, cubesOf, featureSeed, clumps, type Ramp } from './kit';
 import { PRIORITY, registerCreature, type CreatureDefinition } from './creature';
 
 export const GLIMMER_MOTH = 'glimmer_moth';
-/** Moths spawn only in air with at least this much block light (near torches or lumite). */
-export const MOTH_MIN_BLOCK_LIGHT = 8;
 const FLUTTER_TICKS = 6;
 
 // Warm glowing wings with lumite-cyan eyespots and a fuzzy umber body.
@@ -103,15 +99,6 @@ function glimmerMothSkin(seed: number): Uint8Array {
 
 export const GLIMMER_MOTH_PALETTE = [...WING, ...EYESPOT, ...FUZZ];
 
-/** Night (the sun below the horizon) and lit by a light source. */
-export function mothSpawnSpot(world: World, x: number, y: number, z: number): boolean {
-  return (
-    sunElevationSin(getWorldTime()) < 0 &&
-    world.getBlock(x, y, z).id === 'air' &&
-    world.getLight(x, y, z).block >= MOTH_MIN_BLOCK_LIGHT
-  );
-}
-
 export const GLIMMER_MOTH_DEFINITION: CreatureDefinition = {
   type: GLIMMER_MOTH,
   category: 'ambient',
@@ -131,5 +118,4 @@ export const GLIMMER_MOTH_DEFINITION: CreatureDefinition = {
 registerCreature({
   definition: GLIMMER_MOTH_DEFINITION,
   models: [[GLIMMER_MOTH_MODEL, glimmerMothSkin]],
-  spawn: { biomes: [], groupSize: [2, 4], weight: 10, where: mothSpawnSpot },
 });

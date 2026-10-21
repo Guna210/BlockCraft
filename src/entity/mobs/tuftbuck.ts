@@ -388,5 +388,4 @@ registerCreature({
     ),
     [{ ...TUFTBUCK_GEOMETRY, id: TUFTBUCK_SHEARED_MODEL }, tuftbuckSkin(null)],
   ],
-  spawn: { biomes: ['plains', 'meadow', 'savanna'], groupSize: [2, 4], weight: 10 },
 });

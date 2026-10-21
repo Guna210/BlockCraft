@@ -5,7 +5,7 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
 ## 1. One file per creature
 
 - `src/entity/mobs/tuftbuck.ts`, `rootboar.ts`, `dapplefowl.ts`, `mossback.ts` and `glimmer-moth.ts`. Type ids: `tuftbuck`, `rootboar`, `dapplefowl`, `mossback`, `glimmer_moth`.
-- Each file exports its model (at most 24 parts), its skin generator, its palette and its `CreatureDefinition`, and registers them with `registerCreature()`. That one call does `registerEntityModel`, `registerEntityType`, the `'use'` handler and `registerSpawnRule`.
+- Each file exports its model (at most 24 parts), its skin generator, its palette and its `CreatureDefinition`, and registers them with `registerCreature()`. That one call does `registerEntityModel`, `registerEntityType` and the `'use'` handler.
 - `src/entity/mobs/index.ts` imports the five files. `src/engine/player-controller.ts` imports it once, so the types exist whenever a world does.
 - Shared code:
   - `src/entity/mobs/creature.ts`: the definition type, spawning, babies, drops and the creature system.
@@ -139,27 +139,28 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
   - `yaw` (used to frame the probe screenshots)
 - **Choice:** other mobs' snapshots are unchanged, because M13c's unit test compares that snapshot exactly.
 
-## 5. Spawn rules
+## 5. Natural spawning: for M13g
 
-- Every rule has groups of 2–4.
+- **Changed by the orchestrator during the task (replaces decision 5):** M13e registers **no** natural spawn rules.
+  - Registering them filled flat test worlds (all plains, all grass) with Tuftbucks and Dapplefowl.
+  - That broke other milestones' e2e tests: `m07b.spec.ts:106` (expects `getEntities()` to be `[]`), `m08c.spec.ts:160` (a Tuftbuck behind the glass changed the sampled wall colour) and `m17b.spec.ts:70` (creatures are not saved, so the screenshots before and after the reload differ).
+  - Natural spawning, its tuning and that fallout move to M13g, which owns natural-spawn verification.
+  - No spawn-rule code or exports were left behind for later.
+- The intended data, for M13g to register with M13c's `registerSpawnRule`. Every rule has groups of 2–4:
 
-  | Creature | Category | Biomes | Weight | Extra |
-  | --- | --- | --- | --- | --- |
-  | Tuftbuck | passive | `plains`, `meadow`, `savanna` | 10 | |
-  | Rootboar | passive | `oakwood_forest`, `birch_grove`, `pine_taiga` | 10 | |
-  | Dapplefowl | passive | `plains`, `savanna` | 8 | |
-  | Mossback | passive | `swampland`, `river`, `beach` | 6 | `ground`: `grass_block`, `sand`, `dirt`, `gravel` |
-  | Glimmer Moth | ambient | any | 10 | `where`: `mothSpawnSpot` |
+  | Type | Category | Biomes | Weight (suggested) |
+  | --- | --- | --- | --- |
+  | `tuftbuck` | passive | `plains`, `meadow`, `savanna` | 10 |
+  | `rootboar` | passive | `oakwood_forest`, `birch_grove`, `pine_taiga` | 10 |
+  | `dapplefowl` | passive | `plains`, `savanna` | 8 |
+  | `mossback` | passive | `swampland`, `river`, `beach` | 6 |
+  | `glimmer_moth` | ambient | any | 10 |
 
-- `mothSpawnSpot` holds when the sun is below the horizon, the cell is `air`, and its block light is at least 8.
-- Every biome id comes from `OVERWORLD_BIOME_IDS`, and a unit test checks that.
-- **Choice:** two optional fields on M13c's `SpawnRule` (`src/entity/spawning.ts`):
-  - `ground`: the blocks a passive mob spawns on. It defaults to `grass_block`, so existing rules are unchanged. Beach and river surfaces are sand.
-  - `where(world, x, y, z)`: an extra spot test.
-- How the spawner uses them:
-  - `pickRule` takes the spot and keeps only rules whose ground and `where` fit it.
-  - A passive attempt accepts the union of the passive rules' grounds.
-  - Group members are tested against the chosen rule.
+  - Glimmer Moths spawn only at night (the sun below the horizon) on an `air` cell whose block light is at least 8, that is near torches or lumite.
+- Every biome id above exists in `OVERWORLD_BIOME_IDS` (`src/gen/biomes.ts`).
+- Two gaps in M13c's spawner that M13g will meet:
+  - Passive spots need `grass_block` underneath, but beach and river surfaces are sand, so the Mossback would spawn only in swampland. A built and then removed version of this task added an optional `ground` list (`grass_block`, `sand`, `dirt`, `gravel` for the Mossback) to `SpawnRule`.
+  - Ambient spots have no light or time condition, so the moth needs an extra spot test. The same version added an optional `where(world, x, y, z)` test, checked in `pickRule` with the spot and on each group member.
 
 ## 6. Drops
 
@@ -187,9 +188,10 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
   - Nothing is added to or redefined on `World`, `Player` or any other hot shared object.
   - The creature system (order −450: after AI, before navigation) is added to an ECS world by the first creature spawned there (`contextFor`). A world that never had a creature runs nothing new each tick.
   - The renderer's only additions are a cached `emissive` flag per model and a scale read in `computePose`, both inside the existing per-entity loop.
-- **Spawning:** with rules now registered, M13c's spawner works as designed:
-  - first-generation passive attempts, up to 8 columns per tick
-  - 4 ambient attempts per tick, which fail at once by day (the moth `where`)
-  - the 400-tick passive scan
 - The M04b streaming tests were timed on master and on this branch (handoff notes).
 - **Draw calls:** a unit test renders 30 creatures (all five types, babies among them) in an unlit world. It checks one draw call each and full-bright light for the moths only.
+
+## 9. Renderer state fix (M13a)
+
+- `EntityRenderer.render` turned on back-face culling for its draws and never turned it off. Nothing else in the renderer touches culling, so once any entity was drawn, every later pass was culled too. In `m12.spec.ts:661` the rain streaks disappeared (a rain frame diff of 0).
+- On master this never showed, because no entities existed. The pass now turns culling off again after its draws. A unit test checks that the last culling toggle is a `disable`.
