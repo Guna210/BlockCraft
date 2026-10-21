@@ -59,6 +59,8 @@ In flight:
 
 | M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; NO spawn rules (moved to M13g, data recorded in decisions 'For M13g'); emissive moth; lineup probe screenshot; reachability exemptions untouched |
 
+| INFRA-stream Streaming headroom | Prompt given | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
+
 Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
 ## Open items for the owner
@@ -92,6 +94,7 @@ Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (ne
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: Owner approved INFRA-stream; prompt given for Claude cloud (branch claude/infra-stream). Bisect master merges by M04b timing/uploadsDeferred, profile RD12 flight, fix in game code, no test/harness edits, CI evidence: 2 clean runs, shard 2 <=15 min, no flaky.
 - 2026-10-21: MASTER itself (cf97712, run 284) now flaky on m04:221 and m04:276 (shard 2 24.7 min, '2 flaky'), while M18a PR run 282 had 12.7 min clean: CI variance + game getting heavier; these tests are borderline. Proposed INFRA-stream task (profile RD12 flight upload starvation on master, fix in game code); owner decides. #68 M13d is now at master level; gave reviewer prompt.
 - 2026-10-21: #67 M19a round 1 CHANGES NEEDED: Keen ignored in live combat (combat.ts passes held id). Also: jigsaw seed ignored start position (all hamlets same layout), per-tick allocations in BlockInteraction.tick, no stage-with-templates test, hamlet chest table out of scope. Limitations for M19b: ItemEntity loses affix; stage ignores flat/amplified terrain variant.
 - 2026-10-21: M13e QUESTION: natural spawn rules break m07b:106 (always), m08c:160, m17b:70. Decided B: no spawn rules in M13e (or M13f); M13g registers all natural spawning and handles other-spec fallout (owner will need to approve those test edits then). Spawn data recorded in M13e decisions for M13g.
