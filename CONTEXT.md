@@ -53,7 +53,7 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 
 
-| M19a Structure engines | Prompt given | Codex | - | - | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
+| M19a Structure engines | PR #67 (claude/m19a) green on old master (run 281); conflicts with master in pixel-font.ts (M18a) - merge sent to Codex; round 1 reviewer prompt given | Codex | - | #67 | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
 
 | M13d Projectiles & bows | PR #68 (claude/m13d) CI red: m04:221/276 x3, shard 2 32 min on master 203ecbc (master itself 12.7 min). Cause not visible statically; bisect/timing fix sent to Codex; owner may re-run once | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
 
@@ -92,6 +92,7 @@ Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (ne
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: #67 M19a green on 203ecbc but conflicts with master cf97712 (pixel-font.ts). Gave Codex merge message and reviewer prompt (flags: hamlet chest table maybe M19b scope; ui-manager +162 lines).
 - 2026-10-21: Gave M13e prompt (Claude).
 - 2026-10-21: #66 M18a merged. Ready: M13e, M18b, M18c.
 - 2026-10-21: #68 M13d CI red, same M04b streaming symptom as M13c. Static read found nothing obvious (no World mutation); asked Codex to time master vs branch and bisect (HUD bowCharge, bow tick, ProjectileRuntime, Transform pitch shape).
