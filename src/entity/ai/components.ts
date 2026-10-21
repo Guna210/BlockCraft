@@ -30,6 +30,8 @@ export interface MobBody {
   horizontalCollision: boolean;
   /** Desired velocity in blocks per tick (y only for flyers), written by goals and the navigator. */
   wish: Vec3;
+  /** Fastest fall in blocks per tick (a fluttering bird); Infinity for none. */
+  maxFallSpeed: number;
   /** Jump this tick if on the ground; swim up if in water. */
   jump: boolean;
   /** Move up along the wall while it blocks horizontal movement. */
@@ -61,6 +63,17 @@ export interface Love {
   baby: boolean;
 }
 
+/** Age of a creature: a baby grows up when ageTicks reaches the grow-up time. */
+export interface Age {
+  baby: boolean;
+  ageTicks: number;
+}
+
+/** Multiplies incoming damage (a Mossback withdrawn into its shell takes ×0.2). */
+export interface DamageScale {
+  scale: number;
+}
+
 /** Invulnerability frames after a hit: a bigger hit inside them applies only the difference. */
 export interface Combatant {
   invulnerableTicks: number;
@@ -74,3 +87,5 @@ export const NavC = defineComponent<Nav>('nav');
 export const TargetC = defineComponent<Target>('target');
 export const LoveC = defineComponent<Love>('love');
 export const CombatC = defineComponent<Combatant>('combat');
+export const AgeC = defineComponent<Age>('age');
+export const DamageScaleC = defineComponent<DamageScale>('damageScale');

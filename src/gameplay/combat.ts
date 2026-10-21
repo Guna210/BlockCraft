@@ -2,7 +2,15 @@ import type { EntityWorld } from '../entity/ecs/world';
 import { BodyC, HealthC, TransformC } from '../entity/ecs/components';
 import type { Vec3 } from '../entity/ecs/model';
 import { damageEntity, entityState } from '../entity/ecs/systems';
-import { CombatC, MobBodyC, PLAYER_TARGET, TargetC, type TargetRef } from '../entity/ai/components';
+import {
+  CombatC,
+  DamageScaleC,
+  MobBodyC,
+  PLAYER_TARGET,
+  TargetC,
+  type TargetRef,
+} from '../entity/ai/components';
+import { interactMob } from '../entity/ai/interactions';
 import { feedMob } from '../entity/ai/goals/breed';
 import type { Player } from '../entity/player';
 import type { BlockInteraction } from './block-interaction';
@@ -97,6 +105,7 @@ export function hurtMob(
   knockback = true,
 ): boolean {
   if (!ecs.get(id, HealthC) || entityState(ecs, id) === 'dying' || !(amount > 0)) return false;
+  amount *= ecs.get(id, DamageScaleC)?.scale ?? 1;
   const combat = ecs.get(id, CombatC);
   let applied = amount;
   let fresh = true;
@@ -119,6 +128,15 @@ export function hurtMob(
     if (fresh && knockback) knockBack(ecs, id, attacker.pos[0], attacker.pos[2]);
   }
   return true;
+}
+
+/** The held tool loses one point of durability and breaks at its limit. */
+function wearHeld(player: Player): void {
+  const held = player.inventory.held;
+  const durability = getToolDurability(held?.id);
+  if (!held || durability === null) return;
+  held.damage = (held.damage ?? 0) + 1;
+  if (held.damage >= durability) player.inventory.slots[player.inventory.selectedSlot] = null;
 }
 
 /** The hand holding a shield (main hand first), or null. */
@@ -301,9 +319,15 @@ export class PlayerCombat {
       }
       this.ticksSinceAttack = 0;
     }
-    if (use && hit && held && feedMob(this.ecs, hit.id, held)) {
-      if (player.mode === 'survival') player.inventory.consumeSelected();
-      this.interaction?.cancelUse();
+    if (use && hit && held) {
+      const used =
+        interactMob(this.ecs, hit.id, held) ?? (feedMob(this.ecs, hit.id, held) ? 'consume' : null);
+      if (used) {
+        if (player.mode === 'survival')
+          if (used === 'consume') player.inventory.consumeSelected();
+          else wearHeld(player);
+        this.interaction?.cancelUse();
+      }
     }
   }
 

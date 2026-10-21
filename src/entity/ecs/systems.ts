@@ -122,6 +122,8 @@ export interface ModelEntityOptions {
   health: number;
   width: number;
   height: number;
+  /** Model scale; 1 by default. */
+  scale?: number;
 }
 
 /** Creates an entity with every component the renderer and the built-in systems use. */
@@ -144,7 +146,7 @@ export function spawnModelEntity(ecs: EntityWorld, options: ModelEntityOptions):
     deathTicks: 0,
     previousDeathTicks: 0,
   });
-  ecs.add(id, RenderableC, { model: options.model });
+  ecs.add(id, RenderableC, { model: options.model, scale: options.scale ?? 1 });
   ecs.add(id, AnimatorC, {
     walkPhase: 0,
     previousWalkPhase: 0,

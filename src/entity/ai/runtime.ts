@@ -8,6 +8,7 @@ import type { EntityBounds } from '../query';
 import { BlockCollision } from '../physics';
 import { PRNG, deriveSeed } from '../../engine/rng';
 import {
+  AgeC,
   AiC,
   CombatC,
   LoveC,
@@ -58,6 +59,8 @@ export interface MobOptions {
   foods?: Iterable<string>;
   flying?: boolean;
   climbing?: boolean;
+  /** Fall speed cap in blocks per tick. */
+  maxFallSpeed?: number;
   baby?: boolean;
   goals: GoalFactory;
 }
@@ -76,6 +79,7 @@ export function addMob(ecs: EntityWorld, id: number, options: MobOptions): void 
     inFluid: false,
     horizontalCollision: false,
     wish: [0, 0, 0],
+    maxFallSpeed: options.maxFallSpeed ?? Infinity,
     jump: false,
     climb: false,
   });
@@ -346,6 +350,14 @@ export interface EntityAISnapshot {
   /** Ticks left in love (0 when not in love). */
   love: number;
   invulnerableTicks: number;
+  /** A baby cannot breed and grows up over time. */
+  baby: boolean;
+  /** Age of a creature in ticks, or null for a mob without one. */
+  ageTicks: number | null;
+  /** Velocity in blocks per tick. */
+  vel: Vec3;
+  /** Body yaw; forward is (cos yaw, 0, sin yaw). */
+  yaw: number;
 }
 
 /** AI state of one mob, for the debug API. */
@@ -359,5 +371,9 @@ export function entityAI(ecs: EntityWorld, id: number): EntityAISnapshot {
     pathLength: ecs.get(id, NavC)?.navigator.pathLength ?? 0,
     love: ecs.get(id, LoveC)?.loveTicks ?? 0,
     invulnerableTicks: ecs.get(id, CombatC)?.invulnerableTicks ?? 0,
+    baby: ecs.get(id, LoveC)?.baby ?? false,
+    ageTicks: ecs.get(id, AgeC)?.ageTicks ?? null,
+    vel: [...(ecs.get(id, MobBodyC)?.vel ?? [0, 0, 0])],
+    yaw: ecs.get(id, TransformC)?.yaw ?? 0,
   };
 }

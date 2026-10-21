@@ -22,6 +22,7 @@ import type { DamageEvent } from '../gameplay/survival';
 import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
 import { PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
+import '../entity/mobs';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {

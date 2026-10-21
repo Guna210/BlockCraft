@@ -42,7 +42,7 @@ export function moveMob(
   else if (body.inFluid)
     vel[1] = Math.max(-0.2, Math.min(0.2, vel[1] * 0.8 + (body.jump ? 0.04 : -0.02)));
   else if (body.jump && body.onGround) vel[1] = MOB_JUMP_VELOCITY;
-  else vel[1] = (vel[1] - MOB_GRAVITY) * 0.98;
+  else vel[1] = Math.max((vel[1] - MOB_GRAVITY) * 0.98, -body.maxFallSpeed);
 
   const grounded = body.onGround;
   const dy = collision.sweep(pos, height, 1, vel[1], half);
