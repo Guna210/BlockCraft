@@ -155,6 +155,31 @@ describe('M13a baked box models', () => {
 });
 
 describe('M13a pose: hierarchy, procedural animation, death and interpolation', () => {
+  it('keeps entities without pitch on the existing yaw and translation transform', () => {
+    const ecs = createEntityWorld();
+    const yaw = 0.4;
+    const id = spawn(ecs, CUBE, [2, 5, 7], yaw);
+    const rotateX = vi.spyOn(mat4, 'rotateX');
+    let rotateXCalls: number;
+    let actual: mat4;
+    try {
+      computePose(ecs, id, 1, pose);
+      rotateXCalls = rotateX.mock.calls.length;
+      actual = mat4.clone(pose.subarray(0, 16) as unknown as mat4);
+    } finally {
+      rotateX.mockRestore();
+    }
+
+    // The one remaining X rotation is the cube part's rest transform. No root pitch rotation is
+    // applied to entities whose TransformC has never had a pitch field.
+    expect(rotateXCalls).toBe(1);
+    const expected = mat4.create();
+    mat4.fromTranslation(expected, [2, 5, 7]);
+    mat4.rotateY(expected, expected, Math.PI / 2 - yaw);
+    mat4.scale(expected, expected, [1 / 16, 1 / 16, 1 / 16]);
+    expect(Array.from(actual!)).toEqual(Array.from(expected));
+  });
+
   it('places model pixels in the world facing the entity yaw', () => {
     const ecs = createEntityWorld();
     // Yaw 0 faces world +X, the camera's convention.

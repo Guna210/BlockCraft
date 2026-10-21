@@ -99,8 +99,10 @@ export function computePose(
   const yaw = t.previousYaw + wrapAngle(t.yaw - t.previousYaw) * alpha;
   mat4.fromTranslation(root, translation);
   mat4.rotateY(root, root, Math.PI / 2 - yaw);
-  const pitch = lerp(t.previousPitch ?? t.pitch ?? 0, t.pitch ?? 0, alpha);
-  mat4.rotateX(root, root, -pitch);
+  if (t.pitch !== undefined) {
+    const pitch = lerp(t.previousPitch ?? t.pitch, t.pitch, alpha);
+    mat4.rotateX(root, root, -pitch);
+  }
   const tip = tipAngle(health, alpha);
   if (tip) mat4.rotateZ(root, root, tip);
   translation[0] = translation[1] = translation[2] = PIXEL;

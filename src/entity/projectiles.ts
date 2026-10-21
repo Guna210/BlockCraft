@@ -235,7 +235,7 @@ export type ProjectilePlayer = Pick<
 /** Installs the shared 20 Hz swept-segment projectile system on an ECS world. */
 export class ProjectileRuntime {
   private raycaster!: VoxelRaycaster;
-  private readonly blockHit = createRayHit();
+  private blockHit!: ReturnType<typeof createRayHit>;
   private active = false;
   private readonly getPlayer: () => ProjectilePlayer | null;
   private readonly getItems: () => ItemEntityManager | null;
@@ -249,17 +249,21 @@ export class ProjectileRuntime {
     this.getPlayer = getPlayer;
     this.getItems = getItems;
     projectileRuntimes.set(ecs, this);
+    // Install before ticking begins. A mob may fire from inside its AI system, and adding a
+    // higher-priority system during EntityWorld.tick() shifts the live system iteration.
+    this.ecs.addSystem(() => this.tick(), PROJECTILE_TICK_ORDER);
   }
 
-  /** Installs the physics system on the first shot, keeping empty worlds off the per-tick path. */
+  /** Creates the expensive collision state on the first shot. */
   activate(): void {
     if (this.active) return;
     this.active = true;
     this.raycaster = new VoxelRaycaster(this.world);
-    this.ecs.addSystem(() => this.tick(), PROJECTILE_TICK_ORDER);
+    this.blockHit = createRayHit();
   }
 
   private tick(): void {
+    if (!this.active) return;
     for (const id of this.ecs.query(ProjectileC, ProjectileVelocityC, TransformC)) {
       const projectile = this.ecs.get(id, ProjectileC)!;
       const transform = this.ecs.get(id, TransformC)!;
@@ -272,6 +276,7 @@ export class ProjectileRuntime {
         this.tickStuck(id, projectile, transform);
         continue;
       }
+      if (!this.columnLoadedAt(transform.pos)) continue;
 
       const kind = getProjectileKind(projectile.kind),
         velocity = motion.vel;
@@ -335,12 +340,14 @@ export class ProjectileRuntime {
   private tickStuck(id: number, projectile: Projectile, transform: { pos: Vec3 }): void {
     const anchor = projectile.stuckBlock;
     if (anchor) {
-      const stateId = this.world.getBlockStateId(anchor[0], anchor[1], anchor[2]);
-      if (!this.raycaster.shapes.parts[stateId]?.length) {
-        if (projectile.pickup && this.drop(projectile.kind, transform.pos, [0, -0.2, 0]))
-          this.ecs.destroy(id);
-        else if (!projectile.pickup) this.ecs.destroy(id);
-        return;
+      if (this.columnLoadedAt(anchor)) {
+        const stateId = this.world.getBlockStateId(anchor[0], anchor[1], anchor[2]);
+        if (!this.raycaster.shapes.parts[stateId]?.length) {
+          if (projectile.pickup && this.drop(projectile.kind, transform.pos, [0, -0.2, 0]))
+            this.ecs.destroy(id);
+          else if (!projectile.pickup) this.ecs.destroy(id);
+          return;
+        }
       }
     }
     const player = this.getPlayer();
@@ -351,7 +358,7 @@ export class ProjectileRuntime {
       !player.detached &&
       Math.hypot(
         transform.pos[0] - player.pos[0],
-        transform.pos[1] - player.pos[1],
+        transform.pos[1] - (player.pos[1] + player.height / 2),
         transform.pos[2] - player.pos[2],
       ) <= 1 &&
       this.drop(projectile.kind, transform.pos, [0, 0, 0])
@@ -370,6 +377,10 @@ export class ProjectileRuntime {
       this.world.getBlockStateId(Math.floor(pos[0]), Math.floor(pos[1]), Math.floor(pos[2])),
     );
     return state?.blockId === 'water';
+  }
+
+  private columnLoadedAt(pos: Readonly<Vec3>): boolean {
+    return this.world.hasColumn(Math.floor(pos[0] / 16), Math.floor(pos[2] / 16));
   }
 
   private closestEntityHit(

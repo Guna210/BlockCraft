@@ -52,9 +52,14 @@ function arrowCount(player: Player): number {
     .reduce((sum, stack) => sum + (stack?.id === 'arrow' ? stack.count : 0), 0);
 }
 
+function loadAt(world: World, pos: readonly [number, number, number]): void {
+  world.getColumn(Math.floor(pos[0] / 16), Math.floor(pos[2] / 16), true);
+}
+
 describe('M13d projectile physics', () => {
-  it('keeps the projectile system off empty-world ticks until a shot is fired', () => {
+  it('keeps empty projectile ticks cheap and does not rerun a firing system', () => {
     const world = new World(false);
+    world.setBlock(0, 98, 0, 'stone');
     const ecs = createEntityWorld();
     new ProjectileRuntime(world, ecs);
     const query = vi.spyOn(ecs, 'query');
@@ -62,21 +67,34 @@ describe('M13d projectile physics', () => {
     ecs.tick();
     expect(query).not.toHaveBeenCalledWith(ProjectileC, ProjectileVelocityC, TransformC);
 
-    fireProjectile(ecs, {
-      kind: 'arrow',
-      from: [0.5, 100, 0.5],
-      dir: [0, 0, 1],
-      speed: 1,
-      owner: PLAYER_TARGET,
+    let firingSystemRuns = 0;
+    let id = 0;
+    ecs.addSystem(() => {
+      firingSystemRuns++;
+      if (firingSystemRuns === 1)
+        id = fireProjectile(ecs, {
+          kind: 'arrow',
+          from: [0.5, 100, 0.5],
+          dir: [0, 0, 1],
+          speed: 1,
+          owner: PLAYER_TARGET,
+        });
     });
-    query.mockClear();
     ecs.tick();
 
+    expect(firingSystemRuns).toBe(1);
+    expect(ecs.get(id, TransformC)!.pos).toEqual([0.5, 100, 0.5]);
+    expect(query).not.toHaveBeenCalledWith(ProjectileC, ProjectileVelocityC, TransformC);
+
+    ecs.tick();
+    expect(firingSystemRuns).toBe(2);
     expect(query).toHaveBeenCalledWith(ProjectileC, ProjectileVelocityC, TransformC);
+    expect(ecs.get(id, TransformC)!.pos[2]).toBeGreaterThan(0.5);
   });
 
   it('integrates gravity and drag to the closed form over ten ticks', () => {
     const world = new World(false);
+    loadAt(world, [0.5, 100, 0.5]);
     const ecs = createEntityWorld();
     new ProjectileRuntime(world, ecs);
     const id = fireProjectile(ecs, {
@@ -104,6 +122,156 @@ describe('M13d projectile physics', () => {
     expect(ecs.get(id, TransformC)!.pos[2]).toBeCloseTo(0.5 + drag * geometric, 10);
   });
 
+  it('uses 0.6 drag for an arrow moving through water', () => {
+    const world = new World(false);
+    world.setBlock(0, 64, 0, 'water');
+    const ecs = createEntityWorld();
+    new ProjectileRuntime(world, ecs);
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 64.5, 0.5],
+      dir: [0, 0, 1],
+      speed: 1,
+      owner: PLAYER_TARGET,
+    });
+
+    ecs.tick();
+
+    const velocity = ecs.get(id, ProjectileVelocityC)!.vel;
+    expect(velocity[1]).toBeCloseTo(-0.03, 10);
+    expect(velocity[2]).toBeCloseTo(0.6, 10);
+  });
+
+  it('ignores its owner for the first five ticks and can hit on tick six', () => {
+    const world = new World(false);
+    world.setBlock(0, 63, 0, 'stone');
+    const ecs = createEntityWorld();
+    new ProjectileRuntime(world, ecs);
+    const owner = target(ecs, [0.5, 64, 0.5]);
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 64.9, 0.5],
+      dir: [1, 0, 0],
+      speed: 0.001,
+      owner,
+    });
+
+    for (let tick = 0; tick < 5; tick++) ecs.tick();
+    expect(ecs.get(owner, HealthC)!.current).toBe(20);
+    expect(ecs.exists(id)).toBe(true);
+
+    ecs.tick();
+    expect(ecs.get(owner, HealthC)!.current).toBe(19);
+    expect(ecs.exists(id)).toBe(false);
+  });
+
+  it('despawns a stuck arrow at 1200 ticks', () => {
+    const world = new World(false);
+    world.setBlock(1, 64, 0, 'stone');
+    const ecs = createEntityWorld();
+    new ProjectileRuntime(world, ecs);
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 64.5, 0.5],
+      dir: [1, 0, 0],
+      speed: 3,
+      owner: PLAYER_TARGET,
+    });
+
+    ecs.tick();
+    expect(ecs.get(id, ProjectileC)!.stuck).toBe(true);
+    for (let tick = 1; tick < 1200; tick++) ecs.tick();
+
+    expect(ecs.exists(id)).toBe(false);
+  });
+
+  it('keeps stuck arrows when their supporting column is unloaded', () => {
+    const world = new World(false);
+    world.setBlock(1, 64, 0, 'stone');
+    const ecs = createEntityWorld();
+    const items = new ItemEntityManager(world);
+    new ProjectileRuntime(
+      world,
+      ecs,
+      () => null,
+      () => items,
+    );
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 64.5, 0.5],
+      dir: [1, 0, 0],
+      speed: 3,
+      owner: PLAYER_TARGET,
+    });
+    ecs.tick();
+    const position = [...ecs.get(id, TransformC)!.pos];
+    expect(ecs.get(id, ProjectileC)!.stuck).toBe(true);
+
+    world.removeColumn(0, 0);
+    ecs.tick();
+
+    expect(ecs.exists(id)).toBe(true);
+    expect(ecs.get(id, TransformC)!.pos).toEqual(position);
+    expect(items.pool.some((item) => item.active)).toBe(false);
+  });
+
+  it('does not move a flying arrow while its current column is unloaded', () => {
+    const world = new World(false);
+    const ecs = createEntityWorld();
+    new ProjectileRuntime(world, ecs);
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [32.5, 100, 32.5],
+      dir: [0, 0, 1],
+      speed: 1,
+      owner: PLAYER_TARGET,
+    });
+
+    ecs.tick();
+
+    expect(ecs.exists(id)).toBe(true);
+    expect(ecs.get(id, TransformC)!.pos).toEqual([32.5, 100, 32.5]);
+  });
+
+  it('picks up a stuck arrow relative to the player body centre', () => {
+    const world = new World(false);
+    world.setBlock(1, 65, 0, 'stone');
+    const ecs = createEntityWorld();
+    const player = new Player(new BlockCollision(world), () => true);
+    player.setGameMode('survival');
+    player.teleport(0.5, 64, 0.5);
+    const items = new ItemEntityManager(world);
+    new ProjectileRuntime(
+      world,
+      ecs,
+      () => player,
+      () => items,
+    );
+    const id = fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 65.5, 0.5],
+      dir: [1, 0, 0],
+      speed: 3,
+      owner: PLAYER_TARGET,
+    });
+
+    ecs.tick();
+    expect(ecs.get(id, ProjectileC)!.stuck).toBe(true);
+    const arrowPos = ecs.get(id, TransformC)!.pos;
+    expect(Math.hypot(arrowPos[0] - player.pos[0], arrowPos[1] - player.pos[1])).toBeGreaterThan(1);
+    expect(
+      Math.hypot(
+        arrowPos[0] - player.pos[0],
+        arrowPos[1] - (player.pos[1] + player.height / 2),
+        arrowPos[2] - player.pos[2],
+      ),
+    ).toBeLessThanOrEqual(1);
+    ecs.tick();
+
+    expect(ecs.exists(id)).toBe(false);
+    expect(items.pool.some((item) => item.active && item.item.id === 'arrow')).toBe(true);
+  });
+
   it('uses a swept block ray so a full-speed projectile cannot tunnel through a one-block wall', () => {
     const world = new World(false);
     world.setBlock(1, 64, 0, 'stone');
@@ -126,6 +294,7 @@ describe('M13d projectile physics', () => {
 
   it('damages through M13c combat, applies flight-direction knockback and respects invulnerability', () => {
     const world = new World(false);
+    loadAt(world, [0.5, 64.8, 0.5]);
     const ecs = createEntityWorld();
     new ProjectileRuntime(world, ecs);
     const mob = target(ecs, [3.5, 64, 0.5]);
@@ -216,6 +385,7 @@ describe('M13d bow', () => {
 
   it('uses one arrow and one bow durability on a charged survival shot', () => {
     const world = new World(false);
+    loadAt(world, [0.5, 64.5, 0.5]);
     const ecs = createEntityWorld();
     new ProjectileRuntime(world, ecs);
     const player = new Player(new BlockCollision(world), () => true);
@@ -245,12 +415,19 @@ describe('M13d bow', () => {
 
   it('lets creative charge without arrows and marks its shot as unpickable', () => {
     const world = new World(false);
+    world.setBlock(1, 65, 0, 'stone');
     const ecs = createEntityWorld();
-    new ProjectileRuntime(world, ecs);
     const player = new Player(new BlockCollision(world), () => true);
     player.setGameMode('creative');
     player.teleport(0.5, 64, 0.5, 0, 0);
     player.inventory.slots[0] = { slot: 0, id: 'bow', count: 1 };
+    const items = new ItemEntityManager(world);
+    new ProjectileRuntime(
+      world,
+      ecs,
+      () => player,
+      () => items,
+    );
     const bow = new BowController(player, ecs);
 
     bow.input('use', true);
@@ -261,10 +438,17 @@ describe('M13d bow', () => {
     expect(arrowCount(player)).toBe(0);
     expect(ecs.get(id, ProjectileC)!.pickup).toBe(false);
     expect(player.inventory.slots[0]?.damage).toBe(1);
+
+    ecs.tick();
+    expect(ecs.get(id, ProjectileC)!.stuck).toBe(true);
+    ecs.tick();
+    expect(ecs.exists(id)).toBe(true);
+    expect(items.pool.some((item) => item.active)).toBe(false);
   });
 
   it('routes projectile hits through the player shield frontal block and armor reduction', () => {
     const world = new World(false);
+    loadAt(world, [0.5, 64.8, 0.5]);
     const ecs = createEntityWorld();
     const player = new Player(new BlockCollision(world), () => true);
     player.setGameMode('survival');

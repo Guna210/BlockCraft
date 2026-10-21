@@ -7,7 +7,7 @@ Decisions followed from the M13d task prompt.
 - `src/entity/projectiles.ts` defines `ProjectileC` with `{ owner, kind, stuck, ageTicks, pickup }`, plus `ProjectileVelocityC` for velocity and an internal stuck-block anchor.
 - A projectile is a regular M13a ECS entity with `EntityKindC`, `TransformC`, and `RenderableC`; its `EntityKindC.type` is its kind id, so `getEntities({ type: 'arrow' })` includes arrows.
 - Kinds are data `{ id, model, gravity, drag, damageScale, pickup }` registered with `registerProjectileKind`. M13d registers only `arrow`.
-- `fireProjectile(ecs, { kind, from, dir | aimAt, speed, owner })` creates the entity. `PlayerController` registers one shared runtime per player ECS; it creates the raycaster and installs its tick system on the first shot, so empty worlds have no projectile query in their tick path. Later projectile kinds share that runtime.
+- `fireProjectile(ecs, { kind, from, dir | aimAt, speed, owner })` creates the entity. `PlayerController` registers one shared runtime per player ECS. The runtime installs one guarded tick system in its constructor; until the first shot, the system returns before querying or allocating. The raycaster and its hit scratch are lazy. Later projectile kinds share that runtime.
 - Projectiles have no `BodyC`, so they do not press plates or tripwire. Their swept entity collision uses M13a `BodyC` boxes directly.
 
 ## 2. Arrow model and orientation
@@ -21,7 +21,7 @@ Decisions followed from the M13d task prompt.
 - Each 20 Hz step subtracts kind gravity from vertical velocity, then multiplies all velocity axes by kind drag. Water uses drag `0.6`; the arrow's air drag is `0.99` and gravity is `0.05` blocks/tick².
 - A `VoxelRaycaster` tests the segment from the old position to the candidate position against block collision shapes. This reuses the exact DDA and shape table used for block interaction, so full-speed shots cannot tunnel through blocks.
 - Entity collision uses a swept segment against expanded AABBs for living ECS entities and the player. The owner is skipped for the first 5 ticks. A block wins a distance tie.
-- A block hit places the arrow 0.05 blocks back from the hit point and freezes its current orientation. The block cell is stored as the anchor. When that cell has no collision shape, the arrow drops its kind as a normal `ItemEntity` with downward velocity. A stuck arrow with pickup allowed also spawns its item when the player is within 1 block; ordinary item pickup handles inventory insertion.
+- A block hit places the arrow 0.05 blocks back from the hit point and freezes its current orientation. The block cell is stored as the anchor. When that cell has no collision shape, the arrow drops its kind as a normal `ItemEntity` with downward velocity. The anchor check is skipped while its column is unloaded, and flying arrows do not move while their current column is unloaded. A stuck arrow with pickup allowed also spawns its item when the player is within 1 block of the player's body centre; ordinary item pickup handles inventory insertion.
 - Projectiles expire at 1200 ticks. Stuck projectiles therefore meet the required despawn limit.
 
 ## 4. Damage
@@ -47,11 +47,13 @@ Decisions followed from the M13d task prompt.
 ## 7. Debug and tests
 
 - `getProjectile(id)` returns `{ pos, vel, stuck, owner, kind }`; `getEntities` reports the projectile type through M13a ECS snapshots.
-- `tests/unit/m13d-projectiles.test.ts` covers the closed-form gravity/drag integration, full-speed wall collision, mob damage and invulnerability, block-break drops, charge speed, ballistic aim, arrow and bow use, creative pickup rules, player shield/armor and HUD charge quantization.
+- `tests/unit/m13d-projectiles.test.ts` covers the ECS firing-system regression, closed-form gravity/drag integration, water drag, owner immunity, lifetime despawn, loaded-column behavior, full-speed wall collision, mob damage and invulnerability, block-break drops, charge speed, ballistic aim, arrow and bow use, creative pickup rules, player shield/armor and HUD charge quantization. `tests/unit/m13a-render.test.ts` verifies that entities without pitch keep their prior pose without an unnecessary root rotation.
 - `tests/e2e/m13d.spec.ts` fires by holding and releasing the real `use` action, samples the arrow every tick until it embeds in a wall 20 blocks away, then walks into the stuck arrow and checks inventory pickup.
 - M13d does not connect M13c's ranged goal; M13f supplies a kind and uses the shared API.
+- The arrow kind defaults to `pickup: true`; M13f must pass `pickup` explicitly for mob-fired shots.
 
 ## 8. Empty-world performance
 
-- `ProjectileRuntime` stays dormant until `fireProjectile` creates a shot. This avoids a per-tick projectile ECS query and raycaster shape-table construction in worlds that have no projectiles.
-- `tests/unit/m13d-projectiles.test.ts` checks that an empty ECS tick does not query projectile components and that the system starts after the first shot.
+- The ECS system is installed when `ProjectileRuntime` is constructed so firing from an ECS system cannot mutate the live system list. Its idle path returns before a projectile query or allocation until the first shot.
+- `fireProjectile` lazily creates the `VoxelRaycaster` and hit scratch on the first shot.
+- `tests/unit/m13d-projectiles.test.ts` checks the live-system firing regression, next-tick arrow movement, and that empty ECS ticks do not query projectile components.
