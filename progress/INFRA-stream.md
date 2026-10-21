@@ -3,7 +3,7 @@
 Status: incomplete (see "Known limitations": no game-code fix found; CI evidence pending)
 Depends on: M18a (master cf97712)
 Full verify: PR CI
-Quick verify (this session, `MILESTONE=M04 npm run verify:quick`): typecheck ✓ · lint ✓ (0 errors; 2 existing `no-explicit-any` warnings) · placeholders ✓ · unit 1008 passed (115 files) · e2e M04: re-run pending (the first run was cut off when the container paused after 2 of 5 tests)
+Quick verify (this session, `MILESTONE=M04 npm run verify:quick`): typecheck ✓ · lint ✓ (0 errors; 2 existing `no-explicit-any` warnings) · placeholders ✓ · unit 1008 passed (115 files) · e2e M04 5 passed (11.8m), including `:221` (heap growth 0.80 %) and `:277` (largest hole 32 px, limit 64). The first run was cut off when the container paused after 2 of 5 tests; the totals are from the re-run. The test at `:276` before the edit is `:277` after it (one added line).
 
 Not a SPEC task; the owner requested it. No acceptance criteria are owned.
 
