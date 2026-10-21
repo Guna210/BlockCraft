@@ -1,5 +1,6 @@
 import { ChunkColumn } from '../world/column';
 import { deriveSeed } from '../engine/rng';
+import { withTerrainVariant, type TerrainVariant } from './world-options';
 
 /**
  * Pure stage function operating on column data.
@@ -34,12 +35,21 @@ export class TerrainPipeline {
     return this.stages;
   }
 
-  public generateColumn(worldSeed: number, cx: number, cz: number, column: ChunkColumn): void {
+  /** Runs every stage on `column`; `variant` (Amplified, Single Biome) is active meanwhile. */
+  public generateColumn(
+    worldSeed: number,
+    cx: number,
+    cz: number,
+    column: ChunkColumn,
+    variant?: TerrainVariant,
+  ): void {
     column.worldSeed = worldSeed;
-    for (const stage of this.stages) {
-      const stageSeed = deriveSeed(worldSeed, stage.name);
-      stage.generate(stageSeed, cx, cz, column);
-    }
+    withTerrainVariant(variant, () => {
+      for (const stage of this.stages) {
+        const stageSeed = deriveSeed(worldSeed, stage.name);
+        stage.generate(stageSeed, cx, cz, column);
+      }
+    });
   }
 }
 

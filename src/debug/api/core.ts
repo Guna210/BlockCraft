@@ -9,6 +9,19 @@ export interface BlockCraftDebugAPI {
   setItemDamage?: (slot: number, damage: number) => void;
   openScreen?: (name: import('../../ui/ui-manager').ScreenName | 'none') => void;
   getScreen?: () => import('../../ui/ui-manager').ScreenSnapshot;
+  /**
+   * Main menu and panorama state: whether each is up, how often the panorama has started, what its
+   * last teardown left behind, and GPU columns with meshes that are not in the loaded world.
+   */
+  getMenuState?: () => {
+    menuVisible: boolean;
+    panorama: boolean;
+    panoramaStarts: number;
+    lastTeardown: import('../../world/world-manager').PanoramaTeardown | null;
+    sectionMeshes: number;
+    meshedColumns: number;
+    meshedColumnsOutsideWorld: number;
+  };
   kill?: (id: number) => void;
   uiClickSlot?: (slot: number, button: 'left' | 'right', shift?: boolean) => void;
   /** Spawns a registered entity type ('item:<itemId>' drops one item) and returns its id. */
@@ -99,7 +112,13 @@ export interface BlockCraftDebugAPI {
     name?: string;
     seed?: string;
     mode?: 'survival' | 'creative';
-    type?: 'default' | 'flat';
+    type?: 'default' | 'flat' | 'amplified' | 'single_biome';
+    /** Single Biome only (an Appendix C overworld biome id); defaults to plains. */
+    biome?: import('../../gen/biomes').OverworldBiomeId;
+    /** Stored with the world; default true. */
+    structures?: boolean;
+    /** Places a chest of starting items next to the spawn; default false. */
+    startingChest?: boolean;
   }) => Promise<void>;
   openWorldList?: () => Promise<void>;
   listWorlds?: () => Promise<Array<{ name: string; lastPlayed: number; hasThumbnail: boolean }>>;

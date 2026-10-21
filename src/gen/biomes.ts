@@ -1,6 +1,7 @@
 import { deriveSeed } from '../engine/rng';
 import { makeSimplex2D, makeFbm2D } from './noise';
 import { sampleTerrainClimate, TerrainClimateSample, SEA_LEVEL } from './terrain';
+import { terrainVariant } from './world-options';
 
 export const OVERWORLD_BIOME_IDS = [
   'plains',
@@ -311,6 +312,9 @@ function getClimateSamplers(worldSeed: number): ClimateSamplers {
 }
 
 export function sampleBiome(worldSeed: number, wx: number, wz: number): OverworldBiomeId {
+  // Single Biome worlds: surface rules, tints and features all follow the chosen biome.
+  const variant = terrainVariant();
+  if (variant.type === 'single_biome' && variant.biome) return variant.biome;
   const samplers = getClimateSamplers(worldSeed);
   sampleTerrainClimate(samplers.terrainStageSeed, wx, wz, CLIMATE_SCRATCH);
 
