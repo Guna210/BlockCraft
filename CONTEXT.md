@@ -52,12 +52,14 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 
-| M13c AI, spawning & combat | perf fix 7edd8b8 (head 01ff82f), run 276 green ~16 min; round 2 (fix only) sent to session_01CowYQV8SW81itvuApPFqZR | Sonnet (claude/m13c, session_019deLHc75p2JdT69Kz5LJ2Y) | - | #65 | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
+| M13c AI, spawning & combat | round 2 PASS (head 01ff82f, shard 2 15.5 min, no retries); owner to merge, no Update branch needed | Sonnet (claude/m13c, session_019deLHc75p2JdT69Kz5LJ2Y) | - | #65 | goals in src/entity/ai/goals/ with GoalSelector + flags; 2000-node shared path budget, PathSearch.dispose, invalidate on chunk load/unload; spawn rules as data (none registered); blast() in src/gameplay/blast.ts damages only (M14 adds blocks); ranged goal takes injected fire(); combat.ts cooldown 0.2+0.8c², crit 1.5, kb 0.4/0.36, invuln 10, sweep, shield dot>0; armor unified from armor.json; HUD cooldown meter; debug getEntityAI | Claude Code cloud (claude/m13a) | - | - | ECS ids from 2^20; models are data, 1 draw call per entity; walk phase from distance; spawn('item:<id>') only real type, no placeholder creatures; EntityQuery provider 'ecs' |
 
 | M18a Menus & pause | Gate posted (4 commits on fa0bb62); answered: keep redraw-on-change menu (canaries); owner to approve push | Claude cloud (claude/m18a, session_01PGaKs2bkXGmgFnzFMJW89n) | - | - | boot to menu; panorama seed 'blockcraft-panorama' RD4, starts 1 s after menu, torn down on world start, compare m02/m04/m05 durations; logo in code; >=20 splashes data/splashes.json; only Singleplayer+Credits buttons; Create World (types default/flat/amplified/single_biome, biome, structures stored only, startingChest kit); Amplified >250 with Default hash unchanged; WorldRecord options v1 in place; pause Resume + Save & Quit; e2e via real clicks |
 | M19a Structure engines | Prompt given | Codex | - | - | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
 
-After #65 merges: M13d (Codex #2), then M13e (Claude after M18a). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
+| M13d Projectiles & bows | Prompt given (start after #65 merges) | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
+
+Then: M13e (Claude after M18a). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
 ## Open items for the owner
 
@@ -90,6 +92,7 @@ After #65 merges: M13d (Codex #2), then M13e (Claude after M18a). Owner has 2 Co
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: #65 M13c round 2 PASS (regression test fails with old adapter). Told the owner to merge; gave M13d prompt for Codex #2.
 - 2026-10-21: #65 run 276 green (16 min total) after the dictionary-mode fix; sent round 2 to the M13c reviewer, fix only.
 - 2026-10-21: M18a gate: quick verify green, 57 other e2e passed, m02/m04/m05 durations equal to master; m02:54 failed on branch (6.2 ms) but passed on master locally, and builder touched mesh/light/gen worker pools -> asked for a per-pool note; on CI m02:54 counts as M18a's. Answered QUESTION: keep static menu redraw-on-change (drawing every frame broke M00 canaries); 1.5 s fade OK.
 - 2026-10-20: Gave M18a (Claude) and M19a (Codex) prompts.
