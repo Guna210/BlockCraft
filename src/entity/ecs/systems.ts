@@ -20,6 +20,7 @@ import {
   walkPhaseStep,
 } from './animation';
 import type { QueriedEntity } from '../query';
+import { MobC } from '../ai/components';
 
 /** Systems added by later tasks (AI, physics) run between these two orders. */
 export const SNAPSHOT_ORDER = -1000;
@@ -225,10 +226,12 @@ export function queryEcsEntities(ecs: EntityWorld): QueriedEntity[] {
     if (entityState(ecs, id) === 'dying') continue;
     const pos = ecs.get(id, TransformC)!.pos,
       body = ecs.get(id, BodyC)!,
-      half = body.width / 2;
+      half = body.width / 2,
+      category = ecs.get(id, MobC)?.category;
     result.push({
       id,
       type: ecs.get(id, EntityKindC)!.type,
+      ...(category ? { category } : {}),
       minX: pos[0] - half,
       minY: pos[1],
       minZ: pos[2] - half,

@@ -20,6 +20,8 @@ import { getToolDurability } from '../gameplay/tools';
 import type { QueriedEntity } from '../entity/query';
 import type { DamageEvent } from '../gameplay/survival';
 import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
+import { PlayerCombat, hurtPlayer } from '../gameplay/combat';
+import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -28,6 +30,10 @@ export class PlayerController {
   public itemEntities: ItemEntityManager | null = null;
   /** Creatures and other ECS entities of the current world. */
   public ecs: EntityWorld | null = null;
+  /** AI, pathfinding, mob movement and natural spawning for `ecs`. */
+  public mobs: MobRuntime | null = null;
+  /** Melee attacks, the attack meter and feeding mobs. */
+  public combat: PlayerCombat | null = null;
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
@@ -44,7 +50,10 @@ export class PlayerController {
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
-    if (this.player && !this.player.dead) this.interaction?.tick();
+    if (this.player && !this.player.dead) {
+      this.combat?.tick();
+      this.interaction?.tick();
+    }
     if (this.world && this.player)
       this.player.survival.tick(this.world, this.player, this.particles);
     if (this.player) this.itemEntities?.tick(this.player);
@@ -68,6 +77,7 @@ export class PlayerController {
       if (this.player?.dead) {
         this.player.clearInput();
         this.interaction?.clear();
+        this.combat?.clear();
         return;
       }
       this.attach();
@@ -79,6 +89,7 @@ export class PlayerController {
         this.perspectiveDown = down;
       } else {
         this.player?.input(action, down);
+        this.combat?.input(action, down);
         this.interaction?.input(action, down);
       }
     };
@@ -149,6 +160,25 @@ export class PlayerController {
     this.interaction = new BlockInteraction(this.player, (x, y, z) =>
       this.onInteractionEdit(x, y, z),
     );
+    const player = this.player;
+    this.combat = new PlayerCombat(player, ecs, this.interaction);
+    const mobPlayer: MobPlayer = {
+      get pos() {
+        return player.pos;
+      },
+      get height() {
+        return player.height;
+      },
+      heldItemId: () => player.inventory.held?.id ?? null,
+      targetable: () => player.mode === 'survival' && !player.dead,
+      hurt: (amount, source, from) => hurtPlayer(player, amount, source, from),
+    };
+    this.mobs?.dispose();
+    this.mobs = new MobRuntime(world, ecs, {
+      player: () => (this.player === player ? mobPlayer : null),
+      spawnContext: { ecs, items: itemEntities },
+      spawnRules: 'default',
+    });
     this.interaction.onUse = (blockId, target) =>
       world.current.useBlock(target.x, target.y, target.z) || this.onUseBlock(blockId, target);
     this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
@@ -213,6 +243,9 @@ export class PlayerController {
     this.interaction = null;
     this.itemEntities = null;
     this.ecs = null;
+    this.mobs?.dispose();
+    this.mobs = null;
+    this.combat = null;
     this.particles = null;
     this.perspective = 0;
     this.perspectiveDown = false;
@@ -245,6 +278,7 @@ export class PlayerController {
       this.spawnView = false;
       this.player.clearInput();
       this.interaction?.clear();
+      this.combat?.clear();
       this.perspective = 0;
       this.camera.roll = 0;
       this.camera.fov = (settings.fov * Math.PI) / 180;
@@ -281,6 +315,7 @@ export class PlayerController {
     if (!player || player.dead !== true) return;
     player.clearInput();
     this.interaction?.clear();
+    this.combat?.clear();
     this.spawnView = false;
     this.onDeath(deathCauseForDamageSource(source));
     const [x, y, z] = player.pos;

@@ -65,6 +65,16 @@ export class BlockInteraction {
       this.pick = down;
     }
   }
+  /** An entity took this attack press: no mining until the button is pressed again. */
+  holdAttack(): void {
+    this.attack = false;
+    this.reset();
+  }
+  /** An entity took this use press (feeding): no placing or block use this tick. */
+  cancelUse(): void {
+    this.usePressed = false;
+    this.player.survival.useConsumed = true;
+  }
   reset(): void {
     this.progress = 0;
     this.bx = NaN;
