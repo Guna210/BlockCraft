@@ -72,17 +72,14 @@ const SPECIAL_DURABILITY: Readonly<Record<string, number>> = {
   ember_flint: 64,
 };
 
-/** Armor defense points (half-armor icons) per piece. Copper total = 10, Iron total = 15. */
-export const ARMOR_DEFENSE: Readonly<Record<string, number>> = {
-  copper_helmet: 2,
-  copper_chestplate: 4,
-  copper_leggings: 3,
-  copper_boots: 1,
-  iron_helmet: 2,
-  iron_chestplate: 6,
-  iron_leggings: 5,
-  iron_boots: 2,
-};
+/** Armor defense points (half-armor icons) per piece, read from `armorPoints` in data/items. */
+export const ARMOR_DEFENSE: Readonly<Record<string, number>> = Object.freeze(
+  Object.fromEntries(
+    [...items.items.values()]
+      .filter((def) => def.armorPoints !== undefined)
+      .map((def) => [def.id, def.armorPoints!]),
+  ),
+);
 
 export function getToolTierByLevel(level: number): ToolTierStats | null {
   return TIER_BY_LEVEL[level] ?? null;

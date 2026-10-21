@@ -10,6 +10,8 @@ export interface EntityBounds {
 export interface QueriedEntity extends EntityBounds {
   type: string;
   id: number | string;
+  /** Mob category ('passive', 'hostile', 'ambient') for creatures. */
+  category?: string;
 }
 
 export type EntityQueryProvider = () => readonly QueriedEntity[];

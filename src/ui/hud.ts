@@ -1,9 +1,8 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
-import { items } from '../gameplay/items';
 import type { Player } from '../entity/player';
-import { getToolDurability } from '../gameplay/tools';
+import { getToolDurability, getTotalArmorDefense } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
 import type { IconSheet } from './icons';
 import {
@@ -87,6 +86,8 @@ export interface HudSnapshot {
   xpProgress: number;
   selectedSlot: number;
   hotbar: Array<{ id: string; count: number; damage?: number } | null>;
+  /** Attack meter, 0 after a swing to 1 when recharged; quantized to whole pixels of the meter. */
+  attackCooldown: number;
 }
 
 export interface DebugOverlaySnapshot {
@@ -111,15 +112,13 @@ export interface DebugOverlaySnapshot {
 }
 
 export function equippedArmorPoints(player: Pick<Player, 'inventory'>): number {
-  let points = 0;
-  for (let slot = 36; slot <= 39; slot++) {
-    const stack = player.inventory.slots[slot];
-    if (stack) points += items.get(stack.id).armorPoints ?? 0;
-  }
-  return points;
+  return getTotalArmorDefense(player.inventory.slots.slice(36, 40).map((stack) => stack?.id));
 }
 
-export function hudSnapshot(player: Player, submerged: boolean): HudSnapshot {
+/** Inner width of the attack meter in UI pixels. */
+const COOLDOWN_METER_WIDTH = 14;
+
+export function hudSnapshot(player: Player, submerged: boolean, attackCooldown = 1): HudSnapshot {
   return {
     mode: player.mode,
     health: player.health,
@@ -141,7 +140,25 @@ export function hudSnapshot(player: Player, submerged: boolean): HudSnapshot {
           }
         : null,
     ),
+    attackCooldown:
+      Math.floor(Math.max(0, Math.min(1, attackCooldown)) * COOLDOWN_METER_WIDTH) /
+      COOLDOWN_METER_WIDTH,
   };
+}
+
+/** The attack meter under the crosshair, shown only while it recharges. */
+function drawAttackCooldown(
+  ctx: CanvasRenderingContext2D,
+  cooldown: number,
+  width: number,
+  height: number,
+  s: number,
+): void {
+  if (cooldown >= 1) return;
+  const x = Math.floor(width / s / 2) - Math.floor(COOLDOWN_METER_WIDTH / 2) - 1;
+  const y = Math.floor((height / 2 + 8) / s);
+  drawInset(ctx, { x, y, w: COOLDOWN_METER_WIDTH + 2, h: 4 }, s);
+  fillRect(ctx, x + 1, y + 1, Math.round(cooldown * COOLDOWN_METER_WIDTH), 2, UI.accent, s);
 }
 
 function drawPattern(
@@ -355,6 +372,7 @@ function drawHud(
   }
 
   drawCrosshair(ctx, width, height);
+  drawAttackCooldown(ctx, snapshot.attackCooldown, width, height, s);
   if (snapshot.mode === 'creative') return;
 
   drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9, heartShake);
@@ -636,7 +654,11 @@ export class Hud {
     this.hudCanvas.style.display = screenOpen ? 'none' : 'block';
     if (this.debugOpen) this.debugCanvas.style.display = 'block';
     if (screenOpen) this.popupCanvas.style.display = 'none';
-    const snapshot = hudSnapshot(player, this.isSubmerged());
+    const snapshot = hudSnapshot(
+      player,
+      this.isSubmerged(),
+      this.controller()?.combat?.cooldown ?? 1,
+    );
     if (this.lastSelectedSlot === null) {
       this.lastSelectedSlot = snapshot.selectedSlot;
     } else if (this.lastSelectedSlot !== snapshot.selectedSlot) {

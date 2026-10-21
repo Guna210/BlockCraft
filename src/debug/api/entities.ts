@@ -3,6 +3,7 @@ import { WorldManager } from '../../world/world-manager';
 import { killPlayer } from './death';
 import { spawnEntity } from '../../entity/ecs/entity-types';
 import { killEntity, snapshotEcsEntities } from '../../entity/ecs/systems';
+import { entityAI } from '../../entity/ai/runtime';
 function controller() {
   const c = WorldManager.getInstance().playerController;
   if (!c?.player || !c.itemEntities || !c.ecs)
@@ -33,6 +34,11 @@ api.kill = (id) => {
   if (item) item.active = false;
   else if (c?.ecs?.exists(id)) killEntity(c.ecs, id);
   else throw new Error(`No entity with id ${id} exists`);
+};
+api.getEntityAI = (id) => {
+  if (!Number.isSafeInteger(id) || id < 0)
+    throw new Error('Entity id must be a non-negative integer');
+  return entityAI(controller().ecs!, id);
 };
 api.getDropStats = () => {
   const c = controller(),
