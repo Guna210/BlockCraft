@@ -59,7 +59,7 @@ In flight:
 
 | M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; NO spawn rules (moved to M13g, data recorded in decisions 'For M13g'); emissive moth; lineup probe screenshot; reachability exemptions untouched |
 
-| INFRA-stream Streaming headroom | Investigating (session_01Cx1t3x5LLVGaHL7CgCdvJR): no per-commit regression; cause = SwiftShader GPU backpressure (rAF bursts/stalls, bufferData blocks when GPU behind); NO_DISCARD+reorder made it worse (reverting). Next: throttle worker dispatch while uploads backed up, skip FluidDepth blit, discard-free w/o reorder, heap profile; stop rule -> [INCOMPLETE] write-up | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
+| INFRA-stream Streaming headroom | Gate in progress: no game-code win (all A/B within noise or worse); PR = decisions write-up + owner-approved m04 timeout edit only; corrected builder: m04.spec.ts is not harness-guarded | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
 
 Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
@@ -94,6 +94,7 @@ Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (ne
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: INFRA-stream result: no per-commit regression, no game fix helped (discard strip and no depth blit within noise; worker throttle moot since gen/light queues empty after ~10 s and mesh dispatch already stops at 256 deferred); heap 0.86% locally. PR will be write-up + timeout edit. Builder wrongly said m04.spec.ts needs harness-change; corrected.
 - 2026-10-21: Owner approved a test-time-limit edit for INFRA-stream (fallback or margin): m04 heap test setTimeout 420_000 + its 3 waitForStreamingIdle 60_000->120_000; RD12 test setTimeout 420_000 + wait 120_000->300_000. Assertions (15% heap, RD12, no holes) unchanged; no helper/config/harness edits. PR becomes '— verified' with full write-up.
 - 2026-10-21: INFRA-stream findings: main thread 76% idle; SwiftShader backpressure limits frame cadence; uploads block in bufferData when GPU behind. Directed: (c) worker throttle/cap first, (b) skip FluidDepth blit, (a) discard-free alone, (d) heap leaks; no occlusion culling (M22a scope). If no gain: [INCOMPLETE] PR with analysis; harness-side options (SwiftShader flags, runner size) are the owner's.
 - 2026-10-21: #68 M13d round 1 CHANGES NEEDED: activate() adds the ECS system during tick -> calling system runs twice (reproduced). Fix: install at construction, no-op until first shot. Also pose pitch guard, unloaded-column stuck arrows, pickup from body centre, tests for owner immunity/water drag/despawn. Note for M13f: pass pickup explicitly for mob arrows.
