@@ -189,6 +189,30 @@ describe('M13c player melee', () => {
     expect(hudSnapshot(player, false).attackCooldown).toBe(1);
   });
 
+  it('applies Keen through live PlayerCombat attacks while preserving unaffixed damage', () => {
+    const attackWithSword = (keen: boolean) => {
+      const world = flatWorld();
+      const { ecs } = scene(world);
+      const player = fighter(world);
+      give(player, 0, 'iron_sword');
+      if (keen) player.inventory.slots[0]!.affix = 'Keen';
+      const combat = new PlayerCombat(player, ecs, null);
+      const id = makeMob(ecs, [2.5, GROUND, 0.5], { health: 100 });
+      for (let n = 0; n < 12; n++) combat.tick();
+      combat.input('attack', true);
+      combat.tick();
+      return { damage: combat.lastAttack!.damage, remainingHealth: health(ecs, id) };
+    };
+
+    const plain = attackWithSword(false);
+    const keen = attackWithSword(true);
+    const baseDamage = getAttackDamage('iron_sword');
+    expect(plain.damage).toBe(baseDamage);
+    expect(100 - plain.remainingHealth).toBe(baseDamage);
+    expect(keen.damage - plain.damage).toBe(1);
+    expect(100 - keen.remainingHealth).toBe(keen.damage);
+  });
+
   it('crits ×1.5 while falling with a full meter', () => {
     const world = flatWorld();
     const { ecs } = scene(world);

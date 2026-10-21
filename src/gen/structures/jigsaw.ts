@@ -60,6 +60,7 @@ export interface StructureAabb {
 export interface JigsawAssemblyOptions {
   readonly worldSeed: number;
   readonly startTemplate: string;
+  readonly startChunk: readonly [cx: number, cz: number];
   readonly templates: readonly StructurePieceTemplate[];
   readonly pools: readonly StructurePool[];
   readonly maxDepth: number;
@@ -283,7 +284,12 @@ export function assembleJigsaw(options: JigsawAssemblyOptions): PlacedStructureP
   if (!rootTemplate)
     throw new Error('Unknown starting structure template: ' + options.startTemplate);
 
-  const rng = new PRNG(deriveSeed(options.worldSeed, 'jigsaw:' + options.startTemplate));
+  const rng = new PRNG(
+    deriveSeed(
+      options.worldSeed,
+      'jigsaw:' + options.startTemplate + ':' + options.startChunk[0] + ':' + options.startChunk[1],
+    ),
+  );
   const root: PlacedStructurePiece = {
     template: rootTemplate.name,
     position: [0, 0, 0],

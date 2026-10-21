@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { deriveSeed } from '../../src/engine/rng';
 import { ChunkColumn } from '../../src/world/column';
 import { createDefaultPipeline } from '../../src/gen/pipeline';
+import { OVERWORLD_BIOME_IDS, sampleBiome } from '../../src/gen/biomes';
 import { adaptPieceToTerrain } from '../../src/gen/structures/adapt';
 import {
   assembleJigsaw,
@@ -139,6 +140,14 @@ describe('M19a placement grid', () => {
         for (let regionX = -24; regionX <= 24; regionX++) {
           const start = candidates.get(regionX + ',' + regionZ);
           if (!start) continue;
+          const offsetX = start.chunkX - start.regionX * hamletConfig.spacing;
+          const offsetZ = start.chunkZ - start.regionZ * hamletConfig.spacing;
+          const offsetRange = hamletConfig.spacing - hamletConfig.separation;
+          expect(hamletConfig.biomes).toContain(sampleBiome(seed, start.x, start.z));
+          expect(offsetX).toBeGreaterThanOrEqual(0);
+          expect(offsetX).toBeLessThan(offsetRange);
+          expect(offsetZ).toBeGreaterThanOrEqual(0);
+          expect(offsetZ).toBeLessThan(offsetRange);
           for (let dz = -1; dz <= 1; dz++) {
             for (let dx = -1; dx <= 1; dx++) {
               if (dx === 0 && dz === 0) continue;
@@ -190,6 +199,7 @@ describe('M19a connector jigsaw', () => {
       const options = {
         worldSeed,
         startTemplate: 'start',
+        startChunk: [0, 0] as const,
         templates,
         pools,
         maxDepth: 5,
@@ -210,6 +220,29 @@ describe('M19a connector jigsaw', () => {
         }
       }
     }
+  });
+
+  it('seeds layouts with the start chunk while keeping each start repeatable', () => {
+    const options = {
+      worldSeed: 4219,
+      startTemplate: 'start',
+      startChunk: [0, 0] as const,
+      templates: testTemplates(),
+      pools: [
+        {
+          name: 'hamlet_rooms',
+          entries: [
+            { template: 'room_short', weight: 3 },
+            { template: 'room_long', weight: 2 },
+          ],
+        },
+      ],
+      maxDepth: 5,
+      maxPieces: 20,
+    };
+    const first = assembleJigsaw(options);
+    expect(assembleJigsaw(options)).toEqual(first);
+    expect(assembleJigsaw({ ...options, startChunk: [1, 0] })).not.toEqual(first);
   });
 
   it('allows pieces to touch faces while rejecting positive-volume intersections', () => {
@@ -267,5 +300,73 @@ describe('M19a terrain adaptation and stage', () => {
         column.getSection(sectionY),
       ),
     ).toEqual(before);
+  });
+
+  it('generates a registered structure identically across columns in either order', () => {
+    const worldSeed = 314159;
+    const config = {
+      id: 'stage_test',
+      spacing: 64,
+      separation: 48,
+      salt: 'stage_test',
+      biomes: OVERWORLD_BIOME_IDS,
+    } as const;
+    const start = createPlacementGrid(worldSeed, [config]).candidateAtRegion(config.id, 0, 0)!;
+    const registration = {
+      config,
+      startTemplate: 'start',
+      templates: testTemplates(),
+      pools: [
+        {
+          name: 'hamlet_rooms',
+          entries: [
+            { template: 'room_short', weight: 3 },
+            { template: 'room_long', weight: 2 },
+          ],
+        },
+      ],
+      maxDepth: 4,
+      maxPieces: 14,
+      foundationBlock: 'stone',
+    };
+    const columns = Array.from(
+      { length: 25 },
+      (_, index) =>
+        [start.chunkX + (index % 5) - 2, start.chunkZ + Math.floor(index / 5) - 2] as const,
+    );
+
+    const generateInOrder = (order: readonly (readonly [number, number])[]) => {
+      const stage = createStructureStage([registration]);
+      const blocks = new Map<string, number>();
+      for (const [cx, cz] of order) {
+        const column = new ChunkColumn(cx, cz);
+        column.worldSeed = worldSeed;
+        const write = column.setBlockStateId.bind(column);
+        vi.spyOn(column, 'setBlockStateId').mockImplementation((x, y, z, stateId) => {
+          expect(x).toBeGreaterThanOrEqual(0);
+          expect(x).toBeLessThan(16);
+          expect(z).toBeGreaterThanOrEqual(0);
+          expect(z).toBeLessThan(16);
+          write(x, y, z, stateId);
+          blocks.set(cx * 16 + x + ',' + y + ',' + (cz * 16 + z), stateId);
+        });
+        stage.generate(deriveSeed(worldSeed, 'structures'), cx, cz, column);
+      }
+      return blocks;
+    };
+
+    const forward = generateInOrder(columns);
+    const reverse = generateInOrder([...columns].reverse());
+    const canonical = (blocks: Map<string, number>) =>
+      [...blocks.entries()].sort(([left], [right]) => left.localeCompare(right));
+    expect(forward.size).toBeGreaterThan(0);
+    expect(canonical(reverse)).toEqual(canonical(forward));
+    const touchedChunks = new Set(
+      [...forward.keys()].map((coordinate) => {
+        const [x, , z] = coordinate.split(',').map(Number);
+        return Math.floor(x! / 16) + ',' + Math.floor(z! / 16);
+      }),
+    );
+    expect(touchedChunks.size).toBeGreaterThan(1);
   });
 });

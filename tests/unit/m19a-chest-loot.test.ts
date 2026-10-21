@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blockLootTable } from '../../src/gameplay/loot';
-import {
-  chestLootTable,
-  rollChestLoot,
-  validateChestLootTable,
-} from '../../src/gameplay/chest-loot';
+import { rollChestLoot, validateChestLootTable } from '../../src/gameplay/chest-loot';
 import { getAttackDamage, getMiningSpeed, getToolDurability } from '../../src/gameplay/tools';
 import { BlockInteraction } from '../../src/gameplay/block-interaction';
 import { Player } from '../../src/entity/player';
@@ -15,12 +10,6 @@ import { tooltipFor } from '../../src/ui/inventory-screen';
 import { World } from '../../src/world/world';
 
 describe('M19a chest loot tables', () => {
-  it('loads a hamlet table without changing the block-drop table loader', () => {
-    expect(chestLootTable('wayfarer_hamlet')).toBeDefined();
-    expect(blockLootTable('wayfarer_hamlet')).toBeUndefined();
-    expect(blockLootTable('stone')?.entries.length).toBeGreaterThan(0);
-  });
-
   it('uses entry weights across many seeded rolls and is repeatable', () => {
     const table = validateChestLootTable('weight_test', {
       rolls: [1, 1],
@@ -113,6 +102,22 @@ describe('M19a chest loot tables', () => {
     interaction.tick();
 
     expect(interaction.tool.speed).toBeCloseTo(2.4);
+    const swiftTool = interaction.tool;
+    for (let n = 0; n < 10; n++) interaction.tick();
+    expect(interaction.tool).toBe(swiftTool);
+
+    delete player.inventory.held!.affix;
+    interaction.tick();
+    expect(interaction.tool.speed).toBe(2);
+    expect(interaction.tool).not.toBe(swiftTool);
+    const plainTool = interaction.tool;
+    for (let n = 0; n < 10; n++) interaction.tick();
+    expect(interaction.tool).toBe(plainTool);
+
+    player.inventory.held!.id = 'stone_pickaxe';
+    interaction.tick();
+    expect(interaction.tool.speed).toBe(4);
+    expect(interaction.tool).not.toBe(plainTool);
   });
 
   it('preserves affixes through inventory operations, save/load, and item tooltips', () => {

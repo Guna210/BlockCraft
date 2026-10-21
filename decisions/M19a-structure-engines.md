@@ -22,9 +22,9 @@
 
 ## Chest loot and affixes
 
-- Chest tables use data/loot/chests/*.json and a separate loader. The existing block-drop loader's direct-child glob remains unchanged and does not include the chests/ directory.
+- Chest tables use data/loot/chests/*.json and a separate loader. M19a adds no chest content; M19b supplies the Hamlet table. The existing block-drop loader's direct-child glob remains unchanged and does not include the chests/ directory.
 - rolls and count ranges are inclusive. Each roll selects an entry with replacement by weight. durability: [minFrac, maxFrac] means the fraction of maximum durability remaining; the stored stack damage is round(maxDurability * (1 - remainingFraction)).
 - affixChance is rolled per stack. A successful roll selects Keen, Sturdy, or Swift uniformly. The roll seed includes the world seed, table id, chest coordinates, and loot index.
 - Affixes are optional ItemStack.affix values and retain the existing inventory save format version 1. Keen adds 1 attack damage, Swift multiplies mining speed by 1.2, and Sturdy multiplies maximum durability by 1.5 rounded to the nearest whole use.
 - Affixed stacks remain distinct during inventory and container merges. Tool queries accept either an item id or a stack, so callers can apply the affix modifier without changing item definitions. Tooltips prefix the base item name with the affix.
-- Unit tests define their loot tables inline; only the usable Wayfarer Hamlet table is stored under data/.
+- Unit tests define their loot tables inline; M19a stores no chest loot tables under data/.

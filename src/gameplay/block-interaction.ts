@@ -4,7 +4,7 @@ import { BlockRegistry } from '../world/blocks/registry';
 import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { breakSeconds, BARE_HAND, type MiningTool } from './mining';
 import { HALF_WIDTH } from '../entity/physics';
-import { items } from './items';
+import { items, type ItemAffix } from './items';
 import { getMiningSpeed } from './tools';
 import {
   removeShapeBlock,
@@ -45,6 +45,11 @@ export class BlockInteraction {
   private readonly eye = new Float64Array(3);
   private readonly look = new Float64Array(3);
   private readonly registry = BlockRegistry.getInstance();
+  private toolCacheInitialized = false;
+  private cachedToolId: string | null = null;
+  private cachedAffix: ItemAffix | undefined;
+  private cachedMiningSpeed = BARE_HAND.speed;
+  private cachedMiningTool: MiningTool = BARE_HAND;
   constructor(
     readonly player: Player,
     private readonly edited: (x: number, y: number, z: number) => void,
@@ -117,13 +122,26 @@ export class BlockInteraction {
     const t = this.target,
       p = this.player;
     const selected = p.inventory.held;
-    const selectedTool = selected ? (items.get(selected.id).tool ?? BARE_HAND) : BARE_HAND;
-    this.tool = selected
-      ? {
-          ...selectedTool,
-          speed: getMiningSpeed({ id: selected.id, affix: selected.affix }),
-        }
-      : BARE_HAND;
+    const selectedId = selected?.id ?? null;
+    const selectedAffix = selected?.affix;
+    if (
+      !this.toolCacheInitialized ||
+      selectedId !== this.cachedToolId ||
+      selectedAffix !== this.cachedAffix
+    ) {
+      this.toolCacheInitialized = true;
+      this.cachedToolId = selectedId;
+      this.cachedAffix = selectedAffix;
+      if (selected) {
+        const selectedTool = items.get(selected.id).tool ?? BARE_HAND;
+        this.cachedMiningSpeed = getMiningSpeed(selected);
+        this.cachedMiningTool = { ...selectedTool, speed: this.cachedMiningSpeed };
+      } else {
+        this.cachedMiningSpeed = BARE_HAND.speed;
+        this.cachedMiningTool = BARE_HAND;
+      }
+      this.tool = this.cachedMiningTool;
+    }
     if (this.pickPressed && t.hit && p.mode === 'creative') {
       const id = this.registry.getResolvedState(t.stateId)!.blockId;
       p.heldBlock = this.registry.getDefaultStateId(id)!;

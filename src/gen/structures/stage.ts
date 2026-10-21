@@ -80,6 +80,8 @@ function buildStartCells(
   worldSeed: number,
   startX: number,
   startZ: number,
+  startChunkX: number,
+  startChunkZ: number,
   registration: StructureRegistration,
   registry: BlockRegistry,
 ): StructureCell[] {
@@ -89,6 +91,7 @@ function buildStartCells(
   const pieces = assembleJigsaw({
     worldSeed,
     startTemplate: registration.startTemplate,
+    startChunk: [startChunkX, startChunkZ],
     templates: registration.templates,
     pools: registration.pools,
     maxDepth: registration.maxDepth,
@@ -163,22 +166,25 @@ export function createStructureStage(
     registration: StructureRegistration,
     startX: number,
     startZ: number,
+    startChunkX: number,
+    startChunkZ: number,
   ): readonly StructureCell[] {
-    const key =
-      worldSeed +
-      ':' +
-      registration.config.id +
-      ':' +
-      Math.floor((startX - 8) / 16) +
-      ':' +
-      Math.floor((startZ - 8) / 16);
+    const key = worldSeed + ':' + registration.config.id + ':' + startChunkX + ':' + startChunkZ;
     const cached = assembledByStart.get(key);
     if (cached) {
       assembledByStart.delete(key);
       assembledByStart.set(key, cached);
       return cached;
     }
-    const cells = buildStartCells(worldSeed, startX, startZ, registration, registry!);
+    const cells = buildStartCells(
+      worldSeed,
+      startX,
+      startZ,
+      startChunkX,
+      startChunkZ,
+      registration,
+      registry!,
+    );
     assembledByStart.set(key, cells);
     if (assembledByStart.size > ASSEMBLY_CACHE_LIMIT) {
       const oldest = assembledByStart.keys().next().value as string | undefined;
@@ -207,7 +213,14 @@ export function createStructureStage(
           maxZ: maxWorldZ + radius,
         });
         for (const start of starts) {
-          for (const cell of getCells(worldSeed, registration, start.x, start.z)) {
+          for (const cell of getCells(
+            worldSeed,
+            registration,
+            start.x,
+            start.z,
+            start.chunkX,
+            start.chunkZ,
+          )) {
             if (
               cell.x < minWorldX ||
               cell.x > maxWorldX ||
