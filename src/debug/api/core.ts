@@ -9,6 +9,19 @@ export interface BlockCraftDebugAPI {
   setItemDamage?: (slot: number, damage: number) => void;
   openScreen?: (name: import('../../ui/ui-manager').ScreenName | 'none') => void;
   getScreen?: () => import('../../ui/ui-manager').ScreenSnapshot;
+  /**
+   * Main menu and panorama state: whether each is up, how often the panorama has started, what its
+   * last teardown left behind, and GPU columns with meshes that are not in the loaded world.
+   */
+  getMenuState?: () => {
+    menuVisible: boolean;
+    panorama: boolean;
+    panoramaStarts: number;
+    lastTeardown: import('../../world/world-manager').PanoramaTeardown | null;
+    sectionMeshes: number;
+    meshedColumns: number;
+    meshedColumnsOutsideWorld: number;
+  };
   kill?: (id: number) => void;
   uiClickSlot?: (slot: number, button: 'left' | 'right', shift?: boolean) => void;
   /** Spawns a registered entity type ('item:<itemId>' drops one item) and returns its id. */

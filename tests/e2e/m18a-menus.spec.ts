@@ -154,6 +154,52 @@ test.describe('M18a menus', () => {
     expect(maxHeight).toBeLessThanOrEqual(319);
   });
 
+  test('starting a world tears the panorama down completely; Save & Quit streams it again', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    const menuState = () => page.evaluate(() => window.__blockcraft!.getMenuState!());
+
+    // On the menu: the panorama streams in and puts meshes on the GPU.
+    await expect
+      .poll(async () => (await menuState()).sectionMeshes, { timeout: 120_000 })
+      .toBeGreaterThan(20);
+    const onMenu = await menuState();
+    expect(onMenu.panorama).toBe(true);
+    expect(onMenu.panoramaStarts).toBe(1);
+    expect(onMenu.lastTeardown).toBeNull();
+
+    await createWorldThroughUi(page, { name: 'Teardown', seed: 'abc' });
+    await page.evaluate(() => window.__blockcraft!.waitForTerrain!(2));
+    const playing = await menuState();
+    expect(playing.menuVisible).toBe(false);
+    expect(playing.panorama).toBe(false);
+
+    // At teardown every queued and running panorama job was cancelled and every mesh freed.
+    const teardown = playing.lastTeardown!;
+    expect(teardown.meshesBefore).toBeGreaterThan(20);
+    expect(teardown.genQueue).toBe(0);
+    expect(teardown.lightQueue).toBe(0);
+    expect(teardown.meshQueue).toBe(0);
+    expect(teardown.sectionMeshes).toBe(0);
+    // Every GL buffer the panorama created was deleted again.
+    expect(teardown.glBuffers).toBeLessThanOrEqual(teardown.glBuffersAtStart);
+
+    // The meshes on the GPU now are the new world's alone: none belongs to a column it lacks.
+    expect(playing.meshedColumns).toBeGreaterThan(0);
+    expect(playing.meshedColumnsOutsideWorld).toBe(0);
+
+    // Back on the menu the panorama starts streaming again.
+    await saveAndQuit(page);
+    await expect.poll(async () => (await menuState()).panoramaStarts, { timeout: 30_000 }).toBe(2);
+    await expect
+      .poll(async () => (await menuState()).sectionMeshes, { timeout: 120_000 })
+      .toBeGreaterThan(20);
+    const again = await menuState();
+    expect(again.panorama).toBe(true);
+    expect(again.menuVisible).toBe(true);
+  });
+
   test('main menu over the live panorama (m18-main-menu.png)', async ({
     page,
     assertAndSaveScreenshot,

@@ -78,10 +78,27 @@ const PERIMETER_RING = 1;
 
 /** The world behind the main menu (decisions/M18a-menus.md). */
 export const PANORAMA_SEED = 'blockcraft-panorama';
+/** A valley of the panorama seed ringed by hills: land in nearly every direction. */
+export const PANORAMA_CENTER = { x: -64, z: -224 } as const;
 const PANORAMA_RENDER_DISTANCE = 4;
 const PANORAMA_TIME = 6000;
 
 /** What a new world is created with: the debug `createWorld` options and the Create World screen. */
+/** What the panorama left behind when it was torn down (read through the debug API). */
+export interface PanoramaTeardown {
+  /** GPU section meshes the panorama had just before teardown. */
+  meshesBefore: number;
+  /** Jobs still queued or running in each worker pool right after teardown. */
+  genQueue: number;
+  lightQueue: number;
+  meshQueue: number;
+  /** GPU section meshes and live GL buffers right after teardown. */
+  sectionMeshes: number;
+  glBuffers: number;
+  /** Live GL buffers just before the panorama started streaming. */
+  glBuffersAtStart: number;
+}
+
 export interface WorldStartOptions {
   name?: string;
   seed?: string;
@@ -222,6 +239,10 @@ export class WorldManager {
 
   /** True while `world` is the main-menu panorama rather than a played world. */
   public panorama = false;
+  /** How many times the panorama has started streaming since the page loaded. */
+  public panoramaStarts = 0;
+  public lastPanoramaTeardown: PanoramaTeardown | null = null;
+  private panoramaGlBuffersAtStart = 0;
   // The render distance chosen for played worlds while the panorama streams at its own.
   private panoramaSavedRenderDistance: number | null = null;
   /** Called whenever a world starts (or a test takes over the renderer); main.ts hides the menu. */
@@ -609,6 +630,7 @@ export class WorldManager {
   public startPanorama(): void {
     if (this.panorama || this.world || !this.camera) return;
     this.panorama = true;
+    this.panoramaStarts++;
     this.saves.detach();
     resetWorldTime();
     setWorldTime(PANORAMA_TIME);
@@ -619,6 +641,7 @@ export class WorldManager {
     this.worldEpoch++;
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
+    this.panoramaGlBuffersAtStart = this.glWrapper?.getCounts().buffers ?? 0;
     const world = new World();
     this.world = world;
     this.configureLighting(world);
@@ -627,7 +650,7 @@ export class WorldManager {
     // Not the debug API's world: debug calls made in the menu keep addressing their own world.
     this.panoramaSavedRenderDistance = this.streamer.renderDistance;
     this.streamer.setRenderDistance(PANORAMA_RENDER_DISTANCE);
-    this.streamer.reset(0, 0);
+    this.streamer.reset(Math.floor(PANORAMA_CENTER.x / 16), Math.floor(PANORAMA_CENTER.z / 16));
     this.streamer.active = true;
     this.streamer.backgroundEnabled = true;
     this.updateStreamerLimits();
@@ -640,6 +663,7 @@ export class WorldManager {
   public stopPanorama(): void {
     if (!this.panorama) return;
     this.panorama = false;
+    const meshesBefore = this.chunkRenderer?.sectionMeshCount ?? 0;
     this.worldEpoch++;
     this.streamer.reset();
     this.streamer.active = false;
@@ -649,6 +673,15 @@ export class WorldManager {
     this.updateStreamerLimits();
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
+    this.lastPanoramaTeardown = {
+      meshesBefore,
+      genQueue: this.genWorkerPool.queueLength,
+      lightQueue: this.lightWorkerPool.queueLength,
+      meshQueue: this.workerPool.queueLength,
+      sectionMeshes: this.chunkRenderer?.sectionMeshCount ?? 0,
+      glBuffers: this.glWrapper?.getCounts().buffers ?? 0,
+      glBuffersAtStart: this.panoramaGlBuffersAtStart,
+    };
     resetWeather();
     this.world = null;
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });

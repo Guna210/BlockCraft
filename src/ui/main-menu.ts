@@ -6,7 +6,7 @@ import { MenuOverlayRenderer, overlayLayer, type OverlayLayer } from '../render/
 import { deriveSeed, hashString } from '../engine/rng';
 import { sampleTerrainTopY } from '../gen/terrain-height';
 import { withTerrainVariant } from '../gen/world-options';
-import { PANORAMA_SEED, type WorldManager } from '../world/world-manager';
+import { PANORAMA_CENTER, PANORAMA_SEED, type WorldManager } from '../world/world-manager';
 import { drawButton, drawPanel, UI, uiScaleFor, type Rect } from './ui-kit';
 import { drawText, GLYPH_HEIGHT, textWidth } from './pixel-font';
 import { renderLogo } from './logo';
@@ -198,15 +198,19 @@ export class MainMenu {
   private beginPanorama(): void {
     this.panoramaTimer = undefined;
     if (!this.visible || this.manager.world) return;
-    // A scenic height: clear of the highest terrain within a few columns of the origin.
+    // Low over the valley floor, clear of the ground right around the camera, so the hills fill
+    // the view rather than the edge of the loaded area.
     const terrainSeed = deriveSeed(hashString(PANORAMA_SEED), 'terrain_shape');
     let top = 64;
     withTerrainVariant({ type: 'default' }, () => {
-      for (let x = -32; x <= 48; x += 8)
-        for (let z = -32; z <= 48; z += 8)
-          top = Math.max(top, sampleTerrainTopY(terrainSeed, x, z));
+      for (let dx = -8; dx <= 8; dx += 4)
+        for (let dz = -8; dz <= 8; dz += 4)
+          top = Math.max(
+            top,
+            sampleTerrainTopY(terrainSeed, PANORAMA_CENTER.x + dx, PANORAMA_CENTER.z + dz),
+          );
     });
-    this.panoramaY = top + 14;
+    this.panoramaY = top + 16;
     this.panoramaStart = performance.now();
     this.manager.startPanorama();
     this.updateCamera(this.panoramaStart);
@@ -215,9 +219,9 @@ export class MainMenu {
   /** Turns the panorama camera: one revolution every 120 s around a fixed point. */
   updateCamera(now: number): void {
     const turn = ((now - this.panoramaStart) / PANORAMA_TURN_MS) * Math.PI * 2;
-    this.camera.position = vec3.fromValues(8, this.panoramaY, 8);
+    this.camera.position = vec3.fromValues(PANORAMA_CENTER.x, this.panoramaY, PANORAMA_CENTER.z);
     this.camera.yaw = -Math.PI / 2 + turn;
-    this.camera.pitch = -0.22;
+    this.camera.pitch = -0.12;
     this.camera.updateView();
   }
 

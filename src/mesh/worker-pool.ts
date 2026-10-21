@@ -133,6 +133,8 @@ export class WorkerPool {
    * too. The jobs' promises never settle; their owner (the streamer) has already abandoned them.
    */
   public cancelAll(): void {
+    // The cancelled world's timings must not count toward the next world's meshMsP95.
+    this.meshMsTimes = [];
     if (this.activeJobs.size > 0) {
       const size = this.workers.length;
       this.terminate();
