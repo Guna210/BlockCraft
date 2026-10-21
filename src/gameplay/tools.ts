@@ -1,8 +1,10 @@
-import { items } from './items';
+import { items, type ItemAffix } from './items';
 import { BARE_HAND, type MiningTool } from './mining';
 
 export type ToolType = MiningTool['type'];
 export type ToolTierName = 'wood' | 'stone' | 'copper' | 'iron' | 'skyshard';
+export type ToolItemInput =
+  string | null | undefined | { readonly id: string; readonly affix?: ItemAffix };
 
 export interface ToolTierStats {
   readonly name: ToolTierName;
@@ -95,7 +97,16 @@ export function getItemToolTier(itemId?: string | null): ToolTierStats | null {
   return getToolTierByLevel(def.tool.tier);
 }
 
-export function getMiningTool(itemId?: string | null): MiningTool {
+function itemIdOf(item?: ToolItemInput): string | null | undefined {
+  return typeof item === 'string' || item == null ? item : item.id;
+}
+
+function hasAffix(item: ToolItemInput, affix: ItemAffix): boolean {
+  return typeof item === 'object' && item !== null && item.affix === affix;
+}
+
+export function getMiningTool(item?: ToolItemInput): MiningTool {
+  const itemId = itemIdOf(item);
   if (!itemId) return BARE_HAND;
   const def = items.items.get(itemId);
   if (!def?.tool) return BARE_HAND;
@@ -110,20 +121,23 @@ export function getMiningTool(itemId?: string | null): MiningTool {
   return def.tool;
 }
 
-export function getMiningSpeed(itemId?: string | null): number {
-  return getMiningTool(itemId).speed;
+export function getMiningSpeed(item?: ToolItemInput): number {
+  const speed = getMiningTool(item).speed;
+  return hasAffix(item, 'Swift') ? speed * 1.2 : speed;
 }
 
-export function getHarvestLevel(itemId?: string | null): number {
-  return getMiningTool(itemId).tier;
+export function getHarvestLevel(item?: ToolItemInput): number {
+  return getMiningTool(item).tier;
 }
 
-export function getToolDurability(itemId?: string | null): number | null {
+export function getToolDurability(item?: ToolItemInput): number | null {
+  const itemId = itemIdOf(item);
   if (!itemId) return null;
   const special = SPECIAL_DURABILITY[itemId];
-  if (special !== undefined) return special;
   const tier = getItemToolTier(itemId);
-  return tier ? tier.durability : null;
+  const durability = special !== undefined ? special : tier?.durability;
+  if (durability === undefined) return null;
+  return hasAffix(item, 'Sturdy') ? Math.round(durability * 1.5) : durability;
 }
 
 export function getToolAttackDamageForType(type: ToolType, tier: ToolTierName): number {
@@ -143,13 +157,14 @@ export function getToolAttackDamageForType(type: ToolType, tier: ToolTierName): 
   }
 }
 
-export function getAttackDamage(itemId?: string | null): number {
+export function getAttackDamage(item?: ToolItemInput): number {
+  const itemId = itemIdOf(item);
   if (!itemId) return 1;
   const def = items.items.get(itemId);
-  if (!def?.tool) return 1;
+  if (!def?.tool) return 1 + Number(hasAffix(item, 'Keen'));
   const tier = getItemToolTier(itemId);
-  if (!tier) return 1;
-  return getToolAttackDamageForType(def.tool.type, tier.name);
+  const base = tier ? getToolAttackDamageForType(def.tool.type, tier.name) : 1;
+  return base + Number(hasAffix(item, 'Keen'));
 }
 
 export function getArmorDefense(itemId?: string | null): number {

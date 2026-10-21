@@ -22,6 +22,7 @@ import { biomeSurfaceStage } from './surface';
 import { caveStage } from './caves';
 import { oreStage } from './ores';
 import { featureStage } from './features';
+import { createStructureStage, type StructureRegistration } from './structures/stage';
 
 export class TerrainPipeline {
   private stages: TerrainStage[] = [];
@@ -43,12 +44,15 @@ export class TerrainPipeline {
   }
 }
 
-export function createDefaultPipeline(): TerrainPipeline {
+export function createDefaultPipeline(
+  structures: readonly StructureRegistration[] = [],
+): TerrainPipeline {
   const pipeline = new TerrainPipeline();
   pipeline.addStage(terrainShapeStage);
   pipeline.addStage(biomeSurfaceStage);
   pipeline.addStage(caveStage);
   pipeline.addStage(oreStage);
   pipeline.addStage(featureStage);
+  pipeline.addStage(createStructureStage(structures));
   return pipeline;
 }

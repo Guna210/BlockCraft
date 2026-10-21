@@ -61,6 +61,11 @@ export function displayName(id: string): string {
   return id.replace(/_/g, ' ').toUpperCase();
 }
 
+/** Adds an optional affix before the item name for inventory and container tooltips. */
+export function displayItemStackName(id: string, affix?: string): string {
+  return (affix ? affix.toUpperCase() + ' ' : '') + displayName(id);
+}
+
 export function hasGlyph(char: string): boolean {
   return rows.has(char.toUpperCase());
 }

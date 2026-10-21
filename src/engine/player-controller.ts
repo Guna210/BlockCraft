@@ -167,7 +167,7 @@ export class PlayerController {
         this.player!.survival.addExhaustion(0.005);
         const held = this.player!.inventory.held;
         if (held) {
-          const durability = getToolDurability(held.id);
+          const durability = getToolDurability(held);
           if (durability !== null && durability > 0) {
             held.damage = (held.damage ?? 0) + 1;
             if (held.damage >= durability) {
