@@ -57,7 +57,7 @@ In flight:
 
 | M13d Projectiles & bows | PR #68 (claude/m13d) CI red: m04:221/276 x3, shard 2 32 min on master 203ecbc (master itself 12.7 min). Cause not visible statically; bisect/timing fix sent to Codex; owner may re-run once | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
 
-| M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; spawn rules registered; emissive moth; lineup probe screenshot; reachability exemptions untouched |
+| M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; NO spawn rules (moved to M13g, data recorded in decisions 'For M13g'); emissive moth; lineup probe screenshot; reachability exemptions untouched |
 
 Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
@@ -92,6 +92,7 @@ Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (ne
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: M13e QUESTION: natural spawn rules break m07b:106 (always), m08c:160, m17b:70. Decided B: no spawn rules in M13e (or M13f); M13g registers all natural spawning and handles other-spec fallout (owner will need to approve those test edits then). Spawn data recorded in M13e decisions for M13g.
 - 2026-10-21: #67 M19a green on 203ecbc but conflicts with master cf97712 (pixel-font.ts). Gave Codex merge message and reviewer prompt (flags: hamlet chest table maybe M19b scope; ui-manager +162 lines).
 - 2026-10-21: Gave M13e prompt (Claude).
 - 2026-10-21: #66 M18a merged. Ready: M13e, M18b, M18c.
