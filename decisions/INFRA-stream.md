@@ -42,7 +42,7 @@ Upper-bound experiments patch the page before load (`addInitScript`), so they ch
 | --- | --- | --- |
 | Strip every `discard` from the terrain fragment shader (SwiftShader may skip early depth test when a shader can discard), unpinned, 2 runs each | idle 48 / 53 s vs 55 / 57 s base; frames per 20 s 10 / 6 vs 6 / 2 | no, see next row |
 | Visual-identical version: `NO_DISCARD` program variants for the opaque pass of finished-fade columns, plus nearest-first column draw order, unpinned, 3 runs each against a master build | **worse**: idle 62 / 58 / 59 s vs 53 / 56 / 54 s; frames per 20 s 3 / 2 / 2 vs 6 / 10 / 6 | **no**, reverted (never pushed) |
-| Same, pinned (2 cores), strip discards, 3 runs | idle 113 / 227 / (see below) s vs base 168 / 183 / 187 s | no: within noise |
+| Same, pinned (2 cores), strip discards, 3 runs | idle 113 / 227 / 231 s vs base 168 / 183 / 187 s | no: within noise |
 | No depth blit at all (`blitFramebuffer` no-op, upper bound for skipping `FluidDepth.capture`), pinned, 3 runs | idle 207 / 104 / 157 s vs base 168 / 183 / 187 s | no: within noise, so a cheaper capture cannot help |
 | Throttle gen/light dispatch while `uploadsDeferred` is at its limit | not built. Gen and light queues are empty after about 10 s of a ~55 s run, and mesh dispatch already stops at `maxDeferred`; `SharedWorkerBudget` already limits all three pools to `hardwareConcurrency - 1` threads in total. Nothing is left to throttle in the long phase | no |
 | Heap test (m04:221) | passes here: baseline 34.49 MB, end 34.79 MB, growth 0.86 % (limit 15 %). The CI failure mode is "streaming did not become idle", not growth, so no leak was looked for beyond this | no change |
