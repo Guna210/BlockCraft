@@ -1,5 +1,6 @@
 import { SaveDb, type DbWrite } from './idb';
 import { FORMAT_VERSION, migrations } from './version';
+import type { WorldOptions, WorldType } from '../gen/world-options';
 
 /** Columns per region side: a region record groups 32×32 columns. */
 export const REGION_SIZE = 32;
@@ -19,7 +20,9 @@ export interface WorldRecord {
   formatVersion: number;
   /** The seed text the player typed; `seed` below is its hash. */
   seedString: string;
-  worldType: 'default' | 'flat';
+  worldType: WorldType;
+  /** Create World toggles (and the Single Biome biome). Records written without them load with defaults. */
+  options?: WorldOptions;
   createdAt: number;
   lastPlayed: number;
   /** A 160×90 PNG of the last rendered game view, captured when this world saves. */

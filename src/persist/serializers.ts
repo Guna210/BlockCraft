@@ -7,6 +7,7 @@ import type { ChunkColumn } from '../world/column';
 import { BlockTicks, type ScheduledTick } from '../world/ticks';
 import { serializeColumn, deserializeColumn } from './column-format';
 import { FORMAT_VERSION, migrations } from './version';
+import { isWorldType, type WorldType } from '../gen/world-options';
 
 // ---------------------------------------------------------------------------
 // 1. Block Entities
@@ -477,7 +478,7 @@ export interface SerializedWorldMetadata {
   lastTick: number;
   elapsed: number;
   breakCount: number;
-  worldType?: 'default' | 'flat';
+  worldType?: WorldType;
 }
 
 export function serializeWorldMetadata(meta: SerializedWorldMetadata): Uint8Array {
@@ -549,7 +550,7 @@ export function deserializeWorldMetadata(bytes: Uint8Array): SerializedWorldMeta
     lastTick,
     elapsed,
     breakCount,
-    worldType: worldType === 'default' || worldType === 'flat' ? worldType : undefined,
+    worldType: isWorldType(worldType) ? worldType : undefined,
   };
 }
 

@@ -53,7 +53,8 @@ import { smelting } from '../gameplay/smelting';
 import { addXp } from '../gameplay/xp';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 
-export type ScreenName = 'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping';
+export type ScreenName =
+  'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping' | 'pause';
 export type ClickButton = 'left' | 'right';
 
 interface ExternalItemStack {
@@ -107,6 +108,9 @@ export interface ScreenSnapshot {
   flameBox: Rect | null;
   cause: string | null;
   respawnButton: Rect | null;
+  /** Pause menu buttons in CSS pixels; null outside the pause menu. */
+  resumeButton: Rect | null;
+  saveQuitButton: Rect | null;
   message: string | null;
 }
 
@@ -178,6 +182,9 @@ export class UiManager {
   private closeRect: Rect | null = null;
   private deathCause: string | null = null;
   private respawnRect: Rect | null = null;
+  private resumeRect: Rect | null = null;
+  private saveQuitRect: Rect | null = null;
+  private quitting = false;
   private sleepFade = 0;
   private messageText: string | null = null;
   private messageTimer: number | undefined;
@@ -185,6 +192,8 @@ export class UiManager {
   private damageTimer: number | undefined;
   private messageElement: HTMLDivElement | null = null;
   public onRespawn: () => void = () => {};
+  /** Pause menu "Save & Quit": saves and leaves the world (main.ts returns to the main menu). */
+  public onSaveAndQuit: () => Promise<void> = async () => {};
   private controls: ScreenControls = {
     close: null,
     book: null,
@@ -203,6 +212,7 @@ export class UiManager {
 
   attach(): void {
     window.addEventListener('keydown', this.onKeyDown);
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
     window.addEventListener('mouseup', this.onMouseUp);
     window.addEventListener('resize', this.onResize);
   }
@@ -249,6 +259,11 @@ export class UiManager {
   open(name: ScreenName): void {
     if (name === 'death' || name === 'sleeping')
       throw new Error('Death and sleeping screens are controlled by gameplay');
+    if (name === 'pause') {
+      this.requirePlayer();
+      this.openPause();
+      return;
+    }
     if (name === 'chest') {
       const target = this.findNearbyChest();
       if (!target) throw new Error('No chest is within reach');
@@ -306,6 +321,48 @@ export class UiManager {
     this.resizeCanvas();
     this.hoverSlot = null;
     this.render();
+  }
+
+  /**
+   * Opens the pause menu over a played world: the game loop pauses (which saves, M17b) until
+   * Resume, Esc or Save & Quit.
+   */
+  openPause(): void {
+    const controller = this.controller();
+    if (this.screen || !controller?.player || controller.player.dead) return;
+    this.ensureCanvases();
+    this.wasLocked = this.input.pointerLocked;
+    this.input.setCapture(true);
+    if (this.wasLocked) document.exitPointerLock();
+    this.screen = 'pause';
+    this.quitting = false;
+    this.grid = [];
+    this.chestStorage = null;
+    this.activeKiln = null;
+    this.bookOpen = false;
+    this.searchFocused = false;
+    this.drag = null;
+    controller.loop.pause();
+    this.canvas.style.display = 'block';
+    this.resizeCanvas();
+    this.hoverSlot = null;
+    this.render();
+  }
+
+  private async saveAndQuit(): Promise<void> {
+    if (this.screen !== 'pause' || this.quitting) return;
+    this.quitting = true;
+    this.render();
+    try {
+      await this.onSaveAndQuit();
+    } finally {
+      this.quitting = false;
+      this.screen = null;
+      this.resumeRect = null;
+      this.saveQuitRect = null;
+      this.canvas.style.display = 'none';
+      this.input.setCapture(false);
+    }
   }
 
   showMessage(text: string, durationMs = 1800): void {
@@ -459,6 +516,12 @@ export class UiManager {
   /** Returns cursor and crafting-grid items before closing; a full drop pool leaves the screen open. */
   close(): void {
     if (!this.screen || this.screen === 'death' || this.screen === 'sleeping') return;
+    if (this.screen === 'pause') {
+      if (this.quitting) return;
+      this.controller()?.loop.resume();
+      this.resumeRect = null;
+      this.saveQuitRect = null;
+    }
     const player = this.player;
     if (player) {
       if (this.grid.length && !this.returnCraftGrid()) {
@@ -1038,6 +1101,8 @@ export class UiManager {
       flameBox: this.screen === 'kiln' && this.kilnLayout ? css(this.kilnLayout.flame) : null,
       cause: this.screen === 'death' ? this.deathCause : null,
       respawnButton: this.screen === 'death' ? css(this.respawnRect) : null,
+      resumeButton: this.screen === 'pause' ? css(this.resumeRect) : null,
+      saveQuitButton: this.screen === 'pause' ? css(this.saveQuitRect) : null,
       message: this.messageText,
     };
   }
@@ -1093,6 +1158,10 @@ export class UiManager {
     }
     if (this.screen === 'sleeping') {
       this.renderSleeping();
+      return;
+    }
+    if (this.screen === 'pause') {
+      this.renderPause();
       return;
     }
     this.bookRows = this.bookOpen ? this.filteredRecipes() : [];
@@ -1345,6 +1414,62 @@ export class UiManager {
     drawButton(this.ctx, button, 'RESPAWN', scale, this.hoverButton(this.respawnRect));
   }
 
+  private renderPause(): void {
+    if (!this.canvas || !this.ctx) return;
+    const scale = uiScaleFor(this.canvas.width, this.canvas.height);
+    const width = Math.floor(this.canvas.width / scale);
+    const height = Math.floor(this.canvas.height / scale);
+    const panel = {
+      x: Math.floor((width - 188) / 2),
+      y: Math.floor((height - 100) / 2),
+      w: 188,
+      h: 100,
+    };
+    const resume = { x: panel.x + 34, y: panel.y + 36, w: 120, h: 20 };
+    const saveQuit = { x: panel.x + 34, y: panel.y + 62, w: 120, h: 20 };
+    const toCanvas = (rect: Rect): Rect => ({
+      x: rect.x * scale,
+      y: rect.y * scale,
+      w: rect.w * scale,
+      h: rect.h * scale,
+    });
+    this.panelRect = toCanvas(panel);
+    this.resumeRect = toCanvas(resume);
+    this.saveQuitRect = toCanvas(saveQuit);
+    this.closeRect = null;
+    this.controls.close = null;
+    this.screenSlots = [];
+    this.clickTargets = [];
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillStyle = 'rgba(9, 11, 20, 0.6)';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    drawPanel(this.ctx, panel, scale);
+    const title = this.quitting ? 'SAVING WORLD...' : 'GAME PAUSED';
+    drawText(
+      this.ctx,
+      title,
+      (panel.x + Math.floor((panel.w - textWidth(title)) / 2)) * scale,
+      (panel.y + 14) * scale,
+      scale,
+      UI.text,
+      UI.outline,
+    );
+    drawButton(
+      this.ctx,
+      resume,
+      'RESUME',
+      scale,
+      !this.quitting && this.hoverButton(this.resumeRect),
+    );
+    drawButton(
+      this.ctx,
+      saveQuit,
+      'SAVE & QUIT',
+      scale,
+      !this.quitting && this.hoverButton(this.saveQuitRect),
+    );
+  }
+
   private renderSleeping(): void {
     if (!this.canvas || !this.ctx) return;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1574,6 +1699,12 @@ export class UiManager {
       return;
     }
     if (this.screen === 'sleeping') return;
+    if (this.screen === 'pause') {
+      if (event.button !== 0 || this.quitting) return;
+      if (this.hoverButton(this.resumeRect)) this.close();
+      else if (this.hoverButton(this.saveQuitRect)) void this.saveAndQuit();
+      return;
+    }
     const button: ClickButton | null =
       event.button === 0 ? 'left' : event.button === 2 ? 'right' : null;
     const player = this.player;
@@ -1726,6 +1857,12 @@ export class UiManager {
     this.render();
   };
 
+  /** Losing pointer lock in a played world (the browser's own Esc) opens the pause menu. */
+  private readonly onPointerLockChange = (): void => {
+    if (document.pointerLockElement || this.screen || this.input.captured) return;
+    this.openPause();
+  };
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat) return;
     if (this.input.captured && !this.screen) return;
@@ -1770,6 +1907,9 @@ export class UiManager {
       event.preventDefault();
     } else if (event.code === 'Escape' && this.screen) {
       this.close();
+    } else if (event.code === 'Escape' && this.player) {
+      this.openPause();
+      event.preventDefault();
     } else if (event.code === 'KeyQ' && this.player) {
       const target = this.screen ? this.inventorySlot(this.hoverSlot) : this.player.selectedSlot;
       if (target !== null) this.throwStack(target, event.ctrlKey);

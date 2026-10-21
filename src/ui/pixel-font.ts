@@ -41,6 +41,13 @@ const GLYPHS: Record<string, string> = {
   '/': '00001 00010 00100 01000 10000 00000 00000',
   ':': '00000 01100 01100 00000 01100 01100 00000',
   "'": '00100 00100 01000 00000 00000 00000 00000',
+  '!': '00100 00100 00100 00100 00100 00000 00100',
+  '?': '01110 10001 00001 00010 00100 00000 00100',
+  ',': '00000 00000 00000 00000 01100 00100 01000',
+  '&': '01100 10010 10100 01000 10101 10010 01101',
+  '+': '00000 00100 00100 11111 00100 00100 00000',
+  '(': '00010 00100 01000 01000 01000 00100 00010',
+  ')': '01000 00100 00010 00010 00010 00100 01000',
   ' ': '00000 00000 00000 00000 00000 00000 00000',
 };
 
@@ -64,6 +71,11 @@ export function displayName(id: string): string {
 /** Adds an optional affix before the item name for inventory and container tooltips. */
 export function displayItemStackName(id: string, affix?: string): string {
   return (affix ? affix.toUpperCase() + ' ' : '') + displayName(id);
+}
+
+/** The seven row bitmasks of `char` (a space when the font has no such glyph). */
+export function glyphRows(char: string): readonly number[] {
+  return rows.get(char.toUpperCase()) ?? rows.get(' ')!;
 }
 
 export function hasGlyph(char: string): boolean {
