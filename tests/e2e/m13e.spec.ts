@@ -100,7 +100,7 @@ test('M13e: striking a Tuftbuck while falling deals 1.5× damage and knocks it b
     const api = window.__blockcraft!;
     const entity = api.getEntities!().find((e) => e.id === target)!;
     const player = api.getPlayer!();
-    const vel = api.getEntityAI!(target).vel;
+    const vel = api.getEntityAI!(target).vel!;
     const dx = entity.pos[0] - player.pos[0],
       dz = entity.pos[2] - player.pos[2];
     const length = Math.hypot(dx, dz);
