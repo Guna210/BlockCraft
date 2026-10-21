@@ -5,6 +5,7 @@ import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { breakSeconds, BARE_HAND, type MiningTool } from './mining';
 import { HALF_WIDTH } from '../entity/physics';
 import { items } from './items';
+import { getMiningSpeed } from './tools';
 import {
   removeShapeBlock,
   shapeModel,
@@ -116,7 +117,13 @@ export class BlockInteraction {
     const t = this.target,
       p = this.player;
     const selected = p.inventory.held;
-    this.tool = selected ? (items.get(selected.id).tool ?? BARE_HAND) : BARE_HAND;
+    const selectedTool = selected ? (items.get(selected.id).tool ?? BARE_HAND) : BARE_HAND;
+    this.tool = selected
+      ? {
+          ...selectedTool,
+          speed: getMiningSpeed({ id: selected.id, affix: selected.affix }),
+        }
+      : BARE_HAND;
     if (this.pickPressed && t.hit && p.mode === 'creative') {
       const id = this.registry.getResolvedState(t.stateId)!.blockId;
       p.heldBlock = this.registry.getDefaultStateId(id)!;

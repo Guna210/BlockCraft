@@ -1,8 +1,8 @@
 import { crafting, type CraftingRecipe } from './crafting';
 import { items } from './items';
-import type { Inventory, ItemStack } from './inventory';
+import type { CursorStack, Inventory, ItemStack } from './inventory';
 
-export type CraftingSlot = { id: string; count: number } | null;
+export type CraftingSlot = Pick<CursorStack, 'id' | 'count' | 'damage' | 'affix'> | null;
 
 interface RecipeCell {
   slot: number;

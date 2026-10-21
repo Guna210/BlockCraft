@@ -1,6 +1,6 @@
 import type { Inventory } from '../gameplay/inventory';
 import { drawPreviewFigure } from './preview-figure';
-import { displayName, drawText } from './pixel-font';
+import { displayItemStackName, drawText } from './pixel-font';
 import type { IconSheet } from './icons';
 import {
   CLOSE_BUTTON,
@@ -80,7 +80,7 @@ export function drawInventoryScreen(
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (y + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, y, s);
       if (stack.damage !== undefined && stack.damage !== null && stack.damage > 0) {
-        const durability = getToolDurability(stack.id);
+        const durability = getToolDurability(stack);
         if (durability !== null && durability > 0) {
           drawDurabilityBar(ctx, stack.damage, durability, x, y, s);
         }
@@ -103,7 +103,7 @@ export function drawInventoryScreen(
       ctx.restore();
     }
     if (cursor.damage !== undefined && cursor.damage !== null && cursor.damage > 0) {
-      const durability = getToolDurability(cursor.id);
+      const durability = getToolDurability(cursor);
       if (durability !== null && durability > 0) {
         drawDurabilityBar(ctx, cursor.damage, durability, Math.floor(x / s), Math.floor(y / s), s);
       }
@@ -111,7 +111,7 @@ export function drawInventoryScreen(
   } else if (view.hoverSlot !== null) {
     const stack = inventory.slots[view.hoverSlot];
     if (stack) {
-      const name = displayName(stack.id);
+      const name = displayItemStackName(stack.id, stack.affix);
       drawTooltip(
         ctx,
         name,
@@ -128,5 +128,5 @@ export function drawInventoryScreen(
 /** The tooltip text for a slot, or null when it is empty. */
 export function tooltipFor(inventory: Inventory, slot: number | null): string | null {
   const stack = slot === null ? null : inventory.slots[slot];
-  return stack ? displayName(stack.id) : null;
+  return stack ? displayItemStackName(stack.id, stack.affix) : null;
 }

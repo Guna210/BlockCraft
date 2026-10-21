@@ -1,6 +1,13 @@
 import { BlockRegistry } from '../world/blocks/registry';
 import type { MiningTool } from './mining';
 
+export type ItemAffix = 'Keen' | 'Sturdy' | 'Swift';
+export const ITEM_AFFIXES: readonly ItemAffix[] = Object.freeze(['Keen', 'Sturdy', 'Swift']);
+
+export function isItemAffix(value: unknown): value is ItemAffix {
+  return typeof value === 'string' && ITEM_AFFIXES.includes(value as ItemAffix);
+}
+
 export interface ItemDefinition {
   id: string;
   kind: 'block' | 'tool' | 'armor' | 'food' | 'material';

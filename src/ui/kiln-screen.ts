@@ -1,7 +1,7 @@
 import type { Inventory } from '../gameplay/inventory';
 import type { KilnState } from '../gameplay/kiln';
 import { COOK_TICKS_PER_ITEM } from '../gameplay/kiln';
-import { displayName, drawText } from './pixel-font';
+import { displayItemStackName, drawText } from './pixel-font';
 import type { IconSheet } from './icons';
 import {
   KILN_CLOSE_BUTTON,
@@ -14,6 +14,7 @@ import {
   type KilnLayout,
 } from './kiln-layout';
 import { getToolDurability } from '../gameplay/tools';
+import { isItemAffix, type ItemAffix } from '../gameplay/items';
 import {
   UI,
   drawButton,
@@ -25,6 +26,10 @@ import {
   drawTooltip,
   fillRect,
 } from './ui-kit';
+
+function affixValue(value: unknown): ItemAffix | undefined {
+  return isItemAffix(value) ? value : undefined;
+}
 
 export interface KilnView {
   layout: KilnLayout;
@@ -185,16 +190,19 @@ export function kilnTooltipFor(
   slot: number | null,
 ): string | null {
   if (slot === null) return null;
-  if (slot === 0) return kiln.input ? displayName(kiln.input.id) : null;
-  if (slot === 1) return kiln.fuel ? displayName(kiln.fuel.id) : null;
-  if (slot === 2) return kiln.output ? displayName(kiln.output.id) : null;
+  if (slot === 0)
+    return kiln.input ? displayItemStackName(kiln.input.id, affixValue(kiln.input.affix)) : null;
+  if (slot === 1)
+    return kiln.fuel ? displayItemStackName(kiln.fuel.id, affixValue(kiln.fuel.affix)) : null;
+  if (slot === 2)
+    return kiln.output ? displayItemStackName(kiln.output.id, affixValue(kiln.output.affix)) : null;
   if (slot >= 3 && slot <= 11) {
     const stack = inventory.slots[slot - 3];
-    return stack ? displayName(stack.id) : null;
+    return stack ? displayItemStackName(stack.id, stack.affix) : null;
   }
   if (slot >= 12 && slot <= 38) {
     const stack = inventory.slots[slot - 12 + 9];
-    return stack ? displayName(stack.id) : null;
+    return stack ? displayItemStackName(stack.id, stack.affix) : null;
   }
   return null;
 }
@@ -231,10 +239,12 @@ export function drawKilnScreen(
     const [x, y] = KILN_SLOT_POSITIONS[slot]!;
     drawSlot(ctx, x, y, s);
 
-    let stack: { id: string; count: number; damage?: number | null } | null = null;
-    if (slot === 0) stack = kiln.input;
-    else if (slot === 1) stack = kiln.fuel;
-    else if (slot === 2) stack = kiln.output;
+    let stack: { id: string; count: number; damage?: number | null; affix?: ItemAffix } | null =
+      null;
+    if (slot === 0 && kiln.input) stack = { ...kiln.input, affix: affixValue(kiln.input.affix) };
+    else if (slot === 1 && kiln.fuel) stack = { ...kiln.fuel, affix: affixValue(kiln.fuel.affix) };
+    else if (slot === 2 && kiln.output)
+      stack = { ...kiln.output, affix: affixValue(kiln.output.affix) };
     else if (slot >= 3 && slot <= 11) stack = inventory.slots[slot - 3] ?? null;
     else if (slot >= 12 && slot <= 38) stack = inventory.slots[slot - 12 + 9] ?? null;
 
@@ -242,7 +252,7 @@ export function drawKilnScreen(
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (y + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, y, s);
       if (stack.damage !== undefined && stack.damage !== null && stack.damage > 0) {
-        const durability = getToolDurability(stack.id);
+        const durability = getToolDurability(stack);
         if (durability !== null && durability > 0) {
           drawDurabilityBar(ctx, stack.damage, durability, x, y, s);
         }
@@ -267,7 +277,7 @@ export function drawKilnScreen(
       ctx.restore();
     }
     if (cursor.damage !== undefined && cursor.damage !== null && cursor.damage > 0) {
-      const durability = getToolDurability(cursor.id);
+      const durability = getToolDurability(cursor);
       if (durability !== null && durability > 0) {
         drawDurabilityBar(ctx, cursor.damage, durability, Math.floor(x / s), Math.floor(y / s), s);
       }

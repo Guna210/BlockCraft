@@ -1,0 +1,9 @@
+[
+  {
+    "id": "wayfarer_hamlet",
+    "spacing": 34,
+    "separation": 16,
+    "salt": "wayfarer_hamlet",
+    "biomes": ["plains", "savanna", "meadow"]
+  }
+]
