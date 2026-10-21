@@ -1,7 +1,7 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
-import { items, type ItemAffix } from '../gameplay/items';
+import type { ItemAffix } from '../gameplay/items';
 import type { Player } from '../entity/player';
 import { getToolDurability, getTotalArmorDefense } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
