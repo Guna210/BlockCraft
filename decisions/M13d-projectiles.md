@@ -7,7 +7,7 @@ Decisions followed from the M13d task prompt.
 - `src/entity/projectiles.ts` defines `ProjectileC` with `{ owner, kind, stuck, ageTicks, pickup }`, plus `ProjectileVelocityC` for velocity and an internal stuck-block anchor.
 - A projectile is a regular M13a ECS entity with `EntityKindC`, `TransformC`, and `RenderableC`; its `EntityKindC.type` is its kind id, so `getEntities({ type: 'arrow' })` includes arrows.
 - Kinds are data `{ id, model, gravity, drag, damageScale, pickup }` registered with `registerProjectileKind`. M13d registers only `arrow`.
-- `fireProjectile(ecs, { kind, from, dir | aimAt, speed, owner })` creates the entity. The system is installed once per player ECS by `PlayerController` and is shared by later projectile kinds.
+- `fireProjectile(ecs, { kind, from, dir | aimAt, speed, owner })` creates the entity. `PlayerController` registers one shared runtime per player ECS; it creates the raycaster and installs its tick system on the first shot, so empty worlds have no projectile query in their tick path. Later projectile kinds share that runtime.
 - Projectiles have no `BodyC`, so they do not press plates or tripwire. Their swept entity collision uses M13a `BodyC` boxes directly.
 
 ## 2. Arrow model and orientation
@@ -42,6 +42,7 @@ Decisions followed from the M13d task prompt.
 - Release fires at charge ≥ 0.1 with speed `3 × (c² + 2c) / 3`, from the player's eye along the look direction. Survival consumes one arrow from inventory; every fired shot uses one bow durability. Creative shots have `pickup: false`.
 - Bow use consumes the use action before M13c combat and block interaction, preventing the same press from feeding a creature or placing a block.
 - The HUD replaces the M13c cooldown meter with the same 14-pixel inset fill while a bow is charging, including at full charge.
+- Idle HUD snapshots omit `bowCharge`, preserving the existing snapshot comparison key until a bow is actually charging.
 
 ## 7. Debug and tests
 
@@ -49,3 +50,8 @@ Decisions followed from the M13d task prompt.
 - `tests/unit/m13d-projectiles.test.ts` covers the closed-form gravity/drag integration, full-speed wall collision, mob damage and invulnerability, block-break drops, charge speed, ballistic aim, arrow and bow use, creative pickup rules, player shield/armor and HUD charge quantization.
 - `tests/e2e/m13d.spec.ts` fires by holding and releasing the real `use` action, samples the arrow every tick until it embeds in a wall 20 blocks away, then walks into the stuck arrow and checks inventory pickup.
 - M13d does not connect M13c's ranged goal; M13f supplies a kind and uses the shared API.
+
+## 8. Empty-world performance
+
+- `ProjectileRuntime` stays dormant until `fireProjectile` creates a shot. This avoids a per-tick projectile ECS query and raycaster shape-table construction in worlds that have no projectiles.
+- `tests/unit/m13d-projectiles.test.ts` checks that an empty ECS tick does not query projectile components and that the system starts after the first shot.

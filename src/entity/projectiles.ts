@@ -116,6 +116,7 @@ export function arrowSkin(): Uint8Array {
 registerEntityModel(ARROW_MODEL, arrowSkin);
 
 const projectileKinds = new Map<string, ProjectileKind>();
+const projectileRuntimes = new WeakMap<EntityWorld, ProjectileRuntime>();
 
 /** Registers one complete projectile definition; each id can only be installed once. */
 export function registerProjectileKind(kind: ProjectileKind): void {
@@ -187,6 +188,7 @@ export function fireProjectile(ecs: EntityWorld, options: ProjectileFireOptions)
   ecs.add(id, ProjectileVelocityC, {
     vel: [dir[0] * options.speed, dir[1] * options.speed, dir[2] * options.speed],
   });
+  projectileRuntimes.get(ecs)?.activate();
   return id;
 }
 
@@ -232,8 +234,9 @@ export type ProjectilePlayer = Pick<
 
 /** Installs the shared 20 Hz swept-segment projectile system on an ECS world. */
 export class ProjectileRuntime {
-  private readonly raycaster: VoxelRaycaster;
+  private raycaster!: VoxelRaycaster;
   private readonly blockHit = createRayHit();
+  private active = false;
   private readonly getPlayer: () => ProjectilePlayer | null;
   private readonly getItems: () => ItemEntityManager | null;
 
@@ -243,10 +246,17 @@ export class ProjectileRuntime {
     getPlayer: () => ProjectilePlayer | null = () => null,
     getItems: () => ItemEntityManager | null = () => null,
   ) {
-    this.raycaster = new VoxelRaycaster(world);
     this.getPlayer = getPlayer;
     this.getItems = getItems;
-    ecs.addSystem(() => this.tick(), PROJECTILE_TICK_ORDER);
+    projectileRuntimes.set(ecs, this);
+  }
+
+  /** Installs the physics system on the first shot, keeping empty worlds off the per-tick path. */
+  activate(): void {
+    if (this.active) return;
+    this.active = true;
+    this.raycaster = new VoxelRaycaster(this.world);
+    this.ecs.addSystem(() => this.tick(), PROJECTILE_TICK_ORDER);
   }
 
   private tick(): void {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createEntityWorld } from '../../src/entity/ecs/systems';
 import { BodyC, EntityKindC, HealthC, TransformC } from '../../src/entity/ecs/components';
 import { CombatC, MobBodyC, PLAYER_TARGET, TargetC } from '../../src/entity/ai/components';
@@ -53,6 +53,28 @@ function arrowCount(player: Player): number {
 }
 
 describe('M13d projectile physics', () => {
+  it('keeps the projectile system off empty-world ticks until a shot is fired', () => {
+    const world = new World(false);
+    const ecs = createEntityWorld();
+    new ProjectileRuntime(world, ecs);
+    const query = vi.spyOn(ecs, 'query');
+
+    ecs.tick();
+    expect(query).not.toHaveBeenCalledWith(ProjectileC, ProjectileVelocityC, TransformC);
+
+    fireProjectile(ecs, {
+      kind: 'arrow',
+      from: [0.5, 100, 0.5],
+      dir: [0, 0, 1],
+      speed: 1,
+      owner: PLAYER_TARGET,
+    });
+    query.mockClear();
+    ecs.tick();
+
+    expect(query).toHaveBeenCalledWith(ProjectileC, ProjectileVelocityC, TransformC);
+  });
+
   it('integrates gravity and drag to the closed form over ten ticks', () => {
     const world = new World(false);
     const ecs = createEntityWorld();
@@ -284,6 +306,6 @@ describe('M13d bow', () => {
     const world = new World(false);
     const player = new Player(new BlockCollision(world), () => true);
     expect(hudSnapshot(player, false, 1, 0.55).bowCharge).toBe(7 / 14);
-    expect(hudSnapshot(player, false).bowCharge).toBe(null);
+    expect(hudSnapshot(player, false).bowCharge).toBeUndefined();
   });
 });

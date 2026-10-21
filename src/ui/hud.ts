@@ -88,8 +88,8 @@ export interface HudSnapshot {
   hotbar: Array<{ id: string; count: number; damage?: number } | null>;
   /** Attack meter, 0 after a swing to 1 when recharged; quantized to whole pixels of the meter. */
   attackCooldown: number;
-  /** Bow draw meter while use is held, or null when no bow is charging. */
-  bowCharge: number | null;
+  /** Bow draw meter while use is held; omitted when no bow is charging. */
+  bowCharge?: number;
 }
 
 export interface DebugOverlaySnapshot {
@@ -126,7 +126,7 @@ export function hudSnapshot(
   attackCooldown = 1,
   bowCharge: number | null = null,
 ): HudSnapshot {
-  return {
+  const snapshot: HudSnapshot = {
     mode: player.mode,
     health: player.health,
     hunger: player.hunger,
@@ -150,11 +150,12 @@ export function hudSnapshot(
     attackCooldown:
       Math.floor(Math.max(0, Math.min(1, attackCooldown)) * COOLDOWN_METER_WIDTH) /
       COOLDOWN_METER_WIDTH,
+  };
+  if (bowCharge === null) return snapshot;
+  return {
+    ...snapshot,
     bowCharge:
-      bowCharge === null
-        ? null
-        : Math.floor(Math.max(0, Math.min(1, bowCharge)) * COOLDOWN_METER_WIDTH) /
-          COOLDOWN_METER_WIDTH,
+      Math.floor(Math.max(0, Math.min(1, bowCharge)) * COOLDOWN_METER_WIDTH) / COOLDOWN_METER_WIDTH,
   };
 }
 
@@ -395,7 +396,7 @@ function drawHud(
   }
 
   drawCrosshair(ctx, width, height);
-  if (snapshot.bowCharge === null)
+  if (snapshot.bowCharge === undefined)
     drawAttackCooldown(ctx, snapshot.attackCooldown, width, height, s);
   else drawChargeMeter(ctx, snapshot.bowCharge, width, height, s);
   if (snapshot.mode === 'creative') return;
