@@ -27,6 +27,8 @@ export interface BlockCraftDebugAPI {
       | import('../../entity/ecs/systems').EcsEntitySnapshot
     >;
   };
+  /** AI state of an ECS mob: running goal, target (0 = player), path length, love and i-frames. */
+  getEntityAI?: (id: number) => import('../../entity/ai/runtime').EntityAISnapshot;
   getDropStats?: () => {
     items: number;
     particles: number;

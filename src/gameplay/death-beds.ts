@@ -49,6 +49,7 @@ export interface BedWorld {
       maxZ: number;
     }): Array<{
       type: string;
+      category?: string;
       minX: number;
       minY: number;
       minZ: number;
@@ -139,7 +140,7 @@ export function hostileWithin(world: BedWorld, position: Position, radius = 8): 
       maxZ: z + radius,
     })
     .some((entity) => {
-      if (entity.type !== 'hostile') return false;
+      if (entity.type !== 'hostile' && entity.category !== 'hostile') return false;
       const dx = (entity.minX + entity.maxX) / 2 - x;
       const dy = (entity.minY + entity.maxY) / 2 - y;
       const dz = (entity.minZ + entity.maxZ) / 2 - z;

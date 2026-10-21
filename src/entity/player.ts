@@ -107,6 +107,7 @@ export class Player {
   private lastForward = -Infinity;
   private lastJump = -Infinity;
   private sprinting = false;
+  private sprintingNow = false;
   private forwardDown = false;
   private jumpDown = false;
   private forwardPressed = false;
@@ -142,6 +143,7 @@ export class Player {
     this.lastForward = -Infinity;
     this.lastJump = -Infinity;
     this.sprinting = false;
+    this.sprintingNow = false;
     this.survival.useConsumed = false;
   }
   teleport(x: number, y: number, z: number, yaw = this.yaw, pitch = this.pitch): void {
@@ -172,6 +174,10 @@ export class Player {
     this.mode = mode;
     if (mode !== 'creative') this.flying = false;
     this.highest = this.pos[1];
+  }
+  /** Whether the last tick moved at sprint speed (no sweep attacks while sprinting). */
+  get isSprinting(): boolean {
+    return this.sprintingNow;
   }
   public down(action: Action | string): boolean {
     return this.actions.get(action as Action) ?? false;
@@ -231,6 +237,7 @@ export class Player {
       this.mode === 'survival' && (this.hunger <= 6 || this.isEating)
         ? false
         : !this.sneaking && (this.down('sprint') || this.sprinting);
+    this.sprintingNow = sprint && forward && !this.flying;
     let speed = this.flying ? 10.9 : this.sneaking ? 1.3 : sprint ? 5.6 : 4.3;
     if (this.isEating && !this.flying) speed *= 0.2;
     if (this.inFluid && !this.flying) speed = sprint ? 3 : 2;
