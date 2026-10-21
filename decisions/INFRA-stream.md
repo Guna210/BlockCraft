@@ -51,7 +51,7 @@ Not attempted, out of scope: occlusion culling of enclosed sections (SPEC M22a),
 
 ## 5. What this PR changes
 
-Only owner-approved time limits in `tests/e2e/m04.spec.ts` (no assertion, threshold, harness, config or helper change; the file is under the harness guard, so the PR needs the `harness-change` label):
+Only owner-approved time limits in `tests/e2e/m04.spec.ts` (no assertion, threshold, harness, config or helper change; the file is not one of the SPEC §5.7 harness paths):
 
 | Test | Before | After |
 | --- | --- | --- |
