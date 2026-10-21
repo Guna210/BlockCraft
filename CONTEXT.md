@@ -94,6 +94,7 @@ Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (ne
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: Owner approved a test-time-limit edit for INFRA-stream (fallback or margin): m04 heap test setTimeout 420_000 + its 3 waitForStreamingIdle 60_000->120_000; RD12 test setTimeout 420_000 + wait 120_000->300_000. Assertions (15% heap, RD12, no holes) unchanged; no helper/config/harness edits. PR becomes '— verified' with full write-up.
 - 2026-10-21: INFRA-stream findings: main thread 76% idle; SwiftShader backpressure limits frame cadence; uploads block in bufferData when GPU behind. Directed: (c) worker throttle/cap first, (b) skip FluidDepth blit, (a) discard-free alone, (d) heap leaks; no occlusion culling (M22a scope). If no gain: [INCOMPLETE] PR with analysis; harness-side options (SwiftShader flags, runner size) are the owner's.
 - 2026-10-21: #68 M13d round 1 CHANGES NEEDED: activate() adds the ECS system during tick -> calling system runs twice (reproduced). Fix: install at construction, no-op until first shot. Also pose pitch guard, unloaded-column stuck arrows, pickup from body centre, tests for owner immunity/water drag/despawn. Note for M13f: pass pickup explicitly for mob arrows.
 - 2026-10-21: Owner approved INFRA-stream; prompt given for Claude cloud (branch claude/infra-stream). Bisect master merges by M04b timing/uploadsDeferred, profile RD12 flight, fix in game code, no test/harness edits, CI evidence: 2 clean runs, shard 2 <=15 min, no flaky.
