@@ -53,7 +53,7 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 
 
-| M18a Menus & pause | PR #66 green on old master (run 277); conflicts with master in world.ts (listeners vs WorldType) - merge sent to builder; round 1 reviewer prompt given | Claude cloud (claude/m18a, session_01PGaKs2bkXGmgFnzFMJW89n) | - | - | boot to menu; panorama seed 'blockcraft-panorama' RD4, starts 1 s after menu, torn down on world start, compare m02/m04/m05 durations; logo in code; >=20 splashes data/splashes.json; only Singleplayer+Credits buttons; Create World (types default/flat/amplified/single_biome, biome, structures stored only, startingChest kit); Amplified >250 with Default hash unchanged; WorldRecord options v1 in place; pause Resume + Save & Quit; e2e via real clicks |
+| M18a Menus & pause | #66 round 1 CHANGES NEEDED (no panorama teardown/restart test); fix + master merge + meshMsTimes clear + camera tweak sent to builder; reviewer session_01NR6UmAXN6HfuJRhjebp8Gj | Claude cloud (claude/m18a, session_01PGaKs2bkXGmgFnzFMJW89n) | - | - | boot to menu; panorama seed 'blockcraft-panorama' RD4, starts 1 s after menu, torn down on world start, compare m02/m04/m05 durations; logo in code; >=20 splashes data/splashes.json; only Singleplayer+Credits buttons; Create World (types default/flat/amplified/single_biome, biome, structures stored only, startingChest kit); Amplified >250 with Default hash unchanged; WorldRecord options v1 in place; pause Resume + Save & Quit; e2e via real clicks |
 | M19a Structure engines | Prompt given | Codex | - | - | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
 
 | M13d Projectiles & bows | Prompt given, can start now | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
@@ -91,6 +91,7 @@ Then: M13e (Claude after M18a). Owner has 2 Codex + 1 Claude cloud. Proposed: M1
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: #66 M18a round 1 CHANGES NEEDED: no e2e for panorama teardown/restart. Also asked: clear meshMsTimes in WorkerPool.cancelAll (panorama samples could pollute next world's p95), panorama camera shows a dark void (regenerate screenshot). Default hash unchanged (reviewer checked independently); m02:54 green on CI.
 - 2026-10-21: #65 merged (203ecbc). #66 M18a green but conflicts with master in src/world/world.ts (one hunk); told the builder to merge master and push; gave M18a reviewer prompt.
 - 2026-10-21: #65 M13c round 2 PASS (regression test fails with old adapter). Told the owner to merge; gave M13d prompt for Codex #2.
 - 2026-10-21: #65 run 276 green (16 min total) after the dictionary-mode fix; sent round 2 to the M13c reviewer, fix only.
