@@ -132,11 +132,12 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
 - `'use'` with its food on a baby adds 2400 ticks (10 % of 24000) and consumes the item in survival. On an adult the same food goes to M13c's `feedMob` (breeding).
 - Breeding is M13c's `BreedGoal` (600 love ticks, 6000 cooldown). The baby comes from the type's factory with `{ baby: true }`.
 - **Choice:** a baby drops nothing when it dies.
-- `getEntityAI(id)` gains:
+- `getEntityAI(id)` gains four fields for creatures (mobs with `AgeC`):
   - `baby`
-  - `ageTicks` (null for a mob without `AgeC`)
+  - `ageTicks`
   - `vel` (blocks per tick, for the knockback test)
   - `yaw` (used to frame the probe screenshots)
+- **Choice:** other mobs' snapshots are unchanged, because M13c's unit test compares that snapshot exactly.
 
 ## 5. Spawn rules
 

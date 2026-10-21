@@ -458,6 +458,13 @@ describe('M13e performance', () => {
       expect(renderer.render(s.ecs, s.world, view)).toBe(30);
       expect(draw).toHaveBeenCalledTimes(30);
     }
+    // Back-face culling is on for the entities only: the passes after them draw both faces.
+    const toggles = [
+      ...calls.enable!.mock.invocationCallOrder.map((order) => [order, 'on'] as const),
+      ...calls.disable!.mock.invocationCallOrder.map((order) => [order, 'off'] as const),
+    ].sort((a, b) => a[0] - b[0]);
+    expect(toggles.at(-1)![1]).toBe('off');
+    expect(calls.disable!.mock.calls.at(-1)).toEqual([1]);
     const lightLocation = (() => {
       const index = calls.getUniformLocation!.mock.calls.findIndex((call) => call[1] === 'u_light');
       return calls.getUniformLocation!.mock.results[index]!.value;

@@ -382,6 +382,8 @@ export class EntityRenderer {
     }
     gl.bindVertexArray(null);
     gl.bindTexture(gl.TEXTURE_2D, view.atlasTexture);
+    // The passes after this one (particles, translucent terrain, weather) draw both faces.
+    gl.disable(gl.CULL_FACE);
     return this.draws;
   }
 
