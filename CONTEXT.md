@@ -45,7 +45,7 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): M13a (#64), M13c (#65, 203ecbc), M17c (#63, fa0bb62; Codex), M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
+Done (merged; notes in `progress/`): M13a (#64), M13c (#65, 203ecbc), M18a (#66), M17c (#63, fa0bb62; Codex), M00a–M06b, M07a, M07b (#43), M08a (#45), M09a (#44), M09b (#47, 0bb369f), M10a (#48, bf34ade; agy), M17a (#49; agy), M08b (#50, 4fd462d), M08c (#52; Sonnet builder), M09c (#51, 355d136), M10b (#55, 477baf4; Codex), BLOCKS-shapes (#54, fcaaa1f; IDs 158-533), INFRA-ci (#53, 4-way CI sharding, ~13 min), M12a (+fix), M12b (#42), M12c (#46, fe346bf), M13b, M16a, M16c, INFRA-win, M10c (#57, 00aefea; kiln 534-541), M15a (#59; IDs 542-698), M11a (#58; agy), M15b (#60; IDs 699-802), M11b (#61, 5cc53ad; bed 803-810; bed needs wool from M13e), M17b (#62, ae48baf; autosave-spike test best-of-3 attempts; leftovers: formatVersion tests only regions/worlds, garbled column warns each load), plus earlier fix tasks.
 
 In flight:
 
@@ -53,12 +53,11 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 
 
-| M18a Menus & pause | #66 round 2 PASS (head 309fa4f, shard 2 12.7 min); owner to merge | Claude cloud (claude/m18a, session_01PGaKs2bkXGmgFnzFMJW89n) | - | - | boot to menu; panorama seed 'blockcraft-panorama' RD4, starts 1 s after menu, torn down on world start, compare m02/m04/m05 durations; logo in code; >=20 splashes data/splashes.json; only Singleplayer+Credits buttons; Create World (types default/flat/amplified/single_biome, biome, structures stored only, startingChest kit); Amplified >250 with Default hash unchanged; WorldRecord options v1 in place; pause Resume + Save & Quit; e2e via real clicks |
 | M19a Structure engines | Prompt given | Codex | - | - | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
 
 | M13d Projectiles & bows | PR #68 (claude/m13d) CI red: m04:221/276 x3, shard 2 32 min on master 203ecbc (master itself 12.7 min). Cause not visible statically; bisect/timing fix sent to Codex; owner may re-run once | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
 
-Then: M13e (Claude after M18a). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
+Ready now (not started): M13e, M18b, M18c. Proposed: M13e Claude (free slot). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
 ## Open items for the owner
 
@@ -91,6 +90,7 @@ Then: M13e (Claude after M18a). Owner has 2 Codex + 1 Claude cloud. Proposed: M1
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-21: #66 M18a merged. Ready: M13e, M18b, M18c.
 - 2026-10-21: #68 M13d CI red, same M04b streaming symptom as M13c. Static read found nothing obvious (no World mutation); asked Codex to time master vs branch and bisect (HUD bowCharge, bow tick, ProjectileRuntime, Transform pitch shape).
 - 2026-10-21: #66 M18a round 2 PASS. Screenshot now full of terrain. Follow-ups: teardown e2e queue asserts may pass vacuously if panorama already idle; PANORAMA_* constants and Create World name-clash / Single Biome / Starting Chest UI untested (unit only). Told the owner to merge.
 - 2026-10-21: #66 head 309fa4f green (merge 5f311bb + fix 362d3ea + new screenshot); sent round 2.
