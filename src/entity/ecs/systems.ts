@@ -46,6 +46,7 @@ function snapshotSystem(ecs: EntityWorld): void {
     t.previous[1] = t.pos[1];
     t.previous[2] = t.pos[2];
     t.previousYaw = t.yaw;
+    if (t.pitch !== undefined) t.previousPitch = t.pitch;
   }
   for (const id of ecs.query(AnimatorC)) {
     const a = ecs.get(id, AnimatorC)!;

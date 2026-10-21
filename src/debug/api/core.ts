@@ -29,6 +29,13 @@ export interface BlockCraftDebugAPI {
   };
   /** AI state of an ECS mob: running goal, target (0 = player), path length, love and i-frames. */
   getEntityAI?: (id: number) => import('../../entity/ai/runtime').EntityAISnapshot;
+  getProjectile?: (id: number) => {
+    pos: [number, number, number];
+    vel: [number, number, number];
+    stuck: boolean;
+    owner: number;
+    kind: string;
+  };
   getDropStats?: () => {
     items: number;
     particles: number;
