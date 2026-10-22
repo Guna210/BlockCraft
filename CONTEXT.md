@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-22: #67 M19a round 2 PASS (head 20c94d7, shard 2 22 min, no anomaly). Told owner to merge. Non-blocking: progress/M19a.md Status line stale ('awaiting owner approval'), PR description pre-fix. For M19b: re-add assertion that block-loot loader ignores data/loot/chests/; affix lost via ItemEntity/chest break; stage ignores flat/amplified. After merge: M19b ready; #68 (combat.ts overlap) needs Update branch before merge.
 - 2026-10-22: #67, #68, #69 all updated and green. Sent round 2 to #67 and #68 reviewers. Owner visual feedback on #69: Tuftbuck + Rootboar ~1.2x larger (collision width <= 0.95, babies 0.5 of adult), all five skins less noisy (flatter regions, 2-3 shades, ART.md). Sent to M13e builder with gate before push; #69 review round 1 waits until that is pushed and green.
 - 2026-10-22: #70 merged; owner updated #67. Found #68 fix 6cf797c already green (shard 2 26.5 min, old limits). Advised: update #68 and #69 too; round 2 for #67 and #68 and #69 round 1 go out once each is green on the updated head. Codex must pull before any further push.
 - 2026-10-22: #70 CI run 2 green (22.5 min shard 2, no flaky). Failure mode gone; duration still varies (runner/M22a). Recommended merge without a separate reviewer; then Update branch on #67, and #69 review can start.
