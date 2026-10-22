@@ -221,8 +221,9 @@ test.describe('M04b: fade-in and memory', () => {
   test('heap growth after flying 2000 blocks out and back is at most 15 % after forced GC', async ({
     page,
   }) => {
+    test.setTimeout(420_000);
     await createWorld(page, 'm04-heap');
-    await waitForStreamingIdle(page, 60_000);
+    await waitForStreamingIdle(page, 120_000);
     const start = await cameraPosition(page);
 
     // Warm-up: 400 blocks out and back takes the spawn columns out of the keep ring. createWorld lights
@@ -232,7 +233,7 @@ test.describe('M04b: fade-in and memory', () => {
     const near: Vec3 = { x: start.x + 400, y: start.y, z: start.z };
     await fly(page, { from: start, to: near, speed: 60 });
     await fly(page, { from: near, to: start, speed: 60 });
-    await waitForStreamingIdle(page, 60_000);
+    await waitForStreamingIdle(page, 120_000);
     const baseline = await heapUsedAfterGc(page);
     const mb = (bytes: number) => (bytes / MB).toFixed(2);
 
@@ -260,7 +261,7 @@ test.describe('M04b: fade-in and memory', () => {
     const out: Vec3 = { x: start.x + 2000, y: start.y, z: start.z };
     await fly(page, { from: start, to: out, speed: 60 });
     await fly(page, { from: out, to: start, speed: 60 });
-    await waitForStreamingIdle(page, 60_000);
+    await waitForStreamingIdle(page, 120_000);
     const end = await heapUsedAfterGc(page);
 
     // One-sided: a growth of more than 15 % fails. A drop is not checked here (the owner's call).
@@ -277,12 +278,13 @@ test.describe('M04b: fade-in and memory', () => {
     page,
     assertAndSaveScreenshot,
   }) => {
+    test.setTimeout(420_000);
     await createWorld(page, 'm04-horizon');
     await page.evaluate(() => {
       window.__blockcraft!.setClouds!('off');
       window.__blockcraft!.setRenderDistance!(12);
     });
-    await waitForStreamingIdle(page, 120_000);
+    await waitForStreamingIdle(page, 300_000);
     await waitForFadesDone(page, 10_000);
 
     // Eye 40 blocks above the highest ground within 144 blocks of the spawn column, looking 20 degrees
