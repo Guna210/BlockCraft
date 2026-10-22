@@ -74,17 +74,16 @@ function glimmerMothSkin(seed: number): Uint8Array {
   const m = GLIMMER_MOTH_MODEL,
     p = new SkinPainter(32, 32, seed);
   for (const cube of cubesOf(m, 'body'))
-    p.cube(cube, FUZZ, { base: 1.8, pattern: clumps(featureSeed(seed, 'fuzz'), 1, 0.8) });
+    p.cube(cube, FUZZ, { base: 1.8, pattern: clumps(featureSeed(seed, 'fuzz'), 2, 1) });
   for (const name of ['wing_r', 'wing_l']) {
     const [fore, hind] = cubesOf(m, name);
     for (const wing of [fore!, hind!]) {
-      // Glow brightest at the root, with a darker veined rim.
+      // A flat glowing wing inside a darker rim.
       p.cube(wing, WING, {
-        base: 2.6,
-        top: 0.6,
-        bottom: -0.2,
-        pattern: (x, y, _face, w, h) =>
-          x === 0 || x === w - 1 || y === 0 || y === h - 1 ? -1.6 : (x + y) % 4 === 0 ? -0.6 : 0.4,
+        base: 3,
+        top: 0,
+        bottom: 0,
+        pattern: (x, y, _face, w, h) => (x === 0 || x === w - 1 || y === 0 || y === h - 1 ? -2 : 0),
       });
     }
     // One eyespot on each forewing, on both sides.

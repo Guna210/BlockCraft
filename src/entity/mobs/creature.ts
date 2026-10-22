@@ -51,6 +51,8 @@ export interface CreatureDefinition {
   /** Adult collision size in blocks; a baby's is half. */
   width: number;
   height: number;
+  /** Adult model scale; 1 when absent. A baby is drawn at half of it. */
+  scale?: number;
   /** Walking speed in blocks per tick. */
   speed: number;
   foods?: readonly string[];
@@ -152,7 +154,7 @@ export function growUp(ecs: EntityWorld, id: number, definition: CreatureDefinit
     body.width = definition.width;
     body.height = definition.height;
   }
-  if (renderable) renderable.scale = 1;
+  if (renderable) renderable.scale = definition.scale ?? 1;
 }
 
 /** True for a living baby creature. */
@@ -177,6 +179,7 @@ export function spawnCreature(
   const ctx = contextFor(spawn);
   const baby = options?.baby === true;
   const scale = baby ? BABY_SCALE : 1;
+  const modelScale = (definition.scale ?? 1) * scale;
   const id = spawnModelEntity(spawn.ecs, {
     type: definition.type,
     model: definition.model(spawn, x, z),
@@ -185,7 +188,7 @@ export function spawnCreature(
     health: definition.health,
     width: definition.width * scale,
     height: definition.height * scale,
-    scale,
+    scale: modelScale,
   });
   addMob(spawn.ecs, id, {
     category: definition.category,

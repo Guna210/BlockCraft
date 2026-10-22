@@ -6,7 +6,6 @@ import {
   SkinPainter,
   buildModel,
   clumps,
-  combine,
   cubesOf,
   featureSeed,
   type PartSpec,
@@ -133,40 +132,31 @@ function mossbackSkin(seed: number): Uint8Array {
   const m = MOSSBACK_MODEL,
     p = new SkinPainter(128, 64, seed);
   const [belly] = cubesOf(m, 'body');
-  p.cube(belly!, SKIN, { base: 2, pattern: clumps(featureSeed(seed, 'belly'), 2, 0.6) });
+  p.cube(belly!, SKIN, { base: 2, pattern: clumps(featureSeed(seed, 'belly'), 2, 1) });
   const shells = cubesOf(m, 'shell');
   shells.forEach((tier, n) => {
     // Plates: a dark seam every four texels, offset per row so the plates interlock.
     p.cube(tier, PLATE, {
       base: 2.2,
       falloff: 1.2,
-      pattern: combine(clumps(featureSeed(seed, `plate${n}`), 2, 0.6), (x, y, face) =>
-        face !== 'top' && face !== 'bottom' && (x + (Math.floor(y / 2) % 2) * 2) % 4 === 0
-          ? -1.5
-          : 0,
-      ),
+      pattern: (x, y, face) =>
+        face !== 'top' && face !== 'bottom' && (x + (Math.floor(y / 2) % 2) * 2) % 4 === 0 ? -2 : 0,
     });
     // Moss grows in patches on each tier's top, leaving plates showing between them, and hangs
     // over the top edge of the sides in short drips.
-    const patch = (x: number, y: number) =>
-      hash2(
-        featureSeed(seed, `moss${n}`),
-        Math.floor(x / 2) + (Math.floor(y / 2) % 2),
-        Math.floor(y / 2),
-      ) < 0.62;
+    // Each patch is a 3×3 block: a light top-left corner, a mid-green body, a shaded bottom edge.
     const [tw, td] = p.faceSize(tier, 'top');
     for (let y = 0; y < td; y++)
-      for (let x = 0; x < tw; x++)
-        if (patch(x, y))
-          p.rect(
-            tier,
-            'top',
-            x,
-            y,
-            1,
-            1,
-            MOSS[2 + ((x * 3 + y * 5) % 3 === 0 ? 1 : 0) + (y < td / 2 ? 1 : 0)]!,
-          );
+      for (let x = 0; x < tw; x++) {
+        const row = Math.floor(y / 3),
+          shifted = x + (row % 2) * 2,
+          col = Math.floor(shifted / 3);
+        if (hash2(featureSeed(seed, `moss${n}`), col, row) >= 0.6) continue;
+        const lx = shifted % 3,
+          ly = y % 3;
+        const shade = lx === 0 && ly === 0 ? 4 : ly === 2 ? 2 : 3;
+        p.rect(tier, 'top', x, y, 1, 1, MOSS[shade]!);
+      }
     for (const face of ['right', 'front', 'left', 'back'] as const) {
       const [w] = p.faceSize(tier, face);
       for (let x = 0; x < w; x++) {
@@ -180,7 +170,7 @@ function mossbackSkin(seed: number): Uint8Array {
   const garden = cubesOf(m, 'garden');
   const [tuftA, tuftB, fern, stemA, bloomA, stemB, bloomB, stemC, bloomC] = garden;
   for (const tuft of [tuftA!, tuftB!])
-    p.cube(tuft, MOSS, { base: 3, pattern: clumps(featureSeed(seed, 'tuft'), 1, 1) });
+    p.cube(tuft, MOSS, { base: 3, pattern: clumps(featureSeed(seed, 'tuft'), 2, 1) });
   p.cube(fern!, MOSS, { base: 2.5, falloff: 2 });
   for (const stem of [stemA!, stemB!, stemC!]) p.cube(stem, MOSS, { base: 1.5 });
   p.cube(bloomA!, PETAL_PINK, { base: 1.5, falloff: 1 });
@@ -188,8 +178,8 @@ function mossbackSkin(seed: number): Uint8Array {
   p.cube(bloomC!, PETAL_WHITE, { base: 1, falloff: 1 });
   for (const bloom of [bloomA!, bloomB!, bloomC!]) p.rect(bloom, 'top', 0, 0, 1, 1, PETAL_GOLD[1]!);
   const [neck, head, beak] = cubesOf(m, 'head');
-  p.cube(neck!, SKIN, { base: 1.8, pattern: clumps(featureSeed(seed, 'neck'), 2, 0.6) });
-  p.cube(head!, SKIN, { base: 2.4, pattern: clumps(featureSeed(seed, 'head'), 2, 0.8) });
+  p.cube(neck!, SKIN, { base: 1.8, pattern: clumps(featureSeed(seed, 'neck'), 2, 1) });
+  p.cube(head!, SKIN, { base: 2.4, pattern: clumps(featureSeed(seed, 'head'), 2, 1) });
   p.cube(beak!, SKIN, { base: 1, falloff: 0.6 });
   for (const face of ['right', 'left'] as const) {
     const [w] = p.faceSize(head!, face);
@@ -202,7 +192,7 @@ function mossbackSkin(seed: number): Uint8Array {
   for (const name of ['leg_fr', 'leg_fl', 'leg_br', 'leg_bl']) {
     const [leg] = cubesOf(m, name);
     // Scaly, elephantine legs: clumped scales with dark toenail marks at the front.
-    p.cube(leg!, SKIN, { base: 2, falloff: 1, pattern: clumps(featureSeed(seed, name), 1, 0.8) });
+    p.cube(leg!, SKIN, { base: 2, falloff: 1, pattern: clumps(featureSeed(seed, name), 2, 1) });
     p.rect(leg!, 'front', 0, 3, 1, 1, PLATE[0]!);
     p.rect(leg!, 'front', 2, 3, 1, 1, PLATE[0]!);
   }

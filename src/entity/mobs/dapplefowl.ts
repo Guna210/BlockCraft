@@ -138,7 +138,7 @@ function dapplefowlSkin(seed: number): Uint8Array {
     p.cube(cube, PLUMAGE, {
       base: 2.2,
       falloff: 1.4,
-      pattern: clumps(featureSeed(seed, label), 2, 0.7),
+      pattern: clumps(featureSeed(seed, label), 2, 1),
     });
     // Cream dapples laid over the plumage in round 2×2 spots.
     const pattern = spots(featureSeed(seed, label + ':dapples'), 4, 1);
@@ -153,7 +153,7 @@ function dapplefowlSkin(seed: number): Uint8Array {
   };
   cubesOf(m, 'body').forEach((cube, n) => dappled(cube, `body${n}`));
   const [head, beak] = cubesOf(m, 'head');
-  p.cube(head!, PLUMAGE, { base: 2.6, pattern: clumps(featureSeed(seed, 'head'), 2, 0.6) });
+  p.cube(head!, PLUMAGE, { base: 2.6, pattern: clumps(featureSeed(seed, 'head'), 2, 1) });
   p.cube(beak!, HORNY, { base: 2, falloff: 1.5 });
   // Round dark eyes with a glint, one on each side of the head.
   for (const face of ['right', 'left'] as const) {
@@ -166,7 +166,7 @@ function dapplefowlSkin(seed: number): Uint8Array {
     p.cube(plume, CREST, {
       base: 2.2,
       falloff: 3,
-      pattern: strands(featureSeed(seed, 'crest'), 0.6),
+      pattern: strands(featureSeed(seed, 'crest'), 1),
     });
   for (const wing of ['wing_r', 'wing_l']) {
     const [cube] = cubesOf(m, wing);

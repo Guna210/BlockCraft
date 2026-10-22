@@ -115,9 +115,6 @@ export interface PaintOptions {
   skip?: readonly FaceName[];
 }
 
-/** 4×4 ordered dither thresholds in [0, 1). */
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((n) => (n + 0.5) / 16);
-
 export function hexRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -152,7 +149,7 @@ export class SkinPainter {
     this.data[o + 3] = 255;
   }
 
-  /** Paints the face rects of a cube with a dithered ramp. */
+  /** Paints the face rects of a cube in flat, banded shades of a ramp. */
   cube(cube: ModelCube, ramp: Ramp, options: PaintOptions = {}): void {
     const rects = cubeFaceRects(cube);
     const base = options.base ?? (ramp.length - 1) / 2;
@@ -162,17 +159,16 @@ export class SkinPainter {
       const [u, v, w, h] = rects[face];
       const faceShift =
         face === 'top' ? (options.top ?? 1) : face === 'bottom' ? (options.bottom ?? -1) : 0;
+      const side = face !== 'top' && face !== 'bottom';
       for (let y = 0; y < h; y++)
         for (let x = 0; x < w; x++) {
           let level = base + faceShift;
-          if (face !== 'top' && face !== 'bottom' && h > 1) level += falloff * (0.5 - y / (h - 1));
-          // Light from the top-left: a slight lift toward the left edge of side faces.
-          if (face !== 'top' && face !== 'bottom' && w > 2) level += 0.3 * (0.5 - x / (w - 1));
+          // Side faces are lit from above in flat bands: a lighter top third, a darker bottom third.
+          if (side && h >= 3)
+            level += y < h / 3 ? falloff / 2 : y >= (2 * h) / 3 ? -falloff / 2 : 0;
+          else if (side && h === 2) level += y === 0 ? falloff / 2 : -falloff / 2;
           if (options.pattern) level += options.pattern(x, y, face, w, h);
-          const index = Math.max(
-            0,
-            Math.min(ramp.length - 1, Math.floor(level + BAYER[(y & 3) * 4 + (x & 3)]! - 0.5)),
-          );
+          const index = Math.max(0, Math.min(ramp.length - 1, Math.round(level)));
           this.set(u + x, v + y, ramp[index]!);
         }
     }
@@ -243,24 +239,34 @@ export function featureSeed(seed: number, label: string): number {
 }
 
 /**
- * Clumps: blocks of `cell` texels, every other row shifted by half a cell so clumps interlock,
- * each lifted or sunk by up to `amount` steps. Gives 2–6 texel clusters rather than speckle.
+ * Clumps: a few separate `cell`×`cell` clusters, about one cell in eight, each lifted or sunk by
+ * `amount` steps; rows of cells are offset by half a cell. Shapes on a flat region, not a texture.
  */
 export function clumps(seed: number, cell: number, amount: number): Pattern {
   return (x, y, face) => {
-    const row = Math.floor(y / cell);
-    const shift = row % 2 === 0 ? 0 : Math.floor(cell / 2);
-    const col = Math.floor((x + shift) / cell);
+    const row = Math.floor(y / (cell + 1));
+    const shift = row % 2 === 0 ? 0 : Math.floor((cell + 1) / 2);
+    const col = Math.floor((x + shift) / (cell + 1));
+    // The last row and column of each cell stay flat, so clusters never touch.
+    if ((x + shift) % (cell + 1) === cell || y % (cell + 1) === cell) return 0;
     const n = hash2(seed + face.length * 7919, col, row);
-    return n < 0.3 ? -amount : n > 0.72 ? amount : 0;
+    return n < 0.06 ? -amount : n > 0.92 ? amount : 0;
   };
 }
 
-/** Vertical strands 1 texel wide and 2–3 long, alternately light and dark: fur, wool fringes, bristles. */
+/**
+ * Strands: in about one column in four, one stroke 1 texel wide and 2–3 long per 6-row band,
+ * lighter or darker: locks of fur, wool and bristle.
+ */
 export function strands(seed: number, amount: number): Pattern {
   return (x, y, face) => {
-    const n = hash2(seed + face.length * 104729, x, Math.floor((y + (x % 3)) / 3));
-    return n < 0.25 ? -amount : n > 0.75 ? amount : 0;
+    const band = Math.floor(y / 6);
+    const n = hash2(seed + face.length * 104729, x, band);
+    if (n > 0.25) return 0;
+    const start = band * 6 + Math.floor(hash2(seed + 31, x, band) * 3);
+    const length = n < 0.1 ? 3 : 2;
+    if (y < start || y >= start + length) return 0;
+    return n < 0.12 ? -amount : amount;
   };
 }
 

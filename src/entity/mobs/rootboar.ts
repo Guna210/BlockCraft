@@ -150,7 +150,7 @@ function rootboarSkin(seed: number): Uint8Array {
     p = new SkinPainter(128, 64, seed);
   const grizzle = combine(
     clumps(featureSeed(seed, 'hide'), 2, 1),
-    strands(featureSeed(seed, 'grizzle'), 0.5),
+    strands(featureSeed(seed, 'grizzle'), 1),
   );
   const [flank, shoulders] = cubesOf(m, 'body');
   p.cube(flank!, HIDE, { base: 2, falloff: 1.4, pattern: grizzle });
@@ -160,14 +160,14 @@ function rootboarSkin(seed: number): Uint8Array {
       base: 1.8,
       falloff: 2.4,
       top: 1.5,
-      pattern: strands(featureSeed(seed, 'bristle'), 1.2),
+      pattern: strands(featureSeed(seed, 'bristle'), 1),
     });
   const [skull, snout, nose, earR, earL] = cubesOf(m, 'head');
-  p.cube(skull!, HIDE, { base: 2.3, pattern: clumps(featureSeed(seed, 'face'), 2, 0.7) });
+  p.cube(skull!, HIDE, { base: 2.3, pattern: clumps(featureSeed(seed, 'face'), 2, 1) });
   p.cube(snout!, SNOUT, {
     base: 2,
     falloff: 1,
-    pattern: clumps(featureSeed(seed, 'snout'), 2, 0.5),
+    pattern: clumps(featureSeed(seed, 'snout'), 2, 1),
   });
   p.cube(nose!, SNOUT, { base: 0.8, falloff: 0.6 });
   p.rect(nose!, 'front', 0, 1, 1, 1, PUPIL);
@@ -214,8 +214,10 @@ export const ROOTBOAR_DEFINITION: CreatureDefinition = {
   type: ROOTBOAR,
   category: 'passive',
   health: 12,
-  width: 0.9,
-  height: 0.95,
+  // Drawn 1.2× its model size; collision height follows, width stays within one block.
+  scale: 1.2,
+  width: 0.95,
+  height: 1.14,
   speed: 0.1,
   foods: ['tuber'],
   model: () => ROOTBOAR,

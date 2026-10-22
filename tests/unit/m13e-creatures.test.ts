@@ -209,6 +209,25 @@ describe('M13e creature registration', () => {
     expect(GLIMMER_MOTH_DEFINITION.flying).toBe(true);
   });
 
+  it('draws the Tuftbuck and Rootboar at 1.2×, and every creature fits through a 1-block gap', () => {
+    const scales: Record<string, number> = {
+      tuftbuck: 1.2,
+      rootboar: 1.2,
+      dapplefowl: 1,
+      mossback: 1,
+      glimmer_moth: 1,
+    };
+    for (const [type, definition] of Object.entries(DEFINITIONS)) {
+      const s = scene(flatWorld());
+      const id = s.runtime.spawn(type, 0.5, GROUND, 0.5);
+      expect(s.ecs.get(id, RenderableC)!.scale, type).toBe(scales[type]);
+      expect(s.ecs.get(id, BodyC)!.width, type).toBeLessThanOrEqual(0.95);
+      expect(s.ecs.get(id, BodyC)).toEqual({ width: definition.width, height: definition.height });
+    }
+    expect(TUFTBUCK_DEFINITION.height).toBeCloseTo(1.35 * 1.2, 9);
+    expect(ROOTBOAR_DEFINITION.height).toBeCloseTo(0.95 * 1.2, 9);
+  });
+
   it('picks the Tuftbuck fleece by biome', () => {
     expect(tuftbuckWool('plains')).toBe('cream');
     expect(tuftbuckWool('meadow')).toBe('cream');
@@ -290,8 +309,9 @@ describe('M13e babies', () => {
   it('spawns a baby at half size that cannot breed and reports baby and ageTicks', () => {
     const s = scene(flatWorld());
     const id = s.runtime.spawn(TUFTBUCK, 0.5, GROUND, 0.5, { baby: true });
-    expect(s.ecs.get(id, RenderableC)!.scale).toBe(BABY_SCALE);
-    expect(s.ecs.get(id, BodyC)).toEqual({ width: 0.45, height: 0.675 });
+    // Half of the Tuftbuck's adult 1.2× model scale and of its 0.95 × 1.62 body.
+    expect(s.ecs.get(id, RenderableC)!.scale).toBe(BABY_SCALE * 1.2);
+    expect(s.ecs.get(id, BodyC)).toEqual({ width: 0.475, height: 0.81 });
     expect(s.ecs.get(id, LoveC)!.baby).toBe(true);
     expect(feedMob(s.ecs, id, 'wheat')).toBe(false);
     const ai = entityAI(s.ecs, id);
@@ -318,8 +338,8 @@ describe('M13e babies', () => {
     expect(entityAI(s.ecs, id).baby).toBe(true);
     run(s.ecs, 1);
     expect(entityAI(s.ecs, id)).toMatchObject({ baby: false, ageTicks: GROW_UP_TICKS });
-    expect(s.ecs.get(id, RenderableC)!.scale).toBe(1);
-    expect(s.ecs.get(id, BodyC)).toEqual({ width: 0.9, height: 0.95 });
+    expect(s.ecs.get(id, RenderableC)!.scale).toBe(1.2);
+    expect(s.ecs.get(id, BodyC)).toEqual({ width: 0.95, height: 1.14 });
     expect(feedMob(s.ecs, id, 'tuber')).toBe(true);
   });
 
@@ -358,7 +378,7 @@ describe('M13e babies', () => {
     }
     expect(baby).not.toBeNull();
     expect(ticks).toBeLessThan(100);
-    expect(s.ecs.get(baby!, RenderableC)!.scale).toBe(BABY_SCALE);
+    expect(s.ecs.get(baby!, RenderableC)!.scale).toBe(BABY_SCALE * 1.2);
   });
 });
 

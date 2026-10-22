@@ -209,7 +209,7 @@ function paintShared(p: SkinPainter, model: EntityModel): void {
     p.cube(cube, MANE, { base: 2, falloff: 1.5, pattern: strands(featureSeed(s, 'mane'), 1) });
   p.fringe(chest!, 3, featureSeed(s, 'chest'));
   const [skull, muzzle, beard, earR, earL] = cubesOf(model, 'head');
-  p.cube(skull!, COAT, { base: 2.4, pattern: clumps(featureSeed(s, 'face'), 2, 0.6) });
+  p.cube(skull!, COAT, { base: 2.4, pattern: clumps(featureSeed(s, 'face'), 2, 1) });
   // A long face, pale toward the nose, with a dark blaze down its front.
   p.cube(muzzle!, COAT, { base: 3.2, falloff: 0.6 });
   p.rect(skull!, 'front', 2, 0, 1, 5, MANE[1]!);
@@ -227,14 +227,13 @@ function paintShared(p: SkinPainter, model: EntityModel): void {
   p.rect(muzzle!, 'front', 0, 1, 1, 1, HOOF[0]!);
   p.rect(muzzle!, 'front', 3, 1, 1, 1, HOOF[0]!);
   p.rect(muzzle!, 'front', 1, 3, 2, 1, MANE[1]!);
-  // Pale horns with darker growth ridges.
+  // Pale horns, ringed with a darker growth ridge on every other row.
   for (const side of ['horn_r', 'horn_l'])
-    cubesOf(model, side).forEach((segment, n) =>
+    cubesOf(model, side).forEach((segment) =>
       p.cube(segment, HORN, {
-        base: 3.2 - n * 0.2,
-        falloff: 0.4,
-        pattern: (x, y, face) =>
-          face === 'top' || face === 'bottom' ? 0.4 : (x + y + n) % 3 === 0 ? -1.6 : 0,
+        base: 3,
+        falloff: 0,
+        pattern: (_x, y, face) => (face === 'top' || face === 'bottom' ? 0 : y % 2 === 1 ? -1 : 0),
       }),
     );
   const [tail] = cubesOf(model, 'tail');
@@ -267,7 +266,7 @@ function paintFleece(p: SkinPainter, model: EntityModel, wool: Ramp | null): voi
       falloff: 2,
       pattern: combine(
         strands(featureSeed(s, `locks${n}`), 1),
-        clumps(featureSeed(s, `tufts${n}`), 2, 0.5),
+        clumps(featureSeed(s, `tufts${n}`), 2, 1),
       ),
     });
     p.fringe(curtain, 3, featureSeed(s, `fringe${n}`));
@@ -323,8 +322,10 @@ export const TUFTBUCK_DEFINITION: CreatureDefinition = {
   type: TUFTBUCK,
   category: 'passive',
   health: 10,
-  width: 0.9,
-  height: 1.35,
+  // Drawn 1.2× its model size; collision height follows, width stays within one block.
+  scale: 1.2,
+  width: 0.95,
+  height: 1.62,
   speed: 0.1,
   foods: ['wheat'],
   model: (ctx, x, z) => tuftbuckModelId(tuftbuckWool(ctx.items.world.getBiome(x, z))),

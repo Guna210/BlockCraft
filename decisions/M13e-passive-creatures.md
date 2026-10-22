@@ -15,11 +15,14 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
 
 - Every model is written without UVs. `buildModel()` packs each cube's box unwrap into the skin (tallest first, one texel apart) and throws if they do not fit. All cube sizes are whole pixels, so every face maps to whole texels.
 - `SkinPainter` paints per cube with a hand-picked ramp (ART.md):
-  - Faces are lit from the top-left: top lighter, bottom darker, side faces darkening downwards and slightly lighter on the left.
-  - Shades are chosen with a 4×4 ordered dither, so transitions are dithered bands, not gradients.
+  - **Changed after the owner's visual feedback (orchestrator, during PR review):** the first skins looked too noisy, so the painter no longer dithers and patterns are sparse shapes:
+    - Each face is lit from above in flat shades of its ramp: the top lighter, the bottom darker, and side faces in up to three horizontal bands (a lighter top third, a darker bottom third). That gives 2–3 shades per region.
+    - Patterns are deliberate shapes on those flat regions, never texture-wide noise (ART.md):
+      - `clumps`: separate 2×2 or 3×3 clusters, about one cell in eight, lighter or darker by one step, in offset rows with a flat gap between cells.
+      - `strands`: in about one column in four, one stroke 1 texel wide and 2–3 long per 6-row band (locks of fur, wool and bristle).
+    - Horns have a darker growth ring on every other row; moss grows in 3×3 patches with a light corner and a shaded bottom edge; moth wings are flat inside a darker rim.
+    - The palettes, and the tests that every texel is in its palette with a luminance gap of at least 60, are unchanged.
   - Patterns:
-    - `clumps`: 2–3 texel clusters in interlocking rows.
-    - `strands`: 1-texel strands, 2–3 long, for fur, wool and bristles.
     - `spots`: 2×2 dapples.
     - `fringe`: ragged transparent ends on hanging hair; the renderer discards alpha < 0.5.
   - Details such as eyes, nostrils and eyespots are set texel by texel.
@@ -63,6 +66,10 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
 
 - **Choice:** the renderer has one skin per model, so the Tuftbuck has six models that share one geometry: five fleece variants and `tuftbuck_sheared`. The sheared skin leaves the fleece transparent, so shearing changes the model id and grazing restores the one it spawned with.
 - Health (Appendix B): Tuftbuck 10, Rootboar 12, Dapplefowl 4, Mossback 30, Glimmer Moth 2.
+- **Size (owner's feedback, during PR review):** the Tuftbuck and Rootboar are drawn at 1.2× their model size (`CreatureDefinition.scale`, applied as `Renderable.scale`).
+  - Collision heights grow to match: Tuftbuck 1.35 → 1.62, Rootboar 0.95 → 1.14.
+  - Collision widths are 0.95 (1.2 × 0.9 would be 1.08), so both still fit through 1-block gaps. Every creature's width is at most 0.95.
+  - A baby is half the adult: model scale 0.6 and body 0.475 × 0.81 for a Tuftbuck.
 
 ## 3. Behaviours
 
@@ -125,10 +132,10 @@ Decisions given by the orchestrator in the task prompt (1–10), followed by cho
 - `AgeC { baby, ageTicks }` (`src/entity/ai/components.ts`) is on every creature.
   - **Choice:** adults spawn with `ageTicks = 24000`, so `ageTicks` is the creature's age in ticks.
 - A baby (`{ baby: true }`, from breeding) gets:
-  - model scale 0.5 (`Renderable.scale`, new, used by `computePose`)
+  - half its type's adult model scale (`Renderable.scale`, new, used by `computePose`)
   - half the body width and height
   - `LoveC.baby = true`, so it cannot breed
-- The creature system adds 1 to `ageTicks` each tick. At 24000 ticks the creature grows up: full size, scale 1, `LoveC.baby = false`.
+- The creature system adds 1 to `ageTicks` each tick. At 24000 ticks the creature grows up: full size, its adult model scale, `LoveC.baby = false`.
 - `'use'` with its food on a baby adds 2400 ticks (10 % of 24000) and consumes the item in survival. On an adult the same food goes to M13c's `feedMob` (breeding).
 - Breeding is M13c's `BreedGoal` (600 love ticks, 6000 cooldown). The baby comes from the type's factory with `{ baby: true }`.
 - **Choice:** a baby drops nothing when it dies.
