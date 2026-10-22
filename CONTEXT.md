@@ -59,7 +59,7 @@ In flight:
 
 | M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; NO spawn rules (moved to M13g, data recorded in decisions 'For M13g'); emissive moth; lineup probe screenshot; reachability exemptions untouched |
 
-| INFRA-stream Streaming headroom | Final gate posted (decisions + progress + m04.spec.ts timeouts only; quick verify green; heap 0.80%, RD12 hole 32/64 px). Told builder: keep '— verified' title, Status verified, paste m04 diff in PR. Owner to approve; then 2 CI runs | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
+| INFRA-stream Streaming headroom | PR #70 opened; diff checked = exactly the approved time limits + 2 docs; waiting on 2 CI runs (owner re-runs once) | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
 
 Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
 
