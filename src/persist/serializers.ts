@@ -1,6 +1,6 @@
 import { type BlockEntityInstance, isPlainJsonObject } from '../world/block-entities';
 import { Inventory } from '../gameplay/inventory';
-import { items } from '../gameplay/items';
+import { isItemAffix, items, type ItemAffix } from '../gameplay/items';
 import type { ItemEntity } from '../entity/item-entity';
 import type { Player, PlayerSnapshot } from '../entity/player';
 import type { ChunkColumn } from '../world/column';
@@ -59,16 +59,16 @@ export interface SerializedItemStack {
   id: string;
   count: number;
   damage?: number | null;
+  affix?: ItemAffix;
 }
 
 export interface SerializedInventory {
   slots: Array<SerializedItemStack | null>;
-  cursor: { id: string; count: number; damage?: number | null } | null;
+  cursor: { id: string; count: number; damage?: number | null; affix?: ItemAffix } | null;
   selectedSlot: number;
 }
 
 const ARMOR_SLOTS = ['head', 'chest', 'legs', 'feet'] as const;
-
 export function serializeInventory(inv: Inventory | SerializedInventory): Uint8Array {
   let serializable: SerializedInventory;
   if (inv instanceof Inventory) {
@@ -136,6 +136,9 @@ export function deserializeInventory(
       ) {
         throw new Error(`Invalid damage at slot ${i}: ${stack.damage}`);
       }
+      if (stack.affix !== undefined && !isItemAffix(stack.affix)) {
+        throw new Error('Invalid affix at slot ' + i + ': ' + String(stack.affix));
+      }
       // Check armor constraints
       if (i >= 36 && i <= 39) {
         const armorSlot = ARMOR_SLOTS[i - 36];
@@ -172,6 +175,9 @@ export function deserializeInventory(
     ) {
       throw new Error(`Invalid cursor damage: ${cursor.damage}`);
     }
+    if (cursor.affix !== undefined && !isItemAffix(cursor.affix)) {
+      throw new Error('Invalid cursor affix: ' + String(cursor.affix));
+    }
   } else {
     invData.cursor = null;
   }
@@ -184,6 +190,7 @@ export function deserializeInventory(
             id: s.id,
             count: s.count,
             ...(s.damage !== undefined && s.damage !== null ? { damage: s.damage } : {}),
+            ...(s.affix !== undefined ? { affix: s.affix } : {}),
           }
         : null,
     ),
@@ -194,6 +201,7 @@ export function deserializeInventory(
           ...(invData.cursor.damage !== undefined && invData.cursor.damage !== null
             ? { damage: invData.cursor.damage }
             : {}),
+          ...(invData.cursor.affix !== undefined ? { affix: invData.cursor.affix } : {}),
         }
       : null,
     selectedSlot: invData.selectedSlot,

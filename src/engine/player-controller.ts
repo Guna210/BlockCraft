@@ -23,6 +23,8 @@ import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-
 import { PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
 import '../entity/mobs';
+import { ProjectileRuntime } from '../entity/projectiles';
+import { BowController } from '../gameplay/bow';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -35,6 +37,10 @@ export class PlayerController {
   public mobs: MobRuntime | null = null;
   /** Melee attacks, the attack meter and feeding mobs. */
   public combat: PlayerCombat | null = null;
+  /** Bow charge state and shot input for the current player. */
+  public bow: BowController | null = null;
+  /** Shared block/entity collision and movement for projectiles in the current world. */
+  public projectiles: ProjectileRuntime | null = null;
   public particles: BreakParticles | null = null;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
@@ -51,6 +57,7 @@ export class PlayerController {
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
+    this.bow?.tick();
     if (this.player && !this.player.dead) {
       this.combat?.tick();
       this.interaction?.tick();
@@ -77,6 +84,7 @@ export class PlayerController {
     input.onAction = (action, down) => {
       if (this.player?.dead) {
         this.player.clearInput();
+        this.bow?.clear();
         this.interaction?.clear();
         this.combat?.clear();
         return;
@@ -90,8 +98,10 @@ export class PlayerController {
         this.perspectiveDown = down;
       } else {
         this.player?.input(action, down);
-        this.combat?.input(action, down);
-        this.interaction?.input(action, down);
+        if (!this.bow?.input(action, down)) {
+          this.combat?.input(action, down);
+          this.interaction?.input(action, down);
+        }
       }
     };
   }
@@ -163,6 +173,7 @@ export class PlayerController {
     );
     const player = this.player;
     this.combat = new PlayerCombat(player, ecs, this.interaction);
+    this.bow = new BowController(player, ecs);
     const mobPlayer: MobPlayer = {
       get pos() {
         return player.pos;
@@ -180,6 +191,12 @@ export class PlayerController {
       spawnContext: { ecs, items: itemEntities },
       spawnRules: 'default',
     });
+    this.projectiles = new ProjectileRuntime(
+      world,
+      ecs,
+      () => (this.player === player ? player : null),
+      () => (this.itemEntities === itemEntities ? itemEntities : null),
+    );
     this.interaction.onUse = (blockId, target) =>
       world.current.useBlock(target.x, target.y, target.z) || this.onUseBlock(blockId, target);
     this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
@@ -198,7 +215,7 @@ export class PlayerController {
         this.player!.survival.addExhaustion(0.005);
         const held = this.player!.inventory.held;
         if (held) {
-          const durability = getToolDurability(held.id);
+          const durability = getToolDurability(held);
           if (durability !== null && durability > 0) {
             held.damage = (held.damage ?? 0) + 1;
             if (held.damage >= durability) {
@@ -241,6 +258,9 @@ export class PlayerController {
     this.world = null;
     this.worldSpawnPoint = null;
     this.player = null;
+    this.bow?.clear();
+    this.bow = null;
+    this.projectiles = null;
     this.interaction = null;
     this.itemEntities = null;
     this.ecs = null;
@@ -278,6 +298,7 @@ export class PlayerController {
       this.player.detached = true;
       this.spawnView = false;
       this.player.clearInput();
+      this.bow?.clear();
       this.interaction?.clear();
       this.combat?.clear();
       this.perspective = 0;
@@ -315,6 +336,7 @@ export class PlayerController {
     const player = this.player;
     if (!player || player.dead !== true) return;
     player.clearInput();
+    this.bow?.clear();
     this.interaction?.clear();
     this.combat?.clear();
     this.spawnView = false;

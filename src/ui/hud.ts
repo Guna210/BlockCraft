@@ -1,6 +1,7 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
+import type { ItemAffix } from '../gameplay/items';
 import type { Player } from '../entity/player';
 import { getToolDurability, getTotalArmorDefense } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
@@ -85,9 +86,11 @@ export interface HudSnapshot {
   xpLevel: number;
   xpProgress: number;
   selectedSlot: number;
-  hotbar: Array<{ id: string; count: number; damage?: number } | null>;
+  hotbar: Array<{ id: string; count: number; damage?: number; affix?: ItemAffix } | null>;
   /** Attack meter, 0 after a swing to 1 when recharged; quantized to whole pixels of the meter. */
   attackCooldown: number;
+  /** Bow draw meter while use is held; omitted when no bow is charging. */
+  bowCharge?: number;
 }
 
 export interface DebugOverlaySnapshot {
@@ -118,8 +121,13 @@ export function equippedArmorPoints(player: Pick<Player, 'inventory'>): number {
 /** Inner width of the attack meter in UI pixels. */
 const COOLDOWN_METER_WIDTH = 14;
 
-export function hudSnapshot(player: Player, submerged: boolean, attackCooldown = 1): HudSnapshot {
-  return {
+export function hudSnapshot(
+  player: Player,
+  submerged: boolean,
+  attackCooldown = 1,
+  bowCharge: number | null = null,
+): HudSnapshot {
+  const snapshot: HudSnapshot = {
     mode: player.mode,
     health: player.health,
     hunger: player.hunger,
@@ -137,12 +145,19 @@ export function hudSnapshot(player: Player, submerged: boolean, attackCooldown =
             ...(stack.damage !== undefined && stack.damage !== null
               ? { damage: stack.damage }
               : {}),
+            ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
           }
         : null,
     ),
     attackCooldown:
       Math.floor(Math.max(0, Math.min(1, attackCooldown)) * COOLDOWN_METER_WIDTH) /
       COOLDOWN_METER_WIDTH,
+  };
+  if (bowCharge === null) return snapshot;
+  return {
+    ...snapshot,
+    bowCharge:
+      Math.floor(Math.max(0, Math.min(1, bowCharge)) * COOLDOWN_METER_WIDTH) / COOLDOWN_METER_WIDTH,
   };
 }
 
@@ -155,10 +170,21 @@ function drawAttackCooldown(
   s: number,
 ): void {
   if (cooldown >= 1) return;
+  drawChargeMeter(ctx, cooldown, width, height, s);
+}
+
+/** Bow charge uses the same inset and quantized fill as the attack cooldown meter. */
+function drawChargeMeter(
+  ctx: CanvasRenderingContext2D,
+  charge: number,
+  width: number,
+  height: number,
+  s: number,
+): void {
   const x = Math.floor(width / s / 2) - Math.floor(COOLDOWN_METER_WIDTH / 2) - 1;
   const y = Math.floor((height / 2 + 8) / s);
   drawInset(ctx, { x, y, w: COOLDOWN_METER_WIDTH + 2, h: 4 }, s);
-  fillRect(ctx, x + 1, y + 1, Math.round(cooldown * COOLDOWN_METER_WIDTH), 2, UI.accent, s);
+  fillRect(ctx, x + 1, y + 1, Math.round(charge * COOLDOWN_METER_WIDTH), 2, UI.accent, s);
 }
 
 function drawPattern(
@@ -362,7 +388,7 @@ function drawHud(
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (hotbarY + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, hotbarY, s);
       if (stack.damage !== undefined && stack.damage > 0) {
-        const durability = getToolDurability(stack.id);
+        const durability = getToolDurability(stack);
         if (durability !== null && durability > 0) {
           drawDurabilityBar(ctx, stack.damage, durability, x, hotbarY, s);
         }
@@ -372,7 +398,9 @@ function drawHud(
   }
 
   drawCrosshair(ctx, width, height);
-  drawAttackCooldown(ctx, snapshot.attackCooldown, width, height, s);
+  if (snapshot.bowCharge === undefined)
+    drawAttackCooldown(ctx, snapshot.attackCooldown, width, height, s);
+  else drawChargeMeter(ctx, snapshot.bowCharge, width, height, s);
   if (snapshot.mode === 'creative') return;
 
   drawStatusMeter(ctx, 'heart', snapshot.health, 10, centerX - 94, statusY, s, 9, heartShake);
@@ -654,10 +682,12 @@ export class Hud {
     this.hudCanvas.style.display = screenOpen ? 'none' : 'block';
     if (this.debugOpen) this.debugCanvas.style.display = 'block';
     if (screenOpen) this.popupCanvas.style.display = 'none';
+    const controller = this.controller();
     const snapshot = hudSnapshot(
       player,
       this.isSubmerged(),
-      this.controller()?.combat?.cooldown ?? 1,
+      controller?.combat?.cooldown ?? 1,
+      controller?.bow?.charging ? controller.bow.charge : null,
     );
     if (this.lastSelectedSlot === null) {
       this.lastSelectedSlot = snapshot.selectedSlot;

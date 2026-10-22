@@ -30,8 +30,8 @@ export interface MobBody {
   horizontalCollision: boolean;
   /** Desired velocity in blocks per tick (y only for flyers), written by goals and the navigator. */
   wish: Vec3;
-  /** Fastest fall in blocks per tick (a fluttering bird); Infinity for none. */
-  maxFallSpeed: number;
+  /** Fastest fall in blocks per tick (a fluttering bird); no cap when absent. */
+  maxFallSpeed?: number;
   /** Jump this tick if on the ground; swim up if in water. */
   jump: boolean;
   /** Move up along the wall while it blocks horizontal movement. */

@@ -18,6 +18,9 @@ export interface Transform {
   previous: Vec3;
   yaw: number;
   previousYaw: number;
+  /** Optional world pitch for oriented entities such as projectiles. */
+  pitch?: number;
+  previousPitch?: number;
 }
 
 /** Collision size in blocks, centred on the transform horizontally. */

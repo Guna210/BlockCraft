@@ -354,9 +354,10 @@ export class PlayerCombat {
   attack(id: number): AttackResult {
     const player = this.player,
       ecs = this.ecs;
-    const held = player.inventory.held?.id ?? null;
+    const heldStack = player.inventory.held;
+    const held = heldStack?.id ?? null;
     const c = this.cooldown;
-    let damage = scaledDamage(getAttackDamage(held), c);
+    let damage = scaledDamage(getAttackDamage(heldStack), c);
     const critical = isCritical(
       { velY: player.vel[1], onGround: player.onGround, inFluid: player.inFluid !== null },
       c,
