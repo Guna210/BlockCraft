@@ -139,6 +139,14 @@ export function spillKilnContents(
   const free = entities.pool.reduce((count, entity) => count + Number(!entity.active), 0);
   if (stacks.length > free) return false;
   for (const stack of stacks)
-    if (!entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5)) return false;
+    if (
+      !entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5, undefined, {
+        damage: stack.damage,
+        ...(stack['affix'] === 'Keen' || stack['affix'] === 'Sturdy' || stack['affix'] === 'Swift'
+          ? { affix: stack['affix'] }
+          : {}),
+      })
+    )
+      return false;
   return true;
 }

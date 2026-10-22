@@ -223,6 +223,9 @@ export class BlockRegistry {
     if (state.blockId === 'copper_trace') {
       return `copper_trace_${Number(state.properties.power ?? 0)}`;
     }
+    if (state.blockId === 'wheat_crop') {
+      return `wheat_crop_${Number(state.properties.age ?? 0)}`;
+    }
 
     // Log axis rotation handling:
     // If block has an 'axis' state property ('x', 'y', 'z')

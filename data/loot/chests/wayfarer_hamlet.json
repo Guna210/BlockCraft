@@ -1,0 +1,24 @@
+{
+  "rolls": [5, 8],
+  "entries": [
+    { "id": "wheat", "weight": 8, "count": [2, 6] },
+    { "id": "tuber", "weight": 6, "count": [1, 4] },
+    { "id": "coal", "weight": 5, "count": [2, 7] },
+    { "id": "flint", "weight": 4, "count": [1, 4] },
+    {
+      "id": "iron_pickaxe",
+      "weight": 2,
+      "count": [1, 1],
+      "durability": [0.35, 0.8],
+      "affixChance": 0.3
+    },
+    {
+      "id": "stone_axe",
+      "weight": 4,
+      "count": [1, 1],
+      "durability": [0.25, 0.75],
+      "affixChance": 0.12
+    },
+    { "id": "oak_planks", "weight": 5, "count": [2, 8] }
+  ]
+}

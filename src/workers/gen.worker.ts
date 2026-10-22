@@ -1,4 +1,7 @@
 import { createDefaultPipeline } from '../gen/pipeline';
+import { deriveSeed } from '../engine/rng';
+import { withTerrainVariant } from '../gen/world-options';
+import { WAYFARER_HAMLET_REGISTRATIONS } from '../gen/structures/wayfarer-hamlet';
 import { ChunkColumn } from '../world/column';
 import type { PackedChunkStorage } from '../world/chunk';
 import { BlockRegistry } from '../world/blocks/registry';
@@ -8,7 +11,8 @@ const ctx: Worker = self as unknown as Worker;
 
 // Ensure registry is loaded in worker
 BlockRegistry.getInstance();
-const pipeline = createDefaultPipeline();
+const pipelineWithStructures = createDefaultPipeline(WAYFARER_HAMLET_REGISTRATIONS);
+const pipelineWithoutStructures = createDefaultPipeline();
 
 const OVERWORLD_BIOME_IDS = [
   'plains',
@@ -43,6 +47,7 @@ export interface GenWorkerRequest {
   type: WorldType;
   /** The biome of a Single Biome world. */
   biome?: OverworldBiomeId;
+  structures?: boolean;
 }
 
 export interface SectionDataTransfer {
@@ -69,14 +74,20 @@ export interface GenWorkerResponse {
 }
 
 export function processGenMessage(event: MessageEvent): void {
-  const { id, seed, cx, cz, type, biome } = event.data as GenWorkerRequest;
+  const { id, seed, cx, cz, type, biome, structures = true } = event.data as GenWorkerRequest;
 
   // The clock covers everything the worker spends on this column, packaging included
   const start = performance.now();
   const col = new ChunkColumn(cx, cz);
+  const pipeline = structures ? pipelineWithStructures : pipelineWithoutStructures;
 
   if (type === 'flat') {
     generateFlatColumn(col);
+    col.worldSeed = seed;
+    const structureStage = pipeline.getStages().find((stage) => stage.name === 'structures');
+    withTerrainVariant({ type, biome }, () =>
+      structureStage?.generate(deriveSeed(seed, 'structures'), cx, cz, col),
+    );
   } else {
     pipeline.generateColumn(seed, cx, cz, col, { type, biome });
   }

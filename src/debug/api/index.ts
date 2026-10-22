@@ -6,6 +6,7 @@ import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './world';
 import { locate } from './locate';
 import './ore-locate';
+import './structure-locate';
 import './time';
 import './fluids';
 import './clouds';
@@ -33,6 +34,7 @@ import {
 import { WorldManager } from '../../world/world-manager';
 import { setXp } from './xp';
 import { setVitals } from './vitals';
+import { findDebugPath } from './pathfinding';
 
 declare global {
   interface Window {
@@ -58,6 +60,7 @@ export function initDebugApi() {
     api.getBlockLightRGB = getBlockLightRGB;
     api.setDebugLight = setDebugLight;
     api.locate = locate;
+    api.findPath = findDebugPath;
     api.worldHash = worldHash;
     api.setWorkerPoolSize = setWorkerPoolSize;
     api.getMainThreadGenCount = getMainThreadGenCount;

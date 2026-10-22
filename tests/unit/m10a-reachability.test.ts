@@ -95,6 +95,14 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
     task: 'M19b',
     reason: 'Crafted from 9 wheat (requires wheat crops in M19b)',
   },
+  farmland: {
+    task: 'M19b',
+    reason: 'Static hamlet farm soil; breaking it drops dirt and no tilling item exists',
+  },
+  wheat_crop: {
+    task: 'M19b',
+    reason: 'Static hamlet crop state; breaking it drops wheat rather than a crop block item',
+  },
 
   // M11 / M13 passive & hostile creature drops and items crafted/smelted exclusively from them
   wild_berries: {

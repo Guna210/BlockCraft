@@ -183,6 +183,11 @@ export interface BlockCraftDebugAPI {
     id: string,
     near: [number, number, number],
   ) => [number, number, number] | null;
+  findPath?: (
+    start: [number, number, number],
+    goal: [number, number, number],
+    options?: { height?: 1 | 2; maxNodes?: number },
+  ) => import('../../entity/ai/pathfinding').PathResult;
   worldHash?: (x1: number, z1: number, x2: number, z2: number) => string;
   setWorkerPoolSize?: (size: number) => void;
   getMainThreadGenCount?: () => number;

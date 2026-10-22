@@ -809,5 +809,14 @@
   "bed[facing=south,part=foot]": 807,
   "bed[facing=south,part=head]": 808,
   "bed[facing=west,part=foot]": 809,
-  "bed[facing=west,part=head]": 810
+  "bed[facing=west,part=head]": 810,
+  "farmland": 811,
+  "wheat_crop[age=0]": 812,
+  "wheat_crop[age=1]": 813,
+  "wheat_crop[age=2]": 814,
+  "wheat_crop[age=3]": 815,
+  "wheat_crop[age=4]": 816,
+  "wheat_crop[age=5]": 817,
+  "wheat_crop[age=6]": 818,
+  "wheat_crop[age=7]": 819
 }
