@@ -51,21 +51,17 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
+| M19a Structure engines | Round 1 CHANGES NEEDED (Keen not applied in live combat). Fix sent to Codex: pass held stack in combat.ts + live test, jigsaw seed per start chunk, no per-tick allocs in BlockInteraction.tick, stage-with-templates test, placement biome/offset asserts, remove data/loot/chests/wayfarer_hamlet.json, handoff gaps. Head before fix 2715f4b (merged cf97712). Round 2 next | Codex (claude/m19a) | session_01WsF2t3CkcmU1PDq2QpPwmd | #67 | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; only wayfarer_hamlet 34/16; stage writes nothing without templates; chest loot data/loot/chests + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on ItemStack, v1 serializer |
+| M13d Projectiles & bows | Round 1 CHANGES NEEDED (activate() adds ECS system during tick so caller runs twice; handoff gaps). Fix sent to Codex: install system at construction, no-op until first shot + regression test; pose pitch guard; unloaded-column stuck arrows; pickup from body centre; tests for owner immunity/water drag/despawn. Round 2 next | Codex #2 (claude/m13d) | session_01SVgp7tnP9LKY1Y2NtSnQF5 | #68 | projectiles.ts ECS; only 'arrow'; gravity 0.05, drag 0.99/0.6; bow 20-tick charge; fireProjectile + aimAt for M13f (mob arrows must pass pickup explicitly) |
+| M13e Passive creatures | Building; answered QUESTION (no spawn rules, moved to M13g). Gate next: lineup screenshot + M04b timings | Claude cloud (claude/m13e, session_01GLiTfxSJrdNE7K6Hp4ofAB) | - | - | src/entity/mobs/*.ts; tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; babies 0.5 scale, 24000 ticks; emissive moth; reachability exemptions untouched |
+| INFRA-stream Streaming headroom | PR opened; diff checked = 2 docs + approved m04 time limits only. Waiting on 2 CI runs (owner re-runs once), then short review | Claude cloud (claude/infra-stream, session_01Cx1t3x5LLVGaHL7CgCdvJR) | - | #70 | owner-requested, not in SPEC; no game-code fix found (SwiftShader backpressure) |
 
-
-| M19a Structure engines | #67 merged master (2715f4b, green 15 min); round 1 CHANGES NEEDED (Keen not applied in combat); fix + jigsaw seed per start + per-tick alloc + stage test + remove hamlet chest table sent to Codex; reviewer session_01WsF2t3CkcmU1PDq2QpPwmd | Codex | - | #67 | src/gen/structures/{placement,jigsaw,adapt,stage}.ts; grid spacing/separation chunks, only wayfarer_hamlet config (34/16) in data/structures/placement.json; jigsaw BFS 4 rotations AABB reject; foundations/stilts from terrain-height; structures stage writes nothing without templates (hashes unchanged); chest loot data/loot/chests/*.json + src/gameplay/chest-loot.ts; affixes Keen/Sturdy/Swift on stack, persisted |
-
-| M13d Projectiles & bows | #68 round 1 CHANGES NEEDED (lazy addSystem inside tick runs caller twice; handoff gaps); fix sent to Codex; reviewer session_01SVgp7tnP9LKY1Y2NtSnQF5 | Codex #2 | - | - | src/entity/projectiles.ts ECS ProjectileC; kinds as data, only 'arrow'; gravity 0.05, drag 0.99/0.6; swept DDA, no tunnelling; hits via M13c combat; embed pulled back 0.05; despawn 1200; pickup survival-fired only; bow 20-tick charge, speed 3*(c^2+2c)/3; fireProjectile with ballistic aimAt for M13f; debug getProjectile; e2e drop+embed and pickup |
-
-| M13e Passive creatures | Prompt given | Claude cloud (claude/m13e) | - | - | src/entity/mobs/<name>.ts; types tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; behaviours per Appendix B; babies 0.5 scale grow 24000 ticks; NO spawn rules (moved to M13g, data recorded in decisions 'For M13g'); emissive moth; lineup probe screenshot; reachability exemptions untouched |
-
-| INFRA-stream Streaming headroom | PR #70 opened; diff checked = exactly the approved time limits + 2 docs; waiting on 2 CI runs (owner re-runs once) | Claude cloud (claude/infra-stream) | - | - | owner-requested, not in SPEC; target m04:221/276 clean on CI |
-
-Ready now (not started): M18b, M18c (for Codex as slots free). Blocked: M19b (needs M19a), M13f (needs M13d). Owner has 2 Codex + 1 Claude cloud. Proposed: M18a Claude now, M19a Codex now, M13d Codex after #65, M13e Claude after M18a. Merge rule: second PR to merge clicks Update branch and needs a fresh green run with normal shard times. Block IDs: append only, flag it.
+Ready now (not started): M18b, M18c (give to Codex as slots free; they can run in parallel). After M13d: M13f. After M19a: M19b. After M13e+M13f: M13g (registers all natural spawning + other-spec fallout, needs owner-approved test edits).
+Merge rule: the second PR to merge clicks Update branch and needs a fresh green run with normal shard times (shard 2 ~12-25 min; check the log for "flaky"). Block IDs: append only, flag it.
 
 ## Open items for the owner
 
-- CI shard 2 is ~25-28 min: m04:221/276 time out once then pass on retry (~12 min). Possible follow-up: make them robust or split shard balance (not this PR's fault; seen on master).
+- CI shard 2 ~25 min with m04:221/276 flaky on master itself: INFRA-stream (#70) found SwiftShader backpressure, no game fix; owner approved longer time limits in m04.spec.ts. Further options are harness-side (SwiftShader flags, runner size) and the owner's call.
 - Worldgen tuning (later): bigger biomes (needs a SPEC edit to the M03c ≥ 10 biomes in 2048² test) plus fewer Mire patches (surface.ts patchNoise > 0.25).
 - Per-biome fog colour: listed in the SPEC biome appendix, owned by no task.
 - Berry bushes (wild_berries source) are owned by no task (M10a review).
