@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-22: #68 green after Update (shard 2 21.8 min, 35 passed, no flaky, m04 13.6 min). Told owner to merge. After merge: M13f ready; free slots Codex #1 + Codex #2.
 - 2026-10-22: #67 M19a merged. #68 updated (Update branch), waiting for green then merge. Free slot: Codex #1. Ready: M19b, M18b, M18c.
 - 2026-10-22: #68 M13d round 2 PASS (head 701181f). Zero cost with no arrows confirmed. Non-blocking: stuck arrows in unloaded columns kept forever; bow 'use' swallows block interaction while held. #67 shard 2 22 min checked myself: 35 passed, no flaky, heap 3.04 %, hole 12 px, m04 13.9 min = same as #70 run 2 -> runner variance. Merge #67 first, then #68 after Update branch + green. After #68: M13f ready.
 - 2026-10-22: #67 M19a round 2 PASS (head 20c94d7, shard 2 22 min, no anomaly). Told owner to merge. Non-blocking: progress/M19a.md Status line stale ('awaiting owner approval'), PR description pre-fix. For M19b: re-add assertion that block-loot loader ignores data/loot/chests/; affix lost via ItemEntity/chest break; stage ignores flat/amplified. After merge: M19b ready; #68 (combat.ts overlap) needs Update branch before merge.
