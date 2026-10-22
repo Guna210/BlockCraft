@@ -16,6 +16,8 @@ import {
   fillRect,
   uiScaleFor,
 } from './ui-kit';
+import { GUI_SCALE_CHANGE_EVENT, settings } from '../engine/settings';
+import type { KeybindAction } from '../engine/keybinds';
 
 const HEART: readonly string[] = [
   '..##.##..',
@@ -537,6 +539,10 @@ export class Hud {
   private lastDebugUpdate = -Infinity;
   private hurtAt = -Infinity;
 
+  private readonly onGuiScaleChange = (): void => {
+    this.lastHudKey = '';
+  };
+
   constructor(
     private readonly input: InputEngine,
     private readonly controller: () => PlayerController | null,
@@ -545,7 +551,9 @@ export class Hud {
     private readonly getDebugSnapshot: () => DebugOverlaySnapshot | null,
     private readonly isSubmerged: () => boolean,
     private readonly screenOpen: () => boolean,
-  ) {}
+  ) {
+    window.addEventListener(GUI_SCALE_CHANGE_EVENT, this.onGuiScaleChange);
+  }
 
   attach(): void {
     window.addEventListener('keydown', this.onKeyDown);
@@ -621,7 +629,7 @@ export class Hud {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === 'F3') {
+    if (event.code === settings.keyBindings.debug) {
       event.preventDefault();
       if (!event.repeat && this.debugEnabled && !this.input.captured) {
         this.debugOpen = !this.debugOpen;
@@ -636,11 +644,16 @@ export class Hud {
       return;
     }
     if (this.input.captured || event.ctrlKey || event.metaKey || event.altKey) return;
-    const digit = /^Digit([1-9])$/.exec(event.code);
     const player = this.controller()?.player;
-    if (digit && player) {
-      player.inventory.selectedSlot = Number(digit[1]) - 1;
-      event.preventDefault();
+    if (player) {
+      for (let slot = 0; slot < 9; slot++) {
+        const action = `hotbar${slot + 1}` as KeybindAction;
+        if (event.code === settings.keyBindings[action]) {
+          player.inventory.selectedSlot = slot;
+          event.preventDefault();
+          break;
+        }
+      }
     }
   };
 

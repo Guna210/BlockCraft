@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DB_NAME, DB_VERSION, SaveDb, STORE_NAMES } from '../../src/persist/idb';
+import { DB_NAME, DB_VERSION, SaveDb, STORE_NAMES, WORLD_STORE_NAMES } from '../../src/persist/idb';
 import {
   readPlayerRecord,
   readWorldRecord,
@@ -12,7 +12,7 @@ import { createFakeIdb, compareKeys } from './helpers/fake-idb';
 describe('M17b — IndexedDB wrapper', () => {
   afterEach(() => migrations.clear());
 
-  it('creates the five stores of the SPEC schema on first open', async () => {
+  it('creates the world and settings stores on first open', async () => {
     const fake = createFakeIdb();
     await SaveDb.open(fake.env);
     expect([...STORE_NAMES].sort()).toEqual([
@@ -20,6 +20,7 @@ describe('M17b — IndexedDB wrapper', () => {
       'entities',
       'players',
       'regions',
+      'settings',
       'worlds',
     ]);
     expect(fake.versionOf(DB_NAME)).toBe(DB_VERSION);
@@ -82,8 +83,13 @@ describe('M17b — IndexedDB wrapper', () => {
         { op: 'put', store: 'entities', value: { world, dim: 'overworld' } },
       ]);
     }
+    await db.write([
+      { op: 'put', store: 'settings', value: { key: 'global', value: { fov: 80 } } },
+    ]);
     await db.deleteWorld('a');
-    for (const store of STORE_NAMES) expect(await db.count(store)).toBe(1);
+    for (const store of WORLD_STORE_NAMES) expect(await db.count(store)).toBe(1);
+    expect(await db.count('settings')).toBe(1);
+    expect(await db.get('settings', 'global')).toEqual({ key: 'global', value: { fov: 80 } });
     expect(await db.get('worlds', 'a')).toBeUndefined();
     expect(await db.get('worlds', 'ab')).toEqual({ name: 'ab' });
   });

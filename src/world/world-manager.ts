@@ -82,6 +82,7 @@ export const PANORAMA_SEED = 'blockcraft-panorama';
 export const PANORAMA_CENTER = { x: -64, z: -224 } as const;
 const PANORAMA_RENDER_DISTANCE = 4;
 const PANORAMA_TIME = 6000;
+const NO_ACTIVE_PARTICLES = { rain: 0, snow: 0 };
 
 /** What a new world is created with: the debug `createWorld` options and the Create World screen. */
 /** What the panorama left behind when it was torn down (read through the debug API). */
@@ -1483,14 +1484,14 @@ export class WorldManager {
           : { drawCalls: 0, triangles: 0 };
 
       renderStats.weather.state = weatherState;
-      if (this.weatherRenderer && this.world) {
+      if (settings.particles && this.weatherRenderer && this.world) {
         renderStats.weather.activeParticles = this.weatherRenderer.getActiveParticleCounts(
           this.camera.position,
           this.world,
           ticks / 20.0,
         );
       } else {
-        renderStats.weather.activeParticles = { rain: 0, snow: 0 };
+        renderStats.weather.activeParticles = NO_ACTIVE_PARTICLES;
       }
 
       renderStats.drawCalls +=

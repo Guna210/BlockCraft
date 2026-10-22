@@ -10,6 +10,8 @@ import { PANORAMA_CENTER, PANORAMA_SEED, type WorldManager } from '../world/worl
 import { drawButton, drawPanel, UI, uiScaleFor, type Rect } from './ui-kit';
 import { drawText, GLYPH_HEIGHT, textWidth } from './pixel-font';
 import { renderLogo } from './logo';
+import { isActionCode } from '../engine/keybinds';
+import { settings } from '../engine/settings';
 
 /** The splash lines one is picked from each time the menu is shown (data/splashes.json). */
 export const SPLASHES: readonly string[] = rawSplashes as string[];
@@ -26,10 +28,11 @@ const LOGO_Y = 26;
 const BUTTON_W = 150;
 const BUTTON_H = 20;
 
-type MenuButton = 'singleplayer' | 'credits' | 'back';
+type MenuButton = 'singleplayer' | 'settings' | 'credits' | 'back';
 
 const BUTTON_LABELS: Record<MenuButton, { text: string; aria: string }> = {
   singleplayer: { text: 'SINGLEPLAYER', aria: 'Singleplayer' },
+  settings: { text: 'SETTINGS', aria: 'Settings' },
   credits: { text: 'CREDITS', aria: 'Credits' },
   back: { text: 'BACK', aria: 'Back' },
 };
@@ -85,6 +88,7 @@ export class MainMenu {
     private readonly camera: Camera,
     private readonly manager: WorldManager,
     private readonly openWorldList: () => void,
+    private readonly openSettings: () => void = () => {},
   ) {
     const logo = renderLogo();
     this.logoCanvas = document.createElement('canvas');
@@ -163,6 +167,12 @@ export class MainMenu {
     this.frameDirty = true;
   }
 
+  /** Requests one fresh menu composite after an overlay closes or settings change. */
+  refresh(): void {
+    this.invalidate();
+    this.layout();
+  }
+
   /** True when the frame loop has to draw a frame: the menu changed or the panorama is moving. */
   get needsFrame(): boolean {
     return this.visible && (this.frameDirty || this.manager.panorama);
@@ -228,6 +238,7 @@ export class MainMenu {
   private activate(name: MenuButton): void {
     if (!this.visible) return;
     if (name === 'singleplayer') this.openWorldList();
+    else if (name === 'settings') this.openSettings();
     else if (name === 'credits') this.credits = true;
     else this.credits = false;
     this.hovered = null;
@@ -235,7 +246,12 @@ export class MainMenu {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (!this.visible || !this.credits || event.key !== 'Escape') return;
+    if (
+      !this.visible ||
+      !this.credits ||
+      !isActionCode(event.code, 'menuBack', settings.keyBindings)
+    )
+      return;
     event.preventDefault();
     this.activate('back');
   };
@@ -246,7 +262,8 @@ export class MainMenu {
       return { back: { x, y: Math.floor(this.uiH / 2) + 74, w: BUTTON_W, h: BUTTON_H } };
     return {
       singleplayer: { x, y: 110, w: BUTTON_W, h: BUTTON_H },
-      credits: { x, y: 136, w: BUTTON_W, h: BUTTON_H },
+      settings: { x, y: 136, w: BUTTON_W, h: BUTTON_H },
+      credits: { x, y: 162, w: BUTTON_W, h: BUTTON_H },
     };
   }
 
