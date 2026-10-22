@@ -2,6 +2,8 @@ import { createDefaultPipeline } from '../gen/pipeline';
 import { ChunkColumn } from '../world/column';
 import type { PackedChunkStorage } from '../world/chunk';
 import { BlockRegistry } from '../world/blocks/registry';
+import type { WorldType } from '../gen/world-options';
+import type { OverworldBiomeId } from '../gen/biomes';
 const ctx: Worker = self as unknown as Worker;
 
 // Ensure registry is loaded in worker
@@ -38,7 +40,9 @@ export interface GenWorkerRequest {
   seed: number;
   cx: number;
   cz: number;
-  type: 'default' | 'flat';
+  type: WorldType;
+  /** The biome of a Single Biome world. */
+  biome?: OverworldBiomeId;
 }
 
 export interface SectionDataTransfer {
@@ -65,7 +69,7 @@ export interface GenWorkerResponse {
 }
 
 export function processGenMessage(event: MessageEvent): void {
-  const { id, seed, cx, cz, type } = event.data as GenWorkerRequest;
+  const { id, seed, cx, cz, type, biome } = event.data as GenWorkerRequest;
 
   // The clock covers everything the worker spends on this column, packaging included
   const start = performance.now();
@@ -74,7 +78,7 @@ export function processGenMessage(event: MessageEvent): void {
   if (type === 'flat') {
     generateFlatColumn(col);
   } else {
-    pipeline.generateColumn(seed, cx, cz, col);
+    pipeline.generateColumn(seed, cx, cz, col, { type, biome });
   }
 
   const sections: SectionDataTransfer[] = [];

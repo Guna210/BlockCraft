@@ -4,6 +4,7 @@ import { ChunkColumn } from './column';
 import { BlockRegistry } from './blocks/registry';
 import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
+import type { WorldType } from '../gen/world-options';
 import { EntityQuery } from '../entity/query';
 import { CurrentEngine } from '../gameplay/current';
 import type { ItemSpawner } from '../gameplay/mechanics';
@@ -61,7 +62,7 @@ export class World {
   public readonly listeners = new Set<WorldListener>();
   /** Keys (`cx,cz`) of generated columns that no mob spawner has populated yet. */
   public readonly unpopulatedColumns = new Set<string>();
-  public worldType: 'default' | 'flat' = 'default';
+  public worldType: WorldType = 'default';
 
   /**
    * Columns whose blocks changed through `setBlockStateId` since the persistence layer last took

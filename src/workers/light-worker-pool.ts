@@ -112,6 +112,15 @@ export class LightWorkerPool {
     }
   }
 
+  /**
+   * Drops every queued job and, when jobs are running, replaces the workers so their work stops
+   * too. The jobs' promises never settle; their owner (the streamer) has already abandoned them.
+   */
+  public cancelAll(): void {
+    if (this.activeJobs.size > 0) this.setPoolSize(this.workerCount);
+    else this.queue = [];
+  }
+
   public get workerCount(): number {
     return this.workers.length;
   }

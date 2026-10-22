@@ -7,6 +7,7 @@ import {
   TerrainClimateSample,
   TerrainOrigin,
 } from './terrain';
+import { densityCeiling, shapeHeight } from './world-options';
 
 /**
  * Height of the highest solid block that `terrainShapeStage` produces at (wx, wz), without
@@ -102,7 +103,8 @@ function isIsolatedTop(
       ? s.fbm3D((wx + ORIGIN.x) * 0.015, yb * 0.025, (wz + ORIGIN.z) * 0.015) * noiseAmp
       : 0.0;
   let densityBelow = targetH - yb + n3d;
-  if (yb > 220) densityBelow -= (yb - 220) * 2.0;
+  const ceiling = densityCeiling();
+  if (yb > ceiling) densityBelow -= (yb - ceiling) * 2.0;
   if (densityBelow > 0) return false;
   return !(
     terrainSolidAt(terrainStageSeed, wx - 1, y, wz) ||
@@ -119,8 +121,10 @@ export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: numb
 
   const targetH = CLIMATE.surfaceHeight;
   const cont = CLIMATE.continentalness;
-  const uncarved =
-    splineContinentalness(cont) + (CLIMATE.peaks * 25.0 - 10.0) * splineErosion(CLIMATE.erosion);
+  const uncarved = shapeHeight(
+    splineContinentalness(cont) + (CLIMATE.peaks * 25.0 - 10.0) * splineErosion(CLIMATE.erosion),
+  );
+  const ceiling = densityCeiling();
 
   let river3DFactor = 1.0;
   if (cont >= -0.15) {
@@ -147,7 +151,7 @@ export function sampleTerrainTopY(terrainStageSeed: number, wx: number, wz: numb
         ? s.fbm3D((wx + ORIGIN.x) * 0.015, y * 0.025, (wz + ORIGIN.z) * 0.015) * noiseAmp
         : 0.0;
     let density = targetH - y + n3d;
-    if (y > 220) density -= (y - 220) * 2.0;
+    if (y > ceiling) density -= (y - ceiling) * 2.0;
     if (density > 0 && !isIsolatedTop(s, terrainStageSeed, wx, y, wz, noiseMinY, noiseAmp, targetH))
       return y;
   }

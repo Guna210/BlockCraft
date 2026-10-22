@@ -655,6 +655,11 @@ export class ChunkRenderer {
     return remains;
   }
 
+  /** The columns ("cx,cz") that have section meshes on the GPU. */
+  public meshedColumns(): string[] {
+    return Array.from(this.columnMeshes.keys());
+  }
+
   /** Columns whose fade-in has not finished at `nowMs` (see column-fade.ts). */
   public fadingColumns(nowMs: number): number {
     return this.fades.fadingColumns(nowMs);

@@ -2,6 +2,7 @@ import type { SharedWorkerBudget } from './shared-worker-budget';
 import type { ColumnWorkPriority } from '../world/streamer';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
+import type { TerrainVariant } from '../gen/world-options';
 
 // Number of most recent columns the percentile statistics cover
 const GEN_STATS_WINDOW = 100;
@@ -23,7 +24,7 @@ interface GenJob {
   seed: number;
   cx: number;
   cz: number;
-  type: 'default' | 'flat';
+  variant: TerrainVariant;
   resolve: (result: GenResult) => void;
   reject: (err: Error) => void;
 }
@@ -140,6 +141,15 @@ export class GenWorkerPool {
     }
   }
 
+  /**
+   * Drops every queued job and, when jobs are running, replaces the workers so their work stops
+   * too. The jobs' promises never settle; their owner (the streamer) has already abandoned them.
+   */
+  public cancelAll(): void {
+    if (this.activeJobs.size > 0) this.setPoolSize(this.workerCount);
+    else this.queue = [];
+  }
+
   public get workerCount(): number {
     return this.workers.length;
   }
@@ -168,7 +178,7 @@ export class GenWorkerPool {
     seed: number,
     cx: number,
     cz: number,
-    type: 'default' | 'flat',
+    variant: TerrainVariant['type'] | TerrainVariant,
   ): Promise<GenResult> {
     const id = this.nextJobId++;
 
@@ -178,7 +188,7 @@ export class GenWorkerPool {
         seed,
         cx,
         cz,
-        type,
+        variant: typeof variant === 'string' ? { type: variant } : variant,
         resolve,
         reject,
       };
@@ -208,7 +218,8 @@ export class GenWorkerPool {
         seed: job.seed,
         cx: job.cx,
         cz: job.cz,
-        type: job.type,
+        type: job.variant.type,
+        biome: job.variant.biome,
       });
     }
   }
