@@ -36,7 +36,7 @@ import {
   type BookRow,
 } from './crafting-screen';
 import { UI, drawButton, drawPanel, uiScaleFor, type Rect } from './ui-kit';
-import { displayName, drawText, textWidth } from './pixel-font';
+import { displayName, displayItemStackName, drawText, textWidth } from './pixel-font';
 import { crafting } from '../gameplay/crafting';
 import {
   canFillRecipe,
@@ -44,7 +44,7 @@ import {
   takeCraftingOutput,
   type CraftingSlot,
 } from '../gameplay/crafting-session';
-import { items } from '../gameplay/items';
+import { isItemAffix, items, type ItemAffix } from '../gameplay/items';
 import { computeKilnLayout, type KilnLayout } from './kiln-layout';
 import { drawKilnScreen, kilnTooltipFor } from './kiln-screen';
 import type { BlockEntityInstance } from '../world/block-entities';
@@ -56,6 +56,31 @@ import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/c
 export type ScreenName =
   'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping' | 'pause';
 export type ClickButton = 'left' | 'right';
+
+interface ExternalItemStack {
+  id: string;
+  count: number;
+  damage?: number | null;
+  affix?: ItemAffix;
+}
+
+function sameItemStackKind(a: ExternalItemStack, b: ExternalItemStack): boolean {
+  return a.id === b.id && (a.damage ?? null) === (b.damage ?? null) && a.affix === b.affix;
+}
+
+function toExternalItemStack(stack: {
+  id: string;
+  count: number;
+  damage?: unknown;
+  affix?: unknown;
+}): ExternalItemStack {
+  return {
+    id: stack.id,
+    count: stack.count,
+    ...(typeof stack.damage === 'number' || stack.damage === null ? { damage: stack.damage } : {}),
+    ...(isItemAffix(stack.affix) ? { affix: stack.affix } : {}),
+  };
+}
 
 export interface ScreenSnapshot {
   name: ScreenName | null;
@@ -640,8 +665,8 @@ export class UiManager {
       const stack = this.grid[slot];
       if (!stack) return;
       const inventory = this.requirePlayer().inventory;
-      const moved = Math.min(stack.count, inventory.capacity(stack.id));
-      if (moved) inventory.insert(stack.id, moved);
+      const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
+      if (moved) inventory.insert(stack.id, moved, stack);
       stack.count -= moved;
       if (!stack.count) this.grid[slot] = null;
       return;
@@ -659,15 +684,18 @@ export class UiManager {
       return;
     }
     this.clickExternalSlot(
-      () => this.getChestSlot(slot),
+      () => {
+        const stack = this.getChestSlot(slot);
+        return stack ? toExternalItemStack(stack) : null;
+      },
       (stack) => this.setChestSlot(slot, stack),
       button,
     );
   }
 
   private clickExternalSlot(
-    read: () => { id: string; count: number } | null,
-    write: (stack: { id: string; count: number } | null) => void,
+    read: () => ExternalItemStack | null,
+    write: (stack: ExternalItemStack | null) => void,
     button: ClickButton,
   ): void {
     const inventory = this.requirePlayer().inventory;
@@ -675,10 +703,11 @@ export class UiManager {
     const cursor = inventory.cursor;
     if (button === 'left') {
       if (!cursor) {
-        inventory.cursor = slotStack ? { id: slotStack.id, count: slotStack.count } : null;
+        inventory.cursor = slotStack ? { ...slotStack } : null;
         write(null);
       } else if (
-        slotStack?.id === cursor.id &&
+        slotStack &&
+        sameItemStackKind(slotStack, cursor) &&
         items.get(cursor.id).maxStack > 1 &&
         slotStack.count < items.get(cursor.id).maxStack
       ) {
@@ -688,20 +717,20 @@ export class UiManager {
         if (!cursor.count) inventory.cursor = null;
       } else {
         write(cursor);
-        inventory.cursor = slotStack ? { id: slotStack.id, count: slotStack.count } : null;
+        inventory.cursor = slotStack ? { ...slotStack } : null;
       }
     } else if (!cursor && slotStack) {
       const half = Math.ceil(slotStack.count / 2);
-      inventory.cursor = { id: slotStack.id, count: half };
+      inventory.cursor = { ...slotStack, count: half };
       slotStack.count -= half;
       write(slotStack.count ? slotStack : null);
     } else if (
       cursor &&
       (!slotStack ||
-        (slotStack.id === cursor.id && slotStack.count < items.get(cursor.id).maxStack))
+        (sameItemStackKind(slotStack, cursor) && slotStack.count < items.get(cursor.id).maxStack))
     ) {
       if (slotStack) slotStack.count++;
-      else write({ id: cursor.id, count: 1 });
+      else write({ ...cursor, count: 1 });
       cursor.count--;
       if (!cursor.count) inventory.cursor = null;
     }
@@ -718,18 +747,26 @@ export class UiManager {
     return halves[Math.floor(slot / 27)]!.slots[slot % 27] ?? null;
   }
 
-  private setChestSlot(slot: number, stack: ChestSlot | null): void {
+  private setChestSlot(slot: number, stack: ExternalItemStack | null): void {
     const halves = this.chestStorage?.halves;
     if (!halves || slot < 0 || slot >= halves.length * 27) return;
-    halves[Math.floor(slot / 27)]!.slots[slot % 27] = stack ? { ...stack } : null;
+    halves[Math.floor(slot / 27)]!.slots[slot % 27] = stack
+      ? ({
+          id: stack.id,
+          count: stack.count,
+          ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+          ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
+        } as ChestSlot)
+      : null;
   }
 
   private quickMoveChestToInventory(slot: number): void {
-    const stack = this.getChestSlot(slot);
-    if (!stack) return;
+    const stored = this.getChestSlot(slot);
+    if (!stored) return;
+    const stack = toExternalItemStack(stored);
     const inventory = this.requirePlayer().inventory;
-    const moved = Math.min(stack.count, inventory.capacity(stack.id));
-    if (!moved || !inventory.insert(stack.id, moved)) return;
+    const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
+    if (!moved || !inventory.insert(stack.id, moved, stack)) return;
     stack.count -= moved;
     this.setChestSlot(slot, stack.count ? stack : null);
   }
@@ -741,16 +778,23 @@ export class UiManager {
     let count = stack.count;
     const max = items.get(stack.id).maxStack;
     for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
-      const dest = this.getChestSlot(target);
-      if (!dest || dest.id !== stack.id) continue;
+      const stored = this.getChestSlot(target);
+      const dest = stored ? toExternalItemStack(stored) : null;
+      if (!dest || !sameItemStackKind(dest, stack)) continue;
       const moved = Math.min(count, max - dest.count);
       dest.count += moved;
+      stored!.count = dest.count;
       count -= moved;
     }
     for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
       if (this.getChestSlot(target)) continue;
       const moved = Math.min(count, max);
-      this.setChestSlot(target, { id: stack.id, count: moved });
+      this.setChestSlot(target, {
+        id: stack.id,
+        count: moved,
+        ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+        ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
+      });
       count -= moved;
     }
     stack.count = count;
@@ -768,7 +812,9 @@ export class UiManager {
       const current = kiln[slotKey];
       if (shift) {
         if (current) {
-          inv.route(current);
+          const source = toExternalItemStack(current);
+          inv.route(source);
+          current.count = source.count;
           if (current.count <= 0) kiln[slotKey] = null;
         }
         return;
@@ -777,11 +823,7 @@ export class UiManager {
       if (button === 'left') {
         if (!inv.cursor) {
           if (current) {
-            inv.cursor = {
-              id: current.id,
-              count: current.count,
-              damage: current.damage ?? undefined,
-            };
+            inv.cursor = toExternalItemStack(current);
             kiln[slotKey] = null;
           }
         } else {
@@ -791,24 +833,22 @@ export class UiManager {
               id: cursor.id,
               count: cursor.count,
               damage: cursor.damage ?? null,
+              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
             };
             inv.cursor = null;
-          } else if (current.id === cursor.id) {
+          } else if (sameItemStackKind(toExternalItemStack(current), cursor)) {
             const max = items.get(current.id).maxStack;
             const canAdd = Math.min(cursor.count, max - current.count);
             current.count += canAdd;
             cursor.count -= canAdd;
             if (cursor.count <= 0) inv.cursor = null;
           } else {
-            const temp = {
-              id: current.id,
-              count: current.count,
-              damage: current.damage ?? undefined,
-            };
+            const temp = toExternalItemStack(current);
             kiln[slotKey] = {
               id: cursor.id,
               count: cursor.count,
               damage: cursor.damage ?? null,
+              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
             };
             inv.cursor = temp;
           }
@@ -818,9 +858,8 @@ export class UiManager {
           if (current) {
             const take = Math.ceil(current.count / 2);
             inv.cursor = {
-              id: current.id,
+              ...toExternalItemStack(current),
               count: take,
-              damage: current.damage ?? undefined,
             };
             current.count -= take;
             if (current.count <= 0) kiln[slotKey] = null;
@@ -832,10 +871,11 @@ export class UiManager {
               id: cursor.id,
               count: 1,
               damage: cursor.damage ?? null,
+              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
             };
             cursor.count--;
             if (cursor.count <= 0) inv.cursor = null;
-          } else if (current.id === cursor.id) {
+          } else if (sameItemStackKind(toExternalItemStack(current), cursor)) {
             const max = items.get(current.id).maxStack;
             if (current.count < max) {
               current.count++;
@@ -849,8 +889,10 @@ export class UiManager {
       if (!kiln.output) return;
       if (shift) {
         const before = kiln.output.count;
-        inv.route(kiln.output);
-        const moved = before - (kiln.output ? kiln.output.count : 0);
+        const output = toExternalItemStack(kiln.output);
+        inv.route(output);
+        kiln.output.count = output.count;
+        const moved = before - output.count;
         if (moved > 0) {
           addXp(player, kiln.storedXp);
           kiln.storedXp = 0;
@@ -861,15 +903,11 @@ export class UiManager {
 
       if (button === 'left') {
         if (!inv.cursor) {
-          inv.cursor = {
-            id: kiln.output.id,
-            count: kiln.output.count,
-            damage: kiln.output.damage ?? undefined,
-          };
+          inv.cursor = toExternalItemStack(kiln.output);
           addXp(player, kiln.storedXp);
           kiln.storedXp = 0;
           kiln.output = null;
-        } else if (inv.cursor.id === kiln.output.id) {
+        } else if (sameItemStackKind(inv.cursor, toExternalItemStack(kiln.output))) {
           const max = items.get(kiln.output.id).maxStack;
           const canAdd = Math.min(kiln.output.count, max - inv.cursor.count);
           if (canAdd > 0) {
@@ -884,15 +922,14 @@ export class UiManager {
         if (!inv.cursor) {
           const take = Math.ceil(kiln.output.count / 2);
           inv.cursor = {
-            id: kiln.output.id,
+            ...toExternalItemStack(kiln.output),
             count: take,
-            damage: kiln.output.damage ?? undefined,
           };
           kiln.output.count -= take;
           addXp(player, kiln.storedXp);
           kiln.storedXp = 0;
           if (kiln.output.count <= 0) kiln.output = null;
-        } else if (inv.cursor.id === kiln.output.id) {
+        } else if (sameItemStackKind(inv.cursor, toExternalItemStack(kiln.output))) {
           const max = items.get(kiln.output.id).maxStack;
           if (inv.cursor.count < max) {
             inv.cursor.count++;
@@ -916,13 +953,15 @@ export class UiManager {
         if (
           isFuel &&
           (!kiln.fuel ||
-            (kiln.fuel.id === stack.id && kiln.fuel.count < items.get(stack.id).maxStack))
+            (sameItemStackKind(toExternalItemStack(kiln.fuel), stack) &&
+              kiln.fuel.count < items.get(stack.id).maxStack))
         ) {
           if (!kiln.fuel) {
             kiln.fuel = {
               id: stack.id,
               count: stack.count,
               damage: stack.damage ?? null,
+              ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
             };
             inv.slots[pSlot] = null;
           } else {
@@ -935,13 +974,15 @@ export class UiManager {
         } else if (
           isSmeltable &&
           (!kiln.input ||
-            (kiln.input.id === stack.id && kiln.input.count < items.get(stack.id).maxStack))
+            (sameItemStackKind(toExternalItemStack(kiln.input), stack) &&
+              kiln.input.count < items.get(stack.id).maxStack))
         ) {
           if (!kiln.input) {
             kiln.input = {
               id: stack.id,
               count: stack.count,
               damage: stack.damage ?? null,
+              ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
             };
             inv.slots[pSlot] = null;
           } else {
@@ -1077,7 +1118,7 @@ export class UiManager {
       if (this.hoverSlot < 41) return tooltipFor(this.requirePlayer().inventory, this.hoverSlot);
       if (this.hoverSlot < INVENTORY_OUTPUT_SLOT) {
         const stack = this.grid[this.hoverSlot - INVENTORY_CRAFT_BASE];
-        return stack ? displayName(stack.id) : null;
+        return stack ? displayItemStackName(stack.id, stack.affix) : null;
       }
       if (this.hoverSlot === INVENTORY_OUTPUT_SLOT) {
         const output = this.outputStack();
@@ -1086,7 +1127,7 @@ export class UiManager {
     } else if (this.screen === 'crafting') {
       if (this.hoverSlot < CRAFTING_OUTPUT_SLOT) {
         const stack = this.grid[this.hoverSlot];
-        return stack ? displayName(stack.id) : null;
+        return stack ? displayItemStackName(stack.id, stack.affix) : null;
       }
       if (this.hoverSlot === CRAFTING_OUTPUT_SLOT) {
         const output = this.outputStack();
@@ -1097,7 +1138,7 @@ export class UiManager {
     } else {
       if (this.hoverSlot < this.chestSlotCount) {
         const stack = this.getChestSlot(this.hoverSlot);
-        return stack ? displayName(stack.id) : null;
+        return stack ? displayItemStackName(stack.id, toExternalItemStack(stack).affix) : null;
       }
       return tooltipFor(this.requirePlayer().inventory, this.hoverSlot - this.chestSlotCount);
     }
@@ -1746,8 +1787,8 @@ export class UiManager {
     const cursor = inventory.cursor;
     if (!cursor) return;
     const external: Array<{
-      read: () => { id: string; count: number } | null;
-      write: (stack: { id: string; count: number } | null) => void;
+      read: () => ExternalItemStack | null;
+      write: (stack: ExternalItemStack | null) => void;
     }> = [];
     for (const slot of [...new Set(slots)]) {
       if (
@@ -1767,14 +1808,19 @@ export class UiManager {
         });
       } else if (this.screen === 'chest' && slot < this.chestSlotCount) {
         external.push({
-          read: () => this.getChestSlot(slot),
+          read: () => {
+            const stack = this.getChestSlot(slot);
+            return stack ? toExternalItemStack(stack) : null;
+          },
           write: (stack) => this.setChestSlot(slot, stack),
         });
       }
     }
     const eligible = external.filter(({ read }) => {
       const stack = read();
-      return !stack || (stack.id === cursor.id && stack.count < items.get(stack.id).maxStack);
+      return (
+        !stack || (sameItemStackKind(stack, cursor) && stack.count < items.get(stack.id).maxStack)
+      );
     });
     if (!eligible.length) return;
     const each = button === 'left' ? Math.floor(cursor.count / eligible.length) : 1;
@@ -1788,7 +1834,7 @@ export class UiManager {
       );
       if (!moved) continue;
       if (stack) stack.count += moved;
-      else target.write({ id: cursor.id, count: moved });
+      else target.write({ ...cursor, count: moved });
       cursor.count -= moved;
     }
     if (!cursor.count) inventory.cursor = null;

@@ -1,6 +1,7 @@
 import type { InputEngine } from '../engine/input';
 import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
+import type { ItemAffix } from '../gameplay/items';
 import type { Player } from '../entity/player';
 import { getToolDurability, getTotalArmorDefense } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
@@ -85,7 +86,7 @@ export interface HudSnapshot {
   xpLevel: number;
   xpProgress: number;
   selectedSlot: number;
-  hotbar: Array<{ id: string; count: number; damage?: number } | null>;
+  hotbar: Array<{ id: string; count: number; damage?: number; affix?: ItemAffix } | null>;
   /** Attack meter, 0 after a swing to 1 when recharged; quantized to whole pixels of the meter. */
   attackCooldown: number;
 }
@@ -137,6 +138,7 @@ export function hudSnapshot(player: Player, submerged: boolean, attackCooldown =
             ...(stack.damage !== undefined && stack.damage !== null
               ? { damage: stack.damage }
               : {}),
+            ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
           }
         : null,
     ),
@@ -362,7 +364,7 @@ function drawHud(
       drawIcon(ctx, icons, sheet, stack.id, (x + 1) * s, (hotbarY + 1) * s, 16 * s);
       if (stack.count > 1) drawCount(ctx, stack.count, x, hotbarY, s);
       if (stack.damage !== undefined && stack.damage > 0) {
-        const durability = getToolDurability(stack.id);
+        const durability = getToolDurability(stack);
         if (durability !== null && durability > 0) {
           drawDurabilityBar(ctx, stack.damage, durability, x, hotbarY, s);
         }

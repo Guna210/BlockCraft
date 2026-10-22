@@ -1,22 +1,39 @@
-import { items } from './items';
+import { items, type ItemAffix } from './items';
 
 export interface ItemStack {
   slot: number;
   id: string;
   count: number;
   damage?: number | null;
+  affix?: ItemAffix;
 }
 
 export interface CursorStack {
   id: string;
   count: number;
   damage?: number | null;
+  affix?: ItemAffix;
 }
 
 export type InventoryTarget = number | 'cursor';
 const ARMOR = ['head', 'chest', 'legs', 'feet'] as const;
 const HOTBAR = Array.from({ length: 9 }, (_, i) => i);
 const MAIN = Array.from({ length: 27 }, (_, i) => i + 9);
+
+function sameStackKind(
+  a: Pick<CursorStack, 'id' | 'damage' | 'affix'>,
+  b: Pick<CursorStack, 'id' | 'damage' | 'affix'>,
+): boolean {
+  return a.id === b.id && (a.damage ?? null) === (b.damage ?? null) && a.affix === b.affix;
+}
+
+function setStackVariant(target: ItemStack, source: Pick<CursorStack, 'damage' | 'affix'>): void {
+  if (source.damage !== undefined) target.damage = source.damage;
+  else delete target.damage;
+  if (source.affix !== undefined) target.affix = source.affix;
+  else delete target.affix;
+}
+
 /** Slot operations are synchronous model changes; no input, DOM or rendering. */
 export class Inventory {
   readonly slots: Array<ItemStack | null> = Array.from({ length: 41 }, () => null);
@@ -37,24 +54,24 @@ export class Inventory {
   get held(): ItemStack | null {
     return this.slots[this.selected]!;
   }
-  capacity(id: string): number {
+  capacity(id: string, variant: Pick<CursorStack, 'damage' | 'affix'> = {}): number {
     const max = items.get(id).maxStack;
     let room = 0;
     for (let slot = 0; slot < 36; slot++) {
       const stack = this.slots[slot];
       if (!stack) room += max;
-      else if (stack.id === id) room += max - stack.count;
+      else if (sameStackKind(stack, { id, ...variant })) room += max - stack.count;
     }
     return room;
   }
   /** Atomic insertion: a pickup stays in the world unless the entire stack fits. */
-  insert(id: string, count: number): boolean {
+  insert(id: string, count: number, variant: Pick<CursorStack, 'damage' | 'affix'> = {}): boolean {
     if (!Number.isSafeInteger(count) || count <= 0) throw new Error('Item count must be positive');
     const max = items.get(id).maxStack;
-    if (this.capacity(id) < count) return false;
+    if (this.capacity(id, variant) < count) return false;
     for (let slot = 0; slot < 36 && count > 0; slot++) {
       const stack = this.slots[slot];
-      if (stack?.id === id) {
+      if (stack && sameStackKind(stack, { id, ...variant })) {
         const moved = Math.min(count, max - stack.count);
         stack.count += moved;
         count -= moved;
@@ -66,6 +83,7 @@ export class Inventory {
         const record = this.records[slot]!;
         record.id = id;
         record.count = moved;
+        setStackVariant(record, variant);
         this.slots[slot] = record;
         count -= moved;
       }
@@ -83,6 +101,8 @@ export class Inventory {
     const record = this.records[this.selected]!;
     record.id = id;
     record.count = 1;
+    delete record.damage;
+    delete record.affix;
     this.slots[this.selected] = record;
   }
   snapshot(includeEquipment = false): Array<ItemStack | null> {
@@ -96,6 +116,7 @@ export class Inventory {
           id: this.cursor.id,
           count: this.cursor.count,
           ...(this.cursor.damage !== undefined ? { damage: this.cursor.damage } : {}),
+          ...(this.cursor.affix !== undefined ? { affix: this.cursor.affix } : {}),
         }
       : null;
   }
@@ -154,12 +175,13 @@ export class Inventory {
               id: stack.id,
               count: stack.count,
               ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+              ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
             }
           : null;
         this.put(slot, null);
       } else if (this.accepts(slot, this.cursor.id)) {
         // Unstackable items never merge, so the same tool or armor piece swaps like any other item.
-        if (stack?.id === this.cursor.id && items.get(stack.id).maxStack > 1) {
+        if (stack && sameStackKind(stack, this.cursor) && items.get(stack.id).maxStack > 1) {
           const moved = Math.min(this.cursor.count, items.get(stack.id).maxStack - stack.count);
           stack.count += moved;
           this.cursor.count -= moved;
@@ -171,6 +193,7 @@ export class Inventory {
                 id: stack.id,
                 count: stack.count,
                 ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+                ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
               }
             : null;
           this.put(slot, held);
@@ -188,13 +211,15 @@ export class Inventory {
           id: stack.id,
           count,
           ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+          ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
         };
         stack.count -= count;
         if (!stack.count) this.put(slot, null);
       } else if (
         this.cursor &&
         this.accepts(slot, this.cursor.id) &&
-        (!stack || (stack.id === this.cursor.id && stack.count < items.get(stack.id).maxStack))
+        (!stack ||
+          (sameStackKind(stack, this.cursor) && stack.count < items.get(stack.id).maxStack))
       ) {
         if (stack) stack.count++;
         else
@@ -202,6 +227,7 @@ export class Inventory {
             id: this.cursor.id,
             count: 1,
             ...(this.cursor.damage !== undefined ? { damage: this.cursor.damage } : {}),
+            ...(this.cursor.affix !== undefined ? { affix: this.cursor.affix } : {}),
           });
         this.cursor.count--;
         this.cleanCursor();
@@ -211,7 +237,7 @@ export class Inventory {
 
   /** Merge first, then fill empty targets, leaving any overflow at source. */
   public route(
-    source: { id: string; count: number; damage?: number | null },
+    source: { id: string; count: number; damage?: number | null; affix?: ItemAffix },
     targets: readonly number[] = [...MAIN, ...HOTBAR],
   ): void {
     for (const empty of [false, true])
@@ -220,7 +246,7 @@ export class Inventory {
         if (
           !source.count ||
           !this.accepts(slot, source.id) ||
-          (empty ? !!target : target?.id !== source.id)
+          (empty ? !!target : !target || !sameStackKind(target, source))
         )
           continue;
         const moved = Math.min(source.count, items.get(source.id).maxStack - (target?.count ?? 0));
@@ -230,6 +256,7 @@ export class Inventory {
             id: source.id,
             count: moved,
             ...(source.damage !== undefined ? { damage: source.damage } : {}),
+            ...(source.affix !== undefined ? { affix: source.affix } : {}),
           });
         source.count -= moved;
       }
@@ -260,7 +287,8 @@ export class Inventory {
       const targets = [...new Set(slots)].filter((slot) => {
         const stack = this.slots[slot];
         return (
-          this.accepts(slot, cursor.id) && (!stack || (stack.id === cursor.id && stack.count < max))
+          this.accepts(slot, cursor.id) &&
+          (!stack || (sameStackKind(stack, cursor) && stack.count < max))
         );
       });
       if (!targets.length) return;
@@ -275,6 +303,7 @@ export class Inventory {
             id: cursor.id,
             count: moved,
             ...(cursor.damage !== undefined ? { damage: cursor.damage } : {}),
+            ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
           });
         cursor.count -= moved;
       }
@@ -289,7 +318,9 @@ export class Inventory {
       for (const full of [false, true])
         for (let slot = 0; slot < 41; slot++) {
           const stack = this.slots[slot];
-          if (!stack || stack.id !== this.cursor.id || (stack.count === max) !== full) continue;
+          if (!stack || !sameStackKind(stack, this.cursor) || (stack.count === max) !== full) {
+            continue;
+          }
           const moved = Math.min(stack.count, max - this.cursor.count);
           this.cursor.count += moved;
           stack.count -= moved;
@@ -302,9 +333,9 @@ export class Inventory {
     this.operation(() => {
       const cursor = this.cursor;
       if (!cursor) return;
-      const moved = Math.min(cursor.count, this.capacity(cursor.id));
+      const moved = Math.min(cursor.count, this.capacity(cursor.id, cursor));
       if (!moved) return;
-      this.insert(cursor.id, moved);
+      this.insert(cursor.id, moved, cursor);
       cursor.count -= moved;
       this.cleanCursor();
     });
@@ -312,7 +343,14 @@ export class Inventory {
   peekDrop(target: InventoryTarget, whole = false): CursorStack | null {
     if (target !== 'cursor') this.checkSlot(target);
     const stack = target === 'cursor' ? this.cursor : this.slots[target];
-    return stack ? { id: stack.id, count: whole ? stack.count : 1 } : null;
+    return stack
+      ? {
+          id: stack.id,
+          count: whole ? stack.count : 1,
+          ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+          ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
+        }
+      : null;
   }
   /** Pure removal. The world adapter spawns successfully before calling this. */
   drop(target: InventoryTarget, whole = false): CursorStack | null {
