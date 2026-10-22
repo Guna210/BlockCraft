@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-22: Ready per Appendix E (deps on master): M13f, M18b, M18c, M19b. Critical path M13f->M13g->M14/M19c. Recommended M19b + M18b to the 2 Codex now; M13f waits for #69 merge (should reuse M13e's registerCreature/buildModel/SkinPainter, avoid duplicate kit + mobs/ conflicts); M18c after.
 - 2026-10-22: #68 merged (implied). #69 conflicts with master after #67+#68; sent merge instructions to M13e builder (keep heldStack affixes in combat.ts, pitch guard + scale in pose.ts). Review after green.
 - 2026-10-22: #69 visual rework pushed 78117fa, CI green (base before #67/#68). Not reviewed yet -> told owner not to merge. Plan: merge #68, Update branch #69, check new screenshots, then Sonnet round 1 with the reviewer prompt re-issued in chat.
 - 2026-10-22: #68 green after Update (shard 2 21.8 min, 35 passed, no flaky, m04 13.6 min). Told owner to merge. After merge: M13f ready; free slots Codex #1 + Codex #2.
