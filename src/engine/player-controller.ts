@@ -455,9 +455,10 @@ export class PlayerController {
     }
     if (this.input.mouseMovement.x !== 0 || this.input.mouseMovement.y !== 0) {
       this.attach();
+      const sensitivity = this.camera.sensitivity * settings.mouseSensitivity;
       this.look(
-        p.yaw + this.input.mouseMovement.x * this.camera.sensitivity,
-        p.pitch - this.input.mouseMovement.y * this.camera.sensitivity,
+        p.yaw + this.input.mouseMovement.x * sensitivity,
+        p.pitch + this.input.mouseMovement.y * sensitivity * (settings.invertY ? 1 : -1),
       );
       this.input.mouseMovement.x = 0;
       this.input.mouseMovement.y = 0;

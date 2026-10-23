@@ -1,5 +1,11 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  getSettings?: () => import('../../engine/settings').Settings;
+  setSetting?: (
+    key: keyof import('../../engine/settings').Settings,
+    value: unknown,
+  ) => import('../../engine/settings').Settings;
+  resetSettings?: () => import('../../engine/settings').Settings;
   setFluidAnimationPaused?: (paused: boolean) => void;
   getFluidAnimation?: () => { paused: boolean; seconds: number; frame: number };
   giveItem?: (id: string, count: number) => void;

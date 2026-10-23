@@ -1,4 +1,5 @@
 import { drawText, textWidth, GLYPH_HEIGHT } from './pixel-font';
+import { settings } from '../engine/settings';
 
 /** The shared UI palette (ART.md §4: at most 8 colors, bevels lit from the top-left). */
 export const UI = {
@@ -21,7 +22,8 @@ export interface Rect {
 
 /** Largest integer scale at which a 320×240 UI area still fits the window, never below 1. */
 export function uiScaleFor(width: number, height: number): number {
-  return Math.max(1, Math.min(Math.floor(width / 320), Math.floor(height / 240)));
+  const fit = Math.max(1, Math.min(Math.floor(width / 320), Math.floor(height / 240)));
+  return settings.guiScale === 'auto' ? fit : Math.max(1, Math.min(fit, settings.guiScale));
 }
 
 export function fillRect(

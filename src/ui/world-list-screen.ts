@@ -2,6 +2,8 @@ import type { InputEngine } from '../engine/input';
 import type { WorldManager } from '../world/world-manager';
 import type { WorldRecord } from '../persist/world-store';
 import { drawButton, drawInset, drawPanel, fillRect, UI, uiScaleFor, type Rect } from './ui-kit';
+import { isActionCode } from '../engine/keybinds';
+import { settings } from '../engine/settings';
 import { drawText, textWidth } from './pixel-font';
 import { OVERWORLD_BIOME_IDS, type OverworldBiomeId } from '../gen/biomes';
 import { WORLD_TYPES, type WorldType } from '../gen/world-options';
@@ -615,11 +617,12 @@ export class WorldListScreen {
 
   private onCreateKeyDown(form: CreateForm, event: KeyboardEvent): void {
     event.preventDefault();
-    if (event.key === 'Escape' && !this.busy) {
+    if (isActionCode(event.code, 'menuBack', settings.keyBindings) && !this.busy) {
       this.form = null;
       return this.render();
     }
-    if (event.key === 'Enter') return void this.submitCreate();
+    if (isActionCode(event.code, 'menuConfirm', settings.keyBindings))
+      return void this.submitCreate();
     if (this.busy) return;
     if (event.key === 'Tab') {
       form.focus = form.focus === 'name' ? 'seed' : 'name';
@@ -971,11 +974,11 @@ export class WorldListScreen {
     if (this.modal) {
       event.preventDefault();
       const modal = this.modal;
-      if (event.key === 'Escape' && !this.busy) {
+      if (isActionCode(event.code, 'menuBack', settings.keyBindings) && !this.busy) {
         this.modal = null;
         return this.render();
       }
-      if (event.key === 'Enter') {
+      if (isActionCode(event.code, 'menuConfirm', settings.keyBindings)) {
         if (modal.kind === 'delete') void this.confirmDelete();
         else void this.submitModal();
         return;
@@ -990,16 +993,22 @@ export class WorldListScreen {
       this.render();
       return;
     }
-    if (event.key === 'Escape') {
+    if (isActionCode(event.code, 'menuBack', settings.keyBindings)) {
       event.preventDefault();
       this.close();
-    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    } else if (
+      isActionCode(event.code, 'menuDown', settings.keyBindings) ||
+      isActionCode(event.code, 'menuUp', settings.keyBindings)
+    ) {
       event.preventDefault();
       if (this.rows.length === 0) return;
       const selected = this.rows.findIndex((record) => record.name === this.selectedName);
       const next = Math.max(
         0,
-        Math.min(this.rows.length - 1, selected + (event.key === 'ArrowDown' ? 1 : -1)),
+        Math.min(
+          this.rows.length - 1,
+          selected + (isActionCode(event.code, 'menuDown', settings.keyBindings) ? 1 : -1),
+        ),
       );
       this.selectedName = this.rows[next]!.name;
       this.scrollOffset = Math.min(

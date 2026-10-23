@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { api } from '../../src/debug/api/core';
 import '../../src/debug/api/persist';
-import { SaveDb, STORE_NAMES } from '../../src/persist/idb';
+import { SaveDb, WORLD_STORE_NAMES } from '../../src/persist/idb';
 import { SaveManager } from '../../src/persist/save-manager';
 import { createFakeIdb } from './helpers/fake-idb';
 import { World } from '../../src/world/world';
@@ -81,7 +81,7 @@ describe('M17c — world record management', () => {
       name: 'Meadow',
       marker: 'source',
     });
-    for (const store of STORE_NAMES) {
+    for (const store of WORLD_STORE_NAMES) {
       if (store === 'worlds') {
         expect(await db.get('worlds', 'Other')).toEqual({ name: 'Other', marker: 'untouched' });
         continue;
@@ -102,7 +102,7 @@ describe('M17c — world record management', () => {
 
     await db.duplicateWorld('Garden', 'Garden Copy');
 
-    for (const store of STORE_NAMES) {
+    for (const store of WORLD_STORE_NAMES) {
       if (store === 'worlds') {
         expect(await db.get('worlds', 'Garden')).toEqual({ name: 'Garden', marker: 'source' });
         expect(await db.get('worlds', 'Garden Copy')).toEqual({
@@ -136,7 +136,7 @@ describe('M17c — world record management', () => {
     await expect(db.renameWorld('Missing', 'New')).rejects.toThrow(
       "No saved world named 'Missing'",
     );
-    for (const store of STORE_NAMES) {
+    for (const store of WORLD_STORE_NAMES) {
       if (store === 'worlds') {
         expect(await db.get('worlds', 'Garden')).toEqual({ name: 'Garden', marker: 'source' });
         expect(await db.get('worlds', 'Other')).toEqual({ name: 'Other', marker: 'untouched' });

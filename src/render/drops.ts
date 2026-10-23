@@ -9,6 +9,7 @@ import { items } from '../gameplay/items';
 import { ITEM_CAPACITY } from '../entity/item-entity';
 import { PARTICLE_CAPACITY } from './particles';
 import type { World } from '../world/world';
+import { settings } from '../engine/settings';
 
 export const VS = `#version 300 es
 precision highp float;
@@ -304,30 +305,32 @@ export class DropRenderer {
       ux = -Math.cos(yaw) * Math.sin(pitch),
       uy = Math.cos(pitch),
       uz = -Math.sin(yaw) * Math.sin(pitch);
-    for (let n = 0; n < PARTICLE_CAPACITY; n++) {
-      const p = c.particles.pool[n]!;
-      if (!p.active) continue;
-      const x = p.previous[0] + (p.pos[0] - p.previous[0]) * alpha,
-        y = p.previous[1] + (p.pos[1] - p.previous[1]) * alpha,
-        z = p.previous[2] + (p.pos[2] - p.previous[2]) * alpha;
-      const rect = this.faces[p.state]![p.face]!,
-        light = this.light(world, x, y, z, skyBrightness),
-        cutoff = registry.getResolvedState(p.state)!.definition.renderLayer === 'opaque' ? 0 : 0.1;
-      for (let t = 0; t < 6; t++) {
-        const corner = INDICES[t]!,
-          sx = corner < 2 ? -0.045 : 0.045,
-          sy = corner === 0 || corner === 3 ? -0.045 : 0.045;
-        this.vertex(
-          x + rx * sx + ux * sy,
-          y + uy * sy,
-          z + rz * sx + uz * sy,
-          rect.x + p.u + (corner < 2 ? 0.5 : 2.5),
-          rect.y + p.v + (corner === 0 || corner === 3 ? 2.5 : 0.5),
-          light,
-          cutoff,
-        );
+    if (settings.particles)
+      for (let n = 0; n < PARTICLE_CAPACITY; n++) {
+        const p = c.particles.pool[n]!;
+        if (!p.active) continue;
+        const x = p.previous[0] + (p.pos[0] - p.previous[0]) * alpha,
+          y = p.previous[1] + (p.pos[1] - p.previous[1]) * alpha,
+          z = p.previous[2] + (p.pos[2] - p.previous[2]) * alpha;
+        const rect = this.faces[p.state]![p.face]!,
+          light = this.light(world, x, y, z, skyBrightness),
+          cutoff =
+            registry.getResolvedState(p.state)!.definition.renderLayer === 'opaque' ? 0 : 0.1;
+        for (let t = 0; t < 6; t++) {
+          const corner = INDICES[t]!,
+            sx = corner < 2 ? -0.045 : 0.045,
+            sy = corner === 0 || corner === 3 ? -0.045 : 0.045;
+          this.vertex(
+            x + rx * sx + ux * sy,
+            y + uy * sy,
+            z + rz * sx + uz * sy,
+            rect.x + p.u + (corner < 2 ? 0.5 : 2.5),
+            rect.y + p.v + (corner === 0 || corner === 3 ? 2.5 : 0.5),
+            light,
+            cutoff,
+          );
+        }
       }
-    }
     const allVertices = this.cursor / 7,
       particleVertices = allVertices - itemVertices;
     this.triangles = allVertices / 3;

@@ -11,6 +11,7 @@ import './time';
 import './fluids';
 import './clouds';
 import './leaves';
+import './settings';
 import './weather';
 import './raycast';
 import './shapes';

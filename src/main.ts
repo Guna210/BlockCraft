@@ -26,6 +26,8 @@ import {
   sleepRefusalReason,
 } from './gameplay/death-beds';
 import { getWorldTime } from './world/time';
+import { SettingsScreen } from './ui/settings-screen';
+import { loadSavedSettings } from './engine/settings-runtime';
 
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r, g, b;
@@ -52,7 +54,7 @@ function hueToRgb(p: number, q: number, t: number) {
   return p;
 }
 
-function main() {
+async function main() {
   initDebugApi();
   registerKilnBlockEntity();
 
@@ -106,9 +108,22 @@ function main() {
   ui.attach();
   activeUi.manager = ui;
   activeWorldList.screen = new WorldListScreen(input, worldManager);
-  const menu = new MainMenu(glWrapper, camera, worldManager, () => {
-    void activeWorldList.screen?.open();
-  });
+  const settingsScreen = new SettingsScreen(input);
+  const menu = new MainMenu(
+    glWrapper,
+    camera,
+    worldManager,
+    () => {
+      void activeWorldList.screen?.open();
+    },
+    () => {
+      ui.settingsOverlayOpen = true;
+      settingsScreen.show(() => {
+        ui.settingsOverlayOpen = false;
+        menu.refresh();
+      });
+    },
+  );
   activeMenu.menu = menu;
   // A world created with an empty seed field got a random seed; the player is told which.
   activeWorldList.screen.onWorldCreated = (_name, seed) => ui.showMessage(`Seed: ${seed}`, 5000);
@@ -116,6 +131,12 @@ function main() {
   ui.onSaveAndQuit = async () => {
     await worldManager.quitToMenu();
     menu.show();
+  };
+  ui.onOpenSettings = () => {
+    ui.settingsOverlayOpen = true;
+    settingsScreen.show(() => {
+      ui.settingsOverlayOpen = false;
+    });
   };
   playerController.onDeath = (cause) => ui.showDeath(cause);
   ui.onRespawn = () => playerController.respawn();
@@ -368,6 +389,7 @@ function main() {
   }
 
   // The page boots to the main menu; ready() resolves once it is shown and interactive.
+  await loadSavedSettings();
   menu.show();
   requestAnimationFrame((time) => {
     markReady();
@@ -376,4 +398,4 @@ function main() {
   });
 }
 
-main();
+void main();

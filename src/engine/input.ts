@@ -1,3 +1,6 @@
+import { actionsForCode, KEYBIND_ACTIONS, mouseCode } from './keybinds';
+import { settings } from './settings';
+
 export type Action =
   | 'forward'
   | 'back'
@@ -12,7 +15,27 @@ export type Action =
   | 'pick';
 
 export class InputEngine {
-  public keyBindings = new Map<string, Action>();
+  /** Compatibility view for older callers; the source of truth is settings.keyBindings. */
+  get keyBindings(): Map<string, Action> {
+    const bindings = new Map<string, Action>();
+    for (const action of [
+      'forward',
+      'back',
+      'left',
+      'right',
+      'jump',
+      'sneak',
+      'sprint',
+      'attack',
+      'use',
+      'perspective',
+      'pick',
+    ] as const) {
+      const code = settings.keyBindings[action];
+      if (code) bindings.set(code, action);
+    }
+    return bindings;
+  }
   public actionStates = new Map<Action, boolean>();
   public mouseMovement = { x: 0, y: 0 };
   public pointerLocked = false;
@@ -26,16 +49,6 @@ export class InputEngine {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-
-    // Default bindings
-    this.bindKey('KeyW', 'forward');
-    this.bindKey('KeyS', 'back');
-    this.bindKey('KeyA', 'left');
-    this.bindKey('KeyD', 'right');
-    this.bindKey('Space', 'jump');
-    this.bindKey('ShiftLeft', 'sneak');
-    this.bindKey('ControlLeft', 'sprint');
-    this.bindKey('F5', 'perspective');
 
     // Default state
     const actions: Action[] = [
@@ -87,11 +100,12 @@ export class InputEngine {
   }
 
   bindKey(code: string, action: Action) {
-    this.keyBindings.set(code, action);
+    settings.keyBindings[action] = code;
   }
 
   unbindKey(code: string) {
-    this.keyBindings.delete(code);
+    for (const action of KEYBIND_ACTIONS)
+      if (settings.keyBindings[action] === code) settings.keyBindings[action] = '';
   }
 
   setCapture(on: boolean) {
@@ -121,16 +135,16 @@ export class InputEngine {
 
   private onKeyDown(e: KeyboardEvent) {
     if (e.repeat || this.captured) return;
-    const action = this.keyBindings.get(e.code);
-    if (action) {
-      this.setAction(action, true);
-    }
+    this.setActionsForCode(e.code, true);
   }
 
   private onKeyUp(e: KeyboardEvent) {
-    const action = this.keyBindings.get(e.code);
-    if (action) {
-      this.setAction(action, false);
+    this.setActionsForCode(e.code, false);
+  }
+
+  private setActionsForCode(code: string, down: boolean): void {
+    for (const action of actionsForCode(code, settings.keyBindings)) {
+      if (this.actionStates.has(action as Action)) this.setAction(action as Action, down);
     }
   }
 
@@ -143,16 +157,12 @@ export class InputEngine {
 
   private onMouseDown(e: MouseEvent) {
     if (!this.pointerLocked) return;
-    if (e.button === 0) this.setAction('attack', true);
-    if (e.button === 2) this.setAction('use', true);
-    if (e.button === 1) this.setAction('pick', true);
+    this.setActionsForCode(mouseCode(e.button), true);
   }
 
   private onMouseUp(e: MouseEvent) {
     if (!this.pointerLocked) return;
-    if (e.button === 0) this.setAction('attack', false);
-    if (e.button === 2) this.setAction('use', false);
-    if (e.button === 1) this.setAction('pick', false);
+    this.setActionsForCode(mouseCode(e.button), false);
   }
 
   private onPointerLockChange() {

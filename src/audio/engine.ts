@@ -1,4 +1,5 @@
 import { LCG, createNoiseBuffer } from './math';
+import { settings } from '../engine/settings';
 
 export interface SoundRecipeContext {
   ctx: BaseAudioContext;
@@ -19,9 +20,11 @@ export class SynthesisEngine {
     peak = 1,
     attack = 0.01,
   ) {
+    const volume = settings.masterVolume * settings.effectsVolume;
     param.setValueAtTime(0, t0);
-    param.linearRampToValueAtTime(peak, t0 + attack);
-    param.exponentialRampToValueAtTime(0.001, t0 + duration);
+    param.linearRampToValueAtTime(peak * volume, t0 + attack);
+    if (volume > 0) param.exponentialRampToValueAtTime(0.001 * volume, t0 + duration);
+    else param.setValueAtTime(0, t0 + duration);
   }
 
   static playNoise(
