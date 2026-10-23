@@ -8,6 +8,11 @@ import { blockLoot, blockLootTable, rollBlockLoot } from '../../src/gameplay/loo
 import { chestLootTable, rollChestLootById } from '../../src/gameplay/chest-loot';
 import { dropInventoryStack } from '../../src/gameplay/inventory-drop';
 import { spillChestContents, type ChestEntityState } from '../../src/gameplay/chests';
+import {
+  registerKilnBlockEntity,
+  spillKilnContents,
+  type KilnState,
+} from '../../src/gameplay/kiln';
 import { items } from '../../src/gameplay/items';
 import { WAYFARER_HAMLET_REGISTRATIONS } from '../../src/gen/structures/wayfarer-hamlet';
 import { createPlacementGrid } from '../../src/gen/structures/placement';
@@ -17,6 +22,9 @@ import { sampleTerrainTopY } from '../../src/gen/terrain-height';
 import { withTerrainVariant, type TerrainVariant } from '../../src/gen/world-options';
 import { textureGenerators, texturePalettes } from '../../src/render/textures/index';
 import { buildIconSheet } from '../../src/ui/icons';
+import { applyEntityRecord } from '../../src/persist/restore';
+import { serializeItemEntities } from '../../src/persist/serializers';
+import type { EntityRecord } from '../../src/persist/world-store';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { ChunkColumn } from '../../src/world/column';
 import { World } from '../../src/world/world';
@@ -239,5 +247,102 @@ describe('M19b item affix carry-through', () => {
       damage: 11,
       affix: 'Sturdy',
     });
+  });
+
+  it('preserves affixes when kiln contents spill into item entities', () => {
+    BlockRegistry.getInstance();
+    registerKilnBlockEntity();
+    const world = new World(false);
+    world.setBlock(2, 65, 2, 'kiln');
+    const kiln = world.getBlockEntity<KilnState>(2, 65, 2)!;
+    kiln.input = { id: 'raw_iron', count: 2, damage: null, affix: 'Keen' };
+    kiln.fuel = { id: 'coal', count: 1, damage: null, affix: 'Sturdy' };
+    kiln.output = { id: 'iron_ingot', count: 3, damage: null, affix: 'Swift' };
+
+    const dropped = new ItemEntityManager(world);
+    expect(spillKilnContents(world, dropped, 2, 65, 2)).toBe(true);
+    expect(
+      dropped.pool.slice(0, 3).map(({ item, count, affix }) => [item.id, count, affix]),
+    ).toEqual([
+      ['raw_iron', 2, 'Keen'],
+      ['coal', 1, 'Sturdy'],
+      ['iron_ingot', 3, 'Swift'],
+    ]);
+  });
+
+  it('preserves affixes through item-entity serialization and restore', () => {
+    const world = new World(false);
+    const source = new ItemEntityManager(world);
+    const entity = source.spawn(
+      'iron_pickaxe',
+      1,
+      12.5,
+      70,
+      -3.5,
+      {
+        velocity: [0.25, -0.5, 0.75],
+        pickupDelay: 9,
+      },
+      { damage: 27, affix: 'Swift' },
+    )!;
+    entity.age = 135;
+
+    const record: EntityRecord = {
+      world: 'm19b-affix-roundtrip',
+      dim: 'overworld',
+      formatVersion: 1,
+      items: serializeItemEntities(source.pool.filter((item) => item.active)),
+    };
+    const restored = new ItemEntityManager(new World(false));
+    expect(applyEntityRecord(restored, record)).toBe(1);
+    expect(restored.pool[0]).toMatchObject({
+      active: true,
+      item: { id: 'iron_pickaxe' },
+      count: 1,
+      damage: 27,
+      affix: 'Swift',
+      age: 135,
+      pickupDelay: 9,
+      pos: [12.5, 70, -3.5],
+      vel: [0.25, -0.5, 0.75],
+    });
+  });
+
+  it('does not merge nearby item entities with different affixes', () => {
+    const world = new World(false);
+    world.fill(-1, 64, -1, 1, 64, 1, 'stone');
+    const player = new Player(new BlockCollision(world), () => true);
+    player.detached = true;
+    const dropped = new ItemEntityManager(world);
+    const keen = dropped.spawn(
+      'iron_ingot',
+      3,
+      0.5,
+      66,
+      0.5,
+      {
+        velocity: [0, 0, 0],
+        pickupDelay: 100,
+      },
+      { affix: 'Keen' },
+    )!;
+    const swift = dropped.spawn(
+      'iron_ingot',
+      4,
+      0.5,
+      66,
+      0.5,
+      {
+        velocity: [0, 0, 0],
+        pickupDelay: 100,
+      },
+      { affix: 'Swift' },
+    )!;
+
+    dropped.tick(player);
+    expect(keen.active).toBe(true);
+    expect(swift.active).toBe(true);
+    expect([keen.count, swift.count]).toEqual([3, 4]);
+    expect([keen.affix, swift.affix]).toEqual(['Keen', 'Swift']);
   });
 });

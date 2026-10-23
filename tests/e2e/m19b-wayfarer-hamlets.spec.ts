@@ -116,8 +116,8 @@ test('M19b: locate, inspect and walk a Wayfarer Hamlet', async ({
         })
       : [];
 
-    // Face the hamlet from beyond its crop fields for the visual review capture.
-    api.teleport!(start[0] + 16.5, start[1] + 55, start[2] + 16.5, Math.PI, -1.4);
+    // Use a higher aerial view so the farm's wheat rows sit above the hotbar with the hamlet.
+    api.teleport!(start[0] + 16.5, start[1] + 72, start[2] + 16.5, Math.PI, -1.4);
     await api.tick!(1);
     return { start, houses, well, chest, routes };
   });

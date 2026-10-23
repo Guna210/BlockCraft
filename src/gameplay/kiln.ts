@@ -1,4 +1,4 @@
-import { items } from './items';
+import { isItemAffix, items } from './items';
 import { smelting } from './smelting';
 import {
   blockEntityRegistry,
@@ -142,9 +142,7 @@ export function spillKilnContents(
     if (
       !entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5, undefined, {
         damage: stack.damage,
-        ...(stack['affix'] === 'Keen' || stack['affix'] === 'Sturdy' || stack['affix'] === 'Swift'
-          ? { affix: stack['affix'] }
-          : {}),
+        ...(isItemAffix(stack['affix']) ? { affix: stack['affix'] } : {}),
       })
     )
       return false;
