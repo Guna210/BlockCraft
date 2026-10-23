@@ -4,6 +4,7 @@ import { Camera } from './camera';
 import { World } from '../world/world';
 import { LCG } from './textures/noise';
 import { getWeather, getPrecipitationType, weatherManager } from '../world/weather';
+import { settings } from '../engine/settings';
 
 export interface LightningSegment {
   p0: [number, number, number];
@@ -13,6 +14,7 @@ export interface LightningSegment {
 }
 
 type Vec3 = [number, number, number];
+const NO_WEATHER_DRAWS = { drawCalls: 0, triangles: 0 };
 
 /** One continuous branch (trunk or fork) of a bolt: a polyline whose width tapers along its length. */
 export interface LightningPolyline {
@@ -699,6 +701,7 @@ export class WeatherRenderer {
     world: World,
     ticks: number,
   ): { drawCalls: number; triangles: number } {
+    if (!settings.particles) return NO_WEATHER_DRAWS;
     const state = getWeather();
     const rainFactor = state === 'clear' ? 0.0 : state === 'rain' ? 1.0 : 1.25;
 

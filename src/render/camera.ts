@@ -84,8 +84,9 @@ export class Camera {
     // Rotation from mouse
     const mouseMov = input.consumeMouseMovement();
     if (mouseMov.x !== 0 || mouseMov.y !== 0) {
-      this.yaw += mouseMov.x * this.sensitivity;
-      this.pitch -= mouseMov.y * this.sensitivity;
+      const sensitivity = this.sensitivity * settings.mouseSensitivity;
+      this.yaw += mouseMov.x * sensitivity;
+      this.pitch += mouseMov.y * sensitivity * (settings.invertY ? 1 : -1);
 
       // Clamp pitch to avoid flipping
       const limit = Math.PI / 2 - 0.01;

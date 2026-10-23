@@ -1,15 +1,15 @@
 /**
- * A small hand-written IndexedDB wrapper (decisions/M17b-saving.md). It knows the save schema and
- * nothing about the game: five object stores, promise-based reads, and writes grouped into one
- * transaction so a save either lands completely or not at all.
+ * A small hand-written IndexedDB wrapper (decisions/M17b-saving.md). It knows the persistence
+ * schema and nothing about the game: world stores plus one settings store, promise-based reads,
+ * and writes grouped into one transaction so a save either lands completely or not at all.
  */
 
 export const DB_NAME = 'blockcraft-saves';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 /**
- * Object stores and their key paths. Every key starts with the world name, so a world's records are
- * one key range per store and deleting a world is a range delete.
+ * Object stores and their key paths. World-store keys start with the world name, so a world's
+ * records are one key range per store. The separate settings store holds one global record.
  */
 export const STORE_KEY_PATHS = {
   /** One record per world: metadata. Key `name`. */
@@ -22,10 +22,15 @@ export const STORE_KEY_PATHS = {
   entities: ['world', 'dim'],
   /** Block entities of one region. Key `[world, dim, rx, rz]`. */
   blockEntities: ['world', 'dim', 'rx', 'rz'],
+  /** One global user preference record. Key `key` (`global`). */
+  settings: 'key',
 } as const;
 
 export type StoreName = keyof typeof STORE_KEY_PATHS;
 export const STORE_NAMES = Object.keys(STORE_KEY_PATHS) as StoreName[];
+export const WORLD_STORE_NAMES = STORE_NAMES.filter((name) => name !== 'settings') as Array<
+  Exclude<StoreName, 'settings'>
+>;
 
 export type DbKey = string | number | DbKey[];
 
@@ -149,10 +154,10 @@ export class SaveDb {
     await done;
   }
 
-  /** Deletes every record of a world from every store. */
+  /** Deletes every record of a world without touching global settings. */
   async deleteWorld(world: string): Promise<void> {
     await this.write(
-      STORE_NAMES.map((store): DbWrite =>
+      WORLD_STORE_NAMES.map((store): DbWrite =>
         store === 'worlds'
           ? { op: 'delete', store, key: world }
           : { op: 'deletePrefix', store, prefix: [world] },
@@ -172,7 +177,7 @@ export class SaveDb {
   }
 
   private async transferWorld(world: string, name: string, move: boolean): Promise<void> {
-    const tx = this.db.transaction(STORE_NAMES, 'readwrite');
+    const tx = this.db.transaction(WORLD_STORE_NAMES, 'readwrite');
     const done = transactionDone(tx);
     // The separate handler marks the rejection handled while request callbacks are still pending.
     void done.catch(() => {});
@@ -193,7 +198,7 @@ export class SaveDb {
         throw new Error(`No saved world named '${world}'`);
       }
 
-      for (const storeName of STORE_NAMES) {
+      for (const storeName of WORLD_STORE_NAMES) {
         const store = tx.objectStore(storeName);
         if (storeName === 'worlds') {
           store.put({ ...source, name });

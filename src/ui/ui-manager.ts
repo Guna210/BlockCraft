@@ -52,6 +52,8 @@ import type { KilnState } from '../gameplay/kiln';
 import { smelting } from '../gameplay/smelting';
 import { addXp } from '../gameplay/xp';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
+import { isActionCode } from '../engine/keybinds';
+import { settings } from '../engine/settings';
 
 export type ScreenName =
   'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping' | 'pause';
@@ -111,6 +113,7 @@ export interface ScreenSnapshot {
   /** Pause menu buttons in CSS pixels; null outside the pause menu. */
   resumeButton: Rect | null;
   saveQuitButton: Rect | null;
+  settingsButton: Rect | null;
   message: string | null;
 }
 
@@ -143,6 +146,8 @@ interface ScreenControls {
 /** The overlay canvas owns inventory, crafting, recipe-book and chest input. */
 export class UiManager {
   screen: ScreenName | null = null;
+  /** Independent settings DOM overlay sits above the menu or pause canvas. */
+  public settingsOverlayOpen = false;
   private canvas!: HTMLCanvasElement;
   private ctx!: CanvasRenderingContext2D;
   private sheet!: HTMLCanvasElement;
@@ -184,16 +189,20 @@ export class UiManager {
   private respawnRect: Rect | null = null;
   private resumeRect: Rect | null = null;
   private saveQuitRect: Rect | null = null;
+  private settingsRect: Rect | null = null;
   private quitting = false;
   private sleepFade = 0;
   private messageText: string | null = null;
   private messageTimer: number | undefined;
   private damageOverlay: HTMLDivElement | null = null;
+  private pauseSettingsButton: HTMLButtonElement | null = null;
   private damageTimer: number | undefined;
   private messageElement: HTMLDivElement | null = null;
   public onRespawn: () => void = () => {};
   /** Pause menu "Save & Quit": saves and leaves the world (main.ts returns to the main menu). */
   public onSaveAndQuit: () => Promise<void> = async () => {};
+  /** Opens the independent settings overlay over the menu or pause screen. */
+  public onOpenSettings: () => void = () => {};
   private controls: ScreenControls = {
     close: null,
     book: null,
@@ -244,6 +253,27 @@ export class UiManager {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     document.body.appendChild(this.canvas);
+    this.pauseSettingsButton = document.createElement('button');
+    this.pauseSettingsButton.type = 'button';
+    this.pauseSettingsButton.setAttribute('aria-label', 'Settings');
+    Object.assign(this.pauseSettingsButton.style, {
+      position: 'fixed',
+      display: 'none',
+      margin: '0',
+      padding: '0',
+      border: '0',
+      color: 'transparent',
+      background: 'transparent',
+      outline: 'none',
+      cursor: 'pointer',
+      zIndex: '7',
+      font: '1px monospace',
+    });
+    this.pauseSettingsButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.onOpenSettings();
+    });
+    document.body.appendChild(this.pauseSettingsButton);
   }
 
   private get player(): Player | null {
@@ -361,6 +391,7 @@ export class UiManager {
       this.resumeRect = null;
       this.saveQuitRect = null;
       this.canvas.style.display = 'none';
+      if (this.pauseSettingsButton) this.pauseSettingsButton.style.display = 'none';
       this.input.setCapture(false);
     }
   }
@@ -540,6 +571,7 @@ export class UiManager {
     this.searchFocused = false;
     this.drag = null;
     this.canvas.style.display = 'none';
+    if (this.pauseSettingsButton) this.pauseSettingsButton.style.display = 'none';
     this.input.setCapture(false);
     if (this.wasLocked) {
       try {
@@ -1103,6 +1135,7 @@ export class UiManager {
       respawnButton: this.screen === 'death' ? css(this.respawnRect) : null,
       resumeButton: this.screen === 'pause' ? css(this.resumeRect) : null,
       saveQuitButton: this.screen === 'pause' ? css(this.saveQuitRect) : null,
+      settingsButton: this.screen === 'pause' ? css(this.settingsRect) : null,
       message: this.messageText,
     };
   }
@@ -1152,6 +1185,8 @@ export class UiManager {
   render(): void {
     const player = this.player;
     if (!this.screen || !player) return;
+    if (this.screen !== 'pause' && this.pauseSettingsButton)
+      this.pauseSettingsButton.style.display = 'none';
     if (this.screen === 'death') {
       this.renderDeath();
       return;
@@ -1423,10 +1458,11 @@ export class UiManager {
       x: Math.floor((width - 188) / 2),
       y: Math.floor((height - 100) / 2),
       w: 188,
-      h: 100,
+      h: 112,
     };
     const resume = { x: panel.x + 34, y: panel.y + 36, w: 120, h: 20 };
     const saveQuit = { x: panel.x + 34, y: panel.y + 62, w: 120, h: 20 };
+    const settingsButton = { x: panel.x + 34, y: panel.y + 88, w: 120, h: 20 };
     const toCanvas = (rect: Rect): Rect => ({
       x: rect.x * scale,
       y: rect.y * scale,
@@ -1436,6 +1472,16 @@ export class UiManager {
     this.panelRect = toCanvas(panel);
     this.resumeRect = toCanvas(resume);
     this.saveQuitRect = toCanvas(saveQuit);
+    this.settingsRect = toCanvas(settingsButton);
+    if (this.pauseSettingsButton) {
+      Object.assign(this.pauseSettingsButton.style, {
+        display: 'block',
+        left: `${this.settingsRect.x / this.dpr}px`,
+        top: `${this.settingsRect.y / this.dpr}px`,
+        width: `${this.settingsRect.w / this.dpr}px`,
+        height: `${this.settingsRect.h / this.dpr}px`,
+      });
+    }
     this.closeRect = null;
     this.controls.close = null;
     this.screenSlots = [];
@@ -1467,6 +1513,13 @@ export class UiManager {
       'SAVE & QUIT',
       scale,
       !this.quitting && this.hoverButton(this.saveQuitRect),
+    );
+    drawButton(
+      this.ctx,
+      settingsButton,
+      'SETTINGS',
+      scale,
+      !this.quitting && this.hoverButton(this.settingsRect),
     );
   }
 
@@ -1703,6 +1756,7 @@ export class UiManager {
       if (event.button !== 0 || this.quitting) return;
       if (this.hoverButton(this.resumeRect)) this.close();
       else if (this.hoverButton(this.saveQuitRect)) void this.saveAndQuit();
+      else if (this.hoverButton(this.settingsRect)) this.onOpenSettings();
       return;
     }
     const button: ClickButton | null =
@@ -1864,6 +1918,7 @@ export class UiManager {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (this.settingsOverlayOpen) return;
     if (event.repeat) return;
     if (this.input.captured && !this.screen) return;
     if (this.screen === 'death' || this.screen === 'sleeping') {
@@ -1871,7 +1926,7 @@ export class UiManager {
       return;
     }
     if (this.screen && this.bookOpen && this.searchFocused) {
-      if (event.key === 'Escape') {
+      if (isActionCode(event.code, 'menuBack', settings.keyBindings)) {
         this.searchFocused = false;
         event.preventDefault();
         this.close();
@@ -1883,11 +1938,11 @@ export class UiManager {
         this.searchText = this.searchText.slice(0, -1);
       } else if (event.key.length === 1 && /^[a-z0-9 _-]$/i.test(event.key)) {
         this.searchText += event.key.toLowerCase();
-      } else if (event.key === 'ArrowDown') {
+      } else if (isActionCode(event.code, 'menuDown', settings.keyBindings)) {
         this.bookPage++;
-      } else if (event.key === 'ArrowUp') {
+      } else if (isActionCode(event.code, 'menuUp', settings.keyBindings)) {
         this.bookPage = Math.max(0, this.bookPage - 1);
-      } else if (event.key !== 'Enter') {
+      } else if (!isActionCode(event.code, 'menuConfirm', settings.keyBindings)) {
         return;
       }
       this.bookPage = Math.max(
@@ -1898,19 +1953,24 @@ export class UiManager {
         ),
       );
       event.preventDefault();
-      if (event.key === 'Enter') this.searchFocused = false;
+      if (isActionCode(event.code, 'menuConfirm', settings.keyBindings)) this.searchFocused = false;
       return this.render();
     }
-    if (event.code === 'KeyE' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (
+      isActionCode(event.code, 'inventory', settings.keyBindings) &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
       if (this.screen) this.close();
       else if (this.player) this.open('inventory');
       event.preventDefault();
-    } else if (event.code === 'Escape' && this.screen) {
+    } else if (isActionCode(event.code, 'menuBack', settings.keyBindings) && this.screen) {
       this.close();
-    } else if (event.code === 'Escape' && this.player) {
+    } else if (isActionCode(event.code, 'menuBack', settings.keyBindings) && this.player) {
       this.openPause();
       event.preventDefault();
-    } else if (event.code === 'KeyQ' && this.player) {
+    } else if (isActionCode(event.code, 'drop', settings.keyBindings) && this.player) {
       const target = this.screen ? this.inventorySlot(this.hoverSlot) : this.player.selectedSlot;
       if (target !== null) this.throwStack(target, event.ctrlKey);
       event.preventDefault();

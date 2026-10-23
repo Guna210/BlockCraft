@@ -42,6 +42,8 @@ uniform vec3 u_sectionOrigin;
 uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform float u_skyBrightness;
+uniform float u_smoothLighting;
+uniform float u_brightness;
 uniform bool u_debugLight;
 uniform float u_underwaterFloor;
 uniform sampler2D u_grassTintMap;
@@ -134,7 +136,7 @@ void main() {
     worldPos.y += leaf ? 0.01 * sin(phase * 1.3 + base.z * 0.4) : 0.0;
   }
   float faceShade = normal.y > 0.5 ? 1.0 : (normal.y < -0.5 ? 0.5 : (abs(normal.z) > 0.5 ? 0.8 : 0.6));
-  float ao = ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u);
+  float ao = mix(1.0, ${AO_UNOCCLUDED.toFixed(2)} - ${AO_STEP.toFixed(2)} * float((a_word0 >> 18u) & 3u), u_smoothLighting);
   float sky = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * float((a_word0 >> 20u) & 15u) / 15.0;
 #ifdef SKY_ONLY
   vec3 light = vec3(max(sky * u_skyBrightness, ${LIGHT_MIN_BRIGHTNESS.toFixed(2)}));
@@ -143,7 +145,7 @@ void main() {
   vec3 brightness = ${LIGHT_MIN_BRIGHTNESS.toFixed(2)} + ${LIGHT_BRIGHTNESS_RANGE.toFixed(2)} * rgb / 15.0;
   vec3 light = max(vec3(sky * u_skyBrightness), brightness);
 #endif
-  v_light = (u_debugLight ? vec3(1.0) : max(light, vec3(u_underwaterFloor))) * ao * faceShade;
+  v_light = (u_debugLight ? vec3(1.0) : max(light, vec3(u_underwaterFloor))) * ao * faceShade * u_brightness;
   #ifdef WALL_TORCH
   uint tintIdx = wallTorch || shape ? 0u : (a_word0 >> 28u) & 15u;
   #else
@@ -340,6 +342,8 @@ export class ChunkRenderer {
   private locFoliageTintMap: WebGLUniformLocation;
   private locFade: WebGLUniformLocation;
   private locSkyBrightness: WebGLUniformLocation;
+  private locSmoothLighting: WebGLUniformLocation;
+  private locBrightness: WebGLUniformLocation;
   private locDebugLight: WebGLUniformLocation;
   private locCameraPos: WebGLUniformLocation;
   private locFogStart: WebGLUniformLocation;
@@ -437,6 +441,8 @@ export class ChunkRenderer {
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
     this.locIsWireframe = gl.getUniformLocation(this.program, 'u_isWireframe')!;
     this.locSkyBrightness = gl.getUniformLocation(this.program, 'u_skyBrightness')!;
+    this.locSmoothLighting = gl.getUniformLocation(this.program, 'u_smoothLighting')!;
+    this.locBrightness = gl.getUniformLocation(this.program, 'u_brightness')!;
     this.locDebugLight = gl.getUniformLocation(this.program, 'u_debugLight')!;
     this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
     this.locCameraPos = gl.getUniformLocation(this.program, 'u_cameraPos')!;
@@ -473,6 +479,8 @@ export class ChunkRenderer {
       'locIsCutout',
       'locIsWireframe',
       'locSkyBrightness',
+      'locSmoothLighting',
+      'locBrightness',
       'locDebugLight',
       'locFade',
       'locCameraPos',
@@ -862,6 +870,8 @@ export class ChunkRenderer {
     gl.uniformMatrix4fv(this.locInverseViewProj, false, this.inverseViewProj);
     gl.uniform2f(this.locViewport, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.uniform1f(this.locSkyBrightness, this.skyBrightness);
+    gl.uniform1f(this.locSmoothLighting, settings.smoothLighting ? 1 : 0);
+    gl.uniform1f(this.locBrightness, settings.brightness);
     gl.uniform1i(this.locDebugLight, this.debugLight ? 1 : 0);
     gl.uniform1i(this.locAtlasSampler, 0);
     gl.uniform1i(this.locGrassTintMap, 1);
