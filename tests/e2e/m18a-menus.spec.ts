@@ -68,6 +68,7 @@ test.describe('M18a menus', () => {
     await expect(menu).toBeVisible();
     await expect(page.getByRole('button', { name: 'Singleplayer' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Multiplayer', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Credits' })).toBeVisible();
 
     // Credits and back.
