@@ -28,6 +28,13 @@ export const PRIORITY = {
   layEgg: 4,
   wander: 5,
   flock: 5,
+  // Hostiles. Targeting, climbing and leaping claim flags of their own and run beside the rest.
+  target: 0,
+  climb: 0,
+  swell: 1,
+  avoidSunlight: 1,
+  leap: 2,
+  attack: 3,
 } as const;
 
 /** After the AI pass, before navigation. */
@@ -57,6 +64,8 @@ export interface CreatureDefinition {
   speed: number;
   foods?: readonly string[];
   flying?: boolean;
+  /** Climbs walls (M13c's ClimbWallGoal). */
+  climbing?: boolean;
   maxFallSpeed?: number;
   /** Model id for an entity spawned at (x, z). */
   model(ctx: EntitySpawnContext, x: number, z: number): string;
@@ -195,6 +204,7 @@ export function spawnCreature(
     speed: definition.speed,
     foods: definition.foods ?? [],
     flying: definition.flying ?? false,
+    climbing: definition.climbing ?? false,
     ...(definition.maxFallSpeed !== undefined ? { maxFallSpeed: definition.maxFallSpeed } : {}),
     baby,
     goals: definition.goals,

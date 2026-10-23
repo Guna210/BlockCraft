@@ -5,6 +5,7 @@ import {
   INVULNERABLE_TICKS,
   KNOCKBACK_HORIZONTAL,
   KNOCKBACK_UP,
+  PLAYER_INVULNERABLE_TICKS,
   PlayerCombat,
   SHIELD_SLOT,
   SURVIVAL_REACH,
@@ -334,6 +335,11 @@ describe('M13c damage to the player', () => {
     const player = fighter(world);
     const front: [number, number, number] = [3.5, GROUND, 0.5],
       behind: [number, number, number] = [-2.5, GROUND, 0.5];
+    // Lets the player's immunity to entity hits (M13f) run out between hits.
+    const combat = new PlayerCombat(player, scene(world).ecs, null);
+    const settle = () => {
+      for (let n = 0; n < PLAYER_INVULNERABLE_TICKS; n++) combat.tick();
+    };
     give(player, SHIELD_SLOT, 'shield');
     expect(isBlocking(player)).toBe(false);
     expect(hurtPlayer(player, 4, 'mob:test', front)).toBe(true);
@@ -343,6 +349,7 @@ describe('M13c damage to the player', () => {
     expect(hurtPlayer(player, 4, 'mob:test', front)).toBe(false);
     expect(player.health).toBe(16);
     expect(player.inventory.slots[SHIELD_SLOT]!.damage).toBe(1);
+    settle();
     expect(hurtPlayer(player, 4, 'mob:test', behind)).toBe(true);
     expect(player.health).toBe(12);
     // Main hand works too, and a worn-out shield breaks.
@@ -351,6 +358,7 @@ describe('M13c damage to the player', () => {
     player.inventory.slots[0]!.damage = 335;
     expect(hurtPlayer(player, 4, 'mob:test', front)).toBe(false);
     expect(player.inventory.slots[0]).toBeNull();
+    settle();
     expect(hurtPlayer(player, 4, 'mob:test', front)).toBe(true);
     expect(player.health).toBe(8);
   });
