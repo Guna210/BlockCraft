@@ -56,7 +56,7 @@ In flight:
 | M13e Passive creatures | PR #69 open since 2026-10-21 13:36 (missed by me until owner said so); CI green on cf97712, shard 2 16 min; mergeable clean. Updated + green. Visual rework pushed 78117fa, green. Next: Update branch after #68 merges, then review round 1 (prompt re-issued in chat 2026-10-22) | Claude cloud (claude/m13e, session_01GLiTfxSJrdNE7K6Hp4ofAB) | - | #69 | src/entity/mobs/*.ts; tuftbuck/rootboar/dapplefowl/mossback/glimmer_moth; babies 0.5 scale, 24000 ticks; emissive moth; reachability exemptions untouched |
 | INFRA-stream Streaming headroom | PR opened; diff checked = 2 docs + approved m04 time limits only. CI run 1 green on head 4ca6c53 (shard 2 14.5 min, 35 passed, no flaky; heap 2.75 %, RD12 hole 13 px). Run 2 green too (shard 2 22.5 min, no flaky; master spread is the same 12.7/24.7). Told builder no changes. Recommended to owner: merge without a reviewer (diff already checked by me) | Claude cloud (claude/infra-stream, session_01Cx1t3x5LLVGaHL7CgCdvJR) | - | #70 | owner-requested, not in SPEC; no game-code fix found (SwiftShader backpressure) |
 
-In progress: M19b (Codex), M18b (Codex). Ready now (not started): M18c (give to Codex as slots free; they can run in parallel). After M13d: M13f. After M19a: M19b. After M13e+M13f: M13g (registers all natural spawning + other-spec fallout, needs owner-approved test edits).
+In progress: M19b (Codex, PR #72), M18b (Codex, PR #71). Ready now (not started): M18c (give to Codex as slots free; they can run in parallel). After M13d: M13f. After M19a: M19b. After M13e+M13f: M13g (registers all natural spawning + other-spec fallout, needs owner-approved test edits).
 Merge rule: the second PR to merge clicks Update branch and needs a fresh green run with normal shard times (shard 2 ~12-25 min; check the log for "flaky"). Block IDs: append only, flag it.
 
 ## Open items for the owner
@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-23: PRs opened: #71 M18b, #72 M19b (both titled [INCOMPLETE] only because full verify was left to PR CI; builders must retitle '— verified' + Status verified once CI green). #72 CI red: shard 1 hung 90 min in apt/playwright install --with-deps (Ubuntu mirror), cancelled, no tests ran; shards 2-4 green (shard 2 27 min). Infra; owner to re-run failed jobs. M19b IDs 811-819 (farmland, wheat_crop 0-7).
 - 2026-10-22: #69 green on 2d2fc21 (merged with master). Next: owner checks screenshots, starts Sonnet reviewer (prompt in chat). M19b Codex task stuck on proxy (stale origin/master 6411d94); told owner to start a fresh Codex task.
 - 2026-10-22: M19b Codex falsely blocked: its container had a stale origin/master and the fetch failed (proxy), and it read M19a's stale 'awaiting approval' status line. M19a is on master (83874c0, #67); M13d is e6fd45e (#68). Told owner to reply/restart with that; blockers/M19b.md must not be committed.
 - 2026-10-22: #69 merged master as 2d2fc21 (only conflict player-controller imports; MobBody.maxFallSpeed made optional for M13d test literal). quick verify ok, unit 1065. CI running; then owner checks screenshots + starts Sonnet reviewer with prompt from chat.
