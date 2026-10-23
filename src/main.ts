@@ -12,6 +12,11 @@ import { WorldManager } from './world/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
 import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
+import { CreativeInventory } from './ui/creative-inventory';
+import { Chat } from './ui/chat';
+import { Screenshots } from './ui/screenshot';
+import { executeCommand } from './game/commands';
+import { commandContext, completionCatalog } from './game/commands/runtime';
 import { WorldListScreen, activeWorldList } from './ui/world-list-screen';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { MainMenu, activeMenu } from './ui/main-menu';
@@ -107,6 +112,30 @@ async function main() {
   const ui = new UiManager(input, () => worldManager.playerController, icons);
   ui.attach();
   activeUi.manager = ui;
+  const creativeInventory = new CreativeInventory(input, icons);
+  ui.onCreativeInventory = () => {
+    const player = worldManager.playerController?.player;
+    if (!player || input.captured || ui.screen) return false;
+    creativeInventory.open(player);
+    return true;
+  };
+  const chat = new Chat(
+    input,
+    () => !!worldManager.playerController?.player && !worldManager.playerController.player.dead,
+    async (line) => {
+      try {
+        return await executeCommand(line, commandContext(worldManager));
+      } catch (error) {
+        return { text: error instanceof Error ? error.message : 'Command failed', error: true };
+      }
+    },
+    completionCatalog,
+  );
+  const screenshots = new Screenshots(
+    input,
+    () => !!worldManager.playerController?.player,
+    (text, error) => chat.message(text, error),
+  );
   activeWorldList.screen = new WorldListScreen(input, worldManager);
   const settingsScreen = new SettingsScreen(input);
   const menu = new MainMenu(
@@ -138,7 +167,11 @@ async function main() {
       ui.settingsOverlayOpen = false;
     });
   };
-  playerController.onDeath = (cause) => ui.showDeath(cause);
+  playerController.onDeath = (cause) => {
+    chat.close();
+    creativeInventory.close();
+    ui.showDeath(cause);
+  };
   ui.onRespawn = () => playerController.respawn();
   playerController.onUseBlock = (blockId, target) => {
     if (blockId === 'bed') {
@@ -347,6 +380,8 @@ async function main() {
 
     if (rendered && measured && !testScene && worldManager.saves.thumbnailCaptureRequested)
       worldManager.saves.captureThumbnailFrame(canvas);
+
+    if (screenshots.pending && rendered) screenshots.captureAfterRender(canvas);
 
     ui.frame();
     hud.frame(time);

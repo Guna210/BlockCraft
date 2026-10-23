@@ -203,6 +203,8 @@ export class UiManager {
   public onSaveAndQuit: () => Promise<void> = async () => {};
   /** Opens the independent settings overlay over the menu or pause screen. */
   public onOpenSettings: () => void = () => {};
+  /** Creative mode may replace the inventory screen with its independent catalog. */
+  public onCreativeInventory: () => boolean = () => false;
   private controls: ScreenControls = {
     close: null,
     book: null,
@@ -287,6 +289,8 @@ export class UiManager {
   }
 
   open(name: ScreenName): void {
+    if (name === 'inventory' && this.player?.mode === 'creative' && this.onCreativeInventory())
+      return;
     if (name === 'death' || name === 'sleeping')
       throw new Error('Death and sleeping screens are controlled by gameplay');
     if (name === 'pause') {
