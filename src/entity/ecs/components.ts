@@ -40,6 +40,8 @@ export interface Health {
 
 export interface Renderable {
   model: string;
+  /** Uniform model scale (a baby is 0.5); 1 when absent. */
+  scale?: number;
 }
 
 export interface PlayingClip {
