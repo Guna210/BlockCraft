@@ -16,17 +16,21 @@ import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
+import { deriveSeed, hashString } from '../engine/rng';
 import { OVERWORLD_BIOME_IDS, type OverworldBiomeId } from '../gen/biomes';
 import {
   DEFAULT_WORLD_OPTIONS,
   normalizeWorldOptions,
   setTerrainVariant,
+  withTerrainVariant,
   type TerrainVariant,
   type WorldOptions,
   type WorldType,
 } from '../gen/world-options';
 import { placeStartingChest } from '../gameplay/starting-chest';
-import { hashString } from '../engine/rng';
+import { rollChestLootById } from '../gameplay/chest-loot';
+import type { ChestEntityState } from '../gameplay/chests';
+import { WAYFARER_HAMLET_REGISTRATIONS } from '../gen/structures/wayfarer-hamlet';
 import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
@@ -149,6 +153,14 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
     },
   ];
   for (const secData of res.sections) {
+    const registry = BlockRegistry.getInstance();
+    const hasChest = Boolean(
+      secData.packed?.palette.some(
+        (stateId) => registry.getResolvedState(stateId)?.blockId === 'chest',
+      ) ||
+      (secData.uniformStateId !== null &&
+        registry.getResolvedState(secData.uniformStateId)?.blockId === 'chest'),
+    );
     steps.push(() => {
       const col = world.getColumn(res.cx, res.cz, true)!;
       const sec = col.getOrCreateSection(secData.sy);
@@ -159,6 +171,40 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
           sec.loadBlockStatesFrom(secData.states);
         } else if (secData.uniformStateId !== null) {
           sec.fill(secData.uniformStateId);
+        }
+      }
+      if (!hasChest || !sec) return;
+      const xOrigin = res.cx * 16;
+      const zOrigin = res.cz * 16;
+      for (let localY = 0; localY < 16; localY++) {
+        const y = secData.sy * 16 + localY;
+        for (let z = 0; z < 16; z++) {
+          for (let x = 0; x < 16; x++) {
+            const stateId = sec.getBlockStateId(x, localY, z);
+            if (registry.getResolvedState(stateId)?.blockId !== 'chest') continue;
+            const worldX = xOrigin + x;
+            const worldZ = zOrigin + z;
+            if (!world.getBlockEntity(worldX, y, worldZ)) {
+              world.blockEntities.onBlockChanged(worldX, y, worldZ, 'air', 'chest', stateId, 0);
+            }
+            const entity = world.getBlockEntity<ChestEntityState>(worldX, y, worldZ);
+            if (!entity || entity.slots.some((slot) => slot !== null)) continue;
+            const loot = rollChestLootById(
+              'wayfarer_hamlet',
+              world.worldSeed ?? 0,
+              worldX,
+              y,
+              worldZ,
+            );
+            loot.forEach((stack, index) => {
+              entity.slots[index] = {
+                id: stack.id,
+                count: stack.count,
+                ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
+                ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
+              };
+            });
+          }
         }
       }
     });
@@ -349,7 +395,7 @@ export class WorldManager {
     this.workerPool = new WorkerPool();
     this.genWorkerPool = new GenWorkerPool();
     this.lightWorkerPool = new LightWorkerPool();
-    this.pipeline = createDefaultPipeline();
+    this.pipeline = createDefaultPipeline(WAYFARER_HAMLET_REGISTRATIONS);
     this.streamer = new Streamer<GenResult, MeshResult>(this.makeStreamerHost());
     // Not streaming until a world exists (createWorld) and while tests drive an empty world by hand.
     this.streamer.active = false;
@@ -405,11 +451,23 @@ export class WorldManager {
         (error) => {
           // A column that cannot be read is regenerated rather than leaving a hole in the world.
           console.warn(`[saves] column ${cx},${cz} unreadable, regenerating:`, error);
-          return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.terrainVariant);
+          return this.genWorkerPool.enqueueGenJob(
+            this.worldSeed,
+            cx,
+            cz,
+            this.terrainVariant,
+            this.worldOptions.structures,
+          );
         },
       );
     }
-    return this.genWorkerPool.enqueueGenJob(this.worldSeed, cx, cz, this.terrainVariant);
+    return this.genWorkerPool.enqueueGenJob(
+      this.worldSeed,
+      cx,
+      cz,
+      this.terrainVariant,
+      this.worldOptions.structures,
+    );
   }
 
   /** The generator variant of the open world: its type and, for Single Biome, its biome. */
@@ -426,6 +484,9 @@ export class WorldManager {
       type === 'single_biome' ? { ...options, biome: options.biome ?? 'plains' } : { ...options };
     if (type !== 'single_biome') delete this.worldOptions.biome;
     setTerrainVariant(this.terrainVariant);
+    this.pipeline = createDefaultPipeline(
+      this.worldOptions.structures ? WAYFARER_HAMLET_REGISTRATIONS : [],
+    );
   }
 
   /** What the streamer needs from the world, the worker pools and the GPU. */
@@ -785,6 +846,7 @@ export class WorldManager {
     if (!this.world) return;
     this.mainThreadGenCount++;
     const col = this.world.getColumn(cx, cz, true)!;
+    col.worldSeed = this.worldSeed;
     if (this.worldType === 'flat') {
       const registry = BlockRegistry.getInstance();
       const stoneState = registry.getDefaultStateId('stone') ?? 1;
@@ -813,6 +875,10 @@ export class WorldManager {
           for (let x = 0; x < 16; x++) sec4.setBlockStateId(x, 0, z, grassState);
         }
       }
+      const structureStage = this.pipeline.getStages().find((stage) => stage.name === 'structures');
+      withTerrainVariant(this.terrainVariant, () =>
+        structureStage?.generate(deriveSeed(this.worldSeed, 'structures'), cx, cz, col),
+      );
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col, this.terrainVariant);
     }

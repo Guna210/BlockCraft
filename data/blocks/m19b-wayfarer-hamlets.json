@@ -1,0 +1,36 @@
+{
+  "farmland": {
+    "hardness": 0.6,
+    "blastResistance": 0.6,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "shovel",
+    "textures": {
+      "top": "farmland_top",
+      "side": "farmland_side",
+      "bottom": "dirt"
+    }
+  },
+  "wheat_crop": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "none",
+    "states": {
+      "age": {
+        "type": "enum",
+        "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+        "default": "0"
+      }
+    },
+    "textures": {
+      "top": "wheat_crop_0",
+      "side": "wheat_crop_0",
+      "bottom": "wheat_crop_0"
+    }
+  }
+}

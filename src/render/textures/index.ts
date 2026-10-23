@@ -185,6 +185,13 @@ import {
 import { genIce, genFire, PAL_ICE, PAL_FIRE } from './weather';
 import { shapeGenerators, shapePalettes } from './shapes';
 import { STAINED_GLASS_COLORS, genStainedGlass, stainedGlassPalette } from './stained-glass';
+import {
+  genFarmlandSide,
+  genFarmlandTop,
+  genWheatCrop,
+  PAL_FARMLAND,
+  PAL_WHEAT_CROP,
+} from './hamlets';
 import { genWorkbenchSide, genWorkbenchTop, PAL_WORKBENCH } from './workbench';
 import { genChestBottom, genChestSide, genChestTop, PAL_CHEST } from './chest';
 import {
@@ -266,6 +273,14 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   tripwire: genTripwire,
   tripwire_hook: genTripwireHook,
   wooden_button: genWoodenButton,
+  farmland_top: (seed) => genFarmlandTop(seed),
+  farmland_side: (seed) => genFarmlandSide(seed),
+  ...Object.fromEntries(
+    Array.from({ length: 8 }, (_, age) => [
+      `wheat_crop_${age}`,
+      (seed?: number) => genWheatCrop(age, seed),
+    ]),
+  ),
   ...terrainToolGenerators,
   ...shapeGenerators,
   ...Object.fromEntries(
@@ -505,6 +520,11 @@ export const texturePalettes: Record<string, RGBA[]> = {
   tripwire: CURRENT_PALETTES.stoneCutout,
   tripwire_hook: CURRENT_PALETTES.tripwireHook,
   wooden_button: CURRENT_PALETTES.woodCutout,
+  farmland_top: PAL_FARMLAND,
+  farmland_side: PAL_FARMLAND,
+  ...Object.fromEntries(
+    Array.from({ length: 8 }, (_, age) => [`wheat_crop_${age}`, PAL_WHEAT_CROP]),
+  ),
   ...shapePalettes,
   ...Object.fromEntries(
     STAINED_GLASS_COLORS.map((c) => [`${c}_stained_glass`, stainedGlassPalette(c)]),

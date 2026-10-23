@@ -3,6 +3,8 @@ import { ChunkColumn } from '../../world/column';
 import { deriveSeed } from '../../engine/rng';
 import { SEA_LEVEL } from '../terrain';
 import { sampleTerrainTopY } from '../terrain-height';
+import { terrainVariant } from '../world-options';
+import { sampleBiome } from '../biomes';
 import type { TerrainStage } from '../pipeline';
 import { adaptPieceToTerrain } from './adapt';
 import {
@@ -63,7 +65,7 @@ function structureRadius(registration: StructureRegistration): number {
     (max, template) => Math.max(max, template.size[0], template.size[2]),
     0,
   );
-  return (registration.maxDepth + 1) * maxHorizontalSize * 2 + 16;
+  return (registration.maxDepth + 1) * maxHorizontalSize + 16;
 }
 
 function blockStateId(
@@ -86,8 +88,6 @@ function buildStartCells(
   registry: BlockRegistry,
 ): StructureCell[] {
   const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
-  const surfaceY = sampleTerrainTopY(terrainStageSeed, startX, startZ);
-  const startY = surfaceY < SEA_LEVEL ? SEA_LEVEL + 1 : surfaceY + 1;
   const pieces = assembleJigsaw({
     worldSeed,
     startTemplate: registration.startTemplate,
@@ -100,15 +100,43 @@ function buildStartCells(
   const templateByName = new Map(
     registration.templates.map((template) => [template.name, template]),
   );
-  const cellsByPosition = new Map<string, StructureCell>();
-
-  for (const piece of pieces) {
+  const plans = pieces.map((piece) => {
     const template = templateByName.get(piece.template);
     if (!template) throw new Error('Missing assembled structure template: ' + piece.template);
     const rotatedSize: StructurePoint =
       piece.rotation % 2 === 0
         ? [template.size[0], template.size[1], template.size[2]]
         : [template.size[2], template.size[1], template.size[0]];
+    return { piece, template, rotatedSize };
+  });
+  const groundByColumn = new Map<string, number>();
+  const flat = terrainVariant().type === 'flat';
+  const surfaceAt = (x: number, z: number): number => {
+    const key = x + ',' + z;
+    const cached = groundByColumn.get(key);
+    if (cached !== undefined) return cached;
+    const height = flat ? 64 : sampleTerrainTopY(terrainStageSeed, x, z);
+    groundByColumn.set(key, height);
+    return height;
+  };
+  let startY = SEA_LEVEL + 1;
+  for (const { piece, template } of plans) {
+    for (const block of template.blocks.blocks) {
+      const point = rotateStructurePoint(block.pos, template.size, piece.rotation);
+      startY = Math.max(
+        startY,
+        surfaceAt(startX + piece.position[0] + point[0], startZ + piece.position[2] + point[2]) + 1,
+      );
+    }
+  }
+
+  const cellsByPosition = new Map<string, StructureCell>();
+  const pathCells = new Map<
+    string,
+    { x: number; z: number; y: number; originalY: number; stateId: number }
+  >();
+
+  for (const { piece, template, rotatedSize } of plans) {
     const pieceOrigin: StructurePoint = [
       startX + piece.position[0],
       startY + piece.position[1],
@@ -120,18 +148,36 @@ function buildStartCells(
       const blockId = template.blocks.palette[block.paletteIndex]!;
       const stateId = blockStateId(registry, blockId, rotatedState(block.state, piece.rotation));
       const x = pieceOrigin[0] + point[0];
-      const y = pieceOrigin[1] + point[1];
+      const groundY = surfaceAt(x, pieceOrigin[2] + point[2]);
+      const y = block.surfacePath
+        ? block.surfacePathAnchor
+          ? pieceOrigin[1] + point[1]
+          : groundY + 1
+        : pieceOrigin[1] + point[1];
       const z = pieceOrigin[2] + point[2];
       cellsByPosition.set(x + ',' + y + ',' + z, { x, y, z, stateId });
+      if (block.surfacePath) pathCells.set(x + ',' + z, { x, z, y, originalY: y, stateId });
     }
 
+    const supportFootprint = [
+      ...new Set(
+        template.blocks.blocks
+          .filter((block) => !block.surfacePath)
+          .map((block) => {
+            const point = rotateStructurePoint(block.pos, template.size, piece.rotation);
+            return point[0] + ',' + point[2];
+          }),
+      ),
+    ].map((key) => key.split(',').map(Number) as [number, number]);
     const adapted = adaptPieceToTerrain(
       worldSeed,
       { position: pieceOrigin, size: rotatedSize },
       {
         foundationBlock: registration.foundationBlock,
         stiltsBlock: registration.stiltsBlock,
+        supportFootprint,
       },
+      (_seed, x, z) => surfaceAt(x, z),
     );
     for (const block of adapted) {
       const stateId = blockStateId(registry, block.id);
@@ -140,6 +186,39 @@ function buildStartCells(
         y: block.y,
         z: block.z,
         stateId,
+      });
+    }
+  }
+
+  // Raise low path cells until every horizontal step is no taller than one block. Path cells
+  // remain at or above the terrain surface; anchored cells stay level with their doors.
+  const pathQueue = [...pathCells.values()];
+  for (let index = 0; index < pathQueue.length; index++) {
+    const current = pathQueue[index]!;
+    for (const [dx, dz] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const neighbor = pathCells.get(current.x + dx + ',' + (current.z + dz));
+      if (neighbor && neighbor.y < current.y - 1) {
+        neighbor.y = current.y - 1;
+        pathQueue.push(neighbor);
+      }
+    }
+  }
+  for (const { x, z, y, originalY, stateId } of pathCells.values()) {
+    cellsByPosition.delete(x + ',' + originalY + ',' + z);
+    cellsByPosition.set(x + ',' + y + ',' + z, { x, y, z, stateId });
+    const groundY = surfaceAt(x, z);
+    for (let supportY = groundY + 1; supportY < y; supportY++) {
+      const supportId = blockStateId(registry, registration.foundationBlock);
+      cellsByPosition.set(x + ',' + supportY + ',' + z, {
+        x,
+        y: supportY,
+        z,
+        stateId: supportId,
       });
     }
   }
@@ -160,6 +239,7 @@ export function createStructureStage(
   );
   const registry = validRegistrations.length > 0 ? BlockRegistry.getInstance() : null;
   const assembledByStart = new Map<string, readonly StructureCell[]>();
+  const placementsBySeed = new Map<string, ReturnType<typeof createPlacementGrid>>();
 
   function getCells(
     worldSeed: number,
@@ -205,7 +285,36 @@ export function createStructureStage(
 
       for (const registration of validRegistrations) {
         const radius = structureRadius(registration);
-        const grid = createPlacementGrid(worldSeed, [registration.config]);
+        const variant = terrainVariant();
+        const placementKey = `${worldSeed}:${variant.type}:${variant.biome ?? ''}:${registration.config.id}`;
+        let grid = placementsBySeed.get(placementKey);
+        if (!grid) {
+          const isFlat = variant.type === 'flat';
+          const biomeByPosition = new Map<string, string>();
+          const biomeSampler = (seed: number, x: number, z: number): string => {
+            if (isFlat) return 'plains';
+            const key = x + ',' + z;
+            const cached = biomeByPosition.get(key);
+            if (cached !== undefined) {
+              biomeByPosition.delete(key);
+              biomeByPosition.set(key, cached);
+              return cached;
+            }
+            const biome = sampleBiome(seed, x, z);
+            biomeByPosition.set(key, biome);
+            if (biomeByPosition.size > 512) {
+              const oldest = biomeByPosition.keys().next().value as string | undefined;
+              if (oldest !== undefined) biomeByPosition.delete(oldest);
+            }
+            return biome;
+          };
+          grid = createPlacementGrid(worldSeed, [registration.config], biomeSampler);
+          placementsBySeed.set(placementKey, grid);
+          if (placementsBySeed.size > 4) {
+            const oldest = placementsBySeed.keys().next().value as string | undefined;
+            if (oldest !== undefined) placementsBySeed.delete(oldest);
+          }
+        }
         const starts = grid.within(registration.config.id, {
           minX: minWorldX - radius,
           minZ: minWorldZ - radius,

@@ -226,6 +226,8 @@ export function deserializeInventory(
 export interface SerializedItemEntity {
   id: string;
   count: number;
+  damage?: number | null;
+  affix?: ItemAffix;
   position: [number, number, number];
   velocity: [number, number, number];
   pickupDelay: number;
@@ -240,6 +242,8 @@ export function serializeItemEntities(
       return {
         id: e.item.id,
         count: e.count,
+        ...(e.damage !== undefined ? { damage: e.damage } : {}),
+        ...(e.affix !== undefined ? { affix: e.affix } : {}),
         position: [e.pos[0], e.pos[1], e.pos[2]],
         velocity: [e.vel[0], e.vel[1], e.vel[2]],
         pickupDelay: e.pickupDelay,
@@ -253,6 +257,10 @@ export function serializeItemEntities(
       return {
         id,
         count: e.count,
+        ...(entityObj['damage'] !== undefined
+          ? { damage: entityObj['damage'] as number | null }
+          : {}),
+        ...(entityObj['affix'] !== undefined ? { affix: entityObj['affix'] as ItemAffix } : {}),
         position: [pos[0], pos[1], pos[2]],
         velocity: [vel[0], vel[1], vel[2]],
         pickupDelay: e.pickupDelay,
@@ -293,6 +301,14 @@ export function deserializeItemEntities(bytes: Uint8Array): SerializedItemEntity
       typeof item.age !== 'number'
     ) {
       throw new Error('Invalid item entity data');
+    }
+    if (
+      (item.damage !== undefined &&
+        item.damage !== null &&
+        (!Number.isSafeInteger(item.damage) || item.damage < 0)) ||
+      (item.affix !== undefined && !isItemAffix(item.affix))
+    ) {
+      throw new Error('Invalid item entity variant');
     }
     try {
       items.get(item.id);

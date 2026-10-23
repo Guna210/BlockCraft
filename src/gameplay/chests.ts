@@ -6,6 +6,7 @@ import {
 import type { World } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { ItemEntityManager } from '../entity/item-entity';
+import { isItemAffix } from './items';
 
 export interface ChestSlot extends Record<string, JsonValue> {
   id: string;
@@ -190,7 +191,15 @@ export function spillChestContents(
   const contents = state.slots.filter((stack): stack is ChestSlot => stack !== null);
   const freeEntities = entities.pool.reduce((count, entity) => count + Number(!entity.active), 0);
   if (contents.length > freeEntities) return false;
-  for (const stack of contents)
-    if (!entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5)) return false;
+  for (const stack of contents) {
+    const damage = stack['damage'];
+    const affix = stack['affix'];
+    const variant = {
+      ...(typeof damage === 'number' || damage === null ? { damage } : {}),
+      ...(isItemAffix(affix) ? { affix } : {}),
+    };
+    if (!entities.spawn(stack.id, stack.count, x + 0.5, y + 0.5, z + 0.5, undefined, variant))
+      return false;
+  }
   return true;
 }

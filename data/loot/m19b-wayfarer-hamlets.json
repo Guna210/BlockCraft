@@ -1,0 +1,4 @@
+{
+  "farmland": [{ "id": "dirt", "count": 1 }],
+  "wheat_crop": [{ "id": "wheat", "count": 1, "min": 1, "max": 3 }]
+}

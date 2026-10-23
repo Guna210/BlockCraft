@@ -13,6 +13,6 @@ export function dropInventoryStack(
 ): CursorStack | null {
   const stack = inventory.peekDrop(target, whole);
   if (!stack) return null;
-  if (!manager.spawn(stack.id, stack.count, ...position, thrown)) return null;
+  if (!manager.spawn(stack.id, stack.count, ...position, thrown, stack)) return null;
   return inventory.drop(target, whole);
 }

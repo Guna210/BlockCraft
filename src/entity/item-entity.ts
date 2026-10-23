@@ -2,7 +2,7 @@ import { PRNG, deriveSeed } from '../engine/rng';
 import { BlockCollision, EPSILON, type Position } from './physics';
 import type { Player } from './player';
 import type { World } from '../world/world';
-import { items, type ItemDefinition } from '../gameplay/items';
+import { items, type ItemAffix, type ItemDefinition } from '../gameplay/items';
 
 export const ITEM_CAPACITY = 256;
 export const ITEM_LIFETIME = 6000;
@@ -10,6 +10,8 @@ export class ItemEntity {
   active = false;
   id = 0;
   item: ItemDefinition = items.get('stone');
+  damage?: number | null;
+  affix?: ItemAffix;
   count = 0;
   age = 0;
   /** Ticks before the player can collect the item; thrown items use it so they are not re-collected. */
@@ -28,6 +30,8 @@ export interface EntitySnapshot {
   item: string;
   count: number;
   age: number;
+  damage?: number | null;
+  affix?: ItemAffix;
 }
 /** Dedicated bounded manager; IDs and plain snapshots can join M13a's entity API later. */
 export class ItemEntityManager {
@@ -46,6 +50,7 @@ export class ItemEntityManager {
     y: number,
     z: number,
     thrown?: { velocity: Position; pickupDelay: number },
+    variant: { damage?: number | null; affix?: ItemAffix } = {},
   ): ItemEntity | null {
     const item = items.get(id);
     if (!Number.isInteger(count) || count < 1 || count > item.maxStack)
@@ -61,6 +66,10 @@ export class ItemEntityManager {
     entity.id = this.nextId++;
     entity.item = item;
     entity.count = count;
+    if (variant.damage !== undefined) entity.damage = variant.damage;
+    else delete entity.damage;
+    if (variant.affix !== undefined) entity.affix = variant.affix;
+    else delete entity.affix;
     entity.age = 0;
     entity.phase = this.random.next() * Math.PI * 2;
     entity.pos[0] = entity.previous[0] = x;
@@ -112,6 +121,8 @@ export class ItemEntityManager {
         if (
           !other.active ||
           other.item !== entity.item ||
+          (other.damage ?? null) !== (entity.damage ?? null) ||
+          other.affix !== entity.affix ||
           Math.hypot(
             other.pos[0] - entity.pos[0],
             other.pos[1] - entity.pos[1],
@@ -139,9 +150,14 @@ export class ItemEntityManager {
         dy = player.pos[1] + 0.6 - (entity.pos[1] + 0.125),
         dz = player.pos[2] - entity.pos[2];
       const distance = Math.hypot(dx, dy, dz);
-      if (distance > 1.5 || player.inventory.capacity(entity.item.id) < entity.count) continue;
+      if (distance > 1.5) continue;
+      const variant = {
+        ...(entity.damage !== undefined ? { damage: entity.damage } : {}),
+        ...(entity.affix !== undefined ? { affix: entity.affix } : {}),
+      };
+      if (player.inventory.capacity(entity.item.id, variant) < entity.count) continue;
       if (distance < 0.4) {
-        if (player.inventory.insert(entity.item.id, entity.count)) entity.active = false;
+        if (player.inventory.insert(entity.item.id, entity.count, variant)) entity.active = false;
       } else {
         // Attraction is velocity; collision remains authoritative, so walls cannot be crossed.
         const pull = 6 / distance;
@@ -173,6 +189,8 @@ export class ItemEntityManager {
         item: e.item.id,
         count: e.count,
         age: e.age,
+        ...(e.damage !== undefined ? { damage: e.damage } : {}),
+        ...(e.affix !== undefined ? { affix: e.affix } : {}),
       }));
   }
 }

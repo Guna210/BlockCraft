@@ -13,6 +13,8 @@ export interface TerrainAdaptationOptions {
   readonly stiltsBlock?: string;
   readonly seaLevel?: number;
   readonly postSpacing?: number;
+  /** Sparse local X/Z columns to support; omitted means the whole piece footprint. */
+  readonly supportFootprint?: readonly (readonly [x: number, z: number])[];
 }
 
 export interface AdaptedTerrainBlock {
@@ -65,27 +67,40 @@ export function adaptPieceToTerrain(
   const [originX, baseY, originZ] = piece.position;
   const [width, , depth] = piece.size;
 
-  for (let localZ = 0; localZ < depth; localZ++) {
-    for (let localX = 0; localX < width; localX++) {
-      const x = originX + localX;
-      const z = originZ + localZ;
-      const groundY = heightSampler(terrainStageSeed, x, z);
-      if (!Number.isSafeInteger(groundY) || groundY >= baseY - 1) continue;
+  const footprint =
+    options.supportFootprint ??
+    Array.from(
+      { length: width * depth },
+      (_, index) => [index % width, Math.floor(index / width)] as const,
+    );
+  for (const [localX, localZ] of footprint) {
+    if (
+      !Number.isSafeInteger(localX) ||
+      !Number.isSafeInteger(localZ) ||
+      localX < 0 ||
+      localX >= width ||
+      localZ < 0 ||
+      localZ >= depth
+    ) {
+      throw new Error('Invalid terrain support footprint');
+    }
+    const x = originX + localX;
+    const z = originZ + localZ;
+    const groundY = heightSampler(terrainStageSeed, x, z);
+    if (!Number.isSafeInteger(groundY) || groundY >= baseY - 1) continue;
 
-      const underwater = groundY < seaLevel;
-      if (
-        underwater &&
-        !(
-          isPostCoordinate(localX, width, postSpacing) &&
-          isPostCoordinate(localZ, depth, postSpacing)
-        )
-      ) {
-        continue;
-      }
-      const blockId = underwater ? stiltsBlock : options.foundationBlock;
-      for (let y = groundY + 1; y < baseY; y++) {
-        blocks.push({ x, y, z, id: blockId });
-      }
+    const underwater = groundY < seaLevel;
+    if (
+      underwater &&
+      !(
+        isPostCoordinate(localX, width, postSpacing) && isPostCoordinate(localZ, depth, postSpacing)
+      )
+    ) {
+      continue;
+    }
+    const blockId = underwater ? stiltsBlock : options.foundationBlock;
+    for (let y = groundY + 1; y < baseY; y++) {
+      blocks.push({ x, y, z, id: blockId });
     }
   }
   return blocks;

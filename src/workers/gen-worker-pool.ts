@@ -25,6 +25,7 @@ interface GenJob {
   cx: number;
   cz: number;
   variant: TerrainVariant;
+  structures: boolean;
   resolve: (result: GenResult) => void;
   reject: (err: Error) => void;
 }
@@ -179,6 +180,7 @@ export class GenWorkerPool {
     cx: number,
     cz: number,
     variant: TerrainVariant['type'] | TerrainVariant,
+    structures = true,
   ): Promise<GenResult> {
     const id = this.nextJobId++;
 
@@ -189,6 +191,7 @@ export class GenWorkerPool {
         cx,
         cz,
         variant: typeof variant === 'string' ? { type: variant } : variant,
+        structures,
         resolve,
         reject,
       };
@@ -220,6 +223,7 @@ export class GenWorkerPool {
         cz: job.cz,
         type: job.variant.type,
         biome: job.variant.biome,
+        structures: job.structures,
       });
     }
   }

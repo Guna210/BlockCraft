@@ -8,6 +8,10 @@ export interface StructureTemplateBlock {
   readonly pos: StructurePoint;
   readonly paletteIndex: number;
   readonly state?: StructureBlockState;
+  /** Place this block one cell above the sampled terrain, then smooth adjoining path steps. */
+  readonly surfacePath?: boolean;
+  /** Keep this path cell at the hamlet's shared doorway/platform height. */
+  readonly surfacePathAnchor?: boolean;
 }
 
 export interface StructureTemplateBlocks {

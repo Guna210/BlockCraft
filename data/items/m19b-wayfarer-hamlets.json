@@ -1,0 +1,14 @@
+{
+  "farmland": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "farmland",
+    "texture": "farmland_top"
+  },
+  "wheat_crop": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "wheat_crop",
+    "texture": "wheat_crop_7"
+  }
+}

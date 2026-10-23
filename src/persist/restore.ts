@@ -75,6 +75,7 @@ export function applyEntityRecord(items: ItemEntityManager, record: EntityRecord
         velocity: item.velocity,
         pickupDelay: item.pickupDelay,
       },
+      item,
     );
     if (entity) entity.age = item.age;
   }
