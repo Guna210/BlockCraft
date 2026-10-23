@@ -52,6 +52,11 @@ export class GoalSelector {
     return this;
   }
 
+  /** Every goal with its priority, highest rank first. */
+  get goals(): Array<{ priority: number; goal: Goal }> {
+    return this.entries.map((entry) => ({ priority: entry.priority, goal: entry.goal }));
+  }
+
   /** Running goals, highest rank first. */
   get running(): Goal[] {
     return this.entries.filter((entry) => entry.running).map((entry) => entry.goal);

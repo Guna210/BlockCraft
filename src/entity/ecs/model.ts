@@ -68,6 +68,8 @@ export interface EntityModel {
   walk?: WalkAnimation;
   head?: HeadTracking;
   clips?: Record<string, AnimationClip>;
+  /** Drawn full-bright, ignoring world light (a glowing creature). */
+  emissive?: boolean;
 }
 
 /** Procedural skin: returns RGBA bytes of textureSize[0] × textureSize[1] pixels; same seed, same pixels. */

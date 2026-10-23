@@ -105,7 +105,7 @@ export function computePose(
   }
   const tip = tipAngle(health, alpha);
   if (tip) mat4.rotateZ(root, root, tip);
-  translation[0] = translation[1] = translation[2] = PIXEL;
+  translation[0] = translation[1] = translation[2] = PIXEL * (ecs.get(id, RenderableC)?.scale ?? 1);
   mat4.scale(root, root, translation);
   for (let n = 0; n < count; n++) {
     const part = parts[n]!,
