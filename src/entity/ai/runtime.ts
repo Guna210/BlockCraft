@@ -8,6 +8,7 @@ import type { EntityBounds } from '../query';
 import { BlockCollision } from '../physics';
 import { PRNG, deriveSeed } from '../../engine/rng';
 import {
+  AgeC,
   AiC,
   CombatC,
   LoveC,
@@ -58,6 +59,8 @@ export interface MobOptions {
   foods?: Iterable<string>;
   flying?: boolean;
   climbing?: boolean;
+  /** Fall speed cap in blocks per tick. */
+  maxFallSpeed?: number;
   baby?: boolean;
   goals: GoalFactory;
 }
@@ -76,6 +79,7 @@ export function addMob(ecs: EntityWorld, id: number, options: MobOptions): void 
     inFluid: false,
     horizontalCollision: false,
     wish: [0, 0, 0],
+    maxFallSpeed: options.maxFallSpeed ?? Infinity,
     jump: false,
     climb: false,
   });
@@ -346,6 +350,15 @@ export interface EntityAISnapshot {
   /** Ticks left in love (0 when not in love). */
   love: number;
   invulnerableTicks: number;
+  // Creatures (mobs with an age) also report:
+  /** A baby cannot breed and grows up over time. */
+  baby?: boolean;
+  /** Age in ticks; a baby grows up at 24000. */
+  ageTicks?: number;
+  /** Velocity in blocks per tick. */
+  vel?: Vec3;
+  /** Body yaw; forward is (cos yaw, 0, sin yaw). */
+  yaw?: number;
 }
 
 /** AI state of one mob, for the debug API. */
@@ -353,11 +366,19 @@ export function entityAI(ecs: EntityWorld, id: number): EntityAISnapshot {
   if (!ecs.exists(id)) throw new Error(`No entity with id ${id} exists`);
   if (!ecs.has(id, AiC)) throw new Error(`Entity ${id} has no AI`);
   const running = ecs.get(id, AiC)!.selector?.running ?? [];
-  return {
+  const age = ecs.get(id, AgeC);
+  const snapshot: EntityAISnapshot = {
     goal: (running.find((goal) => goal.flags.includes('move')) ?? running[0])?.name ?? null,
     target: ecs.get(id, TargetC)?.target ?? null,
     pathLength: ecs.get(id, NavC)?.navigator.pathLength ?? 0,
     love: ecs.get(id, LoveC)?.loveTicks ?? 0,
     invulnerableTicks: ecs.get(id, CombatC)?.invulnerableTicks ?? 0,
   };
+  if (age) {
+    snapshot.baby = age.baby;
+    snapshot.ageTicks = age.ageTicks;
+    snapshot.vel = [...(ecs.get(id, MobBodyC)?.vel ?? [0, 0, 0])];
+    snapshot.yaw = ecs.get(id, TransformC)?.yaw ?? 0;
+  }
+  return snapshot;
 }

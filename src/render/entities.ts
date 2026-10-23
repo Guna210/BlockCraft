@@ -209,6 +209,7 @@ interface ModelResources {
   buffer: WebGLBuffer;
   texture: WebGLTexture;
   vertices: number;
+  emissive: boolean;
 }
 
 export interface EntityRenderView {
@@ -306,7 +307,13 @@ export class EntityRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_2D, null);
-    const resources = { vao, buffer, texture, vertices: data.length / ENTITY_VERTEX_FLOATS };
+    const resources = {
+      vao,
+      buffer,
+      texture,
+      vertices: data.length / ENTITY_VERTEX_FLOATS,
+      emissive: model.emissive === true,
+    };
     this.models.set(id, resources);
     return resources;
   }
@@ -354,9 +361,20 @@ export class EntityRenderer {
       }
       const parts = computePose(ecs, id, alpha, this.pose);
       gl.uniformMatrix4fv(loc.parts, false, this.pose, 0, parts * 16);
-      const centre = y + (ecs.get(id, BodyC)?.height ?? 1) / 2;
-      entityLight(world, x, centre, z, view.skyBrightness, underwater.brightnessFloor, this.light);
-      gl.uniform3f(loc.light, this.light[0], this.light[1], this.light[2]);
+      if (resources.emissive) gl.uniform3f(loc.light, 1, 1, 1);
+      else {
+        const centre = y + (ecs.get(id, BodyC)?.height ?? 1) / 2;
+        entityLight(
+          world,
+          x,
+          centre,
+          z,
+          view.skyBrightness,
+          underwater.brightnessFloor,
+          this.light,
+        );
+        gl.uniform3f(loc.light, this.light[0], this.light[1], this.light[2]);
+      }
       gl.uniform1f(loc.hurt, hurtTint(ecs.get(id, HealthC)));
       this.wrapper.drawArrays(gl.TRIANGLES, 0, resources.vertices);
       this.draws++;
@@ -364,6 +382,8 @@ export class EntityRenderer {
     }
     gl.bindVertexArray(null);
     gl.bindTexture(gl.TEXTURE_2D, view.atlasTexture);
+    // The passes after this one (particles, translucent terrain, weather) draw both faces.
+    gl.disable(gl.CULL_FACE);
     return this.draws;
   }
 
