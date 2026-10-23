@@ -719,7 +719,11 @@ describe('M03e — ores', () => {
   });
 
   it('the ore code uses no implementation-approximated math and no Math.random', () => {
-    for (const file of ['src/gen/ores.ts', 'src/debug/api/ore-locate.ts']) {
+    for (const file of [
+      'src/gen/ores.ts',
+      'src/debug/api/ore-locate.ts',
+      'src/game/commands/ore-locate.ts',
+    ]) {
       const src = fs
         .readFileSync(path.join(__dirname, '../..', file), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
