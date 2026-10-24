@@ -17,7 +17,7 @@ import {
 import { drawButton, drawInset, drawPanel, fillRect, UI, uiScaleFor } from './ui-kit';
 import { drawText, textWidth } from './pixel-font';
 
-type Tab = 'video' | 'audio' | 'controls-1' | 'controls-2';
+type Tab = 'video' | 'audio' | 'controls-1' | 'controls-2' | 'controls-3';
 type RangeKey =
   | 'renderDistance'
   | 'fov'
@@ -161,9 +161,14 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'audio', label: 'AUDIO' },
   { id: 'controls-1', label: 'KEYS 1' },
   { id: 'controls-2', label: 'KEYS 2' },
+  { id: 'controls-3', label: 'KEYS 3' },
 ];
 
-const actionGroups = [KEYBIND_ACTIONS.slice(0, 14), KEYBIND_ACTIONS.slice(14)];
+const actionGroups = [
+  KEYBIND_ACTIONS.slice(0, 14),
+  KEYBIND_ACTIONS.slice(14, 27),
+  KEYBIND_ACTIONS.slice(27),
+];
 
 /** Pixel-font settings overlay with accessible DOM hit targets over the drawn controls. */
 export class SettingsScreen {
@@ -431,7 +436,7 @@ export class SettingsScreen {
     this.controls.replaceChildren();
     let tabX = 8;
     for (const tab of tabs) {
-      const w = tab.id.startsWith('controls') ? 72 : 68;
+      const w = 58;
       drawButton(ctx, { x: tabX, y: 23, w, h: 17 }, tab.label, 1, this.tab === tab.id);
       this.addHitTarget(tab.label, tabX, 23, w, 17, () => {
         this.tab = tab.id;
@@ -467,7 +472,7 @@ export class SettingsScreen {
         }
       });
     } else {
-      const group = this.tab === 'controls-1' ? 0 : 1;
+      const group = this.tab === 'controls-1' ? 0 : this.tab === 'controls-2' ? 1 : 2;
       const actions = actionGroups[group]!;
       actions.forEach((action, index) => {
         const y = 47 + index * 11;

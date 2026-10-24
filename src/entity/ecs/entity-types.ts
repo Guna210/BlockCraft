@@ -44,6 +44,11 @@ export function hasEntityType(type: string): boolean {
   return types.has(type);
 }
 
+/** A snapshot for console completion; callers cannot mutate the spawn registry. */
+export function entityTypeIds(): string[] {
+  return [...types.keys()];
+}
+
 export function registerEntityFamily(prefix: string, spawner: EntityFamilySpawner): void {
   if (families.has(prefix)) throw new Error(`Duplicate entity family: ${prefix}`);
   families.set(prefix, spawner);

@@ -27,6 +27,9 @@ export const KEYBIND_ACTIONS = [
   'hotbar7',
   'hotbar8',
   'hotbar9',
+  'chat',
+  'command',
+  'screenshot',
 ] as const;
 
 export type KeybindAction = (typeof KEYBIND_ACTIONS)[number];
@@ -60,6 +63,9 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   hotbar7: 'Digit7',
   hotbar8: 'Digit8',
   hotbar9: 'Digit9',
+  chat: 'KeyT',
+  command: 'Slash',
+  screenshot: 'F2',
 };
 
 export function cloneKeyBindings(bindings: KeyBindings = DEFAULT_KEY_BINDINGS): KeyBindings {
@@ -133,6 +139,9 @@ export const KEYBIND_LABELS: Record<KeybindAction, string> = {
   hotbar7: 'Hotbar slot 7',
   hotbar8: 'Hotbar slot 8',
   hotbar9: 'Hotbar slot 9',
+  chat: 'Open chat',
+  command: 'Open command',
+  screenshot: 'Screenshot',
 };
 
 /** Converts a DOM mouse button number to the same code used by key bindings. */
