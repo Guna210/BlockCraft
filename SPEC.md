@@ -922,6 +922,8 @@ Parallel: the M12 track needs only M05b, so it runs alongside M06–M11. M12b �
 - [ ] E2E: a Hollow placed in direct daylight moves to shade (block with sky light < 15 above it) within 300 ticks when shade exists within 16 blocks.
 - [ ] E2E: a Skitterer climbs a 6-block vertical wall to reach the player.
 - [ ] E2E: a Sporeburst adjacent to the player swells for 30 ticks then bursts, removing blocks in a radius (the block-removal assertion is added by task M14) and damaging the player; moving away > 7 blocks during the swell cancels it.
+- [ ] E2E: a Cinderwraith 10 blocks away stays neutral for 200 ticks while the player looks elsewhere; when the player looks at its eyes, it becomes hostile, reaches the player and deals damage within 200 ticks; striking a neutral Cinderwraith also makes it hostile.
+- [ ] E2E: a hurt Cinderwraith teleports at least 4 blocks and always lands on a safe spot (solid block below, 2 free blocks above, no fluid).
 - [ ] E2E: striking a Tuftbuck while falling deals 1.5× damage and applies knockback (entity velocity away from player > 0).
 - [ ] E2E: 2 Tuftbucks fed wheat within 5 blocks produce a baby within 100 ticks.
 - [ ] E2E: at night in an unlit 64×64 area, hostile count stays ≤ the mob cap after 2000 ticks; at noon in the open, no new hostiles spawn.
@@ -932,6 +934,7 @@ Parallel: the M12 track needs only M05b, so it runs alongside M06–M11. M12b �
 - `m13-creatures.png`: lineup of every Appendix B creature spawned in a row, each visually distinct, textured, lit, and none resembling characters from existing games.
 - `m13-combat.png`: hostile flashing red after being hit.
 - `m13-night.png`: hostile creatures visible in the dark approaching.
+- `m13-cinderwraith.png`: grey cinder body with glowing red eyes and red ember particles, distinct from every other creature.
 
 **Task breakdown**
 
@@ -943,9 +946,10 @@ Parallel: the M12 track needs only M05b, so it runs alongside M06–M11. M12b �
 | **M13d** — Projectiles & bows | projectile physics with gravity and drag; bow charge-up; arrows stick in blocks and can be picked up; shared projectile module that the Thornling reuses | E2E arrow drop and embed |
 | **M13e** — Passive creatures | Tuftbuck, Rootboar, Dapplefowl, Mossback, Glimmer Moth: original models, procedural skins, behaviors, drops, breeding, babies growing up over 20 minutes | E2E crit and knockback on a Tuftbuck; E2E breeding |
 | **M13f** — Hostile creatures | Hollow, Thornling, Skitterer, Sporeburst: original models, procedural skins, behaviors, drops | E2E Hollow reaches the player; E2E Hollow seeks shade; E2E Skitterer climbs; E2E Sporeburst swell, cancel and damage (the block-removal half is added by M14) |
+| **M13h** — Cinderwraith | Cinderwraith: original model, procedural skin with glowing eyes, red ember particles, gaze-triggered and retaliation aggro, safe-spot teleport, drops | E2E neutral until gazed at or hit; E2E safe teleport; Visual Review `m13-cinderwraith.png` |
 | **M13g** — Creatures close-out | natural-spawning verification; full milestone verification | E2E mob cap and no noon spawns; Visual Review `m13-creatures.png`, `m13-combat.png`, `m13-night.png` |
 
-Parallel: M13b is an early start. It needs only M06b, so it runs alongside M07–M12. M13d ∥ M13e after M13c. M13f needs M13d.
+Parallel: M13b is an early start. It needs only M06b, so it runs alongside M07–M12. M13d ∥ M13e after M13c. M13f needs M13d. M13h needs M13f; M13g needs M13e, M13f and M13h.
 
 ---
 
@@ -1443,6 +1447,7 @@ Every creature has a procedurally generated skin, a unique silhouette, idle/hurt
 | **Thornling**    | Hostile (ranged)  | Dark areas                             | 16     | Walking bramble-bush creature with a single blinking eye in its thorns                           | Keeps 8–12 block distance; strafes; fires arcing thorn projectiles (gravity)                                               | Thorns (arrowheads), sticks            |
 | **Skitterer**    | Hostile (melee)   | Dark areas, caves; neutral in daylight | 16     | Low six-legged segmented crawler with a glossy carapace                                          | Climbs walls and ceilings; leaps at the player from up to 4 blocks                                                         | Silk (bowstrings), Carapace            |
 | **Sporeburst**   | Hostile (burst)   | Dark areas, mushroom-heavy caves       | 20     | Waddling fungus with a swelling cap and stubby root-legs                                         | Approaches silently; within 3 blocks swells for 30 ticks and bursts (power 3 explosion + lingering spore cloud that slows) | Spore Powder (Blast Charge ingredient) |
+| **Cinderwraith** | Neutral (melee)   | Dark areas (block light 0), rare       | 30     | Hunched, broad-shouldered figure of cracked ash-grey cinder stone that walks on its long knuckles; two glowing red eyes under a heavy brow; red ember sparks drift up from its cracks | Ignores the player until hit, or until the player looks at its eyes from within 64 blocks; then pursues and attacks. Teleports up to 16 blocks to a safe spot when hurt and to close distance while angry, bursting embers at both ends | Cinder Shard ×0–1 |
 | **Glowwing**     | Hostile (flying)  | Hollowdeep                             | 14     | Translucent bioluminescent ray with trailing light ribbons                                       | 3D flight pathfinding, circles then dives at the player                                                                    | Luminous Membrane                      |
 | **Magmaw**       | Hostile (aquatic) | Hollowdeep magma seas                  | 24     | Armored eel with a glowing seam along its body                                                   | Swims in lava, lunges onto shore at players within 6 blocks, sets them on fire                                             | Emberite Scale                         |
 
@@ -1546,7 +1551,8 @@ Milestone-level dependencies are the same as in the original edition, with three
 | M18b | Settings & keybinds | M18a | 28 |
 | M18c | Creative inventory, chat & commands | M18a | 28 |
 | M19b | Wayfarer Hamlets | M19a | 28 |
-| M13g | Creatures close-out | M13e, M13f | 29 |
+| M13h | Cinderwraith | M13f | 29 |
+| M13g | Creatures close-out | M13e, M13f, M13h | 30 |
 | M14 | Explosions | M13g | 30 |
 | M19c | Crypts, ruins, warrens & spawners | M19a, M13g | 30 |
 | M16b | Audio integration | M14, M16a, M16c | 31 |

@@ -155,10 +155,22 @@ export function isBlocking(player: Player): boolean {
   return shieldSlot(player) !== null && player.down('use');
 }
 
+/** Ticks after a hit from an entity during which further entity hits do nothing. */
+export const PLAYER_INVULNERABLE_TICKS = 10;
+
+// Kept beside the player rather than on it; PlayerCombat.tick counts it down.
+const invulnerable = new WeakMap<Player, number>();
+
+/** Ticks left of the player's immunity to entity damage. */
+export function playerInvulnerableTicks(player: Player): number {
+  return invulnerable.get(player) ?? 0;
+}
+
 /**
- * Damage from a mob or blast at `from`. A raised shield facing the source blocks all of it and
- * wears by one point; otherwise armor reduces it. Creative players take none. True when health
- * was lost.
+ * Damage from a mob, projectile or blast at `from`. A raised shield facing the source blocks all
+ * of it and wears by one point; otherwise armor reduces it. Creative players take none, and for
+ * PLAYER_INVULNERABLE_TICKS after a hit the player takes none from entities either. True when
+ * health was lost.
  */
 export function hurtPlayer(
   player: Player,
@@ -175,9 +187,11 @@ export function hurtPlayer(
       player.inventory.slots[slot] = null;
     return false;
   }
+  if (playerInvulnerableTicks(player) > 0) return false;
   const reduced = armorReduced(amount, playerArmor(player));
   if (reduced <= 0) return false;
   player.survival.damage(reduced, source);
+  invulnerable.set(player, PLAYER_INVULNERABLE_TICKS);
   return true;
 }
 
@@ -301,6 +315,11 @@ export class PlayerCombat {
   /** Runs before block interaction so an entity in front of a block takes the click. */
   tick(): void {
     const player = this.player;
+    const immune = invulnerable.get(player);
+    if (immune !== undefined) {
+      if (immune > 1) invulnerable.set(player, immune - 1);
+      else invulnerable.delete(player);
+    }
     const held = player.inventory.held?.id ?? null;
     if (held !== this.heldId) {
       this.heldId = held;

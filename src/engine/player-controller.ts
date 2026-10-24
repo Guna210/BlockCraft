@@ -23,6 +23,7 @@ import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-
 import { PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
 import '../entity/mobs';
+import { slowPlayer } from '../entity/player-slow';
 import { ProjectileRuntime } from '../entity/projectiles';
 import { BowController } from '../gameplay/bow';
 
@@ -184,6 +185,7 @@ export class PlayerController {
       heldItemId: () => player.inventory.held?.id ?? null,
       targetable: () => player.mode === 'survival' && !player.dead,
       hurt: (amount, source, from) => hurtPlayer(player, amount, source, from),
+      slow: (factor, ticks) => slowPlayer(player, factor, ticks),
     };
     this.mobs?.dispose();
     this.mobs = new MobRuntime(world, ecs, {
