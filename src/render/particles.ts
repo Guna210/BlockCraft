@@ -5,6 +5,7 @@ import type { World } from '../world/world';
 export const PARTICLE_CAPACITY = 512;
 export class BreakParticle {
   active = false;
+  emberOwner: number | null = null;
   age = 0;
   lifetime = 20;
   state = 0;
@@ -28,6 +29,7 @@ export class BreakParticles {
       const p = this.pool[this.next]!;
       this.next = (this.next + 1) % PARTICLE_CAPACITY;
       p.active = true;
+      p.emberOwner = null;
       p.age = 0;
       p.state = state;
       p.lifetime = 18 + Math.floor(this.random.next() * 5);
@@ -41,6 +43,29 @@ export class BreakParticles {
       }
     }
   }
+  /** A bounded share of the existing pool; no ember pool or additional tick system. */
+  ember(owner: number, pos: Readonly<Position>, random: () => number, count = 1): void {
+    let active = 0;
+    for (const p of this.pool) if (p.active && p.emberOwner === owner) active++;
+    for (let i = 0; i < Math.min(count, 24 - active); i++) {
+      const p = this.pool[this.next]!;
+      this.next = (this.next + 1) % PARTICLE_CAPACITY;
+      p.active = true;
+      p.emberOwner = owner;
+      p.age = 0;
+      p.lifetime = 16 + Math.floor(random() * 9);
+      for (let a = 0; a < 3; a++) {
+        p.pos[a] = p.previous[a] =
+          pos[a]! +
+          (a === 1
+            ? count > 1
+              ? 0.6 + random() * 0.9
+              : random() * 0.1
+            : (random() - 0.5) * (count > 1 ? 0.9 : 0.08));
+        p.vel[a] = a === 1 ? 0.7 + random() * 0.6 : (random() - 0.5) * 0.4;
+      }
+    }
+  }
   tick(): void {
     for (let n = 0; n < PARTICLE_CAPACITY; n++) {
       const p = this.pool[n]!;
@@ -49,7 +74,7 @@ export class BreakParticles {
         p.active = false;
         continue;
       }
-      p.vel[1] -= 12 * 0.05;
+      p.vel[1] += p.emberOwner === null ? -12 * 0.05 : 0.03;
       for (let axis = 0; axis < 3; axis++) {
         p.previous[axis] = p.pos[axis]!;
         p.pos[axis]! += p.vel[axis]! * 0.05;

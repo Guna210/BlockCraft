@@ -1,3 +1,4 @@
+import type { BreakParticles } from '../../render/particles';
 import { PRNG, deriveSeed } from '../../engine/rng';
 import { defineComponent, type EntityWorld } from '../ecs/world';
 import { BodyC, HealthC, RenderableC, TransformC } from '../ecs/components';
@@ -10,7 +11,7 @@ import {
 import { spawnModelEntity } from '../ecs/systems';
 import { AgeC, LoveC, MobC, type MobCategory } from '../ai/components';
 import { registerMobInteraction, type MobUse } from '../ai/interactions';
-import { AI_ORDER, addMob, type GoalFactory } from '../ai/runtime';
+import { AI_ORDER, addMob, mobRuntime, type GoalFactory } from '../ai/runtime';
 import type { ItemEntityManager } from '../item-entity';
 
 /** Ticks for a baby to grow up: 20 minutes at 20 ticks per second. */
@@ -47,6 +48,7 @@ export type Drops = Array<[itemId: string, count: number]>;
 export interface CreatureContext {
   ecs: EntityWorld;
   items: ItemEntityManager;
+  particles?: BreakParticles;
   /** Deterministic random number in [0, 1), seeded from the world seed. */
   random(): number;
 }
@@ -100,6 +102,9 @@ function contextFor(spawn: EntitySpawnContext): CreatureContext {
     const created: CreatureContext = {
       ecs: spawn.ecs,
       items: spawn.items,
+      ...((spawn.particles ?? mobRuntime(spawn.ecs)?.spawnContext?.particles)
+        ? { particles: spawn.particles ?? mobRuntime(spawn.ecs)?.spawnContext?.particles }
+        : {}),
       random: () => rng.next(),
     };
     ctx = created;

@@ -22,10 +22,12 @@ layout(location=0) in vec3 a_pos;
 layout(location=1) in vec2 a_uv;
 layout(location=2) in vec3 a_normal;
 layout(location=3) in float a_part;
+layout(location=4) in float a_emissive;
 uniform mat4 u_parts[${MAX_MODEL_PARTS}];
 uniform mat4 u_viewProj;
 out vec2 v_uv;
 out float v_shade;
+out float v_emissive;
 out vec3 v_worldPos;
 void main() {
   mat4 part = u_parts[int(a_part + 0.5)];
@@ -35,6 +37,7 @@ void main() {
   float side = mix(0.6, 0.8, abs(n.z) / max(abs(n.x) + abs(n.z), 1e-4));
   v_shade = n.y >= 0.0 ? mix(side, 1.0, n.y) : mix(side, 0.5, -n.y);
   v_uv = a_uv;
+  v_emissive = a_emissive;
   v_worldPos = world.xyz;
   gl_Position = u_viewProj * world;
 }`;
@@ -42,6 +45,7 @@ const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 in float v_shade;
+in float v_emissive;
 in vec3 v_worldPos;
 uniform sampler2D u_skin;
 uniform vec3 u_light;
@@ -60,7 +64,7 @@ ${GLSL_SKY_ATMOSPHERE}
 void main() {
   vec4 tex = texture(u_skin, v_uv);
   if (tex.a < 0.5) discard;
-  vec3 color = mix(tex.rgb, vec3(1.0, 0.0, 0.0), u_hurt) * u_light * v_shade;
+  vec3 color = mix(tex.rgb, vec3(1.0, 0.0, 0.0), u_hurt) * mix(u_light * v_shade, vec3(1.0), v_emissive);
   vec3 delta = v_worldPos - u_eye;
   float distance = u_underwater ? length(delta) : length(delta.xz);
   float fog = smoothstep(u_fogStart, u_fogEnd, distance);
@@ -68,8 +72,8 @@ void main() {
   fragColor = vec4(mix(color, fogColor, fog), 1.0);
 }`;
 
-/** Floats per baked vertex: position (3), uv (2), normal (3), part index (1). */
-export const ENTITY_VERTEX_FLOATS = 9;
+/** Floats per baked vertex: position (3), uv (2), normal (3), part index (1), part emission (1). */
+export const ENTITY_VERTEX_FLOATS = 10;
 
 // Corners per face, seen from outside: 0 bottom-left, 1 top-left, 2 top-right, 3 bottom-right of its UV rect.
 const FACE_CORNERS: Record<FaceName, { normal: [number, number, number]; corners: number[][] }> = {
@@ -171,6 +175,7 @@ export function bakeEntityModel(model: EntityModel): Float32Array {
           data[n++] = normal[1];
           data[n++] = normal[2];
           data[n++] = partIndex;
+          data[n++] = part.emissive ? 1 : 0;
         }
       }
     }
@@ -282,7 +287,7 @@ export class EntityRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     const stride = ENTITY_VERTEX_FLOATS * 4;
-    [3, 2, 3, 1].reduce((offset, size, attr) => {
+    [3, 2, 3, 1, 1].reduce((offset, size, attr) => {
       gl.enableVertexAttribArray(attr);
       gl.vertexAttribPointer(attr, size, gl.FLOAT, false, stride, offset * 4);
       return offset + size;

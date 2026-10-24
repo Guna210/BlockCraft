@@ -172,6 +172,11 @@ export class Navigator {
     readonly id: number,
   ) {}
 
+  /** Direct fallback after A* could not supply a path (or following became stuck). */
+  get failed(): boolean {
+    return this.state === 'direct' && this.path === null;
+  }
+
   get idle(): boolean {
     return this.state === 'idle';
   }

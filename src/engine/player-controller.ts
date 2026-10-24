@@ -183,6 +183,14 @@ export class PlayerController {
         return player.height;
       },
       heldItemId: () => player.inventory.held?.id ?? null,
+      gaze: () => ({
+        origin: [player.pos[0], player.pos[1] + player.eye, player.pos[2]],
+        direction: [
+          Math.cos(player.yaw) * Math.cos(player.pitch),
+          Math.sin(player.pitch),
+          Math.sin(player.yaw) * Math.cos(player.pitch),
+        ],
+      }),
       targetable: () => player.mode === 'survival' && !player.dead,
       hurt: (amount, source, from) => hurtPlayer(player, amount, source, from),
       slow: (factor, ticks) => slowPlayer(player, factor, ticks),
@@ -190,7 +198,7 @@ export class PlayerController {
     this.mobs?.dispose();
     this.mobs = new MobRuntime(world, ecs, {
       player: () => (this.player === player ? mobPlayer : null),
-      spawnContext: { ecs, items: itemEntities },
+      spawnContext: { ecs, items: itemEntities, particles: this.particles },
       spawnRules: 'default',
     });
     this.projectiles = new ProjectileRuntime(

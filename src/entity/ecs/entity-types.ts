@@ -1,3 +1,4 @@
+import type { BreakParticles } from '../../render/particles';
 import type { EntityWorld } from './world';
 import type { ItemEntityManager } from '../item-entity';
 import { items } from '../../gameplay/items';
@@ -6,6 +7,7 @@ import { items } from '../../gameplay/items';
 export interface EntitySpawnContext {
   ecs: EntityWorld;
   items: ItemEntityManager;
+  particles?: BreakParticles;
 }
 
 /** Spawn variations a type may support; breeding asks for `{ baby: true }`. */

@@ -1,3 +1,4 @@
+import { CINDER_SHARD_PALETTE, genCinderShard } from './cinder-shard';
 import { toolGenerators, toolPalettes, TERRAIN_TOOL_IDS } from './tools';
 import { items } from '../../gameplay/items';
 import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from './noise';
@@ -182,3 +183,6 @@ for (const [id, generate] of Object.entries(toolGenerators))
     inventoryItemGenerators[id] = generate;
     inventoryItemPalettes[id] = toolPalettes[id]!;
   }
+
+inventoryItemPalettes.cinder_shard = [[0, 0, 0, 0], ...CINDER_SHARD_PALETTE];
+inventoryItemGenerators.cinder_shard = genCinderShard;

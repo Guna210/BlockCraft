@@ -20,6 +20,8 @@ export interface ModelPart {
   parent?: string;
   pivot: Vec3;
   rotation?: Vec3;
+  /** Full-bright part, including face shading; independent of legacy whole-model emissive. */
+  emissive?: boolean;
   cubes: ModelCube[];
 }
 

@@ -39,6 +39,8 @@ export interface MobPlayer {
   readonly height: number;
   /** Item id in the main hand, or null. */
   heldItemId(): string | null;
+  /** Eye and look ray, read only by gaze-sensitive creatures. */
+  gaze?(): { origin: Vec3; direction: Vec3 };
   /** Alive and in survival: hostiles only target such a player. */
   targetable(): boolean;
   /** Mob damage to the player (shield and armor apply); true when any health was lost. */

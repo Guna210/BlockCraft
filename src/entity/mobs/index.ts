@@ -9,3 +9,4 @@ import './hollow';
 import './thornling';
 import './skitterer';
 import './sporeburst';
+import './cinderwraith';
