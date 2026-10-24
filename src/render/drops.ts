@@ -20,7 +20,7 @@ void main(){v_uv=a_uv;v_light=a_light;v_cutoff=a_cutoff;gl_Position=u_vp*vec4(a_
 export const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;in float v_light;flat in float v_cutoff;uniform sampler2D u_atlas;out vec4 color;
-void main(){vec4 tex=texture(u_atlas,v_uv);if(tex.a<v_cutoff)discard;color=vec4(tex.rgb*v_light,1.0);}`;
+void main(){if(v_cutoff<0.0){color=vec4(1.0,0.28,0.12,v_light);return;}vec4 tex=texture(u_atlas,v_uv);if(tex.a<v_cutoff)discard;color=vec4(tex.rgb*v_light,1.0);}`;
 export const FACES: readonly BlockFaceDirection[] = [
   'east',
   'west',
@@ -227,6 +227,7 @@ export class DropRenderer {
     const alpha = c.renderAlpha,
       world = c.player.collision.world,
       registry = BlockRegistry.getInstance();
+    let hasEmbers = false;
     let terrainVertices = 0;
     let hasAdditionalItems = false;
     for (let pass = 0; pass < 2; pass++) {
@@ -312,6 +313,28 @@ export class DropRenderer {
         const x = p.previous[0] + (p.pos[0] - p.previous[0]) * alpha,
           y = p.previous[1] + (p.pos[1] - p.previous[1]) * alpha,
           z = p.previous[2] + (p.pos[2] - p.previous[2]) * alpha;
+        if (p.emberOwner !== null) {
+          hasEmbers = true;
+          const fade = Math.max(0, 1 - (p.age + alpha) / p.lifetime);
+          for (let t = 0; t < 6; t++) {
+            const corner = INDICES[t]!;
+            const top = corner === 1 || corner === 2;
+            const half = 0.022 * (0.6 + 0.4 * fade);
+            const sx = (corner < 2 ? -1 : 1) * half;
+            const sy = (top ? 1 : -1) * half;
+            // A small, hot red square stays bright while drifting, then fades smoothly.
+            this.vertex(
+              x + rx * sx + ux * sy,
+              y + uy * sy,
+              z + rz * sx + uz * sy,
+              0,
+              0,
+              Math.sqrt(fade),
+              -1,
+            );
+          }
+          continue;
+        }
         const rect = this.faces[p.state]![p.face]!,
           light = this.light(world, x, y, z, skyBrightness),
           cutoff =
@@ -361,8 +384,13 @@ export class DropRenderer {
     }
     gl.depthMask(false);
     if (particleVertices) {
+      if (hasEmbers) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      }
       this.wrapper.drawArrays(gl.TRIANGLES, itemVertices, particleVertices);
       this.particleDraws = 1;
+      if (hasEmbers) gl.disable(gl.BLEND);
     }
     gl.depthMask(true);
     gl.enable(gl.CULL_FACE);

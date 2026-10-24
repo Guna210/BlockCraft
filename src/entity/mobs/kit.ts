@@ -26,6 +26,7 @@ export interface PartSpec {
   parent?: string;
   pivot: Vec3;
   rotation?: Vec3;
+  emissive?: boolean;
   cubes: BoxSpec[];
 }
 
@@ -49,6 +50,7 @@ export function buildModel(spec: ModelSpec): EntityModel {
     name: part.name,
     ...(part.parent !== undefined ? { parent: part.parent } : {}),
     pivot: part.pivot,
+    ...(part.emissive ? { emissive: true } : {}),
     ...(part.rotation ? { rotation: part.rotation } : {}),
     cubes: part.cubes.map((box) => {
       if (!box.size.every((n) => Number.isInteger(n) && n >= 0))

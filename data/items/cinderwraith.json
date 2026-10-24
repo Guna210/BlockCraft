@@ -1,0 +1,7 @@
+{
+  "cinder_shard": {
+    "kind": "material",
+    "maxStack": 64,
+    "texture": "cinder_shard"
+  }
+}
