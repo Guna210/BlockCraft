@@ -3,6 +3,7 @@ import { Inventory } from '../gameplay/inventory';
 import type { Action } from '../engine/input';
 import { BlockCollision, EPSILON, type Position } from './physics';
 import { Survival } from '../gameplay/survival';
+import { takePlayerSlow } from './player-slow';
 
 export type GameMode = 'survival' | 'creative';
 export interface PlayerSnapshot {
@@ -242,6 +243,8 @@ export class Player {
     if (this.isEating && !this.flying) speed *= 0.2;
     if (this.inFluid && !this.flying) speed = sprint ? 3 : 2;
     if (this.onGround && !this.flying && this.collision.onMire(this.pos)) speed *= 0.4;
+    const slow = takePlayerSlow(this);
+    if (!this.flying) speed *= slow;
     const f = Number(forward) - Number(this.down('back'));
     const r = Number(this.down('right')) - Number(this.down('left'));
     const scale = speed / Math.max(1, Math.hypot(f, r));

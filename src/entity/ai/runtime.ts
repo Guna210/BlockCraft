@@ -43,6 +43,8 @@ export interface MobPlayer {
   targetable(): boolean;
   /** Mob damage to the player (shield and armor apply); true when any health was lost. */
   hurt(amount: number, source: string, from: Readonly<Vec3>): boolean;
+  /** Slows the player's walking to `factor` for `ticks` ticks (a spore cloud). */
+  slow?(factor: number, ticks: number): void;
 }
 
 export interface MobHandle {
