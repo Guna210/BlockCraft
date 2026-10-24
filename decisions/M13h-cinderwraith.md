@@ -3,9 +3,9 @@
 ## Owner decisions
 
 - Built with M13e's `registerCreature`, `buildModel`, `SkinPainter`, `PRIORITY` and `definition.drops`.
-- Original Appendix B design: hunched ash-grey cinder stone, broad shoulders, long knuckle-walking arms, heavy brow, two glowing red eyes, and rising red embers. Flat, low-noise regions use 2–3 stone shades and deliberate stepped cracks (ART.md). Health 30; collision 0.95 × 1.75 blocks.
+- Original Appendix B design: hunched ash-grey cinder stone, broad shoulders, long knuckle-walking arms, heavy brow, two glowing red eyes, and rising red embers. Flat, low-noise regions use 2–3 stone shades and deliberate stepped cracks (ART.md). Health 30; collision 0.95 × 1.95 blocks.
 - Eyes alone use per-part emission. One additional baked vertex float selects full-bright lighting for those parts, in the same single draw. Legacy whole-model `emissive` still supplies white world light with the original face shading. Existing models default to zero part emission.
-- Embers reuse the existing particle pool and batch: red tapered sparks drift up, shrink and alpha-fade. At most 24 live sparks per Cinderwraith; teleport emits at departure and arrival. No separate ember system, pool, global scan or frame callback is installed.
+- Embers reuse the existing particle pool and batch: small bright red square sparks drift up, shrink and alpha-fade. At most 24 live sparks per Cinderwraith; teleport emits at departure and arrival. No separate ember system, pool, global scan or frame callback is installed.
 - Neutral until player damage or the player's look ray intersects the posed head box within 64 blocks. Cheap inverse-pose slab test precedes the voxel raycast. Only neutral Cinderwraiths within 64 blocks are gaze-tested. Angry mobs use M13c navigation/A* and melee, through the existing runtime's `hurtPlayer` hook and i-frames. Calm on player death, distance >64, or 600 ticks without clear sight.
 - Teleport uses `ctx.random`, a bounded safe-spot search, a 4–16 block displacement, loaded columns, full solid support and two air cells. Fluids and lava cannot be landing cells. Hurt triggers teleport; angry mobs also use it to close distance or recover after navigation failure. Attempts have an 80-tick cooldown, including failed searches.
 - No natural spawn rules. For M13g: category hostile (mob cap); dark areas, block light 0; rare (suggested weight 10 against Hollow 100); group size 1; all biomes.
@@ -31,3 +31,14 @@ seam variants, making seeds 12345 and 99999 identical. The generator now selects
 four deliberate seam shapes, varying both position and bend height. The owner
 authorized this fix in M13h's own code and clarified that further fixes confined
 to new M13h code need no pause. M09a's test remains unchanged.
+
+## Owner visual revision
+
+The owner requested a slightly taller character and smaller, brighter square embers.
+The shoulder ridge and head are three model pixels higher, with a longer torso,
+arms and legs; the broad shoulders and ground-level knuckles remain. Rest height
+is 30/16 blocks and collision height is 1.95, within the original two-block limit.
+Gaze bounds, eye aim height, sight origin and shoulder emission height move with
+the revised model. Embers are camera-facing squares with a maximum side of 0.044
+blocks, a hotter red colour and a square-root opacity curve that keeps them bright
+longer before they fade. They retain the existing pool, cap and single batch.

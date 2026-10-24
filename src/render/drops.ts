@@ -20,7 +20,7 @@ void main(){v_uv=a_uv;v_light=a_light;v_cutoff=a_cutoff;gl_Position=u_vp*vec4(a_
 export const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;in float v_light;flat in float v_cutoff;uniform sampler2D u_atlas;out vec4 color;
-void main(){if(v_cutoff<0.0){color=vec4(1.0,0.08+0.16*v_light,0.025,v_light);return;}vec4 tex=texture(u_atlas,v_uv);if(tex.a<v_cutoff)discard;color=vec4(tex.rgb*v_light,1.0);}`;
+void main(){if(v_cutoff<0.0){color=vec4(1.0,0.28,0.12,v_light);return;}vec4 tex=texture(u_atlas,v_uv);if(tex.a<v_cutoff)discard;color=vec4(tex.rgb*v_light,1.0);}`;
 export const FACES: readonly BlockFaceDirection[] = [
   'east',
   'west',
@@ -319,9 +319,19 @@ export class DropRenderer {
           for (let t = 0; t < 6; t++) {
             const corner = INDICES[t]!;
             const top = corner === 1 || corner === 2;
-            const sx = (corner < 2 ? -1 : 1) * (top ? 0.012 : 0.045) * fade;
-            const sy = (top ? 0.12 : -0.045) * fade;
-            this.vertex(x + rx * sx + ux * sy, y + uy * sy, z + rz * sx + uz * sy, 0, 0, fade, -1);
+            const half = 0.022 * (0.6 + 0.4 * fade);
+            const sx = (corner < 2 ? -1 : 1) * half;
+            const sy = (top ? 1 : -1) * half;
+            // A small, hot red square stays bright while drifting, then fades smoothly.
+            this.vertex(
+              x + rx * sx + ux * sy,
+              y + uy * sy,
+              z + rz * sx + uz * sy,
+              0,
+              0,
+              Math.sqrt(fade),
+              -1,
+            );
           }
           continue;
         }

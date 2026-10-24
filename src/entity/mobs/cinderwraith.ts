@@ -30,9 +30,9 @@ const DEG = Math.PI / 180;
 const arm = (name: string, x: number): PartSpec => ({
   name,
   parent: 'body',
-  pivot: [x + 2, 23, 0],
+  pivot: [x + 2, 26, 0],
   cubes: [
-    { from: [x, 3, -1], size: [4, 20, 5] },
+    { from: [x, 3, -1], size: [4, 23, 5] },
     { from: [x - 0.5, 0, 1], size: [5, 5, 7] },
   ],
 });
@@ -42,37 +42,37 @@ export const CINDER_MODEL = buildModel({
   parts: [
     {
       name: 'body',
-      pivot: [0, 10, -2],
+      pivot: [0, 11, -2],
       cubes: [
-        { from: [-5, 8, -6], size: [10, 13, 9] },
-        { from: [-8, 19, -5], size: [16, 8, 10] },
-        { from: [-5, 23, -7], size: [10, 4, 3] },
+        { from: [-5, 9, -6], size: [10, 15, 9] },
+        { from: [-8, 22, -5], size: [16, 8, 10] },
+        { from: [-5, 26, -7], size: [10, 4, 3] },
       ],
     },
     {
       name: 'head',
       parent: 'body',
-      pivot: [0, 22, 5],
+      pivot: [0, 25, 5],
       cubes: [
-        { from: [-4, 19, 3], size: [8, 7, 7] },
-        { from: [-5, 24, 6], size: [10, 3, 5] },
-        { from: [-3, 18, 5], size: [6, 2, 5] },
+        { from: [-4, 22, 3], size: [8, 7, 7] },
+        { from: [-5, 27, 6], size: [10, 3, 5] },
+        { from: [-3, 21, 5], size: [6, 2, 5] },
       ],
     },
     {
       name: 'eyes',
       parent: 'head',
-      pivot: [0, 22, 10],
+      pivot: [0, 25, 10],
       emissive: true,
       cubes: [
-        { from: [-3, 22, 10], size: [2, 1, 1] },
-        { from: [1, 22, 10], size: [2, 1, 1] },
+        { from: [-3, 25, 10], size: [2, 1, 1] },
+        { from: [1, 25, 10], size: [2, 1, 1] },
       ],
     },
     arm('arm_r', -11),
     arm('arm_l', 7),
-    { name: 'leg_r', pivot: [-3, 11, -3], cubes: [{ from: [-5, 0, -6], size: [4, 11, 6] }] },
-    { name: 'leg_l', pivot: [3, 11, -3], cubes: [{ from: [1, 0, -6], size: [4, 11, 6] }] },
+    { name: 'leg_r', pivot: [-3, 13, -3], cubes: [{ from: [-5, 0, -6], size: [4, 13, 6] }] },
+    { name: 'leg_l', pivot: [3, 13, -3], cubes: [{ from: [1, 0, -6], size: [4, 13, 6] }] },
   ],
   walk: {
     maxSwing: 10 * DEG,
@@ -210,7 +210,7 @@ export class CinderSight {
         0,
         0,
         0,
-        [-4, 19, 3, 4, 26, 10],
+        [-4, 22, 3, 4, 29, 10],
         this.boxHit,
       ) ||
       this.boxHit.distance > 64
@@ -221,7 +221,7 @@ export class CinderSight {
 
   sees(player: MobPlayer): boolean {
     const p = this.mob.runtime.ecs.get(this.mob.id, TransformC)!.pos;
-    const origin: Vec3 = [p[0], p[1] + 1.4, p[2]];
+    const origin: Vec3 = [p[0], p[1] + 25.5 / 16, p[2]];
     const end: Vec3 = [player.pos[0], player.pos[1] + player.height * 0.85, player.pos[2]];
     const d = vec3.distance(origin, end);
     return !this.ray.cast(
@@ -294,7 +294,7 @@ export const CINDER_DEFINITION: CreatureDefinition = {
   category: 'hostile',
   health: 30,
   width: 0.95,
-  height: 1.75,
+  height: 1.95,
   speed: 0.14,
   model: () => CINDERWRAITH,
   goals: (mob) => [
@@ -313,7 +313,7 @@ export const CINDER_DEFINITION: CreatureDefinition = {
     const forward = 0.0625;
     const spark: Vec3 = [
       t.pos[0] + Math.sin(t.yaw) * side + Math.cos(t.yaw) * forward,
-      t.pos[1] + 27 / 16,
+      t.pos[1] + 30 / 16,
       t.pos[2] - Math.cos(t.yaw) * side + Math.sin(t.yaw) * forward,
     ];
     ctx.particles.ember(id, spark, ctx.random);

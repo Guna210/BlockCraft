@@ -11,7 +11,7 @@ import { BreakParticles } from '../../src/render/particles';
 import type { GLWrapper } from '../../src/render/gl';
 import type { PlayerController } from '../../src/engine/player-controller';
 
-it('M13h batches red tapered embers with alpha fading and restores blending', () => {
+it('M13h batches small bright square embers with alpha fading and restores blending', () => {
   const tiles = new Map<string, Uint8Array>();
   for (const [id, gen] of Object.entries(textureGenerators)) {
     const tile = gen(42);
@@ -47,16 +47,21 @@ it('M13h batches red tapered embers with alpha fading and restores blending', ()
     camera: { yaw: 0, pitch: 0 },
     renderAlpha: 1,
   } as unknown as PlayerController;
-  particles.ember(1, [0.5, 65, 0.5], () => 0.5);
+  // Compare the square near the origin so float32 world-coordinate rounding does not skew its edges.
+  particles.ember(1, [0.5, 0.5, 0.5], () => 0.5);
   expect(renderer.render(controller, mat4.create(), {} as WebGLTexture, 0)).toBe(1);
   expect(draw).toHaveBeenCalledTimes(1);
   expect(draw.mock.calls[0]![2]).toBe(6);
   const data = calls.bufferSubData!.mock.calls[0]![2] as Float32Array;
   const young = data.slice(0, 42);
   expect(young[6]).toBe(-1);
-  // Top narrows to a flame tip and the red shader uses the life fraction as opacity.
-  expect(Math.abs(young[9]! - young[16]!)).toBeLessThan(Math.abs(young[2]! - young[30]!));
-  expect(FS).toContain('vec4(1.0,0.08+0.16*v_light,0.025,v_light)');
+  // All four edges stay equal; the smaller square retains a bright, smooth fade.
+  const width = Math.abs(young[9]! - young[16]!);
+  expect(width).toBeCloseTo(Math.abs(young[2]! - young[30]!), 6);
+  expect(width).toBeCloseTo(Math.abs(young[8]! - young[1]!), 6);
+  expect(width).toBeLessThan(0.05);
+  expect(young[5]).toBeGreaterThan(0.95);
+  expect(FS).toContain('vec4(1.0,0.28,0.12,v_light)');
   for (let n = 0; n < 8; n++) particles.tick();
   renderer.render(controller, mat4.create(), {} as WebGLTexture, 0);
   expect(data[5]).toBeLessThan(young[5]!);

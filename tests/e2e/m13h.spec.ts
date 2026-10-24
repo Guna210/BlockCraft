@@ -46,7 +46,7 @@ async function lookAtEyes(page: Page, id: number) {
       dz = z - p.pos[2];
     api.look!(
       Math.atan2(dz, dx),
-      Math.atan2(mob.pos[1] + 22.5 / 16 - (p.pos[1] + 1.62), Math.hypot(dx, dz)),
+      Math.atan2(mob.pos[1] + 25.5 / 16 - (p.pos[1] + 1.62), Math.hypot(dx, dz)),
     );
   }, id);
 }

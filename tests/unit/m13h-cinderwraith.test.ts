@@ -76,7 +76,7 @@ function headPoint(s: ReturnType<typeof setup>): Vec3 {
   computePose(s.ecs, s.id, 1, pose);
   const p = vec3.transformMat4(
     vec3.create(),
-    [0, 22.5, 10],
+    [0, 25.5, 10],
     pose.subarray(16, 32) as unknown as mat4,
   );
   return [p[0]!, p[1]!, p[2]!];
@@ -102,6 +102,7 @@ describe('M13h registration, art and drops', () => {
     expect(s.ecs.get(s.id, HealthC)!.current).toBe(30);
     expect(s.ecs.get(s.id, MobC)!.category).toBe('hostile');
     expect(s.ecs.get(s.id, BodyC)!.width).toBeLessThanOrEqual(0.95);
+    expect(s.ecs.get(s.id, BodyC)!.height).toBe(1.95);
     expect(s.ecs.get(s.id, BodyC)!.height).toBeLessThanOrEqual(2);
     expect(() => validateModel(CINDER_MODEL)).not.toThrow();
     expect(spawnRules.rules.some((rule) => rule.type === CINDERWRAITH)).toBe(false);
