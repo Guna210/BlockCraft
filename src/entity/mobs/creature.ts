@@ -99,12 +99,11 @@ function contextFor(spawn: EntitySpawnContext): CreatureContext {
   let ctx = contexts.get(spawn.ecs);
   if (!ctx) {
     const rng = new PRNG(deriveSeed(spawn.items.world.worldSeed, 'creatures'));
+    const particles = spawn.particles ?? mobRuntime(spawn.ecs)?.spawnContext?.particles;
     const created: CreatureContext = {
       ecs: spawn.ecs,
       items: spawn.items,
-      ...((spawn.particles ?? mobRuntime(spawn.ecs)?.spawnContext?.particles)
-        ? { particles: spawn.particles ?? mobRuntime(spawn.ecs)?.spawnContext?.particles }
-        : {}),
+      ...(particles ? { particles } : {}),
       random: () => rng.next(),
     };
     ctx = created;

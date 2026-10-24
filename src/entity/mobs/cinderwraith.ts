@@ -26,6 +26,7 @@ export const TELEPORT_COOLDOWN = 80;
 export const TELEPORT_ATTEMPTS = 32;
 export const CINDER_PALETTE = ['#454954', '#878b8e', '#c4c2b9', '#78121e', '#ff4830'];
 const STONE = CINDER_PALETTE.slice(0, 3);
+const HEAD_BOX = [-4, 22, 3, 4, 29, 10] as const;
 const DEG = Math.PI / 180;
 const arm = (name: string, x: number): PartSpec => ({
   name,
@@ -188,10 +189,16 @@ export class CinderSight {
   }
 
   gazed(player: MobPlayer): boolean {
+    const pos = this.mob.runtime.ecs.get(this.mob.id, TransformC)!.pos;
+    if (vec3.squaredDistance(player.pos, pos) > 64 * 64) return false;
     const gaze = player.gaze?.();
     if (!gaze) return false;
-    const pos = this.mob.runtime.ecs.get(this.mob.id, TransformC)!.pos;
-    if (vec3.distance(player.pos, pos) > 64) return false;
+    // Conservative forward-hemisphere rejection toward the head before posing.
+    // The head's full bounding radius allows close/edge rays to reach the exact slab test.
+    const dx = pos[0] - gaze.origin[0];
+    const dy = pos[1] + 25.5 / 16 - gaze.origin[1];
+    const dz = pos[2] - gaze.origin[2];
+    if (dx * gaze.direction[0] + dy * gaze.direction[1] + dz * gaze.direction[2] < -1) return false;
     computePose(this.mob.runtime.ecs, this.mob.id, 1, this.pose);
     // Head is part 1. Inverse maps the world ray into model pixels, preserving its world-distance parameter.
     mat4.invert(this.inverse, this.headPose);
@@ -210,22 +217,35 @@ export class CinderSight {
         0,
         0,
         0,
-        [-4, 22, 3, 4, 29, 10],
+        HEAD_BOX,
         this.boxHit,
       ) ||
       this.boxHit.distance > 64
     )
       return false;
-    return !this.ray.cast(...gaze.origin, ...gaze.direction, this.boxHit.distance, this.hit).hit;
+    return !this.ray.cast(
+      gaze.origin[0],
+      gaze.origin[1],
+      gaze.origin[2],
+      gaze.direction[0],
+      gaze.direction[1],
+      gaze.direction[2],
+      this.boxHit.distance,
+      this.hit,
+    ).hit;
   }
 
   sees(player: MobPlayer): boolean {
     const p = this.mob.runtime.ecs.get(this.mob.id, TransformC)!.pos;
-    const origin: Vec3 = [p[0], p[1] + 25.5 / 16, p[2]];
-    const end: Vec3 = [player.pos[0], player.pos[1] + player.height * 0.85, player.pos[2]];
+    const origin = this.origin;
+    const end = this.endpoint;
+    vec3.set(origin, p[0], p[1] + 25.5 / 16, p[2]);
+    vec3.set(end, player.pos[0], player.pos[1] + player.height * 0.85, player.pos[2]);
     const d = vec3.distance(origin, end);
     return !this.ray.cast(
-      ...origin,
+      origin[0]!,
+      origin[1]!,
+      origin[2]!,
       end[0] - origin[0],
       end[1] - origin[1],
       end[2] - origin[2],

@@ -175,6 +175,10 @@ export class PlayerController {
     const player = this.player;
     this.combat = new PlayerCombat(player, ecs, this.interaction);
     this.bow = new BowController(player, ecs);
+    const gaze: ReturnType<NonNullable<MobPlayer['gaze']>> = {
+      origin: [0, 0, 0],
+      direction: [0, 0, 0],
+    };
     const mobPlayer: MobPlayer = {
       get pos() {
         return player.pos;
@@ -183,14 +187,16 @@ export class PlayerController {
         return player.height;
       },
       heldItemId: () => player.inventory.held?.id ?? null,
-      gaze: () => ({
-        origin: [player.pos[0], player.pos[1] + player.eye, player.pos[2]],
-        direction: [
-          Math.cos(player.yaw) * Math.cos(player.pitch),
-          Math.sin(player.pitch),
-          Math.sin(player.yaw) * Math.cos(player.pitch),
-        ],
-      }),
+      gaze: () => {
+        gaze.origin[0] = player.pos[0];
+        gaze.origin[1] = player.pos[1] + player.eye;
+        gaze.origin[2] = player.pos[2];
+        const horizontal = Math.cos(player.pitch);
+        gaze.direction[0] = Math.cos(player.yaw) * horizontal;
+        gaze.direction[1] = Math.sin(player.pitch);
+        gaze.direction[2] = Math.sin(player.yaw) * horizontal;
+        return gaze;
+      },
       targetable: () => player.mode === 'survival' && !player.dead,
       hurt: (amount, source, from) => hurtPlayer(player, amount, source, from),
       slow: (factor, ticks) => slowPlayer(player, factor, ticks),

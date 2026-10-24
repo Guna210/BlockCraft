@@ -69,3 +69,29 @@ it('M13h batches small bright square embers with alpha fading and restores blend
   expect(calls.disable!.mock.calls.at(-1)).toEqual(['BLEND']);
   renderer.dispose();
 });
+
+it('M13h limits all embers to 128 slots and never evicts active debris or embers', () => {
+  const particles = new BreakParticles(new World());
+  for (let n = 0; n < 20; n++) particles.spawn(1, n, 2, 3);
+  const debris = particles.pool.filter((p) => p.active);
+  const snapshot = debris.map((p) => ({ pos: [...p.pos], age: p.age, state: p.state }));
+  for (let owner = 0; owner < 20; owner++) particles.ember(owner, [0, 0, 0], () => 0.5, 24);
+  const embers = particles.pool.filter((p) => p.active && p.emberOwner !== null);
+  expect(embers).toHaveLength(128);
+  const random = vi.fn(() => 0.5);
+  particles.ember(99, [0, 0, 0], random, 24);
+  expect(random).not.toHaveBeenCalled();
+  debris.forEach((p, n) => {
+    expect(p.active).toBe(true);
+    expect(p.emberOwner).toBeNull();
+    expect({ pos: p.pos, age: p.age, state: p.state }).toEqual(snapshot[n]);
+  });
+  // A full pool skips emission even while the global ember quota has room.
+  for (let n = 0; n < 32; n++) particles.spawn(1, n, 2, 3);
+  expect(particles.pool.every((p) => p.active && p.emberOwner === null)).toBe(true);
+  particles.ember(99, [0, 0, 0], random, 24);
+  expect(random).not.toHaveBeenCalled();
+  for (let n = 0; n < 25; n++) particles.tick();
+  particles.ember(99, [0, 0, 0], random, 24);
+  expect(particles.pool.filter((p) => p.active && p.emberOwner === 99)).toHaveLength(24);
+});

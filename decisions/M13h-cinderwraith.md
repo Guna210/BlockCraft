@@ -42,3 +42,11 @@ Gaze bounds, eye aim height, sight origin and shoulder emission height move with
 the revised model. Embers are camera-facing squares with a maximum side of 0.044
 blocks, a hotter red colour and a square-root opacity curve that keeps them bright
 longer before they fade. They retain the existing pool, cap and single batch.
+
+## Review round 1 — allocation and shared particle budget
+
+- The player gaze reader owns one object and two tuple vectors per attached player, updated in place on demand. CinderSight reuses its pose, inverse, ray hits and two Vec3s for both gaze and anger sight checks; ray calls use explicit scalar arguments and the head box is a module constant.
+- Squared feet distance rejects players beyond 64 blocks before reading gaze. A dot product toward the approximate head rejects rays facing behind the creature before pose computation. A one-block conservative radius keeps nearby/edge rays eligible for the exact posed head slab test; the voxel raycast still runs only after a slab hit.
+- Embers occupy at most 128 of the shared 512 slots, with the existing per-owner cap of 24. They claim inactive slots only and skip emission at either cap or when the pool is full, without evicting active debris or other embers. Ordinary debris retains its existing replacement behavior. The budget requires no new tick work or allocation.
+- Creature context resolves the explicit/runtime particle fallback once into a local. Regression tests cover reference identity across repeated real controller gaze and sight calls, facing-away/distance rejection before posing, global ember saturation, preservation of active debris, a completely full debris pool, and slot reuse after expiry.
+- Owner explicitly authorized these review fixes and a push to the existing PR without another publish gate.

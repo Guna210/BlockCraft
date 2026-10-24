@@ -3,6 +3,7 @@ import type { Position } from '../entity/physics';
 import type { World } from '../world/world';
 
 export const PARTICLE_CAPACITY = 512;
+export const EMBER_CAPACITY = 128;
 export class BreakParticle {
   active = false;
   emberOwner: number | null = null;
@@ -46,10 +47,17 @@ export class BreakParticles {
   /** A bounded share of the existing pool; no ember pool or additional tick system. */
   ember(owner: number, pos: Readonly<Position>, random: () => number, count = 1): void {
     let active = 0;
-    for (const p of this.pool) if (p.active && p.emberOwner === owner) active++;
-    for (let i = 0; i < Math.min(count, 24 - active); i++) {
-      const p = this.pool[this.next]!;
-      this.next = (this.next + 1) % PARTICLE_CAPACITY;
+    let total = 0;
+    for (const p of this.pool) {
+      if (!p.active || p.emberOwner === null) continue;
+      total++;
+      if (p.emberOwner === owner) active++;
+    }
+    let cursor = 0;
+    for (let i = 0; i < Math.min(count, 24 - active, EMBER_CAPACITY - total); i++) {
+      while (cursor < PARTICLE_CAPACITY && this.pool[cursor]!.active) cursor++;
+      if (cursor === PARTICLE_CAPACITY) break;
+      const p = this.pool[cursor++]!;
       p.active = true;
       p.emberOwner = owner;
       p.age = 0;

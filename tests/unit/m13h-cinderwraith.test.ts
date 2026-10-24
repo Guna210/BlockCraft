@@ -1,3 +1,7 @@
+import * as poseModule from '../../src/entity/ecs/pose';
+import { PlayerController } from '../../src/engine/player-controller';
+import { Camera } from '../../src/render/camera';
+import type { InputEngine } from '../../src/engine/input';
 import { describe, expect, it, vi } from 'vitest';
 import { mat4, vec3 } from 'gl-matrix';
 import '../../src/entity/mobs';
@@ -364,4 +368,51 @@ describe('M13h teleport safety and lazy particles', () => {
       ember.mockRestore();
     }
   });
+});
+
+it('M13h reuses controller gaze and sight scratch, rejecting away rays before posing', () => {
+  const s = setup();
+  const controller = new PlayerController(
+    new Camera(16 / 9),
+    { actionStates: new Map() } as InputEngine,
+    () => true,
+  );
+  controller.spawn(s.world, 10.5, GROUND, 0.5, 'survival');
+  const player = controller.mobs!.player()!;
+  const gaze = player.gaze!();
+  const origin = gaze.origin;
+  const direction = gaze.direction;
+  const pose = vi.spyOn(poseModule, 'computePose');
+  const add = vi.spyOn(vec3, 'add');
+  const set = vi.spyOn(vec3, 'set');
+  try {
+    controller.player!.yaw = Math.PI;
+    for (let n = 0; n < 5; n++) {
+      expect(player.gaze!()).toBe(gaze);
+      expect(gaze.origin).toBe(origin);
+      expect(gaze.direction).toBe(direction);
+      s.sight.gazed(player);
+      s.sight.sees(player);
+    }
+    expect(pose).toHaveBeenCalledTimes(5);
+    const poseScratch = pose.mock.calls[0]![3];
+    for (const call of pose.mock.calls) expect(call[3]).toBe(poseScratch);
+    const endpoint = add.mock.calls[0]![0];
+    const sightOrigin = set.mock.calls[0]![0];
+    for (let n = 0; n < set.mock.calls.length; n += 2) {
+      expect(set.mock.calls[n]![0]).toBe(sightOrigin);
+      expect(set.mock.calls[n + 1]![0]).toBe(endpoint);
+    }
+    controller.player!.yaw = 0;
+    pose.mockClear();
+    for (let n = 0; n < 5; n++) expect(s.sight.gazed(player)).toBe(false);
+    expect(pose).not.toHaveBeenCalled();
+    controller.player!.pos[0] = 65.5;
+    controller.player!.yaw = Math.PI;
+    expect(s.sight.gazed(player)).toBe(false);
+    expect(pose).not.toHaveBeenCalled();
+  } finally {
+    vi.restoreAllMocks();
+    controller.mobs!.dispose();
+  }
 });
