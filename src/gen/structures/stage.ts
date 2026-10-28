@@ -436,6 +436,8 @@ export function createStructureStage(
       for (const registration of validRegistrations) {
         const radius = structureRadius(registration);
         const variant = terrainVariant();
+        // Flat worlds have no caves or depth to bury a dungeon in: buried structures stay out.
+        if (registration.buried && variant.type === 'flat') continue;
         const placementKey = `${worldSeed}:${variant.type}:${variant.biome ?? ''}:${registration.config.id}`;
         let grid = placementsBySeed.get(placementKey);
         if (!grid) {

@@ -32,6 +32,7 @@ import {
   structureAabbsIntersect,
 } from '../../src/gen/structures/jigsaw';
 import { createPlacementGrid } from '../../src/gen/structures/placement';
+import { WAYFARER_HAMLET_REGISTRATIONS } from '../../src/gen/structures/wayfarer-hamlet';
 import { STRUCTURE_REGISTRATIONS } from '../../src/gen/structures/registrations';
 import {
   createStructureStage,
@@ -84,6 +85,7 @@ function generate(
   seed: number,
   start: { x: number; z: number },
   reverse = false,
+  variant: TerrainVariant = DEFAULT,
 ): Generated {
   const reach = 96;
   const coords: Array<[number, number]> = [];
@@ -98,7 +100,7 @@ function generate(
   const stage = createStructureStage([registration]);
   const cells = new Map<string, number>();
   const markers: StructureMarker[] = [];
-  withTerrainVariant(DEFAULT, () => {
+  withTerrainVariant(variant, () => {
     for (const [cx, cz] of coords) {
       const column = new ChunkColumn(cx, cz);
       column.worldSeed = seed;
@@ -234,6 +236,30 @@ describe('M19c structure placement', () => {
       off.generate(deriveSeed(seed, 'structures'), column.cx, column.cz, column),
     );
     expect(writes).toBe(0);
+  });
+
+  it('keeps buried crypts and warrens out of flat worlds, which still get hamlets', () => {
+    const FLAT: TerrainVariant = { type: 'flat' };
+    for (const registration of [SUNKEN_CRYPT_REGISTRATION, MINESHAFT_WARREN_REGISTRATION]) {
+      // A flat world is all plains, so the placement grid does find a start for it.
+      const seed = 42;
+      const start = createPlacementGrid(seed, [registration.config], () => 'plains').locateNearest(
+        registration.config.id,
+        [0, 64, 0],
+        2000,
+      );
+      expect(start, registration.config.id).not.toBeNull();
+      const flat = generate(registration, seed, start!, false, FLAT);
+      expect(flat.cells.size, registration.config.id).toBe(0);
+      expect(flat.markers, registration.config.id).toEqual([]);
+    }
+    const hamlet = WAYFARER_HAMLET_REGISTRATIONS[0]!;
+    const hamletStart = createPlacementGrid(42, [hamlet.config], () => 'plains').locateNearest(
+      hamlet.config.id,
+      [0, 64, 0],
+      2000,
+    );
+    expect(generate(hamlet, 42, hamletStart!, false, FLAT).cells.size).toBeGreaterThan(0);
   });
 
   for (const registration of M19C) {

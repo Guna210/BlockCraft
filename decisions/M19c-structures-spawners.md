@@ -90,3 +90,17 @@ each one was carried out.
   `mineshaft_warren`. They are rolled through `src/gameplay/chest-loot.ts`.
 - Durable weapons and tools carry durability ranges and affix chances. Armour has no durability in
   this codebase, so armour entries carry neither.
+
+## 7. No buried structures in flat worlds
+
+- The structure stage skips every `buried` registration (Sunken Crypt, Mineshaft Warren, and any
+  later Buried Cache) when `terrainVariant().type` is `flat`. Flat worlds keep their hamlets. Spire
+  Ruins never place there anyway, because a flat world is all plains.
+- Reason: without this check, the first touched-milestone e2e run failed 5 tests in flat worlds.
+  - `m13g.spec.ts:47`: a Thornling spawned at noon in a warren's dark tunnels.
+  - `m17b.spec.ts:387/399/410/418`: a nearby crypt's block-entity columns were captured on unload,
+    so a region was saved before the trigger.
+- The orchestrator chose this option (A) on the owner's behalf. SPEC only requires the flat layer
+  structure, and flat worlds have no caves, so nothing is lost.
+- Test: `tests/unit/m19c-structures.test.ts` › "keeps buried crypts and warrens out of flat
+  worlds, which still get hamlets". It fails without the check: the crypt wrote 1910 cells.
