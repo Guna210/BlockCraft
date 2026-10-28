@@ -52,7 +52,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M19c Crypts, ruins, warrens & spawners | Round 1 PASS, ready to merge | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
-| M14 Explosions | Building (m10a exemption approved) | Codex, GitHub plugin not git (claude/m14) | - | - | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
+| M14 Explosions | PR green (5652e8c), reviewer prompt given; id conflict with #77 | Codex, GitHub plugin not git (claude/m14) | Sonnet (new) | #78 | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-28: #78 M14 opened, CI green on 5652e8c (shard 2 23 min). Uses blast_charge 820 = collides with #77. Trial merge: only data/block-state-ids.json conflicts. Plan: merge #77 first; owner resolves #78 conflict in GitHub web editor (keep 820-823, blast_charge 824); docs (progress/decisions say 820) fixed in Codex round-1 fix push. Reviewer prompt given in parallel; flags: lighting.ts generator conversion of BFS (per-edit generator alloc on hot path), getHighestOpaqueY rewrite (palette.every closure), forked LightEngine sharing storage while explosion lighting yields; World gained methods only; m10a 1 entry + m13f removal assertion as approved.
 - 2026-10-28: #77 M19c round 1 PASS (session_0155bUSCSPD7HzY2fEjY9W6g). Told owner to merge (contains master, green). Follow-ups (non-blocking, for a later fix task): spawnerSpotOk checks block light only, not sky light x daylight (exposed spawner, e.g. after M14 explosion, could spawn in daylight); setMiniature key string per spawner tick + spawnerMiniatures object per frame; far spawners re-check every 100 ticks (late activation); no save-manager round-trip test for spawner/chest. After merge: M14 ids must start at 824; M20a + M20b ready.
 - 2026-10-28: #77 M19c green on 3a903b0 (shard 2 22 min, 42 passed, 0 flaky, m04 12.1 min); titled verified. Gave Sonnet reviewer prompt; flags: spawner per-tick cost + caps, gen stage cost, flat-world rule, m10a exemption entries, player.ts silkmesh scan, ids 820-823, mob/spawner entity spawning respecting M13g caps.
 - 2026-10-28: Owner approved and relayed M14 m10a edit: only blast_charge exemption entry; craftability in M14's own test; blockers/M14.md not committed. Owner-approved test edits += M14 blast_charge exemption.
