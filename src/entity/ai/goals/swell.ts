@@ -1,5 +1,5 @@
 import type { GoalFlag } from '../goal';
-import { blast } from '../../../gameplay/blast';
+import { explode } from '../../../gameplay/explosions';
 import type { MobHandle } from '../runtime';
 import { MobGoal } from './mob-goal';
 
@@ -56,7 +56,7 @@ export class SwellGoal extends MobGoal {
     if (++this.ticks < this.fuse) return;
     this.burst = true;
     const pos = this.pos;
-    blast(this.runtime, [pos[0], pos[1] + this.height / 2, pos[2]], this.power, this.id);
+    explode(this.runtime, [pos[0], pos[1] + this.height / 2, pos[2]], this.power, this.id);
     this.runtime.remove(this.id);
   }
 

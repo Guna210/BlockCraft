@@ -147,6 +147,7 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
     reason: 'Crafted from silk (Skitterer drop in M13f)',
   },
   spore_powder: { task: 'M13f', reason: 'Dropped by Sporeburst hostile creature' },
+  blast_charge: { task: 'M14', reason: 'Crafted from spore_powder (Sporeburst drop)' },
   cinder_shard: { task: 'M13h', reason: 'Dropped by Cinderwraith neutral creature' },
 
   // M20 Hollowdeep dimension ores, creatures, and items

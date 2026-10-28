@@ -235,6 +235,8 @@ const DX = [1, -1, 0, 0, 0, 0];
 const DY = [0, 0, 1, -1, 0, 0];
 const DZ = [0, 0, 0, 0, 1, -1];
 
+const removalEngines = new WeakMap<LightEngine, LightEngine[]>();
+
 export class LightEngine {
   public storage: LightStorage = new LightStorage();
   public tables: LightLookupTables;
@@ -417,12 +419,23 @@ export class LightEngine {
       return hm[idx]!;
     }
     let h = -1;
-    for (let y = 319; y >= 0; y--) {
-      const stateId = world.getBlockStateId(x, y, z);
-      const op = this.tables.opacityTable[stateId] ?? 0;
-      if (op > 0) {
-        h = y;
-        break;
+    const column = world.getColumn(cx, cz, false);
+    for (let sy = 19; sy >= 0 && h < 0; sy--) {
+      const section = column?.getSection(sy);
+      const palette = section?.getPalette();
+      if (!section || palette?.length === 1) {
+        const state = section
+          ? palette![0]!
+          : (column?.getBlockStateId(localX, sy * 16, localZ) ?? 0);
+        if ((this.tables.opacityTable[state] ?? 0) > 0) h = sy * 16 + 15;
+        continue;
+      }
+      if (palette!.every((state) => (this.tables.opacityTable[state] ?? 0) === 0)) continue;
+      for (let ly = 15; ly >= 0; ly--) {
+        if ((this.tables.opacityTable[section.getBlockStateId(localX, ly, localZ)] ?? 0) > 0) {
+          h = sy * 16 + ly;
+          break;
+        }
       }
     }
     hm[idx] = h;
@@ -662,6 +675,110 @@ export class LightEngine {
     }
   }
 
+  /** One flood-fill transaction for an explosion, after all blocks have been removed. */
+  public onBlocksRemoved(world: World, blocks: readonly import('./world').RemovedBlock[]): void {
+    for (const step of this.updateRemovedSteps(world, blocks)) void step;
+  }
+
+  /** Independent queues let an explosion yield without another edit overwriting its BFS cursors. */
+  public *removalSteps(
+    world: World,
+    blocks: readonly import('./world').RemovedBlock[],
+  ): Generator<void> {
+    let pool = removalEngines.get(this);
+    if (!pool) {
+      pool = [];
+      removalEngines.set(this, pool);
+    }
+    const fork = pool.pop() ?? new LightEngine(this.tables, this.blockOnly);
+    const share = (target: LightEngine, source: LightEngine): void => {
+      target.tables = source.tables;
+      target.storage = source.storage;
+      target.heightmaps = source.heightmaps;
+      target.onlyLitColumns = source.onlyLitColumns;
+      target.litColumns.clear();
+      for (const key of source.litColumns) target.litColumns.add(key);
+      target.rgbChannels.forEach((channel, i) => share(channel, source.rgbChannels[i]!));
+    };
+    share(fork, this);
+    const touched = new Set<number>();
+    try {
+      for (const step of fork.updateRemovedSteps(world, blocks)) {
+        for (const key of this.storage.touchedSections) touched.add(key);
+        for (const channel of this.rgbChannels)
+          for (const key of channel.storage.touchedSections) touched.add(key);
+        yield step;
+      }
+      for (const key of touched) this.storage.touchedSections.add(key);
+    } finally {
+      pool.push(fork);
+    }
+  }
+
+  private *updateRemovedSteps(
+    world: World,
+    blocks: readonly import('./world').RemovedBlock[],
+  ): Generator<void> {
+    this.storage.resetTouched();
+    this.blockRemHead = this.blockRemTail = this.blockAddHead = this.blockAddTail = 0;
+    this.skyRemHead = this.skyRemTail = this.skyAddHead = this.skyAddTail = 0;
+    const columns = new Map<string, { x: number; z: number; top: number }>();
+    let work = 0;
+    for (const b of blocks) {
+      if (++work % 16 === 0) yield;
+      if (!this.acceptsColumn(world, Math.floor(b.x / 16), Math.floor(b.z / 16))) continue;
+      const cx = Math.floor(b.x / 16),
+        cz = Math.floor(b.z / 16);
+      if (this.tables.emissionTable[b.state]) {
+        const level = this.storage.getBlockLight(cx, b.y >> 4, cz, b.x & 15, b.y & 15, b.z & 15);
+        this.storage.setBlockLight(cx, b.y >> 4, cz, b.x & 15, b.y & 15, b.z & 15, 0);
+        this.pushBlockRem(b.x, b.y, b.z, level);
+      }
+      const key = `${b.x},${b.z}`,
+        previous = columns.get(key);
+      if (!previous || b.y > previous.top) columns.set(key, { x: b.x, z: b.z, top: b.y });
+      for (let i = 0; i < 6; i++) {
+        const x = b.x + DX[i]!,
+          y = b.y + DY[i]!,
+          z = b.z + DZ[i]!;
+        if (y < 0 || y > 319 || !this.acceptsColumn(world, Math.floor(x / 16), Math.floor(z / 16)))
+          continue;
+        if (this.getLight(x, y, z).block > 1) this.pushBlockAdd(x, y, z);
+        if (!this.blockOnly && this.getLight(x, y, z).sky > 1) this.pushSkyAdd(x, y, z);
+      }
+    }
+    yield* this.stepsBlockRem(world);
+    yield* this.stepsBlockAdd(world);
+    if (this.blockOnly) return;
+    for (const engine of this.rgbChannels) {
+      yield* engine.updateRemovedSteps(world, blocks);
+      for (const key of engine.storage.touchedSections) this.storage.touchedSections.add(key);
+    }
+    for (const { x, z, top } of columns.values()) {
+      if (++work % 16 === 0) yield;
+      // Invalidate a cached roof once; every changed block in this vertical column is already air.
+      const hm = this.heightmaps.get(
+        LightEngine.getColumnKey(Math.floor(x / 16), Math.floor(z / 16)),
+      );
+      if (hm) hm[((z & 15) << 4) | (x & 15)] = -2;
+      const newHighestY = this.getHighestOpaqueY(world, x, z);
+      if (top <= newHighestY) continue;
+      for (let y = top; y > newHighestY; y--) {
+        this.storage.setSkyLight(
+          Math.floor(x / 16),
+          y >> 4,
+          Math.floor(z / 16),
+          x & 15,
+          y & 15,
+          z & 15,
+          15,
+        );
+        this.pushSkyAdd(x, y, z);
+      }
+    }
+    yield* this.stepsSkyAdd(world);
+  }
+
   public onBlockChanged(
     world: World,
     x: number,
@@ -882,8 +999,14 @@ export class LightEngine {
   }
 
   private processBlockRem(world: World): void {
+    for (const step of this.stepsBlockRem(world)) void step;
+  }
+
+  private *stepsBlockRem(world: World): Generator<void> {
     if (!this.blockRemX || !this.blockRemY || !this.blockRemZ || !this.blockRemVal) return;
+    let work = 0;
     while (this.blockRemHead < this.blockRemTail) {
+      if (++work % 256 === 0) yield;
       const rx = this.blockRemX[this.blockRemHead]!;
       const ry = this.blockRemY[this.blockRemHead]!;
       const rz = this.blockRemZ[this.blockRemHead]!;
@@ -923,8 +1046,14 @@ export class LightEngine {
   }
 
   private processBlockAdd(world: World): void {
+    for (const step of this.stepsBlockAdd(world)) void step;
+  }
+
+  private *stepsBlockAdd(world: World): Generator<void> {
     if (!this.blockAddX || !this.blockAddY || !this.blockAddZ) return;
+    let work = 0;
     while (this.blockAddHead < this.blockAddTail) {
+      if (++work % 256 === 0) yield;
       const ax = this.blockAddX[this.blockAddHead]!;
       const ay = this.blockAddY[this.blockAddHead]!;
       const az = this.blockAddZ[this.blockAddHead]!;
@@ -1006,8 +1135,14 @@ export class LightEngine {
   }
 
   private processSkyAdd(world: World): void {
+    for (const step of this.stepsSkyAdd(world)) void step;
+  }
+
+  private *stepsSkyAdd(world: World): Generator<void> {
     if (!this.skyAddX || !this.skyAddY || !this.skyAddZ) return;
+    let work = 0;
     while (this.skyAddHead < this.skyAddTail) {
+      if (++work % 256 === 0) yield;
       const ax = this.skyAddX[this.skyAddHead]!;
       const ay = this.skyAddY[this.skyAddHead]!;
       const az = this.skyAddZ[this.skyAddHead]!;

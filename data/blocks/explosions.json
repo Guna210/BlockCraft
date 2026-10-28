@@ -1,0 +1,15 @@
+{
+  "blast_charge": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "none",
+    "textures": {
+      "top": "blast_charge_top",
+      "side": "blast_charge",
+      "bottom": "blast_charge_top"
+    }
+  }
+}
