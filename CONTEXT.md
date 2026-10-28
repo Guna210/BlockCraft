@@ -52,7 +52,7 @@ In flight:
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
 | M19c Crypts, ruins, warrens & spawners | PR open, CI running | Claude cloud (claude/m19c) | - | #77 | new blocks append after 819; buried caches skipped |
-| M14 Explosions | Paused on QUESTION (m10a exemption) | Codex, GitHub plugin not git (claude/m14) | - | - | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
+| M14 Explosions | Building (m10a exemption approved) | Codex, GitHub plugin not git (claude/m14) | - | - | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-28: Owner approved and relayed M14 m10a edit: only blast_charge exemption entry; craftability in M14's own test; blockers/M14.md not committed. Owner-approved test edits += M14 blast_charge exemption.
 - 2026-10-28: #77 M19c opened (owner approved gate). Ids spawner 820, silkmesh 821, decorative_rail 822-823 -> M14 must start at 824 if it merges second. Diff edits m10a exemption table (spawner, silkmesh; established pattern, flag for reviewer) and player.ts (module consts + per-tick inSilkmesh voxel scan, no new fields/allocs). M14 Codex QUESTION: Blast Charge unreachable (spore_powder). Recommended owner approve only the blast_charge exemption entry; craftability proven in M14's own test, no new assertions in m10a. Message drafted; waiting on owner.
 - 2026-10-28: M19c at publish gate: flat-world rule in stage.ts + unit test; quick verify unit 1160, M19 e2e 4; touched e2e 61 passed 0 flaky; no m13g/m17b test edits; restored other tasks' screenshots. Waiting on owner approval.
 - 2026-10-28: M19c builder (session_0155bUSBYQZkbBBSoK9928bX) QUESTION: buried crypts/warrens in flat worlds (solid stone to y 60) broke m13g:47 noon test (Thornling in warren tunnels) and m17b:387/399/410/418 (crypt block entities save a region early). Answered A myself (no owner test edit): no buried structures when terrainVariant is flat, hamlets kept; unit test + decisions file. quick verify was green (unit 1159, M19 e2e 4).
