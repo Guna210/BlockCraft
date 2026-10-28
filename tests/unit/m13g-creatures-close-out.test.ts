@@ -247,7 +247,6 @@ describe('M13g natural spawn rules', () => {
     expect(s.runtime.spawner!.count('hostile')).toBe(MOB_CAPS.hostile);
     s.runtime.dispose();
   });
-
 });
 
 describe('M13g creature and player close-out', () => {
