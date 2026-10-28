@@ -115,6 +115,8 @@ export interface WorldStartOptions {
   structures?: boolean;
   /** A chest of starting items next to the spawn; default off. */
   startingChest?: boolean;
+  /** Natural creature spawning; default on. */
+  spawning?: boolean;
 }
 
 /** Main-thread time per frame that may be spent uploading meshes. */
@@ -127,7 +129,7 @@ type StreamedGenResult = GenResult & { restored?: RestoredColumn };
  * The steps that store a generation result in a world column: the column with its biome data, then
  * one step per section. The streamer runs them a few milliseconds at a time.
  */
-function applyGenSteps(world: World, res: GenResult): Array<() => void> {
+function applyGenSteps(world: World, res: GenResult, queueForSpawning: boolean): Array<() => void> {
   const restored = (res as StreamedGenResult).restored;
   if (restored) {
     // A saved column replaces generation: it is adopted whole, with its block entities and ticks.
@@ -135,7 +137,7 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
       () => applyRestoredColumn(world, restored),
       () => weatherManager.heightmap.updateColumn(world, res.cx, res.cz),
       () => world.current.settleRestored(),
-      () => world.notifyColumnLoaded(res.cx, res.cz, false),
+      () => world.notifyColumnLoaded(res.cx, res.cz, false, queueForSpawning),
     ];
   }
   const steps: Array<() => void> = [
@@ -214,7 +216,7 @@ function applyGenSteps(world: World, res: GenResult): Array<() => void> {
   });
   // A generated column can complete the neighbourhood a restored column was waiting for.
   steps.push(() => world.current.settleRestored());
-  steps.push(() => world.notifyColumnLoaded(res.cx, res.cz, true));
+  steps.push(() => world.notifyColumnLoaded(res.cx, res.cz, true, queueForSpawning));
   return steps;
 }
 
@@ -282,6 +284,7 @@ export class WorldManager {
   public worldSeed: number = hashString('blockcraft-test-seed-42');
   public worldType: WorldType = 'default';
   public worldOptions: WorldOptions = { ...DEFAULT_WORLD_OPTIONS };
+  private spawning = true;
   public mainThreadGenCount: number = 0;
 
   /** True while `world` is the main-menu panorama rather than a played world. */
@@ -496,7 +499,7 @@ export class WorldManager {
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
-        return applyGenSteps(world, res);
+        return applyGenSteps(world, res, this.spawning);
       },
       requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
@@ -1000,6 +1003,13 @@ export class WorldManager {
     await this.startWorld(opts);
   }
 
+  /** Enables or disables natural spawning in the active world. */
+  public setSpawning(enabled: boolean): void {
+    this.spawning = enabled;
+    if (!enabled) this.world?.unpopulatedColumns.clear();
+    this.playerController?.setSpawning(enabled);
+  }
+
   /**
    * Loads a saved world by name: its seed and type, every edited column, block entities, the
    * player, inventory, ground items, clocks and weather. Columns nobody edited regenerate from
@@ -1069,6 +1079,7 @@ export class WorldManager {
     opts?: WorldStartOptions,
     restore?: LoadedWorld,
   ): Promise<boolean> {
+    this.spawning = opts?.spawning ?? true;
     const radiusChunks = 4;
     // One more ring of columns is generated and lit than is meshed, so that every meshed section
     // has real neighbour columns (decisions/M03g-mesh-perimeter.md).
@@ -1169,6 +1180,8 @@ export class WorldManager {
           savedPlayer.position[1],
           savedPlayer.position[2],
           savedPlayer.mode,
+          false,
+          this.spawning,
         );
         const player = this.playerController.player!;
         applyPlayerRecord(player, restore.player);
@@ -1240,6 +1253,7 @@ export class WorldManager {
         playerSpawn.z + 0.5,
         opts?.mode ?? 'survival',
         true,
+        this.spawning,
       );
 
     if (this.playerController)

@@ -6,6 +6,7 @@ import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
 import type { WorldType } from '../gen/world-options';
 import { EntityQuery } from '../entity/query';
+import { MAX_UNPOPULATED_COLUMNS } from '../entity/ecs/world';
 import { CurrentEngine } from '../gameplay/current';
 import type { ItemSpawner } from '../gameplay/mechanics';
 import {
@@ -142,8 +143,14 @@ export class World {
   }
 
   /** Announces a streamed column; `generated` is false for one restored from a save. */
-  public notifyColumnLoaded(cx: number, cz: number, generated: boolean): void {
-    if (generated) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
+  public notifyColumnLoaded(
+    cx: number,
+    cz: number,
+    generated: boolean,
+    queueForSpawning = true,
+  ): void {
+    if (generated && queueForSpawning && this.unpopulatedColumns.size < MAX_UNPOPULATED_COLUMNS)
+      this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
     for (const listener of this.listeners) listener.loaded?.(cx, cz, generated);
   }
 

@@ -19,6 +19,7 @@ async function stage(page: Page): Promise<void> {
       mode: 'creative',
       type: 'flat',
       seed: 'blockcraft-test-seed-42',
+      spawning: false,
     });
     a.pause!();
     a.setRenderDistance!(4);

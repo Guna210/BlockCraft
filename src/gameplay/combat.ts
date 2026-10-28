@@ -166,6 +166,11 @@ export function playerInvulnerableTicks(player: Player): number {
   return invulnerable.get(player) ?? 0;
 }
 
+/** Clears entity-damage immunity when a player dies or respawns. */
+export function clearPlayerInvulnerability(player: Player): void {
+  invulnerable.delete(player);
+}
+
 /**
  * Damage from a mob, projectile or blast at `from`. A raised shield facing the source blocks all
  * of it and wears by one point; otherwise armor reduces it. Creative players take none, and for
@@ -191,7 +196,8 @@ export function hurtPlayer(
   const reduced = armorReduced(amount, playerArmor(player));
   if (reduced <= 0) return false;
   player.survival.damage(reduced, source);
-  invulnerable.set(player, PLAYER_INVULNERABLE_TICKS);
+  if (player.dead) clearPlayerInvulnerability(player);
+  else invulnerable.set(player, PLAYER_INVULNERABLE_TICKS);
   return true;
 }
 

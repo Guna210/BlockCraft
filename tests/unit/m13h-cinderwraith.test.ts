@@ -109,7 +109,9 @@ describe('M13h registration, art and drops', () => {
     expect(s.ecs.get(s.id, BodyC)!.height).toBe(1.95);
     expect(s.ecs.get(s.id, BodyC)!.height).toBeLessThanOrEqual(2);
     expect(() => validateModel(CINDER_MODEL)).not.toThrow();
-    expect(spawnRules.rules.some((rule) => rule.type === CINDERWRAITH)).toBe(false);
+    expect(spawnRules.rules.filter((rule) => rule.type === CINDERWRAITH)).toMatchObject([
+      { category: 'hostile', groupSize: 1, weight: 10 },
+    ]);
   });
   it('paints a deterministic palette-only low-noise grey skin with contrast at least 60', () => {
     const skin = getEntitySkin(CINDERWRAITH);

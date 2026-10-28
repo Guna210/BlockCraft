@@ -20,7 +20,7 @@ import { getToolDurability } from '../gameplay/tools';
 import type { QueriedEntity } from '../entity/query';
 import type { DamageEvent } from '../gameplay/survival';
 import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
-import { PlayerCombat, hurtPlayer } from '../gameplay/combat';
+import { clearPlayerInvulnerability, PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
 import '../entity/mobs';
 import { slowPlayer } from '../entity/player-slow';
@@ -113,6 +113,7 @@ export class PlayerController {
     z: number,
     mode: GameMode,
     preserveCamera = false,
+    spawning = true,
   ): void {
     this.perspective = 0;
     this.perspectiveDown = false;
@@ -206,6 +207,7 @@ export class PlayerController {
       player: () => (this.player === player ? mobPlayer : null),
       spawnContext: { ecs, items: itemEntities, particles: this.particles },
       spawnRules: 'default',
+      spawning,
     });
     this.projectiles = new ProjectileRuntime(
       world,
@@ -295,6 +297,10 @@ export class PlayerController {
     this.loop.resume();
     this.rememberCamera();
   }
+  /** Turns natural spawning off or on for the attached world's mob runtime. */
+  setSpawning(enabled: boolean): void {
+    this.mobs?.setSpawning(enabled);
+  }
   private rememberCamera(): void {
     this.x = this.camera.position[0];
     this.y = this.camera.position[1];
@@ -351,6 +357,7 @@ export class PlayerController {
   private handleDeath(source: string): void {
     const player = this.player;
     if (!player || player.dead !== true) return;
+    clearPlayerInvulnerability(player);
     player.clearInput();
     this.bow?.clear();
     this.interaction?.clear();
@@ -434,6 +441,7 @@ export class PlayerController {
     const player = this.player;
     const world = this.world;
     if (!player || !world || !player.dead) return;
+    clearPlayerInvulnerability(player);
     const fallback = this.worldSpawnPoint ?? [0.5, 65, 0.5];
     const position = resolveBedRespawn(world, player.spawnPoint, fallback, (x, y, z, height) =>
       player.collision.free(x, y, z, height),

@@ -36,6 +36,8 @@ export interface MobBody {
   jump: boolean;
   /** Move up along the wall while it blocks horizontal movement. */
   climb: boolean;
+  /** Held against a ceiling while a climbing mob pursues along its underside. */
+  ceilingCling?: boolean;
 }
 
 export interface Ai {
