@@ -2,7 +2,7 @@ import { STRUCTURE_PLACEMENT_CONFIGS } from './placement';
 import type { StructurePieceTemplate, StructureTemplateBlock } from './jigsaw';
 import type { StructureRegistration } from './stage';
 
-class TemplateBuilder {
+export class TemplateBuilder {
   private readonly palette: string[] = [];
   private readonly paletteIndexes = new Map<string, number>();
   private readonly blocks: StructureTemplateBlock[] = [];
@@ -386,5 +386,6 @@ export const WAYFARER_HAMLET_REGISTRATIONS: readonly StructureRegistration[] = [
     maxPieces: 7,
     foundationBlock: 'cobblestone',
     stiltsBlock: 'oak_log',
+    lootTable: 'wayfarer_hamlet',
   },
 ];

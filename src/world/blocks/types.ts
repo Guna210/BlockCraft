@@ -51,7 +51,7 @@ export interface BlockDefinition {
   fullOpaqueCube: boolean;
   /** Mesh model; omitted means a full cube. */
   model?: BlockModel;
-  /** Tool that harvests the block, as in SPEC A.3: axe, pickaxe, shovel, shears/hoe or none. */
+  /** Tool that harvests the block, as in SPEC A.3: axe, pickaxe, shovel, shears/hoe, shears/sword or none. */
   tool?: string;
   /** Minimum tool tier (SPEC A.2); omitted means any tier. */
   minTier?: number;

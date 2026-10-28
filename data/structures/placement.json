@@ -5,5 +5,54 @@
     "separation": 16,
     "salt": "wayfarer_hamlet",
     "biomes": ["plains", "savanna", "meadow"]
+  },
+  {
+    "id": "sunken_crypt",
+    "spacing": 20,
+    "separation": 8,
+    "salt": "sunken_crypt",
+    "biomes": [
+      "plains",
+      "meadow",
+      "oakwood_forest",
+      "birch_grove",
+      "pine_taiga",
+      "snowy_tundra",
+      "frost_peaks",
+      "stony_heights",
+      "desert",
+      "badlands",
+      "savanna",
+      "swampland",
+      "rainforest"
+    ]
+  },
+  {
+    "id": "spire_ruin",
+    "spacing": 24,
+    "separation": 8,
+    "salt": "spire_ruin",
+    "biomes": ["stony_heights", "frost_peaks"]
+  },
+  {
+    "id": "mineshaft_warren",
+    "spacing": 28,
+    "separation": 10,
+    "salt": "mineshaft_warren",
+    "biomes": [
+      "plains",
+      "meadow",
+      "oakwood_forest",
+      "birch_grove",
+      "pine_taiga",
+      "snowy_tundra",
+      "frost_peaks",
+      "stony_heights",
+      "desert",
+      "badlands",
+      "savanna",
+      "swampland",
+      "rainforest"
+    ]
   }
 ]

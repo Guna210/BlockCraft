@@ -1,0 +1,5 @@
+{
+  "spawner": [],
+  "silkmesh": [{ "id": "silk", "count": 1 }],
+  "decorative_rail": [{ "id": "decorative_rail", "count": 1 }]
+}

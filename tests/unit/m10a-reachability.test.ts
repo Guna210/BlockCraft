@@ -51,6 +51,19 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
   piston_moving: { task: 'M15b', reason: 'Technical block that stands in for a block in motion' },
 
   // Blocks that drop materials/dirt and are never obtainable as items
+  spawner: {
+    task: 'M19c',
+    reason: 'Found only in Sunken Crypts; breaking it drops nothing and it has no recipe',
+  },
+  silkmesh: {
+    task: 'M19c',
+    reason: 'Structure-only web; breaking it gives silk, never the block',
+  },
+  decorative_rail: {
+    task: 'M19c',
+    reason: 'Found only in Mineshaft Warrens; it has no recipe',
+  },
+
   grass_block: {
     task: 'M19b',
     reason:

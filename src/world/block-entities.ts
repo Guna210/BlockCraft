@@ -29,6 +29,8 @@ export interface BlockEntityTypeDefinition<TState extends BlockEntityState = Blo
   readonly tickInterval?: number;
   create: (x: number, y: number, z: number, stateId: number) => TState;
   tick?: (entity: BlockEntityInstance<TState>, world: World) => void;
+  /** Ticks until the next tick after this one; tickInterval when omitted. */
+  nextTickDelay?: (entity: BlockEntityInstance<TState>, world: World) => number;
   container?: (entity: BlockEntityInstance<TState>) => BlockEntityContainer | undefined;
   afterPlaced?: (entity: BlockEntityInstance<TState>, world: World) => void;
   afterStateChanged?: (entity: BlockEntityInstance<TState>, world: World) => void;
@@ -253,9 +255,10 @@ export class BlockEntityManager {
     typeDef.tick(entity, this.world);
 
     if (this.entities.get(k) === entity && this.world.hasColumn(cx, cz)) {
+      const delay = typeDef.nextTickDelay?.(entity, this.world) ?? typeDef.tickInterval ?? 1;
       this.world.ticks.schedule(
         { x, y, z, type: BLOCK_ENTITY_TICK_TYPE },
-        typeDef.tickInterval ?? 1,
+        Math.max(1, Math.floor(delay)),
       );
     }
   }

@@ -5,6 +5,11 @@ import { BlockCollision, EPSILON, type Position } from './physics';
 import { Survival } from '../gameplay/survival';
 import { takePlayerSlow } from './player-slow';
 
+/** Silkmesh (Appendix A): walking speed factor and the vertical speeds it allows, blocks/s. */
+export const SILKMESH_SPEED_FACTOR = 0.25;
+export const SILKMESH_MAX_FALL = 1.2;
+export const SILKMESH_MAX_RISE = 0.6;
+
 export type GameMode = 'survival' | 'creative';
 export interface PlayerSnapshot {
   pos: Position;
@@ -243,6 +248,8 @@ export class Player {
     if (this.isEating && !this.flying) speed *= 0.2;
     if (this.inFluid && !this.flying) speed = sprint ? 3 : 2;
     if (this.onGround && !this.flying && this.collision.onMire(this.pos)) speed *= 0.4;
+    const meshed = !this.flying && this.collision.inSilkmesh(this.pos, this.height);
+    if (meshed) speed *= SILKMESH_SPEED_FACTOR;
     const slow = takePlayerSlow(this);
     if (!this.flying) speed *= slow;
     const f = Number(forward) - Number(this.down('back'));
@@ -253,6 +260,14 @@ export class Player {
     const accel = (this.flying ? 60 : this.inFluid ? 32 : this.onGround ? 40 : 8) * TICK_SECONDS;
     this.vel[0] += Math.max(-accel, Math.min(accel, tx - this.vel[0]));
     this.vel[2] += Math.max(-accel, Math.min(accel, tz - this.vel[2]));
+    if (meshed) {
+      // Silkmesh drags the body down to its own speed at once, whatever the momentum.
+      const horizontal = Math.hypot(this.vel[0], this.vel[2]);
+      if (horizontal > speed) {
+        this.vel[0] *= speed / horizontal;
+        this.vel[2] *= speed / horizontal;
+      }
+    }
     if (this.flying) this.vel[1] = (Number(jump) - Number(this.down('sneak'))) * 10.9;
     else if (this.climbing) {
       this.vel[1] = this.sneaking
@@ -309,6 +324,14 @@ export class Player {
           dy = this.vel[1] * TICK_SECONDS - 0.5 * 32 * TICK_SECONDS * TICK_SECONDS;
         }
       }
+    }
+    if (meshed) {
+      dy = Math.max(
+        -SILKMESH_MAX_FALL * TICK_SECONDS,
+        Math.min(SILKMESH_MAX_RISE * TICK_SECONDS, dy),
+      );
+      this.vel[1] = dy / TICK_SECONDS;
+      this.highest = this.pos[1];
     }
     if (!this.terrainReady(this.pos[0] + dx, this.pos[2] + dz)) {
       // Freeze all physics, including gravity, until the destination is ready.

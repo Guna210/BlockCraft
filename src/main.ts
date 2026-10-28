@@ -24,6 +24,7 @@ import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
 import './gameplay/chests';
+import './gameplay/spawners';
 import {
   bedPairAt,
   hostileWithin,

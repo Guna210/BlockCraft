@@ -28,9 +28,9 @@ import {
   type WorldType,
 } from '../gen/world-options';
 import { placeStartingChest } from '../gameplay/starting-chest';
-import { rollChestLootById } from '../gameplay/chest-loot';
-import type { ChestEntityState } from '../gameplay/chests';
-import { WAYFARER_HAMLET_REGISTRATIONS } from '../gen/structures/wayfarer-hamlet';
+import { applyStructureMarkers } from '../gameplay/structure-markers';
+import { spawnerMiniatures } from '../gameplay/spawners';
+import { STRUCTURE_REGISTRATIONS } from '../gen/structures/registrations';
 import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
@@ -155,14 +155,6 @@ function applyGenSteps(world: World, res: GenResult, queueForSpawning: boolean):
     },
   ];
   for (const secData of res.sections) {
-    const registry = BlockRegistry.getInstance();
-    const hasChest = Boolean(
-      secData.packed?.palette.some(
-        (stateId) => registry.getResolvedState(stateId)?.blockId === 'chest',
-      ) ||
-      (secData.uniformStateId !== null &&
-        registry.getResolvedState(secData.uniformStateId)?.blockId === 'chest'),
-    );
     steps.push(() => {
       const col = world.getColumn(res.cx, res.cz, true)!;
       const sec = col.getOrCreateSection(secData.sy);
@@ -175,42 +167,11 @@ function applyGenSteps(world: World, res: GenResult, queueForSpawning: boolean):
           sec.fill(secData.uniformStateId);
         }
       }
-      if (!hasChest || !sec) return;
-      const xOrigin = res.cx * 16;
-      const zOrigin = res.cz * 16;
-      for (let localY = 0; localY < 16; localY++) {
-        const y = secData.sy * 16 + localY;
-        for (let z = 0; z < 16; z++) {
-          for (let x = 0; x < 16; x++) {
-            const stateId = sec.getBlockStateId(x, localY, z);
-            if (registry.getResolvedState(stateId)?.blockId !== 'chest') continue;
-            const worldX = xOrigin + x;
-            const worldZ = zOrigin + z;
-            if (!world.getBlockEntity(worldX, y, worldZ)) {
-              world.blockEntities.onBlockChanged(worldX, y, worldZ, 'air', 'chest', stateId, 0);
-            }
-            const entity = world.getBlockEntity<ChestEntityState>(worldX, y, worldZ);
-            if (!entity || entity.slots.some((slot) => slot !== null)) continue;
-            const loot = rollChestLootById(
-              'wayfarer_hamlet',
-              world.worldSeed ?? 0,
-              worldX,
-              y,
-              worldZ,
-            );
-            loot.forEach((stack, index) => {
-              entity.slots[index] = {
-                id: stack.id,
-                count: stack.count,
-                ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
-                ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
-              };
-            });
-          }
-        }
-      }
     });
   }
+  // Generated chests get their structure's loot and spawners their creature (M19c markers).
+  const markers = res.markers;
+  if (markers && markers.length > 0) steps.push(() => applyStructureMarkers(world, markers));
   steps.push(() => {
     weatherManager.heightmap.updateColumn(world, res.cx, res.cz);
   });
@@ -398,7 +359,7 @@ export class WorldManager {
     this.workerPool = new WorkerPool();
     this.genWorkerPool = new GenWorkerPool();
     this.lightWorkerPool = new LightWorkerPool();
-    this.pipeline = createDefaultPipeline(WAYFARER_HAMLET_REGISTRATIONS);
+    this.pipeline = createDefaultPipeline(STRUCTURE_REGISTRATIONS);
     this.streamer = new Streamer<GenResult, MeshResult>(this.makeStreamerHost());
     // Not streaming until a world exists (createWorld) and while tests drive an empty world by hand.
     this.streamer.active = false;
@@ -488,7 +449,7 @@ export class WorldManager {
     if (type !== 'single_biome') delete this.worldOptions.biome;
     setTerrainVariant(this.terrainVariant);
     this.pipeline = createDefaultPipeline(
-      this.worldOptions.structures ? WAYFARER_HAMLET_REGISTRATIONS : [],
+      this.worldOptions.structures ? STRUCTURE_REGISTRATIONS : [],
     );
   }
 
@@ -885,6 +846,7 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col, this.terrainVariant);
     }
+    applyStructureMarkers(this.world, this.pipeline.takeStructureMarkers(cx, cz));
 
     weatherManager.heightmap.updateColumn(this.world, cx, cz);
     this.streamer.adoptColumn(cx, cz);
@@ -1502,20 +1464,25 @@ export class WorldManager {
             underwater.submerged ? underwater.fogEnd : maxFogDist,
           ) ?? 0;
         const entityDraws =
-          this.entityRenderer?.render(this.playerController?.ecs ?? null, this.world, {
-            viewProj: this.viewProj,
-            atlasTexture: this.atlasTexture,
-            eye: this.camera!.position,
-            alpha: this.playerController?.renderAlpha ?? 1,
-            skyBrightness,
-            underwater,
-            sunDir: sunDirection(ticks),
-            day: dayFactor,
-            twilight: twilightFactor,
-            night: nightFactor,
-            fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
-            fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
-          }) ?? 0;
+          this.entityRenderer?.render(
+            this.playerController?.ecs ?? null,
+            this.world,
+            {
+              viewProj: this.viewProj,
+              atlasTexture: this.atlasTexture,
+              eye: this.camera!.position,
+              alpha: this.playerController?.renderAlpha ?? 1,
+              skyBrightness,
+              underwater,
+              sunDir: sunDirection(ticks),
+              day: dayFactor,
+              twilight: twilightFactor,
+              night: nightFactor,
+              fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
+              fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
+            },
+            spawnerMiniatures(this.world),
+          ) ?? 0;
         return (
           playerDraws +
           entityDraws +
