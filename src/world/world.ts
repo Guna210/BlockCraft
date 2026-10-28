@@ -6,7 +6,6 @@ import { LightEngine } from './lighting';
 import { sampleBiome } from '../gen/biomes';
 import type { WorldType } from '../gen/world-options';
 import { EntityQuery } from '../entity/query';
-import { MAX_UNPOPULATED_COLUMNS } from '../entity/ecs/world';
 import { CurrentEngine } from '../gameplay/current';
 import type { ItemSpawner } from '../gameplay/mechanics';
 import {
@@ -61,7 +60,7 @@ export class World {
    * setBlock. Unlike `onBlockEdited`, adding one never redefines a property of this object.
    */
   public readonly listeners = new Set<WorldListener>();
-  /** Keys (`cx,cz`) of generated columns that no mob spawner has populated yet. */
+  /** Loaded generated columns waiting for one bounded first-generation passive spawn attempt. */
   public readonly unpopulatedColumns = new Set<string>();
   public worldType: WorldType = 'default';
 
@@ -149,8 +148,7 @@ export class World {
     generated: boolean,
     queueForSpawning = true,
   ): void {
-    if (generated && queueForSpawning && this.unpopulatedColumns.size < MAX_UNPOPULATED_COLUMNS)
-      this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
+    if (generated && queueForSpawning) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
     for (const listener of this.listeners) listener.loaded?.(cx, cz, generated);
   }
 

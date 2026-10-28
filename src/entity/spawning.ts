@@ -2,7 +2,6 @@ import { BlockRegistry } from '../world/blocks/registry';
 import type { World } from '../world/world';
 import { getWorldTime, skyLightMultiplier } from '../world/time';
 import { TransformC } from './ecs/components';
-import { MAX_UNPOPULATED_COLUMNS } from './ecs/world';
 import { hasEntityType } from './ecs/entity-types';
 import { MobC, type MobCategory } from './ai/components';
 import type { MobRuntime } from './ai/runtime';
@@ -41,7 +40,6 @@ export const PASSIVE_INTERVAL = 400;
 export const HOSTILE_MAX_SKY = 8;
 /** Shared budget across all spawning categories. */
 export const SPAWN_ATTEMPTS_PER_TICK = 8;
-export { MAX_UNPOPULATED_COLUMNS };
 const MAX_POPULATED_COLUMNS = 256;
 const GROUP_SPREAD = 4;
 
@@ -161,7 +159,7 @@ export class MobSpawner {
     const y = surface ? top + 1 : 1 + Math.floor(runtime.random() * Math.max(1, top + 1));
     const test = category === 'hostile' ? this.hostileSpot.bind(this) : this.ambientSpot.bind(this);
     if (!test(x, y, z)) return;
-    this.spawnGroup(category, x, y, z, test);
+    this.spawnGroup(category, x, y, z);
   }
 
   /** Solid below, two free cells, block light 0, effective sky light below 8, 24–128 away. */
@@ -229,7 +227,7 @@ export class MobSpawner {
     const x = cx * 16 + Math.floor(runtime.random() * 16);
     const z = cz * 16 + Math.floor(runtime.random() * 16);
     const y = runtime.world.getHeight(x, z) + 1;
-    this.spawnGroup('passive', x, y, z, (gx, gy, gz, rule) => this.canSpawnAt(rule, gx, gy, gz));
+    this.spawnGroup('passive', x, y, z);
   }
 
   private periodicPassiveAttempt(): void {
@@ -242,16 +240,10 @@ export class MobSpawner {
     const z = Math.floor(player.pos[2] + (runtime.random() * 2 - 1) * 60);
     const y = runtime.world.getHeight(x, z) + 1;
     if (!runtime.world.hasColumn(Math.floor(x / 16), Math.floor(z / 16))) return;
-    this.spawnGroup('passive', x, y, z, (gx, gy, gz, rule) => this.canSpawnAt(rule, gx, gy, gz));
+    this.spawnGroup('passive', x, y, z);
   }
 
-  private spawnGroup(
-    category: MobCategory,
-    x: number,
-    y: number,
-    z: number,
-    test: (x: number, y: number, z: number, rule: SpawnRule) => boolean,
-  ): void {
+  private spawnGroup(category: MobCategory, x: number, y: number, z: number): void {
     const rule = this.pickRule(category, this.runtime.world.getBiome(x, z), x, y, z);
     if (!rule) return;
     const [min, max] = groupRange(rule);
@@ -265,7 +257,7 @@ export class MobSpawner {
         sx = x + Math.floor((this.runtime.random() * 2 - 1) * GROUP_SPREAD);
         sz = z + Math.floor((this.runtime.random() * 2 - 1) * GROUP_SPREAD);
       }
-      if (!test(sx, y, sz, rule)) continue;
+      if (!this.canSpawnAt(rule, sx, y, sz)) continue;
       this.runtime.spawn(rule.type, sx + 0.5, y, sz + 0.5);
       spawned++;
     }

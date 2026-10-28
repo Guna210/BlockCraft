@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../src/entity/mobs';
 import {
   MOB_CAPS,
-  MAX_UNPOPULATED_COLUMNS,
   SPAWN_ATTEMPTS_PER_TICK,
   MobSpawner,
+  SpawnRuleRegistry,
   spawnRules,
 } from '../../src/entity/spawning';
+import { EntityKindC } from '../../src/entity/ecs/components';
 import { BlockCollision } from '../../src/entity/physics';
 import { LightEngine } from '../../src/world/lighting';
 import { Camera } from '../../src/render/camera';
@@ -100,6 +101,41 @@ describe('M13g natural spawn rules', () => {
     expect(spawner.canSpawnAt(moth, 30, GROUND, 0)).toBe(false);
   });
 
+  it("checks a Glimmer Moth rule's where condition for every group member", () => {
+    setWorldTime(18000);
+    const world = worldWithSurface('grass_block', true);
+    world.setBlock(24, GROUND - 1, 0, 'torch');
+    expect(world.getLight(24, GROUND, 0).block).toBeGreaterThanOrEqual(8);
+
+    const moth = BY_TYPE.get('glimmer_moth')!;
+    const where = vi.fn((...args: Parameters<NonNullable<typeof moth.where>>) => {
+      const [candidateWorld, x, y, z] = args;
+      return moth.where!(candidateWorld, x, y, z) && x === 24 && y === GROUND && z === 0;
+    });
+    const rules = new SpawnRuleRegistry();
+    rules.register({ ...moth, where });
+    const s = scene(world, [0.5, GROUND, 0.5], { spawnRules: rules });
+    vi.spyOn(s.runtime, 'random')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(0.99);
+
+    const spawnGroup = Reflect.get(s.runtime.spawner!, 'spawnGroup') as (
+      category: 'ambient',
+      x: number,
+      y: number,
+      z: number,
+    ) => void;
+    spawnGroup.call(s.runtime.spawner!, 'ambient', 24, GROUND, 0);
+
+    const mothIds = s.ecs
+      .query(EntityKindC)
+      .filter((id) => s.ecs.get(id, EntityKindC)!.type === 'glimmer_moth');
+    expect(mothIds).toHaveLength(1);
+    expect(where.mock.calls.some(([, x, y, z]) => x !== 24 || y !== GROUND || z !== 0)).toBe(true);
+    s.runtime.dispose();
+  });
+
   it('requires every hostile to have block light zero, rejects open noon, and weights cave Sporebursts up', () => {
     const world = worldWithSurface('grass_block', true);
     const spawner = scene(world, [0.5, GROUND, 0.5], { spawnRules }).runtime.spawner!;
@@ -122,16 +158,13 @@ describe('M13g natural spawn rules', () => {
     expect(spores.weightAt!(world, 30, GROUND, 0)).toBe(180);
   });
 
-  it('keeps caps and despawning active, bounds the column queue, and removes spawn tick work when disabled', () => {
+  it('keeps despawning active and removes spawn tick work when disabled', () => {
     const world = worldWithSurface('grass_block', true);
     world.notifyColumnLoaded(0, 0, true);
     const s = scene(world, [0.5, GROUND, 0.5], { spawnRules, spawning: false });
     expect(world.unpopulatedColumns.size).toBe(0);
     expect(s.runtime.spawner).toBeInstanceOf(MobSpawner);
     const spawnerTick = vi.spyOn(s.runtime.spawner!, 'tick');
-    for (let n = 0; n < MAX_UNPOPULATED_COLUMNS + 20; n++) world.notifyColumnLoaded(n, 0, true);
-    expect(world.unpopulatedColumns.size).toBe(MAX_UNPOPULATED_COLUMNS);
-    world.unpopulatedColumns.clear();
     world.notifyColumnLoaded(0, 0, true, false);
     expect(world.unpopulatedColumns.size).toBe(0);
 
@@ -156,6 +189,65 @@ describe('M13g natural spawn rules', () => {
     expect(world.unpopulatedColumns.size).toBe(0);
     s.runtime.dispose();
   });
+
+  it('drains first-generation passive work for every generated column beyond 128', () => {
+    const world = flatWorld({ radius: 9, top: 'grass_block' });
+    world.worldType = 'flat';
+    const rules = new SpawnRuleRegistry();
+    rules.register({
+      type: 'tuftbuck',
+      category: 'passive',
+      biomes: ['no_such_biome'],
+      groupSize: 1,
+      weight: 1,
+    });
+    const s = scene(world, [0.5, GROUND, 0.5], { spawnRules: rules });
+    const columns = world.loadedColumns();
+    for (const [cx, cz] of columns) world.notifyColumnLoaded(cx, cz, true);
+
+    expect(columns.length).toBeGreaterThan(128);
+    expect(world.unpopulatedColumns.size).toBe(columns.length);
+    run(s.ecs, Math.ceil(columns.length / SPAWN_ATTEMPTS_PER_TICK));
+    expect(world.unpopulatedColumns.size).toBe(0);
+    expect(s.runtime.spawner!.count('passive')).toBe(0);
+    s.runtime.dispose();
+  });
+
+  it('fills the hostile cap, then stops adding hostiles', () => {
+    setWorldTime(18000);
+    const world = worldWithSurface('grass_block', true);
+    const rules = new SpawnRuleRegistry();
+    rules.register({
+      type: 'hollow',
+      category: 'hostile',
+      biomes: [],
+      groupSize: [1, 3],
+      weight: 1,
+    });
+    const s = scene(world, [0.5, GROUND, 0.5], { spawnRules: rules });
+    for (let n = 0; n < MOB_CAPS.hostile - 1; n++)
+      makeMob(s.ecs, [1.5 + (n % 6), GROUND, 1.5 + Math.floor(n / 6)], {
+        type: 'hollow',
+        category: 'hostile',
+      });
+    const spawn = vi.spyOn(s.runtime, 'spawn');
+    vi.spyOn(s.runtime, 'random')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(0.99);
+
+    s.runtime.spawner!.tick();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(s.runtime.spawner!.count('hostile')).toBe(MOB_CAPS.hostile);
+
+    s.runtime.spawner!.tick();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(s.runtime.spawner!.count('hostile')).toBe(MOB_CAPS.hostile);
+    s.runtime.dispose();
+  });
+
 });
 
 describe('M13g creature and player close-out', () => {

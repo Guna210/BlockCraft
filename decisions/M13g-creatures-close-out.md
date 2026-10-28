@@ -24,7 +24,8 @@ Appendix B caps remain passive 12, hostile 40 and ambient 10 across loaded colum
 ## Bounded work and the spawning switch
 
 - The spawner has eight shared candidate-attempt slots per tick, rotated among categories with rules. A passive periodic candidate replaces one of those slots every 400 ticks; it does not enumerate loaded columns.
-- Generated passive columns queue in insertion order, with at most 128 pending keys. The recently populated-key set evicts its oldest key at 256 entries. There are no per-column-load scans or unbounded column sets.
+- Generated passive columns queue in insertion order until each receives its first-generation attempt. The queue contains only generated columns that are still loaded, drains through the fixed attempt budget, and removes entries when columns unload or spawning is disabled; overflow is never dropped. The recently populated-key set evicts its oldest key at 256 entries. There are no per-column-load scans or unbounded historical column sets.
+- Every member of a selected spawn group is checked with the full rule, biome, and category conditions. This applies species-specific `where` checks, including the Glimmer Moth's nighttime and block-light requirements, to followers as well as the initial candidate.
 - There is no scan of `loadedColumns()` in the spawning path. `World` only receives the existing column notification, with an optional flag that skips the queue when spawning is off. No properties were added to `World`, `Player` or other hot shared objects.
 - `createWorld({ spawning })` defaults to true. With `spawning: false`, column notifications do not queue work and the ECS spawn system is not installed. The debug `setSpawning(enabled)` method toggles the active runtime and clears pending work when disabled.
 - Natural spawning uses the existing per-world mob runtime and PRNG; there are no test-condition branches.
@@ -69,8 +70,8 @@ Cinderwraith. No other part of that test file was changed.
 
 ## Tests and visual review
 
-- Unit tests cover the ten registrations, biome eligibility, ground, moth time/light/air, hostile block light and noon, cave-biased Sporeburst weight, group sizes, caps, despawn, bounded queues, disabled-system behavior, ceiling movement and death/respawn immunity.
-- M13g E2E tests cover the 2,000-tick hostile cap, no noon hostiles, and the three Visual Review captures.
+- Unit tests cover the ten registrations, biome eligibility, ground, moth time/light/air and follower checks, hostile block light and noon, cave-biased Sporeburst weight, group sizes, filling and enforcing caps, despawning, draining more than 128 generated columns, disabled-system behavior, ceiling movement and death/respawn immunity.
+- M13g E2E tests cover a nonzero hostile population that remains at or below 40 after 2,000 night ticks, no noon hostiles, and the three Visual Review captures.
 - `docs/screenshots/M13g/m13-creatures.png`: a daylight row containing Tuftbuck, Rootboar, Dapplefowl, Mossback, Glimmer Moth, Hollow, Thornling, Skitterer, Sporeburst and Cinderwraith; their silhouettes and color palettes are distinct. Glowwing and Magmaw are Hollowdeep creatures in M20, so they are not in this Overworld row.
 - `docs/screenshots/M13g/m13-combat.png`: a Hollow caught immediately after a sword hit, with the red hurt tint visible.
 - `docs/screenshots/M13g/m13-night.png`: a Hollow and Skitterer moving toward the player under an unlit night sky.

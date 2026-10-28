@@ -40,6 +40,7 @@ test('M13g: night spawns stay under the hostile cap after 2000 ticks', async ({ 
     await api.tick!(2000);
     return hostileTypes.reduce((sum, type) => sum + api.getEntities!({ type }).length, 0);
   }, HOSTILE_TYPES);
+  expect(count).toBeGreaterThan(0);
   expect(count).toBeLessThanOrEqual(40);
 });
 

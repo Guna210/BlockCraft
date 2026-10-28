@@ -13,9 +13,6 @@ export function defineComponent<T>(name: string): ComponentType<T> {
 }
 
 export type EcsSystem = (ecs: EntityWorld) => void;
-/** Generated columns awaiting passive population are kept in a bounded FIFO set. */
-export const MAX_UNPOPULATED_COLUMNS = 128;
-
 /**
  * Lightweight entity-component system. Pure data: no browser APIs, no rendering. Queries return ids
  * in ascending order so every system visits entities in the same deterministic order.
