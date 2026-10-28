@@ -9,6 +9,7 @@ test.beforeEach(async ({ page }) => {
       mode: 'survival',
       type: 'flat',
       seed: 'blockcraft-test-seed-42',
+      spawning: false,
     });
     a.pause!();
     a.teleport!(0.5, 65, 0.5, 0, 0);

@@ -60,7 +60,7 @@ export class World {
    * setBlock. Unlike `onBlockEdited`, adding one never redefines a property of this object.
    */
   public readonly listeners = new Set<WorldListener>();
-  /** Keys (`cx,cz`) of generated columns that no mob spawner has populated yet. */
+  /** Loaded generated columns waiting for one bounded first-generation passive spawn attempt. */
   public readonly unpopulatedColumns = new Set<string>();
   public worldType: WorldType = 'default';
 
@@ -142,8 +142,13 @@ export class World {
   }
 
   /** Announces a streamed column; `generated` is false for one restored from a save. */
-  public notifyColumnLoaded(cx: number, cz: number, generated: boolean): void {
-    if (generated) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
+  public notifyColumnLoaded(
+    cx: number,
+    cz: number,
+    generated: boolean,
+    queueForSpawning = true,
+  ): void {
+    if (generated && queueForSpawning) this.unpopulatedColumns.add(World.getChunkKey(cx, cz));
     for (const listener of this.listeners) listener.loaded?.(cx, cz, generated);
   }
 

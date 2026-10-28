@@ -47,7 +47,13 @@ async function newWorld(
   await page.evaluate(
     async ({ name, type }) => {
       const api = window.__blockcraft!;
-      await api.createWorld!({ name, seed: 'blockcraft-m17b', mode: 'survival', type });
+      await api.createWorld!({
+        name,
+        seed: 'blockcraft-m17b',
+        mode: 'survival',
+        type,
+        spawning: false,
+      });
       api.pause!();
       api.setRenderDistance!(4);
       api.setClouds!('off');

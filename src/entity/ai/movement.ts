@@ -34,10 +34,13 @@ export function moveMob(
     return;
   }
   body.inFluid = !body.flying && collision.inWater(pos, height);
+  const touchingCeiling =
+    body.climbing && body.climb && collision.sweep(pos, height, 1, 0.03, half) < 0.03 - EPSILON;
   const keep = body.flying ? FLY_KEEP : body.onGround || body.inFluid ? GROUND_KEEP : AIR_KEEP;
   vel[0] = wish[0] + (vel[0] - wish[0]) * keep;
   vel[2] = wish[2] + (vel[2] - wish[2]) * keep;
   if (body.flying) vel[1] = wish[1] + (vel[1] - wish[1]) * FLY_KEEP;
+  else if (touchingCeiling && body.ceilingCling === true) vel[1] = 0;
   else if (body.climb && body.climbing && body.horizontalCollision) vel[1] = MOB_CLIMB_SPEED;
   else if (body.inFluid)
     vel[1] = Math.max(-0.2, Math.min(0.2, vel[1] * 0.8 + (body.jump ? 0.04 : -0.02)));
@@ -72,6 +75,9 @@ export function moveMob(
   if (blockedX) vel[0] = 0;
   if (blockedZ) vel[2] = 0;
   body.horizontalCollision = blockedX || blockedZ;
+  body.ceilingCling =
+    body.climbing && body.climb && collision.sweep(pos, height, 1, 0.03, half) < 0.03 - EPSILON;
+  if (body.ceilingCling) vel[1] = 0;
 
   if (Math.hypot(wish[0], wish[2]) > 1e-4) {
     const want = Math.atan2(wish[2], wish[0]);

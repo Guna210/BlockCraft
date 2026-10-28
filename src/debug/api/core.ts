@@ -132,7 +132,11 @@ export interface BlockCraftDebugAPI {
     structures?: boolean;
     /** Places a chest of starting items next to the spawn; default false. */
     startingChest?: boolean;
+    /** Natural creature spawning; default on. */
+    spawning?: boolean;
   }) => Promise<void>;
+  /** Enables or disables natural creature spawning in the active world. */
+  setSpawning?: (enabled: boolean) => void;
   openWorldList?: () => Promise<void>;
   listWorlds?: () => Promise<Array<{ name: string; lastPlayed: number; hasThumbnail: boolean }>>;
   waitForTerrain?: (radiusChunks: number) => Promise<void>;

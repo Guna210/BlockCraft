@@ -10,3 +10,4 @@ import './thornling';
 import './skitterer';
 import './sporeburst';
 import './cinderwraith';
+import './spawn-rules';

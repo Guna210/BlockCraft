@@ -1,4 +1,5 @@
 import { BlockRegistry } from '../world/blocks/registry';
+import type { World } from '../world/world';
 import { getWorldTime, skyLightMultiplier } from '../world/time';
 import { TransformC } from './ecs/components';
 import { hasEntityType } from './ecs/entity-types';
@@ -15,6 +16,12 @@ export interface SpawnRule {
   groupSize: number | readonly [number, number];
   /** Relative chance among the rules that fit a spot. */
   weight: number;
+  /** Ground blocks accepted below the mob. Passive rules default to grass. */
+  ground?: readonly string[];
+  /** Additional bounded species-specific spot condition. */
+  where?: (world: World, x: number, y: number, z: number) => boolean;
+  /** Dynamic weight for a valid spot, used for cave-biased species. */
+  weightAt?: (world: World, x: number, y: number, z: number) => number;
 }
 
 /** Appendix B caps, counted over the loaded area around the player. */
@@ -29,11 +36,11 @@ export const SPAWN_MAX_DISTANCE = 128;
 export const DESPAWN_NEAR_DISTANCE = 32;
 export const DESPAWN_CHANCE = 1 / 800;
 export const PASSIVE_INTERVAL = 400;
-export const PASSIVE_CHANCE = 0.1;
 /** Effective sky light (sky × daylight factor) must be below this for hostiles. */
 export const HOSTILE_MAX_SKY = 8;
-const ATTEMPTS_PER_TICK = 4;
-const GENERATED_PER_TICK = 8;
+/** Shared budget across all spawning categories. */
+export const SPAWN_ATTEMPTS_PER_TICK = 8;
+const MAX_POPULATED_COLUMNS = 256;
 const GROUP_SPREAD = 4;
 
 export class SpawnRuleRegistry {
@@ -78,12 +85,17 @@ export class MobSpawner {
   private readonly populated = new Set<string>();
   private clock = 0;
   private readonly grass: number | undefined;
+  private readonly categories: MobCategory[];
+  private attemptCursor = 0;
 
   constructor(
     private readonly runtime: MobRuntime,
     readonly rules: SpawnRuleRegistry,
   ) {
     this.grass = BlockRegistry.getInstance().getDefaultStateId('grass_block');
+    this.categories = (['passive', 'hostile', 'ambient'] as const).filter(
+      (category) => this.rules.forCategory(category).length > 0,
+    );
   }
 
   /** Mobs of a category standing in loaded columns. */
@@ -104,27 +116,15 @@ export class MobSpawner {
     if (!player) return;
     this.clock++;
     this.despawn();
-    const world = this.runtime.world;
-    // With no passive rules nothing could spawn, so nothing is recorded either.
-    const passive = this.rules.forCategory('passive').length > 0;
-    if (!passive) world.unpopulatedColumns.clear();
-    let generated = 0;
-    for (const key of world.unpopulatedColumns) {
-      if (generated++ >= GENERATED_PER_TICK) break;
-      world.unpopulatedColumns.delete(key);
-      if (this.populated.has(key)) continue;
-      this.populated.add(key);
-      const [cx, cz] = key.split(',').map(Number) as [number, number];
-      if (world.hasColumn(cx, cz)) this.passiveAttempt(cx, cz);
-    }
-    for (let i = 0; i < ATTEMPTS_PER_TICK; i++) {
-      this.annulusAttempt('hostile', i % 2 === 0);
-      this.annulusAttempt('ambient', i % 2 === 0);
-    }
-    if (passive && this.clock % PASSIVE_INTERVAL === 0) {
-      const columns = world.loadedColumns().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-      for (const [cx, cz] of columns)
-        if (this.runtime.random() < PASSIVE_CHANCE) this.passiveAttempt(cx, cz);
+    if (this.categories.length === 0) return;
+    let periodicPassive = this.clock % PASSIVE_INTERVAL === 0;
+    for (let i = 0; i < SPAWN_ATTEMPTS_PER_TICK; i++) {
+      const category = this.categories[this.attemptCursor++ % this.categories.length]!;
+      if (category === 'passive' && periodicPassive) {
+        periodicPassive = false;
+        this.periodicPassiveAttempt();
+      } else if (category === 'passive') this.passiveAttemptFromQueue();
+      else this.annulusAttempt(category, i % 2 === 0);
     }
   }
 
@@ -159,7 +159,7 @@ export class MobSpawner {
     const y = surface ? top + 1 : 1 + Math.floor(runtime.random() * Math.max(1, top + 1));
     const test = category === 'hostile' ? this.hostileSpot.bind(this) : this.ambientSpot.bind(this);
     if (!test(x, y, z)) return;
-    this.spawnGroup(category, x, y, z, test);
+    this.spawnGroup(category, x, y, z);
   }
 
   /** Solid below, two free cells, block light 0, effective sky light below 8, 24–128 away. */
@@ -185,13 +185,39 @@ export class MobSpawner {
   }
 
   /** Grass below and two free cells. */
-  passiveSpot(x: number, y: number, z: number): boolean {
+  passiveSpot(
+    x: number,
+    y: number,
+    z: number,
+    ground: readonly string[] = ['grass_block'],
+  ): boolean {
     const runtime = this.runtime;
     return (
-      runtime.world.getBlockStateId(x, y - 1, z) === this.grass &&
+      ground.some((block) =>
+        block === 'grass_block'
+          ? runtime.world.getBlockStateId(x, y - 1, z) === this.grass
+          : runtime.world.getBlock(x, y - 1, z).id === block,
+      ) &&
       runtime.classify(x, y, z) === 'passable' &&
       runtime.classify(x, y + 1, z) === 'passable'
     );
+  }
+
+  private passiveAttemptFromQueue(): void {
+    if (this.rules.forCategory('passive').length === 0) return;
+    const world = this.runtime.world;
+    const key = world.unpopulatedColumns.values().next().value as string | undefined;
+    if (!key) return;
+    world.unpopulatedColumns.delete(key);
+    if (this.populated.has(key)) return;
+    if (this.populated.size >= MAX_POPULATED_COLUMNS) {
+      const oldest = this.populated.values().next().value as string | undefined;
+      if (oldest !== undefined) this.populated.delete(oldest);
+    }
+    this.populated.add(key);
+    const [cx, cz] = key.split(',').map(Number) as [number, number];
+    if (this.count('passive') < MOB_CAPS.passive && world.hasColumn(cx, cz))
+      this.passiveAttempt(cx, cz);
   }
 
   private passiveAttempt(cx: number, cz: number): void {
@@ -201,18 +227,24 @@ export class MobSpawner {
     const x = cx * 16 + Math.floor(runtime.random() * 16);
     const z = cz * 16 + Math.floor(runtime.random() * 16);
     const y = runtime.world.getHeight(x, z) + 1;
-    if (!this.passiveSpot(x, y, z)) return;
-    this.spawnGroup('passive', x, y, z, (gx, gy, gz) => this.passiveSpot(gx, gy, gz));
+    this.spawnGroup('passive', x, y, z);
   }
 
-  private spawnGroup(
-    category: MobCategory,
-    x: number,
-    y: number,
-    z: number,
-    test: (x: number, y: number, z: number) => boolean,
-  ): void {
-    const rule = this.pickRule(category, this.runtime.world.getBiome(x, z));
+  private periodicPassiveAttempt(): void {
+    if (this.count('passive') >= MOB_CAPS.passive) return;
+    const runtime = this.runtime,
+      player = runtime.player();
+    if (!player) return;
+    // A fixed-size local search samples a nearby column without enumerating loaded columns.
+    const x = Math.floor(player.pos[0] + (runtime.random() * 2 - 1) * 60);
+    const z = Math.floor(player.pos[2] + (runtime.random() * 2 - 1) * 60);
+    const y = runtime.world.getHeight(x, z) + 1;
+    if (!runtime.world.hasColumn(Math.floor(x / 16), Math.floor(z / 16))) return;
+    this.spawnGroup('passive', x, y, z);
+  }
+
+  private spawnGroup(category: MobCategory, x: number, y: number, z: number): void {
+    const rule = this.pickRule(category, this.runtime.world.getBiome(x, z), x, y, z);
     if (!rule) return;
     const [min, max] = groupRange(rule);
     const size = min + Math.floor(this.runtime.random() * (max - min + 1));
@@ -225,28 +257,62 @@ export class MobSpawner {
         sx = x + Math.floor((this.runtime.random() * 2 - 1) * GROUP_SPREAD);
         sz = z + Math.floor((this.runtime.random() * 2 - 1) * GROUP_SPREAD);
       }
-      if (spawned > 0 && !test(sx, y, sz)) continue;
+      if (!this.canSpawnAt(rule, sx, y, sz)) continue;
       this.runtime.spawn(rule.type, sx + 0.5, y, sz + 0.5);
       spawned++;
     }
   }
 
   /** Weighted pick among the category's rules for this biome. */
-  pickRule(category: MobCategory, biome: string): SpawnRule | null {
+  pickRule(
+    category: MobCategory,
+    biome: string,
+    x?: number,
+    y?: number,
+    z?: number,
+  ): SpawnRule | null {
+    const hasSpot = x !== undefined && y !== undefined && z !== undefined;
     const fitting = this.rules
       .forCategory(category)
       .filter(
         (rule) =>
           (rule.biomes.length === 0 || rule.biomes.includes(biome)) && hasEntityType(rule.type),
       );
-    const total = fitting.reduce((sum, rule) => sum + rule.weight, 0);
+    const eligible = hasSpot ? fitting.filter((rule) => this.ruleFits(rule, x!, y!, z!)) : fitting;
+    const total = eligible.reduce((sum, rule) => sum + this.ruleWeight(rule, x, y, z), 0);
     if (total <= 0) return null;
     let roll = this.runtime.random() * total;
-    for (const rule of fitting) {
-      roll -= rule.weight;
+    for (const rule of eligible) {
+      roll -= this.ruleWeight(rule, x, y, z);
       if (roll < 0) return rule;
     }
-    return fitting[fitting.length - 1]!;
+    return eligible[eligible.length - 1]!;
+  }
+
+  /** Full biome, ground, light, time and species-specific check for one rule candidate. */
+  canSpawnAt(rule: SpawnRule, x: number, y: number, z: number): boolean {
+    const world = this.runtime.world;
+    return (
+      (rule.biomes.length === 0 || rule.biomes.includes(world.getBiome(x, z))) &&
+      this.ruleFits(rule, x, y, z) &&
+      (rule.category === 'hostile'
+        ? this.hostileSpot(x, y, z)
+        : rule.category === 'ambient'
+          ? this.ambientSpot(x, y, z)
+          : this.passiveSpot(x, y, z, rule.ground ?? ['grass_block']))
+    );
+  }
+
+  private ruleFits(rule: SpawnRule, x: number, y: number, z: number): boolean {
+    if (rule.category === 'passive' && !this.passiveSpot(x, y, z, rule.ground ?? ['grass_block']))
+      return false;
+    return rule.where?.(this.runtime.world, x, y, z) ?? true;
+  }
+
+  private ruleWeight(rule: SpawnRule, x?: number, y?: number, z?: number): number {
+    if (x === undefined || y === undefined || z === undefined) return rule.weight;
+    const weight = rule.weightAt?.(this.runtime.world, x, y, z) ?? rule.weight;
+    return Number.isFinite(weight) && weight > 0 ? weight : 0;
   }
 
   private inAnnulus(x: number, z: number): boolean {

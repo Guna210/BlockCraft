@@ -1,5 +1,5 @@
 import type { World } from '../../world/world';
-import type { EntityWorld } from '../ecs/world';
+import type { EcsSystem, EntityWorld } from '../ecs/world';
 import { BodyC, EntityKindC, HealthC, LookTargetC, TransformC } from '../ecs/components';
 import type { Vec3 } from '../ecs/model';
 import { entityState } from '../ecs/systems';
@@ -86,6 +86,7 @@ export function addMob(ecs: EntityWorld, id: number, options: MobOptions): void 
     maxFallSpeed: options.maxFallSpeed ?? Infinity,
     jump: false,
     climb: false,
+    ceilingCling: false,
   });
   const ai = ecs.add(id, AiC, { selector: null });
   goalFactories.set(ai, options.goals);
@@ -138,6 +139,8 @@ export interface MobRuntimeOptions {
   spawnContext?: EntitySpawnContext;
   /** Natural spawning and despawning; off unless rules are given. */
   spawnRules?: SpawnRuleRegistry | 'default';
+  /** Whether this runtime installs its natural-spawning system. Defaults to on when rules exist. */
+  spawning?: boolean;
   seed?: number;
 }
 
@@ -152,6 +155,8 @@ export class MobRuntime implements NavigationHost {
   private readonly rng: PRNG;
   private readonly removals = new Set<number>();
   private readonly getPlayer: () => MobPlayer | null;
+  private spawnSystem: EcsSystem | null = null;
+  private spawning = false;
 
   constructor(
     readonly world: World,
@@ -173,16 +178,34 @@ export class MobRuntime implements NavigationHost {
     ecs.addSystem(() => this.aiSystem(), AI_ORDER);
     ecs.addSystem(() => this.navigationSystem(), NAV_ORDER);
     ecs.addSystem(() => this.movementSystem(), MOVE_ORDER);
-    if (this.spawner) {
-      const spawner = this.spawner;
-      ecs.addSystem(() => spawner.tick(), SPAWN_ORDER);
-    }
+    if (this.spawner) this.spawnSystem = () => this.spawner!.tick();
+    this.setSpawning(options.spawning ?? true);
   }
 
   /** Detaches world listeners and drops every pending path search. */
   dispose(): void {
+    if (this.spawnSystem) this.ecs.removeSystem(this.spawnSystem);
     this.scheduler.clear();
     if (runtimes.get(this.ecs) === this) runtimes.delete(this.ecs);
+  }
+
+  /** Enables or removes natural spawning without adding work to World or Player. */
+  setSpawning(enabled: boolean): void {
+    if (!this.spawner || !this.spawnSystem) {
+      this.spawning = false;
+      if (!enabled) this.world.unpopulatedColumns.clear();
+      return;
+    }
+    if (this.spawning === enabled) {
+      if (!enabled) this.world.unpopulatedColumns.clear();
+      return;
+    }
+    this.spawning = enabled;
+    if (enabled) this.ecs.addSystem(this.spawnSystem, SPAWN_ORDER);
+    else {
+      this.ecs.removeSystem(this.spawnSystem);
+      this.world.unpopulatedColumns.clear();
+    }
   }
 
   classify(x: number, y: number, z: number): NodeClassification {

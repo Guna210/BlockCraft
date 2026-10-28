@@ -13,7 +13,6 @@ export function defineComponent<T>(name: string): ComponentType<T> {
 }
 
 export type EcsSystem = (ecs: EntityWorld) => void;
-
 /**
  * Lightweight entity-component system. Pure data: no browser APIs, no rendering. Queries return ids
  * in ascending order so every system visits entities in the same deterministic order.
@@ -95,6 +94,12 @@ export class EntityWorld {
     let at = this.systems.length;
     while (at > 0 && this.systems[at - 1]!.order > order) at--;
     this.systems.splice(at, 0, { order, run });
+  }
+
+  /** Removes one installed system, used when natural spawning is disabled for this world. */
+  removeSystem(run: EcsSystem): void {
+    const index = this.systems.findIndex((system) => system.run === run);
+    if (index >= 0) this.systems.splice(index, 1);
   }
 
   tick(): void {
