@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M19c Crypts, ruins, warrens & spawners | PR open, CI running | Claude cloud (claude/m19c) | - | #77 | new blocks append after 819; buried caches skipped |
+| M19c Crypts, ruins, warrens & spawners | CI green (3a903b0), review round 1 prompt given | Claude cloud (claude/m19c) | Sonnet (new) | #77 | new blocks append after 819; buried caches skipped |
 | M14 Explosions | Building (m10a exemption approved) | Codex, GitHub plugin not git (claude/m14) | - | - | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-28: #77 M19c green on 3a903b0 (shard 2 22 min, 42 passed, 0 flaky, m04 12.1 min); titled verified. Gave Sonnet reviewer prompt; flags: spawner per-tick cost + caps, gen stage cost, flat-world rule, m10a exemption entries, player.ts silkmesh scan, ids 820-823, mob/spawner entity spawning respecting M13g caps.
 - 2026-10-28: Owner approved and relayed M14 m10a edit: only blast_charge exemption entry; craftability in M14's own test; blockers/M14.md not committed. Owner-approved test edits += M14 blast_charge exemption.
 - 2026-10-28: #77 M19c opened (owner approved gate). Ids spawner 820, silkmesh 821, decorative_rail 822-823 -> M14 must start at 824 if it merges second. Diff edits m10a exemption table (spawner, silkmesh; established pattern, flag for reviewer) and player.ts (module consts + per-tick inSilkmesh voxel scan, no new fields/allocs). M14 Codex QUESTION: Blast Charge unreachable (spore_powder). Recommended owner approve only the blast_charge exemption entry; craftability proven in M14's own test, no new assertions in m10a. Message drafted; waiting on owner.
 - 2026-10-28: M19c at publish gate: flat-world rule in stage.ts + unit test; quick verify unit 1160, M19 e2e 4; touched e2e 61 passed 0 flaky; no m13g/m17b test edits; restored other tasks' screenshots. Waiting on owner approval.
