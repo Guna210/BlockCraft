@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M19c Crypts, ruins, warrens & spawners | Round 1 PASS; merging master + renumber 821-824 (msg sent) | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
+| M19c Crypts, ruins, warrens & spawners | Merged master + renumbered (9e3f52f green), verified, merge now | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -89,6 +89,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-29: #77 merge 3655706 + 9e3f52f green (shard 2 11.8 min). I verified: contains master, ids 821-824 appended after blast_charge 820, own test updated, shared files (runtime.ts, textures/index.ts, m10a test) keep exactly M19c's original changes. Blasted spawners/chests go through onBlockChanged (probe). Local flakes m14:26 frame 100.7 ms, m17b:278 light job error passed on rerun -> watch on master. Told owner to merge #77.
 - 2026-10-29: #78 M14 merged (d4167d8). M16b now ready (needs M14, M16a, M16c). Sent M19c builder: merge master, renumber spawner 821, silkmesh 822, decorative_rail 823/824, update own test + docs, check block entities under explosions, quick verify + m14/m13f/m17b e2e, push. Then I check diff; owner merges #77 (no round 2 needed).
 - 2026-10-29: #78 M14 round 2 PASS (all 7 fixes verified, regression test for touched set, litColumns test). Told owner to merge #78 (base = master 9a1250d). Then I message M19c builder to merge master + renumber 821-824. Non-blocking: share() refills litColumns per slice (explosion-only); onBlockEdited per removed block with batched flag.
 - 2026-10-29: #78 fix 2f7379a green (shard 2 16.7 min). Sent round 2 to session_0155bUSDQY78WVFzxUUwDRBY.
