@@ -45,13 +45,15 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 820.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 824.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M19c Crypts, ruins, warrens & spawners | Merged master + renumbered (9e3f52f green), verified, merge now | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
+| M16b Audio integration | Prompt given 2026-10-29 | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
+| M20a Dimensions & portals | Prompt given 2026-10-29 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
+| M20b Hollowdeep generator | Prompt given 2026-10-29 | Codex small model, GitHub plugin (claude/m20b) | - | - | many block ids append after 824; second of M20a/M20b renumbers |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -89,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-29: #77 M19c merged (89777d7). Owner: 2 parallel Codex = smaller model (quota). Gave prompts: M20a Claude cloud; M16b + M20b Codex small. Split M20a/M20b: M20b owns src/gen/hollowdeep/ (createHollowdeepPipeline(): TerrainPipeline, y 0-192), new blocks/textures, HOLLOWDEEP_ENVIRONMENT constants (fog, spores, lava flow rate, no sky) + unit tests; no dimension switching. M20a owns DimensionId type in src/world/dimension.ts, per-dimension World/streaming/storage (idb already keyed by dim), gen requests carry dimension, portal block, frame detect, Ember Flint (exists), shader, 4 s travel, 1:4 link, safe platform, player dimension persisted. Second to merge wires: if M20b first, M20a uses its pipeline+env; if M20a first, hollowdeep = empty stage list (void + platform) and M20b wires pipeline + env via M20a's API. M16b: one audio service, zero cost when idle, occlusion raycast rate-limited per voice, 32-voice priority stealing, lastSounds ring buffer in getAudioStats, volumes from M18b settings, M12 rain assertion (row allows), music via M16c moods by biome/player.dimension.
 - 2026-10-29: #77 merge 3655706 + 9e3f52f green (shard 2 11.8 min). I verified: contains master, ids 821-824 appended after blast_charge 820, own test updated, shared files (runtime.ts, textures/index.ts, m10a test) keep exactly M19c's original changes. Blasted spawners/chests go through onBlockChanged (probe). Local flakes m14:26 frame 100.7 ms, m17b:278 light job error passed on rerun -> watch on master. Told owner to merge #77.
 - 2026-10-29: #78 M14 merged (d4167d8). M16b now ready (needs M14, M16a, M16c). Sent M19c builder: merge master, renumber spawner 821, silkmesh 822, decorative_rail 823/824, update own test + docs, check block entities under explosions, quick verify + m14/m13f/m17b e2e, push. Then I check diff; owner merges #77 (no round 2 needed).
 - 2026-10-29: #78 M14 round 2 PASS (all 7 fixes verified, regression test for touched set, litColumns test). Told owner to merge #78 (base = master 9a1250d). Then I message M19c builder to merge master + renumber 821-824. Non-blocking: share() refills litColumns per slice (explosion-only); onBlockEdited per removed block with batched flag.
