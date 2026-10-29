@@ -188,6 +188,15 @@ test('M13f: a Sporeburst swells for 30 ticks and bursts, hurting the player; run
     () => window.__blockcraft!.getEntities!({ type: 'spore_cloud' }).length,
   );
   expect(clouds).toBe(1);
+  expect(
+    await page.evaluate((g) => {
+      const api = window.__blockcraft!;
+      let removed = 0;
+      for (let x = 1; x <= 5; x++)
+        for (let z = -2; z <= 2; z++) if (api.getBlock!(x, g - 1, z).id === 'air') removed++;
+      return removed;
+    }, y),
+  ).toBeGreaterThan(0);
 
   // Cancel: the player sprints away from a second one once it starts to swell.
   const health = sample.health;

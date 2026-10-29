@@ -4,7 +4,7 @@ import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
 import { EntityRenderer } from '../render/entities';
 import type { PlayerController } from '../engine/player-controller';
-import { SKY_15_SECTION } from './lighting';
+import { LightStorage, SKY_15_SECTION } from './lighting';
 import { collectLightPadding } from './light-padding';
 import type { ColumnLight, LightRect } from './batch-light';
 import { columnKey } from './streaming-plan';
@@ -337,6 +337,7 @@ export class WorldManager {
   private editSerial = 0;
   private readonly editMeshes: Array<{ result: MeshResult; serial: number; primary: boolean }> = [];
   private readonly editVersions = new Map<string, number>();
+  private readonly editMeshStarters: Array<() => void> = [];
   public interactionEditFrame = -1;
   public interactionMeshFrame = -1;
   public interactionMeshRevision = 0;
@@ -380,6 +381,44 @@ export class WorldManager {
               primary: sx === cx && sectionY === sy && sz === cz,
             });
         });
+    }
+  }
+
+  /** One coalesced worker mesh per affected section, with snapshots spread over frame slices. */
+  private requestBatchMeshes(sections: readonly [number, number, number][]): void {
+    const world = this.world,
+      tables = this.tables;
+    if (!world || !tables) return;
+    const serial = ++this.editSerial,
+      epoch = this.worldEpoch;
+    for (const [cx, sy, cz] of sections) {
+      const key = `${cx},${sy},${cz}`;
+      this.editVersions.set(key, serial);
+      this.editMeshStarters.push(() => {
+        if (epoch !== this.worldEpoch || this.editVersions.get(key) !== serial) return;
+        if (!world.hasColumn(cx, cz)) {
+          this.editVersions.delete(key);
+          return;
+        }
+        void this.workerPool
+          .enqueueMeshJob(
+            cx,
+            sy,
+            cz,
+            collectBlockPadding(world, cx, sy, cz),
+            tables,
+            false,
+            collectLightPadding(world, cx, sy, cz),
+          )
+          .then((result) => {
+            if (epoch !== this.worldEpoch || this.editVersions.get(key) !== serial) return;
+            if (!world.hasColumn(cx, cz)) {
+              this.editVersions.delete(key);
+              return;
+            }
+            this.editMeshes.push({ result, serial, primary: false });
+          });
+      });
     }
   }
 
@@ -551,7 +590,65 @@ export class WorldManager {
 
   private configureLighting(world: World): void {
     world.lightEngine.onlyLitColumns = true;
-    world.onBlockEdited = (x, y, z) => {
+    world.listeners.add({
+      blocksRemoved: (blocks, touchedSections) => {
+        weatherManager.heightmap.blocksRemoved(world, blocks);
+        const sections = new Map<number, [number, number, number]>();
+        const add = (cx: number, sy: number, cz: number) => {
+          if (sy < 0 || sy > 19 || !world.hasColumn(cx, cz)) return;
+          sections.set(LightStorage.getSectionKey(cx, sy, cz), [cx, sy, cz]);
+        };
+        const borderColumns = new Set<number>();
+        for (const b of blocks) {
+          const cx = Math.floor(b.x / 16),
+            sy = b.y >> 4,
+            cz = Math.floor(b.z / 16);
+          const xs = [cx],
+            ys = [sy],
+            zs = [cz];
+          if ((b.x & 15) === 0) xs.push(cx - 1);
+          if ((b.x & 15) === 15) xs.push(cx + 1);
+          if ((b.y & 15) === 0) ys.push(sy - 1);
+          if ((b.y & 15) === 15) ys.push(sy + 1);
+          if ((b.z & 15) === 0) zs.push(cz - 1);
+          if ((b.z & 15) === 15) zs.push(cz + 1);
+          for (const x of xs) for (const y of ys) for (const z of zs) add(x, y, z);
+          for (let dz = -1; dz <= 1; dz++)
+            for (let dx = -1; dx <= 1; dx++)
+              if (!world.lightEngine.isLit(cx + dx, cz + dz)) borderColumns.add(columnKey(cx, cz));
+        }
+        for (const key of touchedSections) {
+          const column = Math.floor(key / 32),
+            sy = key % 32;
+          const cx = Math.floor(column / 65536) - 32768,
+            cz = (column % 65536) - 32768;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dz = -1; dz <= 1; dz++)
+              for (let dx = -1; dx <= 1; dx++) {
+                const x = cx + dx,
+                  y = sy + dy,
+                  z = cz + dz;
+                const section = world.getColumn(x, z, false)?.getSection(y);
+                if (section && !(section.getBitsPerEntry() === 0 && section.uniformStateId === 0))
+                  add(x, y, z);
+              }
+        }
+        for (const [cx, , cz] of sections.values()) {
+          const phase = this.streamer.phaseOf(cx, cz);
+          if (phase === 'lighting' || phase === 'queuedLight') borderColumns.add(columnKey(cx, cz));
+        }
+        for (const key of borderColumns)
+          this.streamer.invalidateLight(Math.floor(key / 65536) - 32768, (key % 65536) - 32768);
+        this.requestBatchMeshes(
+          [...sections.values()].filter(
+            ([cx, , cz]) =>
+              !borderColumns.has(columnKey(cx, cz)) && world.lightEngine.isLit(cx, cz),
+          ),
+        );
+      },
+    });
+    world.onBlockEdited = (x, y, z, _state, batched) => {
+      if (batched) return; // The batch listener handles weather and mesh/light invalidation once.
       weatherManager.heightmap.updateBlock(world, x, y, z);
       const cx = Math.floor(x / 16);
       const cz = Math.floor(z / 16);
@@ -776,6 +873,7 @@ export class WorldManager {
     this.lightWorkerPool.cancelAll();
     this.workerPool.cancelAll();
     this.updateStreamerLimits();
+    this.editMeshStarters.length = 0;
     this.editMeshes.length = 0;
     this.editVersions.clear();
     this.playerController?.reset();
@@ -824,6 +922,7 @@ export class WorldManager {
     this.saves.detach();
     resetWorldTime();
     resetWeather();
+    this.editMeshStarters.length = 0;
     this.editMeshes.length = 0;
     this.editVersions.clear();
     this.playerController?.reset();
@@ -1114,6 +1213,7 @@ export class WorldManager {
 
     resetWorldTime();
     resetWeather();
+    this.editMeshStarters.length = 0;
     this.editMeshes.length = 0;
     this.editVersions.clear();
     this.playerController?.reset();
@@ -1282,6 +1382,12 @@ export class WorldManager {
       genRadius: radiusChunks + PERIMETER_RING,
       meshRadius: radiusChunks,
     });
+    const epoch = this.worldEpoch;
+    while (
+      epoch === this.worldEpoch &&
+      (this.editMeshStarters.length || this.editVersions.size || this.editMeshes.length)
+    )
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   }
 
   /** The streamer's view of `camera`: position, orientation and frustum planes of its current pose. */
@@ -1417,10 +1523,13 @@ export class WorldManager {
     if (this.world && this.camera) {
       this.streamer.update(this.streamerView(this.camera), performance.now());
       const uploadStart = performance.now();
+      while (this.editMeshStarters.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS / 2)
+        this.editMeshStarters.shift()!();
       while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
         const { result: mesh, serial, primary } = this.editMeshes.shift()!;
         if (this.editVersions.get(mesh.key) !== serial) continue;
         this.editVersions.delete(mesh.key);
+        if (!this.world.hasColumn(mesh.sx, mesh.sz)) continue;
         this.chunkRenderer?.uploadSectionMesh(mesh.sx, mesh.sy, mesh.sz, mesh.meshData, -Infinity);
         if (primary && serial === this.editSerial) {
           this.interactionMeshFrame = this.terrainFrames + 1;

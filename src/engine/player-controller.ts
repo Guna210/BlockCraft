@@ -26,6 +26,8 @@ import '../entity/mobs';
 import { slowPlayer } from '../entity/player-slow';
 import { ProjectileRuntime } from '../entity/projectiles';
 import { BowController } from '../gameplay/bow';
+import { BlastCharges } from '../entity/blast-charge';
+import { playExplosion, prepareExplosionSound } from '../audio/explosion';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -43,6 +45,9 @@ export class PlayerController {
   /** Shared block/entity collision and movement for projectiles in the current world. */
   public projectiles: ProjectileRuntime | null = null;
   public particles: BreakParticles | null = null;
+  public charges: BlastCharges | null = null;
+  private shake = 0;
+  private shakeUntil = 0;
   public onInteractionEdit: (x: number, y: number, z: number) => void = () => {};
   public onUseBlock: (blockId: string, target: RayHit) => boolean = () => false;
   public onDamage: (event: DamageEvent) => void = () => {};
@@ -200,6 +205,9 @@ export class PlayerController {
       },
       targetable: () => player.mode === 'survival' && !player.dead,
       hurt: (amount, source, from) => hurtPlayer(player, amount, source, from),
+      impulse: (velocity) => {
+        for (let a = 0; a < 3; a++) player.vel[a]! += velocity[a]! * 20;
+      },
       slow: (factor, ticks) => slowPlayer(player, factor, ticks),
     };
     this.mobs?.dispose();
@@ -209,6 +217,26 @@ export class PlayerController {
       spawnRules: 'default',
       spawning,
     });
+    this.charges?.dispose();
+    prepareExplosionSound();
+    this.charges = new BlastCharges(
+      world,
+      ecs,
+      { ecs, world, player: () => mobPlayer },
+      this.particles,
+      (center, power) => {
+        const distance = Math.hypot(
+          player.pos[0] - center[0],
+          player.pos[1] + player.eye - center[1],
+          player.pos[2] - center[2],
+        );
+        if (distance < 32) {
+          this.shake = Math.max(this.shake, (1 - distance / 32) * power * 0.012);
+          this.shakeUntil = performance.now() + 350;
+          playExplosion(world.worldSeed + world.breakCount);
+        }
+      },
+    );
     this.projectiles = new ProjectileRuntime(
       world,
       ecs,
@@ -269,6 +297,9 @@ export class PlayerController {
     else this.render(1);
   }
   reset(): void {
+    this.charges?.dispose();
+    this.charges = null;
+    this.shake = this.shakeUntil = 0;
     this.world?.entityQuery.removeProvider('player');
     this.world?.entityQuery.removeProvider('items');
     this.world?.entityQuery.removeProvider('ecs');
@@ -487,7 +518,10 @@ export class PlayerController {
       this.input.mouseMovement.x = 0;
       this.input.mouseMovement.y = 0;
     }
-    this.render(this.loop.advance(seconds));
+    this.charges?.beginFrame();
+    const alpha = this.loop.advance(seconds);
+    this.charges?.endFrame();
+    this.render(alpha);
   }
   tick(n: number): void {
     this.detectCamera();
@@ -539,6 +573,13 @@ export class PlayerController {
       this.camera.position[1] += Math.sin(distance * Math.PI) * 0.02 * amount;
       this.camera.roll = Math.sin(distance * Math.PI * 0.5) * 0.008 * amount;
     }
+    const shakeLeft = this.shakeUntil - performance.now();
+    if (shakeLeft > 0) {
+      const now = performance.now();
+      const amount = (this.shake * shakeLeft) / 350;
+      this.camera.roll += Math.sin(now * 0.09) * amount;
+      this.camera.position[1] += Math.sin(now * 0.12) * amount;
+    } else this.shake = 0;
     this.camera.updateView();
     this.rememberCamera();
   }

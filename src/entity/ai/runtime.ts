@@ -37,6 +37,7 @@ export const SPAWN_ORDER = -200;
 export interface MobPlayer {
   readonly pos: Readonly<Vec3>;
   readonly height: number;
+  impulse?(velocity: Vec3): void;
   /** Item id in the main hand, or null. */
   heldItemId(): string | null;
   /** Eye and look ray, read only by gaze-sensitive creatures. */

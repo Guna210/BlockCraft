@@ -818,5 +818,6 @@
   "wheat_crop[age=4]": 816,
   "wheat_crop[age=5]": 817,
   "wheat_crop[age=6]": 818,
-  "wheat_crop[age=7]": 819
+  "wheat_crop[age=7]": 819,
+  "blast_charge": 820
 }
