@@ -108,3 +108,15 @@ each one was carried out.
 - `getPortalTravel()`.
 
 `getPlayer().dimension` reports the dimension.
+
+## 8. Edits to other tasks' tests (approved by the owner)
+
+The owner approved both edits through the orchestrator.
+
+- `tests/unit/m19c-structures.test.ts`: the global `Math.max(...ids) === 824` assertion was
+  removed, because any block appended after M19c breaks it. The exact checks for M19c's own ids
+  (821–824) stay. M20b makes the identical edit, so the two branches merge cleanly. The `ids` local
+  it used is now unused (one lint warning). It is left in place so the edit stays identical to
+  M20b's.
+- `tests/unit/m10a-reachability.test.ts`: a `portal` exemption (task `M20a`). The portal is lit
+  with Ember Flint, never crafted or mined, and drops nothing.
