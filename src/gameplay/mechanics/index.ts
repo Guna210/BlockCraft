@@ -127,6 +127,7 @@ export class Mechanics {
   /** Receivers whose inputs may have changed since the last reconcile. */
   private readonly dirty = new Set<string>();
   private readonly listeners = new Set<(event: ToneEvent) => void>();
+  private readonly pistonListeners = new Set<(position: BlockPosition) => void>();
   private readonly registry = BlockRegistry.getInstance();
   private readonly openableCache = new Map<string, boolean>();
 
@@ -205,6 +206,12 @@ export class Mechanics {
   onTone(listener: (event: ToneEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** Subscribes to successful piston extensions and retractions. */
+  onPiston(listener: (position: BlockPosition) => void): () => void {
+    this.pistonListeners.add(listener);
+    return () => this.pistonListeners.delete(listener);
   }
 
   /** Blocks currently sliding between cells, for the renderer. */
@@ -447,6 +454,7 @@ export class Mechanics {
   private extend(position: BlockPosition, id: string, facing: MechanicFacing): void {
     const line = this.pushLine(position, facing);
     if (!line) return;
+    for (const listener of this.pistonListeners) listener(position);
     const vector = FACING_VECTORS[facing];
     const back = [-vector[0], -vector[1], -vector[2]];
     const owner = [position.x, position.y, position.z];
@@ -482,6 +490,7 @@ export class Mechanics {
     facing: MechanicFacing,
     front: BlockPosition,
   ): void {
+    for (const listener of this.pistonListeners) listener(position);
     const vector = FACING_VECTORS[facing];
     const back = [-vector[0], -vector[1], -vector[2]];
     const owner = [position.x, position.y, position.z];

@@ -22,7 +22,7 @@ function createCreatureVoice(
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, duration, peak, duration * 0.1);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + duration);
 

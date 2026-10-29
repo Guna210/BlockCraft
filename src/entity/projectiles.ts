@@ -239,6 +239,7 @@ export class ProjectileRuntime {
   private active = false;
   private readonly getPlayer: () => ProjectilePlayer | null;
   private readonly getItems: () => ItemEntityManager | null;
+  onArrowHit: (position: Readonly<Vec3>) => void = () => {};
 
   constructor(
     readonly world: World,
@@ -317,6 +318,7 @@ export class ProjectileRuntime {
         projectile.stuckBlock = [this.blockHit.x, this.blockHit.y, this.blockHit.z];
         velocity.fill(0);
         this.setOrientation(transform, dir);
+        if (projectile.kind === 'arrow') this.onArrowHit(transform.pos);
         continue;
       }
       if (entityHit) {
@@ -326,6 +328,7 @@ export class ProjectileRuntime {
           start[2] + dir[2] * entityHit.distance,
         ];
         transform.pos.splice(0, 3, ...hit);
+        if (projectile.kind === 'arrow') this.onArrowHit(hit);
         this.hitEntity(projectile, entityHit.id, hit, dir, length);
         this.ecs.destroy(id);
         continue;

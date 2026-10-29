@@ -31,6 +31,7 @@ export class BlockInteraction {
   progress = 0;
   tool: MiningTool = BARE_HAND;
   onBreak?: (state: number, x: number, y: number, z: number, tool: MiningTool) => void;
+  onPlace?: (state: number, x: number, y: number, z: number) => void;
   onBreakBeforeRemove?: (state: number, x: number, y: number, z: number) => boolean | void;
   onUse?: (blockId: string, target: RayHit) => boolean;
   private attack = false;
@@ -328,6 +329,8 @@ export class BlockInteraction {
           return false;
     }
     for (const cell of cells) world.setBlockStateId(cell.x, cell.y, cell.z, cell.state);
+    const placed = cells[0]!;
+    this.onPlace?.(placed.state, placed.x, placed.y, placed.z);
     if (selected && p.mode === 'survival') p.inventory.consumeSelected();
     for (const cell of cells) {
       this.edited(cell.x, cell.y, cell.z);

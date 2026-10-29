@@ -1,10 +1,14 @@
 import { LCG, createNoiseBuffer } from './math';
-import { settings } from '../engine/settings';
+import type { CompositionSequence } from './music/composer';
 
 export interface SoundRecipeContext {
   ctx: BaseAudioContext;
   t0: number;
   random: LCG;
+  /** Runtime voice bus. Offline rendering falls back to the context destination. */
+  output?: AudioNode;
+  pitch?: number;
+  sequence?: CompositionSequence;
 }
 
 export interface SoundRecipe {
@@ -20,11 +24,9 @@ export class SynthesisEngine {
     peak = 1,
     attack = 0.01,
   ) {
-    const volume = settings.masterVolume * settings.effectsVolume;
     param.setValueAtTime(0, t0);
-    param.linearRampToValueAtTime(peak * volume, t0 + attack);
-    if (volume > 0) param.exponentialRampToValueAtTime(0.001 * volume, t0 + duration);
-    else param.setValueAtTime(0, t0 + duration);
+    param.linearRampToValueAtTime(peak, t0 + attack);
+    param.exponentialRampToValueAtTime(0.001, t0 + duration);
   }
 
   static playNoise(
@@ -48,7 +50,7 @@ export class SynthesisEngine {
 
     noiseSource.connect(filter);
     filter.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(ctx.output ?? audioCtx.destination);
 
     noiseSource.start(t0);
     noiseSource.stop(t0 + duration);
@@ -94,7 +96,7 @@ export class SynthesisEngine {
     gain.connect(convolver);
     convolver.connect(masterGain);
 
-    masterGain.connect(audioCtx.destination);
+    masterGain.connect(ctx.output ?? audioCtx.destination);
 
     noiseSource.start(t0);
     noiseSource.stop(t0 + Math.max(duration, reverbDuration));
@@ -117,7 +119,7 @@ export class SynthesisEngine {
     SynthesisEngine.applySimpleEnvelope(gain.gain, t0, duration, peakLevel, attack);
 
     osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(ctx.output ?? audioCtx.destination);
 
     osc.start(t0);
     osc.stop(t0 + duration);

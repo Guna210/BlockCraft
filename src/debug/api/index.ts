@@ -1,6 +1,7 @@
 import { registerPlayerApi } from './player';
 import { api } from './core';
 import { audioApi } from './audio';
+import './audio-stats';
 import { look } from './camera';
 import { showTestScene } from './test-scene';
 import { getBlock, setBlock, fill, getBiome, getHeight, worldHash } from './world';

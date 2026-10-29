@@ -67,6 +67,7 @@ import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
 import { settings, type LeavesSetting } from '../engine/settings';
+import { sound } from '../audio/service';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
 import { MeshAttempts } from './mesh-attempts';
 import { fadeStartFor } from '../render/column-fade';
@@ -1517,6 +1518,7 @@ export class WorldManager {
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const ticks = getWorldTime();
+      sound.updateListener(this.camera);
       if (this.world) {
         weatherManager.tick(this.world, ticks, this.camera.position);
       }
