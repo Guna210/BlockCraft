@@ -14,7 +14,40 @@ import {
   type FaceName,
 } from '../entity/ecs/model';
 import { BodyC, HealthC, RenderableC, TransformC } from '../entity/ecs/components';
-import { computePose, hurtTint } from '../entity/ecs/pose';
+import { computePose, computeRestPose, hurtTint } from '../entity/ecs/pose';
+
+/** A spawner's spinning creature: the model id and the spawner block's corner. */
+export interface EntityMiniature {
+  readonly model: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/** Largest side of a spawner's miniature creature, in blocks. */
+export const MINIATURE_SIZE = 0.55;
+/** Radians per second the miniature turns. */
+const MINIATURE_SPIN = 1.6;
+
+const miniatureFits = new WeakMap<EntityModel, { scale: number; lift: number }>();
+
+/** Scale that fits a model's cubes into MINIATURE_SIZE, and the model-pixel height of its middle. */
+export function miniatureFit(model: EntityModel): { scale: number; lift: number } {
+  const cached = miniatureFits.get(model);
+  if (cached) return cached;
+  const min = [Infinity, Infinity, Infinity],
+    max = [-Infinity, -Infinity, -Infinity];
+  for (const part of model.parts)
+    for (const cube of part.cubes)
+      for (let axis = 0; axis < 3; axis++) {
+        min[axis] = Math.min(min[axis]!, cube.from[axis]!);
+        max[axis] = Math.max(max[axis]!, cube.from[axis]! + cube.size[axis]!);
+      }
+  const extent = Math.max(1, max[0]! - min[0]!, max[1]! - min[1]!, max[2]! - min[2]!);
+  const fit = { scale: (MINIATURE_SIZE * 16) / extent, lift: (min[1]! + max[1]!) / 2 };
+  miniatureFits.set(model, fit);
+  return fit;
+}
 
 const VS = `#version 300 es
 precision highp float;
@@ -323,11 +356,16 @@ export class EntityRenderer {
     return resources;
   }
 
-  render(ecs: EntityWorld | null, world: World | null, view: EntityRenderView): number {
+  render(
+    ecs: EntityWorld | null,
+    world: World | null,
+    view: EntityRenderView,
+    miniatures: readonly EntityMiniature[] = [],
+  ): number {
     this.draws = this.triangles = 0;
-    if (this.disposed || !ecs || !world) return 0;
-    const ids = ecs.query(RenderableC, TransformC);
-    if (!ids.length) return 0;
+    if (this.disposed || !world) return 0;
+    const ids = ecs ? ecs.query(RenderableC, TransformC) : [];
+    if (!ids.length && !miniatures.length) return 0;
     const gl = this.wrapper.gl,
       loc = this.loc,
       underwater = view.underwater,
@@ -351,6 +389,7 @@ export class EntityRenderer {
     gl.enable(gl.CULL_FACE);
     let bound = '';
     for (const id of ids) {
+      if (!ecs) break;
       const t = ecs.get(id, TransformC)!,
         alpha = view.alpha;
       const x = t.previous[0] + (t.pos[0] - t.previous[0]) * alpha,
@@ -381,6 +420,44 @@ export class EntityRenderer {
         gl.uniform3f(loc.light, this.light[0], this.light[1], this.light[2]);
       }
       gl.uniform1f(loc.hurt, hurtTint(ecs.get(id, HealthC)));
+      this.wrapper.drawArrays(gl.TRIANGLES, 0, resources.vertices);
+      this.draws++;
+      this.triangles += resources.vertices / 3;
+    }
+    const spin = (performance.now() / 1000) * MINIATURE_SPIN;
+    for (const mini of miniatures) {
+      const model = getEntityModel(mini.model),
+        resources = this.resources(mini.model),
+        fit = miniatureFit(model);
+      if (mini.model !== bound) {
+        gl.bindVertexArray(resources.vao);
+        gl.bindTexture(gl.TEXTURE_2D, resources.texture);
+        bound = mini.model;
+      }
+      const parts = computeRestPose(
+        model,
+        mini.x + 0.5,
+        mini.y + 0.5 - (fit.lift / 16) * fit.scale,
+        mini.z + 0.5,
+        spin,
+        fit.scale,
+        this.pose,
+      );
+      gl.uniformMatrix4fv(loc.parts, false, this.pose, 0, parts * 16);
+      if (resources.emissive) gl.uniform3f(loc.light, 1, 1, 1);
+      else {
+        entityLight(
+          world,
+          mini.x + 0.5,
+          mini.y + 0.5,
+          mini.z + 0.5,
+          view.skyBrightness,
+          underwater.brightnessFloor,
+          this.light,
+        );
+        gl.uniform3f(loc.light, this.light[0], this.light[1], this.light[2]);
+      }
+      gl.uniform1f(loc.hurt, 0);
       this.wrapper.drawArrays(gl.TRIANGLES, 0, resources.vertices);
       this.draws++;
       this.triangles += resources.vertices / 3;

@@ -1,6 +1,6 @@
 import { BlockRegistry } from '../../world/blocks/registry';
 import { ChunkColumn } from '../../world/column';
-import { deriveSeed } from '../../engine/rng';
+import { deriveSeed, hash3 } from '../../engine/rng';
 import { SEA_LEVEL } from '../terrain';
 import { sampleTerrainTopY } from '../terrain-height';
 import { terrainVariant } from '../world-options';
@@ -30,6 +30,39 @@ export interface StructureRegistration {
   readonly maxPieces: number;
   readonly foundationBlock: string;
   readonly stiltsBlock?: string;
+  /** The chest loot table (data/loot/chests/) rolled into this structure's generated chests. */
+  readonly lootTable?: string;
+  /** Creatures a generated spawner may hold; each spawner picks one from its position. */
+  readonly spawnerCreatures?: readonly string[];
+  /**
+   * Sinks the structure so its highest cell is `cover` blocks below the lowest ground around it,
+   * but never below `minY`. Buried structures get no foundations.
+   */
+  readonly buried?: { readonly cover: number; readonly minY: number };
+  /** Share (0–1) of blocks a ruin loses at its top; less lower down, none on piece floors. */
+  readonly decay?: number;
+}
+
+/** A generated block that needs a block entity set up once its column is in the world. */
+export type StructureMarker =
+  | {
+      readonly kind: 'chest';
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+      readonly table: string;
+    }
+  | {
+      readonly kind: 'spawner';
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+      readonly creature: string;
+    };
+
+/** The structures stage, plus the markers of the column it generated last. */
+export interface StructureStage extends TerrainStage {
+  takeMarkers(cx: number, cz: number): StructureMarker[];
 }
 
 interface StructureCell {
@@ -37,7 +70,12 @@ interface StructureCell {
   readonly y: number;
   readonly z: number;
   readonly stateId: number;
+  readonly marker?: StructureMarker;
 }
+
+/** Ground sampled every BURIED_SAMPLE_STEP blocks, BURIED_MARGIN beyond each buried piece. */
+const BURIED_SAMPLE_STEP = 4;
+const BURIED_MARGIN = 8;
 
 const ASSEMBLY_CACHE_LIMIT = 256;
 
@@ -78,15 +116,24 @@ function blockStateId(
   return id;
 }
 
-function buildStartCells(
+interface StartPlan {
+  readonly plans: ReadonlyArray<{
+    piece: ReturnType<typeof assembleJigsaw>[number];
+    template: StructurePieceTemplate;
+    rotatedSize: StructurePoint;
+  }>;
+  readonly startY: number;
+  readonly surfaceAt: (x: number, z: number) => number;
+}
+
+function planStart(
   worldSeed: number,
   startX: number,
   startZ: number,
   startChunkX: number,
   startChunkZ: number,
   registration: StructureRegistration,
-  registry: BlockRegistry,
-): StructureCell[] {
+): StartPlan {
   const terrainStageSeed = deriveSeed(worldSeed, 'terrain_shape');
   const pieces = assembleJigsaw({
     worldSeed,
@@ -119,6 +166,27 @@ function buildStartCells(
     groundByColumn.set(key, height);
     return height;
   };
+  if (registration.buried) {
+    let lowestGround = Infinity;
+    let top = 0;
+    for (const { piece, rotatedSize } of plans) {
+      top = Math.max(top, piece.position[1] + rotatedSize[1]);
+      const minX = startX + piece.position[0] - BURIED_MARGIN;
+      const minZ = startZ + piece.position[2] - BURIED_MARGIN;
+      const maxX = startX + piece.position[0] + rotatedSize[0] - 1 + BURIED_MARGIN;
+      const maxZ = startZ + piece.position[2] + rotatedSize[2] - 1 + BURIED_MARGIN;
+      for (let x = minX; x <= maxX + BURIED_SAMPLE_STEP - 1; x += BURIED_SAMPLE_STEP) {
+        for (let z = minZ; z <= maxZ + BURIED_SAMPLE_STEP - 1; z += BURIED_SAMPLE_STEP) {
+          lowestGround = Math.min(lowestGround, surfaceAt(Math.min(x, maxX), Math.min(z, maxZ)));
+        }
+      }
+    }
+    const startY = Math.max(
+      registration.buried.minY,
+      lowestGround - registration.buried.cover - top,
+    );
+    return { plans, startY, surfaceAt };
+  }
   let startY = SEA_LEVEL + 1;
   for (const { piece, template } of plans) {
     for (const block of template.blocks.blocks) {
@@ -129,6 +197,62 @@ function buildStartCells(
       );
     }
   }
+  return { plans, startY, surfaceAt };
+}
+
+/** The floor height of a structure start's first piece (what locating a structure reports). */
+export function structureStartY(
+  worldSeed: number,
+  registration: StructureRegistration,
+  startX: number,
+  startZ: number,
+  startChunkX: number,
+  startChunkZ: number,
+): number {
+  return planStart(worldSeed, startX, startZ, startChunkX, startChunkZ, registration).startY;
+}
+
+function buildStartCells(
+  worldSeed: number,
+  startX: number,
+  startZ: number,
+  startChunkX: number,
+  startChunkZ: number,
+  registration: StructureRegistration,
+  registry: BlockRegistry,
+): StructureCell[] {
+  const { plans, startY, surfaceAt } = planStart(
+    worldSeed,
+    startX,
+    startZ,
+    startChunkX,
+    startChunkZ,
+    registration,
+  );
+  const decaySeed = deriveSeed(worldSeed, 'structure_decay:' + registration.config.id);
+  const creatureSeed = deriveSeed(worldSeed, 'structure_spawner:' + registration.config.id);
+  const markerFor = (
+    blockId: string,
+    x: number,
+    y: number,
+    z: number,
+  ): StructureMarker | undefined => {
+    if (blockId === 'chest' && registration.lootTable) {
+      return { kind: 'chest', x, y, z, table: registration.lootTable };
+    }
+    const creatures = registration.spawnerCreatures;
+    if (blockId === 'spawner' && creatures && creatures.length > 0) {
+      const index = Math.floor(hash3(creatureSeed, x, y, z) * creatures.length);
+      return {
+        kind: 'spawner',
+        x,
+        y,
+        z,
+        creature: creatures[Math.min(index, creatures.length - 1)]!,
+      };
+    }
+    return undefined;
+  };
 
   const cellsByPosition = new Map<string, StructureCell>();
   const pathCells = new Map<
@@ -155,10 +279,25 @@ function buildStartCells(
           : groundY + 1
         : pieceOrigin[1] + point[1];
       const z = pieceOrigin[2] + point[2];
-      cellsByPosition.set(x + ',' + y + ',' + z, { x, y, z, stateId });
+      if (
+        registration.decay &&
+        point[1] > 0 &&
+        blockId !== 'air' &&
+        blockId !== 'chest' &&
+        hash3(decaySeed, x >> 1, y >> 1, z >> 1) <
+          registration.decay * (0.2 + (0.8 * point[1]) / Math.max(1, rotatedSize[1] - 1))
+      ) {
+        continue;
+      }
+      const marker = markerFor(blockId, x, y, z);
+      cellsByPosition.set(
+        x + ',' + y + ',' + z,
+        marker ? { x, y, z, stateId, marker } : { x, y, z, stateId },
+      );
       if (block.surfacePath) pathCells.set(x + ',' + z, { x, z, y, originalY: y, stateId });
     }
 
+    if (registration.buried) continue;
     const supportFootprint = [
       ...new Set(
         template.blocks.blocks
@@ -233,13 +372,16 @@ function buildStartCells(
  */
 export function createStructureStage(
   registrations: readonly StructureRegistration[] = [],
-): TerrainStage {
+): StructureStage {
   const validRegistrations = registrations.filter(
     (registration) => registration.templates.length > 0,
   );
   const registry = validRegistrations.length > 0 ? BlockRegistry.getInstance() : null;
   const assembledByStart = new Map<string, readonly StructureCell[]>();
   const placementsBySeed = new Map<string, ReturnType<typeof createPlacementGrid>>();
+  const placementCacheLimit = Math.max(4, validRegistrations.length * 2);
+  let markerColumn = '';
+  let markers: StructureMarker[] = [];
 
   function getCells(
     worldSeed: number,
@@ -275,7 +417,15 @@ export function createStructureStage(
 
   return {
     name: 'structures',
+    takeMarkers(cx: number, cz: number): StructureMarker[] {
+      const taken = markerColumn === cx + ',' + cz ? markers : [];
+      markerColumn = '';
+      markers = [];
+      return taken;
+    },
     generate(_stageSeed, cx, cz, column: ChunkColumn): void {
+      markerColumn = cx + ',' + cz;
+      markers = [];
       const worldSeed = column.worldSeed;
       if (worldSeed === undefined || validRegistrations.length === 0) return;
       const minWorldX = cx * 16;
@@ -286,6 +436,8 @@ export function createStructureStage(
       for (const registration of validRegistrations) {
         const radius = structureRadius(registration);
         const variant = terrainVariant();
+        // Flat worlds have no caves or depth to bury a dungeon in: buried structures stay out.
+        if (registration.buried && variant.type === 'flat') continue;
         const placementKey = `${worldSeed}:${variant.type}:${variant.biome ?? ''}:${registration.config.id}`;
         let grid = placementsBySeed.get(placementKey);
         if (!grid) {
@@ -310,7 +462,7 @@ export function createStructureStage(
           };
           grid = createPlacementGrid(worldSeed, [registration.config], biomeSampler);
           placementsBySeed.set(placementKey, grid);
-          if (placementsBySeed.size > 4) {
+          if (placementsBySeed.size > placementCacheLimit) {
             const oldest = placementsBySeed.keys().next().value as string | undefined;
             if (oldest !== undefined) placementsBySeed.delete(oldest);
           }
@@ -341,6 +493,7 @@ export function createStructureStage(
               continue;
             }
             column.setBlockStateId(cell.x & 15, cell.y, cell.z & 15, cell.stateId);
+            if (cell.marker) markers.push(cell.marker);
           }
         }
       }

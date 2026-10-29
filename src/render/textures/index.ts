@@ -192,6 +192,14 @@ import {
   PAL_FARMLAND,
   PAL_WHEAT_CROP,
 } from './hamlets';
+import {
+  genDecorativeRail,
+  genSilkmesh,
+  genSpawner,
+  PAL_DECORATIVE_RAIL,
+  PAL_SILKMESH,
+  PAL_SPAWNER,
+} from './structures';
 import { genWorkbenchSide, genWorkbenchTop, PAL_WORKBENCH } from './workbench';
 import { genChestBottom, genChestSide, genChestTop, PAL_CHEST } from './chest';
 import {
@@ -279,6 +287,10 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   wooden_button: genWoodenButton,
   farmland_top: (seed) => genFarmlandTop(seed),
   farmland_side: (seed) => genFarmlandSide(seed),
+  spawner: genSpawner,
+  silkmesh: genSilkmesh,
+  decorative_rail_x: (seed) => genDecorativeRail('x', seed),
+  decorative_rail_z: (seed) => genDecorativeRail('z', seed),
   ...Object.fromEntries(
     Array.from({ length: 8 }, (_, age) => [
       `wheat_crop_${age}`,
@@ -528,6 +540,10 @@ export const texturePalettes: Record<string, RGBA[]> = {
   wooden_button: CURRENT_PALETTES.woodCutout,
   farmland_top: PAL_FARMLAND,
   farmland_side: PAL_FARMLAND,
+  spawner: PAL_SPAWNER,
+  silkmesh: PAL_SILKMESH,
+  decorative_rail_x: PAL_DECORATIVE_RAIL,
+  decorative_rail_z: PAL_DECORATIVE_RAIL,
   ...Object.fromEntries(
     Array.from({ length: 8 }, (_, age) => [`wheat_crop_${age}`, PAL_WHEAT_CROP]),
   ),

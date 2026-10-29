@@ -3,6 +3,7 @@ import type { ColumnWorkPriority } from '../world/streamer';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 import type { TerrainVariant } from '../gen/world-options';
+import type { StructureMarker } from '../gen/structures/stage';
 
 // Number of most recent columns the percentile statistics cover
 const GEN_STATS_WINDOW = 100;
@@ -14,6 +15,8 @@ export interface GenResult {
   biomes: Uint8Array;
   grassTints: Uint8Array;
   foliageTints: Uint8Array;
+  /** Generated chests and spawners that need block entities; absent for saved columns. */
+  markers?: StructureMarker[];
   columnMs: number;
   sectionCount: number;
   perSectionMs: number;
@@ -86,6 +89,7 @@ export class GenWorkerPool {
           biomes,
           grassTints,
           foliageTints,
+          markers,
           columnMs,
           sectionCount,
           perSectionMs,
@@ -114,6 +118,7 @@ export class GenWorkerPool {
             biomes,
             grassTints,
             foliageTints,
+            markers,
             columnMs,
             sectionCount,
             perSectionMs,

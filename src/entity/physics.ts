@@ -20,6 +20,7 @@ export class BlockCollision {
   private readonly water: Uint8Array;
   private readonly hay: Uint8Array;
   private readonly mire: Uint8Array;
+  private readonly silkmesh: Uint8Array;
   private readonly climbers: Uint8Array;
   constructor(public readonly world: World) {
     const registry = BlockRegistry.getInstance();
@@ -29,6 +30,7 @@ export class BlockCollision {
     this.water = new Uint8Array(n);
     this.hay = new Uint8Array(n);
     this.mire = new Uint8Array(n);
+    this.silkmesh = new Uint8Array(n);
     this.climbers = new Uint8Array(n);
     const data: number[] = [];
     for (const id of registry.getAllStateIds()) {
@@ -36,6 +38,7 @@ export class BlockCollision {
       this.water[id] = state.blockId === 'water' ? 1 : 0;
       this.hay[id] = state.blockId === 'hay_bale' ? 1 : 0;
       this.mire[id] = state.blockId === 'mire' ? 1 : 0;
+      this.silkmesh[id] = state.blockId === 'silkmesh' ? 1 : 0;
       if (state.blockId === 'ladder' || state.blockId === 'vine')
         this.climbers[id] =
           ['north', 'south', 'east', 'west'].indexOf(String(state.properties.facing)) + 1;
@@ -158,6 +161,23 @@ export class BlockCollision {
           x++
         )
           if (this.water[this.state(x, y, z)]) return true;
+    return false;
+  }
+
+  /** Whether the body overlaps a Silkmesh cell (it has no collision box, only drag). */
+  inSilkmesh(pos: Position, height: number): boolean {
+    for (let y = Math.floor(pos[1]); y <= Math.floor(pos[1] + height - EPSILON); y++)
+      for (
+        let z = Math.floor(pos[2] - HALF_WIDTH + EPSILON);
+        z <= Math.floor(pos[2] + HALF_WIDTH - EPSILON);
+        z++
+      )
+        for (
+          let x = Math.floor(pos[0] - HALF_WIDTH + EPSILON);
+          x <= Math.floor(pos[0] + HALF_WIDTH - EPSILON);
+          x++
+        )
+          if (this.silkmesh[this.state(x, y, z)]) return true;
     return false;
   }
 

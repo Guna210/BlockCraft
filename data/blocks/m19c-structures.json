@@ -1,0 +1,52 @@
+{
+  "spawner": {
+    "hardness": 5,
+    "blastResistance": 5,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "spawner",
+      "side": "spawner",
+      "bottom": "spawner"
+    }
+  },
+  "silkmesh": {
+    "hardness": 4,
+    "blastResistance": 4,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "cross",
+    "tool": "shears/sword",
+    "minTier": 0,
+    "textures": {
+      "top": "silkmesh",
+      "side": "silkmesh",
+      "bottom": "silkmesh"
+    }
+  },
+  "decorative_rail": {
+    "hardness": 0.7,
+    "blastResistance": 0.7,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "model": "trace",
+    "tool": "pickaxe",
+    "states": {
+      "axis": {
+        "type": "enum",
+        "values": ["x", "z"],
+        "default": "z"
+      }
+    },
+    "textures": {
+      "top": "decorative_rail_z",
+      "side": "decorative_rail_z",
+      "bottom": "decorative_rail_z"
+    }
+  }
+}

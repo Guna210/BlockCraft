@@ -1,0 +1,20 @@
+{
+  "spawner": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "spawner",
+    "texture": "spawner"
+  },
+  "silkmesh": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "silkmesh",
+    "texture": "silkmesh"
+  },
+  "decorative_rail": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "decorative_rail",
+    "texture": "decorative_rail_z"
+  }
+}

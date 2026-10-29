@@ -128,6 +128,12 @@ export function worldPaths(world: World): SharedPaths {
 }
 
 const runtimes = new WeakMap<EntityWorld, MobRuntime>();
+const worldRuntimes = new WeakMap<World, MobRuntime>();
+
+/** The runtime driving mobs in a block world, if any (spawner blocks spawn through it). */
+export function mobRuntimeForWorld(world: World): MobRuntime | undefined {
+  return worldRuntimes.get(world);
+}
 
 /** The runtime installed on an ECS world, if any. */
 export function mobRuntime(ecs: EntityWorld): MobRuntime | undefined {
@@ -166,6 +172,7 @@ export class MobRuntime implements NavigationHost {
   ) {
     if (runtimes.has(ecs)) throw new Error('A mob runtime is already installed on this ECS world');
     runtimes.set(ecs, this);
+    worldRuntimes.set(world, this);
     this.collision = new BlockCollision(world);
     const shared = worldPaths(world);
     this.adapter = shared.adapter;
@@ -188,6 +195,12 @@ export class MobRuntime implements NavigationHost {
     if (this.spawnSystem) this.ecs.removeSystem(this.spawnSystem);
     this.scheduler.clear();
     if (runtimes.get(this.ecs) === this) runtimes.delete(this.ecs);
+    if (worldRuntimes.get(this.world) === this) worldRuntimes.delete(this.world);
+  }
+
+  /** Whether mobs spawn on their own in this world (the world's spawning option). */
+  get spawningEnabled(): boolean {
+    return this.spawning;
   }
 
   /** Enables or removes natural spawning without adding work to World or Player. */

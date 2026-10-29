@@ -11,7 +11,8 @@ export function canHarvest(block: BlockDefinition, tool: MiningTool = BARE_HAND)
 function correctTool(block: BlockDefinition, tool: MiningTool): boolean {
   return (
     block.tool === tool.type ||
-    (block.tool === 'shears/hoe' && (tool.type === 'shears' || tool.type === 'hoe'))
+    (block.tool === 'shears/hoe' && (tool.type === 'shears' || tool.type === 'hoe')) ||
+    (block.tool === 'shears/sword' && (tool.type === 'shears' || tool.type === 'sword'))
   );
 }
 /** Appendix A.1. Infinity/negative hardness is unbreakable, even in creative. */

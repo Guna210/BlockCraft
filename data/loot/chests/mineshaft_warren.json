@@ -1,0 +1,26 @@
+{
+  "rolls": [4, 8],
+  "entries": [
+    { "id": "coal", "weight": 8, "count": [3, 9] },
+    { "id": "raw_iron", "weight": 6, "count": [1, 5] },
+    { "id": "raw_copper", "weight": 6, "count": [2, 7] },
+    { "id": "raw_gold", "weight": 2, "count": [1, 3] },
+    { "id": "torch", "weight": 5, "count": [2, 8] },
+    { "id": "decorative_rail", "weight": 4, "count": [2, 8] },
+    { "id": "baked_tuber", "weight": 3, "count": [1, 3] },
+    {
+      "id": "iron_pickaxe",
+      "weight": 2,
+      "count": [1, 1],
+      "durability": [0.2, 0.7],
+      "affixChance": 0.35
+    },
+    {
+      "id": "stone_shovel",
+      "weight": 3,
+      "count": [1, 1],
+      "durability": [0.3, 0.9],
+      "affixChance": 0.15
+    }
+  ]
+}

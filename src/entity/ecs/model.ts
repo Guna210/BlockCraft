@@ -156,6 +156,10 @@ export function registerEntityModel(model: EntityModel, skin: SkinGenerator): vo
   models.set(model.id, { model, skin });
 }
 
+export function hasEntityModel(id: string): boolean {
+  return models.has(id);
+}
+
 export function getEntityModel(id: string): EntityModel {
   const entry = models.get(id);
   if (!entry) throw new Error(`Unknown entity model: ${id}`);

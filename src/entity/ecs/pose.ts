@@ -107,9 +107,16 @@ export function computePose(
   if (tip) mat4.rotateZ(root, root, tip);
   translation[0] = translation[1] = translation[2] = PIXEL * (ecs.get(id, RenderableC)?.scale ?? 1);
   mat4.scale(root, root, translation);
-  for (let n = 0; n < count; n++) {
+  writeParts(model, indices, out);
+  return count;
+}
+
+/** Part world matrices from `root`, the rotations and the offsets now in the scratch arrays. */
+function writeParts(model: EntityModel, indices: Map<string, number>, out: Float32Array): void {
+  const parts = model.parts;
+  for (let n = 0; n < parts.length; n++) {
     const part = parts[n]!,
-      parentIndex = part.parent === undefined ? -1 : index(part.parent);
+      parentIndex = part.parent === undefined ? -1 : indices.get(part.parent)!;
     const pivot = part.pivot;
     translation[0] = pivot[0] + offsets[n * 3]!;
     translation[1] = pivot[1] + offsets[n * 3 + 1]!;
@@ -125,5 +132,39 @@ export function computePose(
     mat4.multiply(world[n]!, parentIndex < 0 ? root : world[parentIndex]!, local);
     out.set(world[n]!, n * 16);
   }
+}
+
+/**
+ * World matrices of a model in its rest pose with no entity behind it (a spawner's miniature): its
+ * feet origin at (x, y, z), turned by `yaw` around +Y and scaled by `scale`. Returns the part count.
+ */
+export function computeRestPose(
+  model: EntityModel,
+  x: number,
+  y: number,
+  z: number,
+  yaw: number,
+  scale: number,
+  out: Float32Array,
+): number {
+  const parts = model.parts,
+    count = parts.length;
+  offsets.fill(0, 0, count * 3);
+  for (let n = 0; n < count; n++) {
+    const rest = parts[n]!.rotation;
+    rotations[n * 3] = rest?.[0] ?? 0;
+    rotations[n * 3 + 1] = rest?.[1] ?? 0;
+    rotations[n * 3 + 2] = rest?.[2] ?? 0;
+  }
+  const indices = indexCache.get(model) ?? new Map(parts.map((part, n) => [part.name, n]));
+  indexCache.set(model, indices);
+  translation[0] = x;
+  translation[1] = y;
+  translation[2] = z;
+  mat4.fromTranslation(root, translation);
+  mat4.rotateY(root, root, yaw);
+  translation[0] = translation[1] = translation[2] = PIXEL * scale;
+  mat4.scale(root, root, translation);
+  writeParts(model, indices, out);
   return count;
 }

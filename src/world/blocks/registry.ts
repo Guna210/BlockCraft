@@ -226,6 +226,9 @@ export class BlockRegistry {
     if (state.blockId === 'wheat_crop') {
       return `wheat_crop_${Number(state.properties.age ?? 0)}`;
     }
+    if (state.blockId === 'decorative_rail') {
+      return state.properties.axis === 'x' ? 'decorative_rail_x' : 'decorative_rail_z';
+    }
 
     // Log axis rotation handling:
     // If block has an 'axis' state property ('x', 'y', 'z')

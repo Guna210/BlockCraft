@@ -1,0 +1,25 @@
+{
+  "rolls": [3, 6],
+  "entries": [
+    { "id": "arrow", "weight": 7, "count": [3, 10] },
+    { "id": "flint", "weight": 5, "count": [1, 4] },
+    { "id": "feather", "weight": 5, "count": [2, 6] },
+    { "id": "copper_ingot", "weight": 5, "count": [1, 5] },
+    { "id": "lumite_shard", "weight": 3, "count": [1, 4] },
+    { "id": "skyshard_crystal", "weight": 1, "count": [1, 1] },
+    {
+      "id": "bow",
+      "weight": 2,
+      "count": [1, 1],
+      "durability": [0.3, 0.8],
+      "affixChance": 0.3
+    },
+    {
+      "id": "iron_shears",
+      "weight": 1,
+      "count": [1, 1],
+      "durability": [0.5, 1],
+      "affixChance": 0.2
+    }
+  ]
+}

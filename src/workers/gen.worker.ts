@@ -1,7 +1,8 @@
 import { createDefaultPipeline } from '../gen/pipeline';
 import { deriveSeed } from '../engine/rng';
 import { withTerrainVariant } from '../gen/world-options';
-import { WAYFARER_HAMLET_REGISTRATIONS } from '../gen/structures/wayfarer-hamlet';
+import { STRUCTURE_REGISTRATIONS } from '../gen/structures/registrations';
+import type { StructureMarker } from '../gen/structures/stage';
 import { ChunkColumn } from '../world/column';
 import type { PackedChunkStorage } from '../world/chunk';
 import { BlockRegistry } from '../world/blocks/registry';
@@ -11,7 +12,7 @@ const ctx: Worker = self as unknown as Worker;
 
 // Ensure registry is loaded in worker
 BlockRegistry.getInstance();
-const pipelineWithStructures = createDefaultPipeline(WAYFARER_HAMLET_REGISTRATIONS);
+const pipelineWithStructures = createDefaultPipeline(STRUCTURE_REGISTRATIONS);
 const pipelineWithoutStructures = createDefaultPipeline();
 
 const OVERWORLD_BIOME_IDS = [
@@ -65,6 +66,8 @@ export interface GenWorkerResponse {
   biomes: Uint8Array;
   grassTints: Uint8Array;
   foliageTints: Uint8Array;
+  /** Generated chests and spawners that need block entities (M19c). */
+  markers: StructureMarker[];
   /** Worker wall time of the whole job: generation plus packaging the result for transfer. */
   columnMs: number;
   /** 16³ sections shipped to the main thread (every section that exists in the column). */
@@ -91,6 +94,7 @@ export function processGenMessage(event: MessageEvent): void {
   } else {
     pipeline.generateColumn(seed, cx, cz, col, { type, biome });
   }
+  const markers = pipeline.takeStructureMarkers(cx, cz);
 
   const sections: SectionDataTransfer[] = [];
   const transferables: Transferable[] = [];
@@ -144,6 +148,7 @@ export function processGenMessage(event: MessageEvent): void {
       biomes,
       grassTints,
       foliageTints,
+      markers,
       columnMs,
       sectionCount: count,
       perSectionMs: columnMs / count,

@@ -23,7 +23,12 @@ import { biomeSurfaceStage } from './surface';
 import { caveStage } from './caves';
 import { oreStage } from './ores';
 import { featureStage } from './features';
-import { createStructureStage, type StructureRegistration } from './structures/stage';
+import {
+  createStructureStage,
+  type StructureMarker,
+  type StructureRegistration,
+  type StructureStage,
+} from './structures/stage';
 
 export class TerrainPipeline {
   private stages: TerrainStage[] = [];
@@ -34,6 +39,13 @@ export class TerrainPipeline {
 
   public getStages(): readonly TerrainStage[] {
     return this.stages;
+  }
+
+  /** The chest and spawner markers the structures stage left for the column it generated last. */
+  public takeStructureMarkers(cx: number, cz: number): StructureMarker[] {
+    const stage = this.stages.find((candidate) => candidate.name === 'structures') as
+      Partial<StructureStage> | undefined;
+    return stage?.takeMarkers?.(cx, cz) ?? [];
   }
 
   /** Runs every stage on `column`; `variant` (Amplified, Single Biome) is active meanwhile. */
