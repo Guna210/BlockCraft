@@ -59,6 +59,8 @@ export interface SaveSession {
   world: World;
   player(): Player | null;
   items(): ItemEntityManager | null;
+  /** The portal index of the dimension being saved (M20a). */
+  portals?(): Int32Array;
 }
 
 /** A column read back from the database, with everything that has to be re-attached to it. */
@@ -214,17 +216,51 @@ export class SaveManager {
     await (await this.open()).deleteWorld(world);
   }
 
-  /** Reads a world's records. Throws when no world has this name. */
-  async load(name: string): Promise<LoadedWorld> {
+  /**
+   * Reads a world's records. Throws when no world has this name. The columns and entities read are
+   * those of the dimension `dimensionOf` picks from the saved player (the Overworld by default).
+   */
+  async load(
+    name: string,
+    dimensionOf: (player: PlayerRecord | undefined) => string = () => DEFAULT_DIMENSION,
+  ): Promise<LoadedWorld> {
     const db = await this.open();
     const record = await readWorldRecord(db, name);
     if (!record) throw new Error(`No saved world named '${name}'`);
-    const [store, player, entities] = await Promise.all([
-      WorldStore.load(db, name),
-      readPlayerRecord(db, name),
-      readEntityRecord(db, name, DEFAULT_DIMENSION),
+    const player = await readPlayerRecord(db, name);
+    const dim = dimensionOf(player);
+    const [store, entities] = await Promise.all([
+      WorldStore.load(db, name, dim),
+      readEntityRecord(db, name, dim),
     ]);
     return { record, store, player, entities };
+  }
+
+  /** The columns and entities of another dimension of the open world. */
+  async loadDimension(
+    dim: string,
+  ): Promise<{ store: WorldStore; entities: EntityRecord | undefined }> {
+    const active = this.active;
+    if (!active) throw new Error('No world is open');
+    const db = await this.open();
+    const name = active.session.name;
+    const [store, entities] = await Promise.all([
+      WorldStore.load(db, name, dim),
+      readEntityRecord(db, name, dim),
+    ]);
+    return { store, entities };
+  }
+
+  /**
+   * The open world goes on in another dimension: from now on `world` is saved into `store`. The
+   * dimension being left must have been saved first (its unsaved edits are not kept).
+   */
+  switchDimension(world: World, store: WorldStore): void {
+    const active = this.active;
+    if (!active) throw new Error('No world is open');
+    active.session.world = world;
+    active.store = store;
+    this.refreshStoreStats();
   }
 
   /** Begins saving `session`. A world that came from the database keeps its creation time. */
@@ -651,6 +687,7 @@ export class SaveManager {
         dim: store.dim,
         formatVersion: FORMAT_VERSION,
         items: serializeItemEntities(items ? items.pool.filter((entity) => entity.active) : []),
+        ...(session.portals ? { portals: session.portals() } : {}),
       } satisfies EntityRecord,
     });
     return writes;

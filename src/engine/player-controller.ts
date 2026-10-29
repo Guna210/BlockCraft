@@ -59,7 +59,12 @@ export class PlayerController {
   private worldSpawnPoint: [number, number, number] | null = null;
   private hitRoll = 0;
   private hitRollUntil = 0;
+  /** While set (a dimension change is loading the other world) ticks simulate nothing. */
+  public suspended = false;
+  /** Runs after each simulated tick (portal travel). */
+  public onTick: (() => void) | null = null;
   public readonly loop = new TickLoop(() => {
+    if (this.suspended) return;
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
@@ -73,6 +78,7 @@ export class PlayerController {
     if (this.player) this.itemEntities?.tick(this.player);
     this.ecs?.tick();
     this.particles?.tick();
+    this.onTick?.();
   });
   private x = 0;
   private y = 0;
@@ -297,6 +303,7 @@ export class PlayerController {
     else this.render(1);
   }
   reset(): void {
+    this.suspended = false;
     this.charges?.dispose();
     this.charges = null;
     this.shake = this.shakeUntil = 0;

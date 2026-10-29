@@ -23,6 +23,7 @@ import './spawning';
 import './entities';
 import './explosions';
 import './persist';
+import './dimension';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';
 import { wireframe, setWireframe } from './wireframe';

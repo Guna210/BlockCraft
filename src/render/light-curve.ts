@@ -18,5 +18,6 @@ export const EMITTER_TINTS: Readonly<Record<string, readonly [number, number, nu
   kiln: [1, 0.75, 0.4],
   lumite_ore: [0.45, 0.85, 1],
   lumite_block: [0.45, 0.85, 1],
+  portal: [0.65, 0.5, 1],
   lava: [1, 0.45, 0.15],
 };

@@ -159,6 +159,31 @@ export interface BlockCraftDebugAPI {
   ) => { blockId: string; state: Record<string, unknown> } | null;
   /** The player's respawn point (null = world spawn); `set` replaces it. */
   spawnPoint?: (set?: [number, number, number] | null) => [number, number, number] | null;
+  /** The dimension the player is in (M20a). */
+  getDimension?: () => import('../../world/dimension').DimensionId;
+  /**
+   * Sends the player to `dimension` near (x, y, z) there (default: the 1:4 point of where they
+   * stand), arriving in a linked or new portal; resolves with that portal once terrain is meshed.
+   */
+  travelTo?: (
+    dimension: import('../../world/dimension').DimensionId,
+    x?: number,
+    y?: number,
+    z?: number,
+  ) => Promise<import('../../world/portals').PortalRecord>;
+  /** Resolves when no dimension change is running (portal travel starts one on its own). */
+  waitForTravel?: () => Promise<void>;
+  /** The portals indexed in the player's dimension. */
+  getPortals?: () => import('../../world/portals').PortalRecord[];
+  /** Portal travel state: ticks spent inside, warp strength, and completed dimension changes. */
+  getPortalTravel?: () => {
+    ticksInside: number;
+    warp: number;
+    travelling: boolean;
+    needsExit: boolean;
+    cooldown: number;
+    changes: number;
+  };
   getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
   wireframe?: (enabled?: boolean) => boolean;
   setWireframe?: (enabled: boolean) => void;

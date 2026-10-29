@@ -823,5 +823,7 @@
   "spawner": 821,
   "silkmesh": 822,
   "decorative_rail[axis=x]": 823,
-  "decorative_rail[axis=z]": 824
+  "decorative_rail[axis=z]": 824,
+  "portal[axis=x]": 825,
+  "portal[axis=z]": 826
 }

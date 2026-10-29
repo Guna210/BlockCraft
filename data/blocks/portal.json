@@ -1,0 +1,14 @@
+{
+  "portal": {
+    "hardness": 0,
+    "blastResistance": 0,
+    "lightEmission": 11,
+    "renderLayer": "translucent",
+    "fullOpaqueCube": false,
+    "model": "none",
+    "states": {
+      "axis": { "type": "enum", "values": ["x", "z"], "default": "x" }
+    },
+    "textures": { "top": "portal", "side": "portal", "bottom": "portal" }
+  }
+}
