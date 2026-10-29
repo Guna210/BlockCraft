@@ -1,6 +1,6 @@
 import type { World, WorldListener } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
-import { CURRENT_BLOCK_IDS } from '../gameplay/current/types';
+import { CURRENT_BLOCK_IDS, NEIGHBOR_OFFSETS } from '../gameplay/current/types';
 import { BlockCollision } from './physics';
 import type { Vec3 } from './ecs/model';
 import { registerEntityModel, cubeFaceRects } from './ecs/model';
@@ -17,6 +17,7 @@ export const CHARGE_FUSE = 80;
 export const CHARGE_POWER = 4;
 export const PrimedChargeC = defineComponent<{ fuse: number; vel: Vec3 }>('primedCharge');
 const MODEL = 'primed_blast_charge';
+const COLLISION_AXES = [1, 0, 2] as const;
 for (const flash of [false, true]) {
   const model = buildModel({
     id: MODEL + (flash ? '_flash' : ''),
@@ -66,13 +67,14 @@ export class BlastCharges {
       blockEdited: (x, y, z, state) => {
         if (state === 0) return;
         const id = BlockRegistry.getInstance().getResolvedState(state)!.blockId;
-        if (
-          id === 'blast_charge' ||
-          id === 'fire' ||
-          CURRENT_BLOCK_IDS.has(id) ||
-          world.current.hasComponents
-        )
+        if (id === 'blast_charge') {
+          this.checkCharge(x, y, z);
+        } else if (id === 'fire') {
+          for (const offset of NEIGHBOR_OFFSETS)
+            this.checkCharge(x + offset.x, y + offset.y, z + offset.z);
+        } else if (CURRENT_BLOCK_IDS.has(id)) {
           this.changed(x, y, z);
+        }
       },
     };
     world.listeners.add(this.listener);
@@ -137,17 +139,18 @@ export class BlastCharges {
           const bx = x + dx,
             by = y + dy,
             bz = z + dz;
-          if (this.world.getBlock(bx, by, bz).id !== 'blast_charge') continue;
-          const fire = [
-            [1, 0, 0],
-            [-1, 0, 0],
-            [0, 1, 0],
-            [0, -1, 0],
-            [0, 0, 1],
-            [0, 0, -1],
-          ].some(([a, b, c]) => this.world.getBlock(bx + a!, by + b!, bz + c!).id === 'fire');
-          if (fire || this.world.current.getWeakPower(bx, by, bz) > 0) this.prime(bx, by, bz);
+          this.checkCharge(bx, by, bz);
         }
+  }
+  private checkCharge(x: number, y: number, z: number): void {
+    if (this.world.getBlock(x, y, z).id !== 'blast_charge') return;
+    for (const offset of NEIGHBOR_OFFSETS) {
+      if (this.world.getBlock(x + offset.x, y + offset.y, z + offset.z).id === 'fire') {
+        this.prime(x, y, z);
+        return;
+      }
+    }
+    if (this.world.current.getWeakPower(x, y, z) > 0) this.prime(x, y, z);
   }
   private push(center: Readonly<Vec3>, power: number): void {
     for (const id of this.active) {
@@ -198,7 +201,7 @@ export class BlastCharges {
         }
       }
       charge.vel[1] -= 0.04;
-      for (const axis of [1, 0, 2]) {
+      for (const axis of COLLISION_AXES) {
         const move = this.collision.sweep(t.pos, 0.98, axis, charge.vel[axis]!, 0.49);
         t.pos[axis]! += move;
         if (move !== charge.vel[axis]) charge.vel[axis] = 0;

@@ -591,7 +591,7 @@ export class WorldManager {
   private configureLighting(world: World): void {
     world.lightEngine.onlyLitColumns = true;
     world.listeners.add({
-      blocksRemoved: (blocks) => {
+      blocksRemoved: (blocks, touchedSections) => {
         weatherManager.heightmap.blocksRemoved(world, blocks);
         const sections = new Map<number, [number, number, number]>();
         const add = (cx: number, sy: number, cz: number) => {
@@ -617,7 +617,7 @@ export class WorldManager {
             for (let dx = -1; dx <= 1; dx++)
               if (!world.lightEngine.isLit(cx + dx, cz + dz)) borderColumns.add(columnKey(cx, cz));
         }
-        for (const key of world.lightEngine.storage.touchedSections) {
+        for (const key of touchedSections) {
           const column = Math.floor(key / 32),
             sy = key % 32;
           const cx = Math.floor(column / 65536) - 32768,
@@ -647,7 +647,8 @@ export class WorldManager {
         );
       },
     });
-    world.onBlockEdited = (x, y, z) => {
+    world.onBlockEdited = (x, y, z, _state, batched) => {
+      if (batched) return; // The batch listener handles weather and mesh/light invalidation once.
       weatherManager.heightmap.updateBlock(world, x, y, z);
       const cx = Math.floor(x / 16);
       const cz = Math.floor(z / 16);

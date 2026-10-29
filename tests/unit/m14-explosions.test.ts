@@ -97,6 +97,8 @@ describe('M14 explosions', () => {
       { x: 8, y: 42, z: 8, state: registry.getDefaultStateId('stone')! },
       { x: 8, y: 41, z: 8, state: registry.getDefaultStateId('stone')! },
     ];
+    const legacy = vi.fn();
+    world.onBlockEdited = legacy;
     const observed = vi.fn(() => {
       for (const b of removed) expect(world.getBlockStateId(b.x, b.y, b.z)).toBe(0);
     });
@@ -105,6 +107,7 @@ describe('M14 explosions', () => {
     expect(edit).toHaveBeenCalledTimes(1);
     expect(single).not.toHaveBeenCalled();
     expect(observed).toHaveBeenCalledTimes(1);
+    expect(legacy.mock.calls).toEqual(removed.map((b) => [b.x, b.y, b.z, 0, true]));
     expect(world.getLight(8, 41, 8).sky).toBe(15);
     expect(world.modifiedColumns.size).toBe(1);
   });
@@ -129,6 +132,70 @@ describe('M14 explosions', () => {
     expect(world.getLight(10, 43, 10).block).toBe(14);
     expect(world.getLight(11, 43, 10).block).toBe(13);
     expect(notified).toHaveBeenCalledTimes(1);
+  });
+  it('retains the explosion remesh sections when setBlock resets scratch state in the final yield', () => {
+    const prepare = () => {
+      const world = new World();
+      const column = world.getColumn(0, 0, true)!;
+      const state = registry.getDefaultStateId('stone')!;
+      for (let z = 0; z < 16; z++)
+        for (let x = 0; x < 16; x++) column.setBlockStateId(x, 80, z, state);
+      const sections: number[] = [];
+      world.listeners.add({ blocksRemoved: (_blocks, touched) => sections.push(...touched) });
+      const steps = world.removeBlocksSteps([{ x: 8, y: 80, z: 8, state }]);
+      return { world, steps, sections };
+    };
+    const baseline = prepare();
+    let yields = 0;
+    while (!baseline.steps.next().done) yields++;
+    expect(new Set(baseline.sections).size).toBeGreaterThan(1);
+    const interrupted = prepare();
+    for (let i = 0; i < yields; i++) expect(interrupted.steps.next().done).toBe(false);
+    expect(interrupted.sections).toEqual([]);
+    interrupted.world.setBlock(12, 100, 12, 'stone');
+    expect(interrupted.steps.next().done).toBe(true);
+    expect(interrupted.sections.sort()).toEqual(baseline.sections.sort());
+  });
+  it('uses newly lit columns when an explosion resumes after streaming commits light', () => {
+    const world = new World();
+    const state = registry.getDefaultStateId('stone')!;
+    for (let x = 0; x < 32; x++)
+      for (let z = 0; z < 16; z++)
+        world.getColumn(x >> 4, 0, true)!.setBlockStateId(x & 15, 80, z, state);
+    const removed = Array.from({ length: 17 }, (_, x) => ({ x, y: 80, z: 8, state }));
+    for (const b of removed)
+      world.getColumn(b.x >> 4, 0, false)!.setBlockStateId(b.x & 15, b.y, b.z, 0);
+    world.lightEngine.onlyLitColumns = true;
+    world.lightEngine.markLit(0, 0);
+    const steps = world.lightEngine.removalSteps(world, removed);
+    expect(steps.next().done).toBe(false);
+    world.lightEngine.markLit(1, 0);
+    while (!steps.next().done) {
+      /* The resumed seed and flood passes must see the streaming commit. */
+    }
+    expect(world.getLight(16, 79, 8).sky).toBe(15);
+  });
+  it('keeps ordinary lighting off generators and reads height palettes without copying', () => {
+    const world = new World();
+    const stepped = world.lightEngine as unknown as {
+      stepsBlockRem(): Generator;
+      stepsBlockAdd(): Generator;
+      stepsSkyAdd(): Generator;
+    };
+    const rem = vi.spyOn(stepped, 'stepsBlockRem');
+    const add = vi.spyOn(stepped, 'stepsBlockAdd');
+    const sky = vi.spyOn(stepped, 'stepsSkyAdd');
+    world.setBlock(8, 40, 8, 'torch');
+    world.setBlock(8, 40, 8, 'air');
+    expect(rem).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(sky).not.toHaveBeenCalled();
+    const section = world.getColumn(0, 0, true)!.getOrCreateSection(5)!;
+    section.setBlockStateId(15, 0, 15, registry.getDefaultStateId('stone')!);
+    const palette = vi.spyOn(section, 'getPalette');
+    // A fresh x/z has no cached roof and must inspect this mixed section's palette.
+    expect(world.lightEngine.getHighestOpaqueY(world, 15, 15)).toBe(80);
+    expect(palette).not.toHaveBeenCalled();
   });
   it('gives overlapping explosion transactions independent light queues', () => {
     const world = new World();
@@ -193,6 +260,19 @@ describe('M14 explosions', () => {
       ecs.tick();
     }
     expect(ecs.get(id, RenderableC)!.model).toContain('_flash');
+    charges.dispose();
+  });
+  it('does not scan for charges on unrelated edits even when Current components exist', () => {
+    const { world, charges } = runtime();
+    const changed = vi.spyOn(
+      charges as unknown as { changed(x: number, y: number, z: number): void },
+      'changed',
+    );
+    world.setBlock(1, 40, 1, 'lever', { face: 'floor', powered: 'false' });
+    expect(world.current.hasComponents).toBe(true);
+    changed.mockClear();
+    world.setBlock(8, 40, 8, 'stone');
+    expect(changed).not.toHaveBeenCalled();
     charges.dispose();
   });
   it('falls, flashes, chains with short fuses, bounds detonation work and removes its idle system', () => {

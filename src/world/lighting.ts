@@ -422,15 +422,22 @@ export class LightEngine {
     const column = world.getColumn(cx, cz, false);
     for (let sy = 19; sy >= 0 && h < 0; sy--) {
       const section = column?.getSection(sy);
-      const palette = section?.getPalette();
-      if (!section || palette?.length === 1) {
+      const palette = section?.palette;
+      if (!section || !palette || palette.length === 1) {
         const state = section
-          ? palette![0]!
+          ? (palette?.[0] ?? section.uniformStateId)
           : (column?.getBlockStateId(localX, sy * 16, localZ) ?? 0);
         if ((this.tables.opacityTable[state] ?? 0) > 0) h = sy * 16 + 15;
         continue;
       }
-      if (palette!.every((state) => (this.tables.opacityTable[state] ?? 0) === 0)) continue;
+      let opaque = false;
+      for (let i = 0; i < palette.length; i++) {
+        if ((this.tables.opacityTable[palette[i]!] ?? 0) > 0) {
+          opaque = true;
+          break;
+        }
+      }
+      if (!opaque) continue;
       for (let ly = 15; ly >= 0; ly--) {
         if ((this.tables.opacityTable[section.getBlockStateId(localX, ly, localZ)] ?? 0) > 0) {
           h = sy * 16 + ly;
@@ -676,15 +683,21 @@ export class LightEngine {
   }
 
   /** One flood-fill transaction for an explosion, after all blocks have been removed. */
-  public onBlocksRemoved(world: World, blocks: readonly import('./world').RemovedBlock[]): void {
-    for (const step of this.updateRemovedSteps(world, blocks)) void step;
+  public onBlocksRemoved(
+    world: World,
+    blocks: readonly import('./world').RemovedBlock[],
+  ): ReadonlySet<number> {
+    const steps = this.removalSteps(world, blocks);
+    let result = steps.next();
+    while (!result.done) result = steps.next();
+    return result.value;
   }
 
-  /** Independent queues let an explosion yield without another edit overwriting its BFS cursors. */
+  /** Each transaction owns its touched sections, independent of ordinary edits between slices. */
   public *removalSteps(
     world: World,
     blocks: readonly import('./world').RemovedBlock[],
-  ): Generator<void> {
+  ): Generator<void, ReadonlySet<number>> {
     let pool = removalEngines.get(this);
     if (!pool) {
       pool = [];
@@ -698,19 +711,28 @@ export class LightEngine {
       target.onlyLitColumns = source.onlyLitColumns;
       target.litColumns.clear();
       for (const key of source.litColumns) target.litColumns.add(key);
-      target.rgbChannels.forEach((channel, i) => share(channel, source.rgbChannels[i]!));
+      for (let i = 0; i < target.rgbChannels.length; i++)
+        share(target.rgbChannels[i]!, source.rgbChannels[i]!);
     };
-    share(fork, this);
     const touched = new Set<number>();
+    const steps = fork.updateRemovedSteps(world, blocks);
     try {
-      for (const step of fork.updateRemovedSteps(world, blocks)) {
+      for (;;) {
+        // Streaming may light or unload a column while this transaction is suspended.
+        share(fork, this);
+        this.storage.resetTouched();
+        for (const channel of this.rgbChannels) channel.storage.resetTouched();
+        const result = steps.next();
         for (const key of this.storage.touchedSections) touched.add(key);
         for (const channel of this.rgbChannels)
           for (const key of channel.storage.touchedSections) touched.add(key);
-        yield step;
+        if (result.done) break;
+        yield;
       }
       for (const key of touched) this.storage.touchedSections.add(key);
+      return touched;
     } finally {
+      steps.return(undefined);
       pool.push(fork);
     }
   }
@@ -999,7 +1021,44 @@ export class LightEngine {
   }
 
   private processBlockRem(world: World): void {
-    for (const step of this.stepsBlockRem(world)) void step;
+    if (!this.blockRemX || !this.blockRemY || !this.blockRemZ || !this.blockRemVal) return;
+    while (this.blockRemHead < this.blockRemTail) {
+      const rx = this.blockRemX[this.blockRemHead]!;
+      const ry = this.blockRemY[this.blockRemHead]!;
+      const rz = this.blockRemZ[this.blockRemHead]!;
+      const val = this.blockRemVal[this.blockRemHead]!;
+      this.blockRemHead++;
+
+      for (let i = 0; i < 6; i++) {
+        const nx = rx + DX[i]!;
+        const ny = ry + DY[i]!;
+        const nz = rz + DZ[i]!;
+        if (ny < 0 || ny > 319) continue;
+
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
+
+        const nsy = ny >> 4;
+        const nly = ny & 15;
+        const nBL = this.storage.getBlockLight(ncx, nsy, ncz, nlx, nly, nlz);
+        if (nBL === 0) continue;
+
+        const st = world.getBlockStateId(nx, ny, nz);
+        const emit = this.tables.emissionTable[st] ?? 0;
+        const isEmitter = emit > 0 && emit === nBL;
+
+        if (nBL < val || (nBL === val && !isEmitter)) {
+          this.storage.setBlockLight(ncx, nsy, ncz, nlx, nly, nlz, emit);
+          this.pushBlockRem(nx, ny, nz, nBL);
+          if (emit > 0) this.pushBlockAdd(nx, ny, nz);
+        } else if (nBL >= val) {
+          this.pushBlockAdd(nx, ny, nz);
+        }
+      }
+    }
   }
 
   private *stepsBlockRem(world: World): Generator<void> {
@@ -1046,7 +1105,51 @@ export class LightEngine {
   }
 
   private processBlockAdd(world: World): void {
-    for (const step of this.stepsBlockAdd(world)) void step;
+    if (!this.blockAddX || !this.blockAddY || !this.blockAddZ) return;
+    while (this.blockAddHead < this.blockAddTail) {
+      const ax = this.blockAddX[this.blockAddHead]!;
+      const ay = this.blockAddY[this.blockAddHead]!;
+      const az = this.blockAddZ[this.blockAddHead]!;
+      this.blockAddHead++;
+
+      const acx = Math.floor(ax / 16);
+      const acz = Math.floor(az / 16);
+      const alx = ((ax % 16) + 16) % 16;
+      const alz = ((az % 16) + 16) % 16;
+      const asy = ay >> 4;
+      const aly = ay & 15;
+      const curBL = this.storage.getBlockLight(acx, asy, acz, alx, aly, alz);
+      if (curBL <= 1) continue;
+
+      for (let i = 0; i < 6; i++) {
+        const nx = ax + DX[i]!;
+        const ny = ay + DY[i]!;
+        const nz = az + DZ[i]!;
+        if (ny < 0 || ny > 319) continue;
+
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
+
+        const st = world.getBlockStateId(nx, ny, nz);
+        const op = this.tables.opacityTable[st] ?? 0;
+        if (op === 15) continue;
+
+        const attenuation = 1 + op;
+        const target = curBL - attenuation;
+
+        const nsy = ny >> 4;
+        const nly = ny & 15;
+        const existingBL = this.storage.getBlockLight(ncx, nsy, ncz, nlx, nly, nlz);
+
+        if (target > existingBL) {
+          this.storage.setBlockLight(ncx, nsy, ncz, nlx, nly, nlz, target);
+          this.pushBlockAdd(nx, ny, nz);
+        }
+      }
+    }
   }
 
   private *stepsBlockAdd(world: World): Generator<void> {
@@ -1135,7 +1238,59 @@ export class LightEngine {
   }
 
   private processSkyAdd(world: World): void {
-    for (const step of this.stepsSkyAdd(world)) void step;
+    if (!this.skyAddX || !this.skyAddY || !this.skyAddZ) return;
+    while (this.skyAddHead < this.skyAddTail) {
+      const ax = this.skyAddX[this.skyAddHead]!;
+      const ay = this.skyAddY[this.skyAddHead]!;
+      const az = this.skyAddZ[this.skyAddHead]!;
+      this.skyAddHead++;
+
+      const acx = Math.floor(ax / 16);
+      const acz = Math.floor(az / 16);
+      const alx = ((ax % 16) + 16) % 16;
+      const alz = ((az % 16) + 16) % 16;
+      const asy = ay >> 4;
+      const aly = ay & 15;
+      const curSky = this.storage.getSkyLight(acx, asy, acz, alx, aly, alz);
+      if (curSky <= 1) continue;
+
+      const highestY = this.getHighestOpaqueY(world, ax, az);
+      const isBeam = curSky === 15 && ay > highestY;
+
+      for (let i = 0; i < 6; i++) {
+        const nx = ax + DX[i]!;
+        const ny = ay + DY[i]!;
+        const nz = az + DZ[i]!;
+        if (ny < 0 || ny > 319) continue;
+
+        const ncx = Math.floor(nx / 16);
+        const ncz = Math.floor(nz / 16);
+        const nlx = ((nx % 16) + 16) % 16;
+        const nlz = ((nz % 16) + 16) % 16;
+        if (!this.acceptsColumn(world, ncx, ncz)) continue;
+
+        const st = world.getBlockStateId(nx, ny, nz);
+        const op = this.tables.opacityTable[st] ?? 0;
+        if (op === 15) continue;
+
+        let target: number;
+        if (isBeam && ny === ay - 1 && nx === ax && nz === az) {
+          target = op === 0 ? 15 : Math.max(0, 15 - op);
+        } else {
+          const attenuation = 1 + op;
+          target = curSky - attenuation;
+        }
+
+        const nsy = ny >> 4;
+        const nly = ny & 15;
+        const existingSky = this.storage.getSkyLight(ncx, nsy, ncz, nlx, nly, nlz);
+
+        if (target > existingSky) {
+          this.storage.setSkyLight(ncx, nsy, ncz, nlx, nly, nlz, target);
+          this.pushSkyAdd(nx, ny, nz);
+        }
+      }
+    }
   }
 
   private *stepsSkyAdd(world: World): Generator<void> {

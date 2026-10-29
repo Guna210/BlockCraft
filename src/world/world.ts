@@ -21,7 +21,7 @@ export interface RemovedBlock {
   state: number;
 }
 export interface WorldListener {
-  blocksRemoved?(blocks: readonly RemovedBlock[]): void;
+  blocksRemoved?(blocks: readonly RemovedBlock[], touchedSections: ReadonlySet<number>): void;
   loaded?(cx: number, cz: number, generated: boolean): void;
   unloaded?(cx: number, cz: number): void;
   blockEdited?(x: number, y: number, z: number, state: number): void;
@@ -61,7 +61,13 @@ export class World {
   public lightEngine: LightEngine;
   public worldSeed: number = 42;
   public breakCount: number = 0;
-  public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
+  public onBlockEdited?: (
+    x: number,
+    y: number,
+    z: number,
+    state: number,
+    batched?: boolean,
+  ) => void;
   /**
    * Told when a column's blocks are all in place, just before a column is removed and after each
    * setBlock. Unlike `onBlockEdited`, adding one never redefines a property of this object.
@@ -350,8 +356,8 @@ export class World {
     const removed = this.writeRemovals(blocks);
     if (!removed.length) return;
     this.notifyBlockRemovals(removed);
-    this.lightEngine?.onBlocksRemoved(this, removed);
-    this.notifyRemovals(removed);
+    const touched = this.lightEngine?.onBlocksRemoved(this, removed) ?? new Set<number>();
+    this.notifyRemovals(removed, touched);
   }
 
   /** One atomic terrain write, followed by a bounded light transaction and one mesh notification. */
@@ -364,9 +370,11 @@ export class World {
     onRemoved?.();
     if (!removed.length) return;
     yield 'lighting';
-    if (this.lightEngine) yield* this.lightEngine.removalSteps(this, removed);
+    const touched = this.lightEngine
+      ? yield* this.lightEngine.removalSteps(this, removed)
+      : new Set<number>();
     yield;
-    this.notifyRemovals(removed);
+    this.notifyRemovals(removed, touched);
   }
 
   private writeRemovals(blocks: readonly RemovedBlock[]): RemovedBlock[] {
@@ -383,8 +391,9 @@ export class World {
     return removed;
   }
 
-  private notifyRemovals(removed: readonly RemovedBlock[]): void {
-    for (const listener of this.listeners) listener.blocksRemoved?.(removed);
+  private notifyRemovals(removed: readonly RemovedBlock[], touched: ReadonlySet<number>): void {
+    for (const b of removed) this.onBlockEdited?.(b.x, b.y, b.z, 0, true);
+    for (const listener of this.listeners) listener.blocksRemoved?.(removed, touched);
   }
 
   private notifyBlockRemovals(removed: readonly RemovedBlock[]): void {
