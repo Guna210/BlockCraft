@@ -1,0 +1,50 @@
+{
+  "duskrock": [
+    {
+      "id": "duskrock",
+      "count": 1
+    }
+  ],
+  "driftstone": [
+    {
+      "id": "driftstone",
+      "count": 1
+    }
+  ],
+  "glowcap_stem": [
+    {
+      "id": "glowcap_stem",
+      "count": 1
+    }
+  ],
+  "glowcap": [
+    {
+      "id": "glowcap",
+      "count": 1
+    }
+  ],
+  "glowcap_gills": [
+    {
+      "id": "glowcap_gills",
+      "count": 1
+    }
+  ],
+  "veilroot": [
+    {
+      "id": "veilroot",
+      "count": 1
+    }
+  ],
+  "voidglass": [
+    {
+      "id": "voidglass",
+      "count": 1
+    }
+  ],
+  "emberite": [
+    {
+      "id": "emberite",
+      "count": 1
+    }
+  ]
+}
