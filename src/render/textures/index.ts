@@ -240,7 +240,11 @@ export { PAL_ICE, PAL_FIRE, genIce, genFire };
 
 export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 
+import { genBlastCharge, BLAST_PALETTE } from './explosions';
+
 export const textureGenerators: Record<string, TextureGenerator> = {
+  blast_charge: (seed) => genBlastCharge(seed),
+  blast_charge_top: (seed) => genBlastCharge(seed, true),
   ...Object.fromEntries(
     Array.from({ length: 16 }, (_, power) => [
       `copper_trace_${power}`,
@@ -495,6 +499,8 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  blast_charge: BLAST_PALETTE,
+  blast_charge_top: BLAST_PALETTE,
   ...Object.fromEntries(
     Array.from({ length: 16 }, (_, power) => [`copper_trace_${power}`, CURRENT_PALETTES.copper]),
   ),

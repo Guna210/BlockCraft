@@ -14,7 +14,14 @@ import {
   type BlockEntityState,
 } from './block-entities';
 
+export interface RemovedBlock {
+  x: number;
+  y: number;
+  z: number;
+  state: number;
+}
 export interface WorldListener {
+  blocksRemoved?(blocks: readonly RemovedBlock[], touchedSections: ReadonlySet<number>): void;
   loaded?(cx: number, cz: number, generated: boolean): void;
   unloaded?(cx: number, cz: number): void;
   blockEdited?(x: number, y: number, z: number, state: number): void;
@@ -54,7 +61,13 @@ export class World {
   public lightEngine: LightEngine;
   public worldSeed: number = 42;
   public breakCount: number = 0;
-  public onBlockEdited?: (x: number, y: number, z: number, state: number) => void;
+  public onBlockEdited?: (
+    x: number,
+    y: number,
+    z: number,
+    state: number,
+    batched?: boolean,
+  ) => void;
   /**
    * Told when a column's blocks are all in place, just before a column is removed and after each
    * setBlock. Unlike `onBlockEdited`, adding one never redefines a property of this object.
@@ -336,6 +349,62 @@ export class World {
     this.onBlockEdited?.(x, y, z, stateId);
     for (const listener of this.listeners) listener.blockEdited?.(x, y, z, stateId);
     this.fluids.changed(x, y, z);
+  }
+
+  /** Apply one explosion atomically before light, circuits and observers see its final terrain. */
+  public removeBlocks(blocks: readonly RemovedBlock[]): void {
+    const removed = this.writeRemovals(blocks);
+    if (!removed.length) return;
+    this.notifyBlockRemovals(removed);
+    const touched = this.lightEngine?.onBlocksRemoved(this, removed) ?? new Set<number>();
+    this.notifyRemovals(removed, touched);
+  }
+
+  /** One atomic terrain write, followed by a bounded light transaction and one mesh notification. */
+  public *removeBlocksSteps(
+    blocks: readonly RemovedBlock[],
+    onRemoved?: () => void,
+  ): Generator<void | 'lighting'> {
+    const removed = this.writeRemovals(blocks);
+    this.notifyBlockRemovals(removed);
+    onRemoved?.();
+    if (!removed.length) return;
+    yield 'lighting';
+    const touched = this.lightEngine
+      ? yield* this.lightEngine.removalSteps(this, removed)
+      : new Set<number>();
+    yield;
+    this.notifyRemovals(removed, touched);
+  }
+
+  private writeRemovals(blocks: readonly RemovedBlock[]): RemovedBlock[] {
+    const removed: RemovedBlock[] = [];
+    for (const b of blocks) {
+      if (b.y < 0 || b.y > 319 || this.getBlockStateId(b.x, b.y, b.z) !== b.state || b.state === 0)
+        continue;
+      const col = this.getColumn(Math.floor(b.x / 16), Math.floor(b.z / 16), false);
+      if (!col) continue;
+      col.setBlockStateId(b.x & 15, b.y, b.z & 15, 0);
+      this.modifiedColumns.add(col);
+      removed.push(b);
+    }
+    return removed;
+  }
+
+  private notifyRemovals(removed: readonly RemovedBlock[], touched: ReadonlySet<number>): void {
+    for (const b of removed) this.onBlockEdited?.(b.x, b.y, b.z, 0, true);
+    for (const listener of this.listeners) listener.blocksRemoved?.(removed, touched);
+  }
+
+  private notifyBlockRemovals(removed: readonly RemovedBlock[]): void {
+    for (const b of removed) {
+      const id = this.registry.getResolvedState(b.state)!.blockId;
+      this.blockEntities.onBlockChanged(b.x, b.y, b.z, id, 'air', 0, b.state);
+      if (this.current.shouldObserveBlockChange('air'))
+        this.current.onBlockChanged(b.x, b.y, b.z, 'air');
+      for (const listener of this.listeners) listener.blockEdited?.(b.x, b.y, b.z, 0);
+      this.fluids.changed(b.x, b.y, b.z);
+    }
   }
 
   public getBlockDefinition(blockId: string) {

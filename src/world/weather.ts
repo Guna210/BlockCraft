@@ -1,4 +1,4 @@
-import type { World } from './world';
+import type { World, RemovedBlock } from './world';
 import { LCG } from '../render/textures/noise';
 
 export type WeatherState = 'clear' | 'rain' | 'thunder';
@@ -77,6 +77,31 @@ export class WeatherHeightmap {
       heights[lz * 16 + lx] = world.getHeight(x, z);
       this.version++;
     }
+  }
+
+  /** A removal transaction can only lower the cached surface; inspect each x/z once. */
+  public blocksRemoved(world: World, blocks: readonly RemovedBlock[]): void {
+    const seen = new Set<string>();
+    let changed = false;
+    for (const b of blocks) {
+      const key = `${b.x},${b.z}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const heights = this.columns.get(this.columnKey(Math.floor(b.x / 16), Math.floor(b.z / 16)));
+      if (!heights) continue;
+      const index = ((b.z & 15) << 4) | (b.x & 15);
+      const before = heights[index]!;
+      let y = before;
+      for (; y > 0; y--) {
+        const id = world.getBlock(b.x, y, b.z).id;
+        if (id !== 'air' && id !== 'water' && id !== 'lava') break;
+      }
+      if (y !== before) {
+        heights[index] = y;
+        changed = true;
+      }
+    }
+    if (changed) this.version++;
   }
 
   public getTopSolidY(world: World, x: number, z: number): number {

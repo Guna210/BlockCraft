@@ -1,0 +1,15 @@
+{
+  "blast_charge": {
+    "type": "shaped",
+    "pattern": [" C ", "PSP", " P "],
+    "key": {
+      "C": "copper_ingot",
+      "P": "spore_powder",
+      "S": "sand"
+    },
+    "result": {
+      "id": "blast_charge",
+      "count": 1
+    }
+  }
+}

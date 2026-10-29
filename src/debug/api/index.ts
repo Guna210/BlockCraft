@@ -21,6 +21,7 @@ import './ui';
 import './death';
 import './spawning';
 import './entities';
+import './explosions';
 import './persist';
 import { getLight, getBlockLightRGB } from './light';
 import { setDebugLight } from './debug-light';

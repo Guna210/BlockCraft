@@ -66,10 +66,8 @@ export class ItemEntityManager {
     entity.id = this.nextId++;
     entity.item = item;
     entity.count = count;
-    if (variant.damage !== undefined) entity.damage = variant.damage;
-    else delete entity.damage;
-    if (variant.affix !== undefined) entity.affix = variant.affix;
-    else delete entity.affix;
+    entity.damage = variant.damage;
+    entity.affix = variant.affix;
     entity.age = 0;
     entity.phase = this.random.next() * Math.PI * 2;
     entity.pos[0] = entity.previous[0] = x;
@@ -123,11 +121,10 @@ export class ItemEntityManager {
           other.item !== entity.item ||
           (other.damage ?? null) !== (entity.damage ?? null) ||
           other.affix !== entity.affix ||
-          Math.hypot(
-            other.pos[0] - entity.pos[0],
-            other.pos[1] - entity.pos[1],
-            other.pos[2] - entity.pos[2],
-          ) > 0.5
+          (other.pos[0] - entity.pos[0]) ** 2 +
+            (other.pos[1] - entity.pos[1]) ** 2 +
+            (other.pos[2] - entity.pos[2]) ** 2 >
+            0.25
         )
           continue;
         const count = Math.min(entity.count, entity.item.maxStack - other.count);

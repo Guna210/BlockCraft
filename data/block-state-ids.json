@@ -819,8 +819,9 @@
   "wheat_crop[age=5]": 817,
   "wheat_crop[age=6]": 818,
   "wheat_crop[age=7]": 819,
-  "spawner": 820,
-  "silkmesh": 821,
-  "decorative_rail[axis=x]": 822,
-  "decorative_rail[axis=z]": 823
+  "blast_charge": 820,
+  "spawner": 821,
+  "silkmesh": 822,
+  "decorative_rail[axis=x]": 823,
+  "decorative_rail[axis=z]": 824
 }

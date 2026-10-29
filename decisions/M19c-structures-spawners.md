@@ -81,8 +81,8 @@ each one was carried out.
   to `canHarvest`).
 - A player inside Silkmesh moves at 0.25× horizontal speed. Their fall speed is clamped to 1.2,
   their rise speed to 0.6, and they take no fall damage.
-- State ids are appended after 819 only: spawner 820, silkmesh 821, decorative_rail[axis=x] 822 and
-  decorative_rail[axis=z] 823.
+- State ids are appended after M14's blast_charge (820) only: spawner 821, silkmesh 822,
+  decorative_rail[axis=x] 823 and decorative_rail[axis=z] 824.
 
 ## 6. Chest loot
 

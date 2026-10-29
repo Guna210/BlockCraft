@@ -204,6 +204,15 @@ export interface BlockCraftDebugAPI {
   resetMainThreadGenCount?: () => void;
   setRenderDistance?: (n: number) => number;
   getStreamingStats?: () => import('../../world/world-manager').WorldStreamingStats;
+  primeBlastCharge?: (x: number, y: number, z: number) => number | null;
+  explode?: (x: number, y: number, z: number, power: number) => number;
+  getExplosionStats?: () => {
+    detonations: number;
+    pending: number;
+    maxExplosionMs: number;
+    tick: number;
+    lastDetonationTick: number;
+  };
   resetFrameStats?: () => void;
   getFrameStats?: () => import('../../engine/frame-stats').FrameStatsSnapshot;
   getGlResourceCounts?: () => import('../../render/gl').ResourceCounts;

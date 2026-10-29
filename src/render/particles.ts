@@ -6,6 +6,7 @@ export const PARTICLE_CAPACITY = 512;
 export const EMBER_CAPACITY = 128;
 export class BreakParticle {
   active = false;
+  smoke = false;
   emberOwner: number | null = null;
   age = 0;
   lifetime = 20;
@@ -31,6 +32,7 @@ export class BreakParticles {
       this.next = (this.next + 1) % PARTICLE_CAPACITY;
       p.active = true;
       p.emberOwner = null;
+      p.smoke = false;
       p.age = 0;
       p.state = state;
       p.lifetime = 18 + Math.floor(this.random.next() * 5);
@@ -60,6 +62,7 @@ export class BreakParticles {
       const p = this.pool[cursor++]!;
       p.active = true;
       p.emberOwner = owner;
+      p.smoke = false;
       p.age = 0;
       p.lifetime = 16 + Math.floor(random() * 9);
       for (let a = 0; a < 3; a++) {
@@ -74,6 +77,31 @@ export class BreakParticles {
       }
     }
   }
+  /** Free slots only, capped at 96: an explosion can never evict debris or embers. */
+  explosion(center: Readonly<Position>, random: () => number): void {
+    let count = this.pool.filter((p) => p.active && p.smoke).length;
+    let spawned = 0;
+    for (const p of this.pool) {
+      if (count >= 96 || spawned >= 24) break;
+      if (p.active) continue;
+      count++;
+      spawned++;
+      p.active = true;
+      p.smoke = true;
+      p.emberOwner = null;
+      p.age = 0;
+      p.lifetime = 18 + Math.floor(random() * 10);
+      const dx = random() * 2 - 1,
+        dy = random() * 2 - 1,
+        dz = random() * 2 - 1;
+      const length = Math.max(0.01, Math.hypot(dx, dy, dz));
+      for (let a = 0; a < 3; a++) {
+        const direction = [dx, dy, dz][a]! / length;
+        p.pos[a] = p.previous[a] = center[a]! + direction * 0.2;
+        p.vel[a] = direction * (3 + random() * 3);
+      }
+    }
+  }
   tick(): void {
     for (let n = 0; n < PARTICLE_CAPACITY; n++) {
       const p = this.pool[n]!;
@@ -82,7 +110,7 @@ export class BreakParticles {
         p.active = false;
         continue;
       }
-      p.vel[1] += p.emberOwner === null ? -12 * 0.05 : 0.03;
+      p.vel[1] += p.smoke ? 0.04 : p.emberOwner === null ? -12 * 0.05 : 0.03;
       for (let axis = 0; axis < 3; axis++) {
         p.previous[axis] = p.pos[axis]!;
         p.pos[axis]! += p.vel[axis]! * 0.05;

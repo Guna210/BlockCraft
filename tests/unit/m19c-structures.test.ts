@@ -127,14 +127,14 @@ const sortedMarkers = (markers: StructureMarker[]) =>
   [...markers].sort((a, b) => a.x - b.x || a.y - b.y || a.z - b.z);
 
 describe('M19c blocks', () => {
-  it('appends the spawner, Silkmesh and decorative rail states after 819', () => {
+  it('appends the spawner, Silkmesh and decorative rail states after 820', () => {
     const registry = BlockRegistry.getInstance();
     const ids = blockStateIds as Record<string, number>;
-    expect(Math.max(...Object.values(ids))).toBe(823);
-    expect(registry.getDefaultStateId('spawner')).toBe(820);
-    expect(registry.getDefaultStateId('silkmesh')).toBe(821);
-    expect(registry.getStateId('decorative_rail', { axis: 'x' })).toBe(822);
-    expect(registry.getStateId('decorative_rail', { axis: 'z' })).toBe(823);
+    expect(Math.max(...Object.values(ids))).toBe(824);
+    expect(registry.getDefaultStateId('spawner')).toBe(821);
+    expect(registry.getDefaultStateId('silkmesh')).toBe(822);
+    expect(registry.getStateId('decorative_rail', { axis: 'x' })).toBe(823);
+    expect(registry.getStateId('decorative_rail', { axis: 'z' })).toBe(824);
     expect(registry.getBlockDefinition('silkmesh')).toMatchObject({
       model: 'cross',
       renderLayer: 'cutout',
