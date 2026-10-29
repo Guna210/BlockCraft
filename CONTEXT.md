@@ -45,14 +45,13 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 819.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 820.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M19c Crypts, ruins, warrens & spawners | Round 1 PASS, ready to merge | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
-| M14 Explosions | Round 2 PASS, merge now | Codex, GitHub plugin not git (claude/m14) | session_0155bUSDQY78WVFzxUUwDRBY | #78 | new blocks append after 819 -> second of M14/M19c to merge renumbers its ids |
+| M19c Crypts, ruins, warrens & spawners | Round 1 PASS; merging master + renumber 821-824 (msg sent) | Claude cloud (claude/m19c) | session_0155bUSCSPD7HzY2fEjY9W6g | #77 | new blocks append after 819; buried caches skipped |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -90,6 +89,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-29: #78 M14 merged (d4167d8). M16b now ready (needs M14, M16a, M16c). Sent M19c builder: merge master, renumber spawner 821, silkmesh 822, decorative_rail 823/824, update own test + docs, check block entities under explosions, quick verify + m14/m13f/m17b e2e, push. Then I check diff; owner merges #77 (no round 2 needed).
 - 2026-10-29: #78 M14 round 2 PASS (all 7 fixes verified, regression test for touched set, litColumns test). Told owner to merge #78 (base = master 9a1250d). Then I message M19c builder to merge master + renumber 821-824. Non-blocking: share() refills litColumns per slice (explosion-only); onBlockEdited per removed block with batched flag.
 - 2026-10-29: #78 fix 2f7379a green (shard 2 16.7 min). Sent round 2 to session_0155bUSDQY78WVFzxUUwDRBY.
 - 2026-10-29: #78 M14 round 1 CHANGES NEEDED (reviewer session_0155bUSDQY78WVFzxUUwDRBY): edit during removeBlocksSteps' final yield resets shared storage.touchedSections before blocksRemoved listener reads it -> missed remeshes (probe 5 vs 1 sections). Fix msg via owner to Codex: pass touched set in blocksRemoved payload (or drop final yield) + regression test; also non-generator fast path for ordinary edits (no generator alloc on hot path), getPalette copy -> getPaletteSize/direct, BlastCharges blockEdited narrowed to Current/fire, hoist per-tick [1,0,2], writeRemovals also calls onBlockEdited consumers (or document), refresh litColumns per step. Round 2 same reviewer.
