@@ -1,3 +1,5 @@
+import { deriveSeed } from '../../src/engine/rng';
+import { hollowdeepShapeStage, hollowdeepHeights } from '../../src/gen/hollowdeep/shape';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -114,6 +116,30 @@ describe('M20b Hollowdeep', () => {
     for (const name of names) expect(counts.get(id(name)), name).toBeGreaterThan(0);
   });
 
+  it('labels shallow magma seas, deep chasms and dry forest floors from the actual sea level', () => {
+    const seed = deriveSeed(42, 'hollowdeep:shape');
+    const heights = hollowdeepHeights(seed);
+    const seen = new Set<string>();
+    for (let cz = -4; cz <= 4; cz++)
+      for (let cx = -4; cx <= 4; cx++) {
+        const column = new ChunkColumn(cx, cz);
+        hollowdeepShapeStage.generate(seed, cx, cz, column);
+        for (let z = 0; z < 16; z++)
+          for (let x = 0; x < 16; x++) {
+            const floor = heights(cx * 16 + x, cz * 16 + z).floor;
+            const biome = column.biomes[z * 16 + x]!;
+            seen.add(biome);
+            if (floor >= 40) expect(biome).toBe('glowcap_forest');
+            else {
+              expect(column.getBlockStateId(x, 40, z)).toBe(id('lava'));
+              expect(biome).toBe(floor < 32 ? 'driftstone_expanse' : 'magma_sea');
+            }
+            if (biome === 'magma_sea') expect(floor).toBeLessThan(40);
+          }
+      }
+    expect([...seen].sort()).toEqual(['driftstone_expanse', 'glowcap_forest', 'magma_sea']);
+  });
+
   it('Skyshard never generates in the Overworld; appears at the Appendix A rate in the Hollowdeep', () => {
     const overworld = createDefaultPipeline();
     const hollowdeep = createHollowdeepPipeline();
@@ -122,23 +148,27 @@ describe('M20b Hollowdeep', () => {
     );
     let ore = 0;
     let solid = 0;
-    let highOre = 0;
+    let outsideBand = 0;
+    const depthCounts = new Array<number>(193).fill(0);
     for (let i = 0; i < 1024; i++) {
       const cx = (i % 32) * 7 - 112;
       const cz = Math.floor(i / 32) * 7 - 112;
       const column = new ChunkColumn(cx, cz);
       hollowdeep.generateColumn(1301 + (i % 4), cx, cz, column);
-      for (let y = 5; y < 192; y++)
+      for (let y = 0; y <= 192; y++)
         for (let z = 0; z < 16; z++)
           for (let x = 0; x < 16; x++) {
             const state = column.getBlockStateId(x, y, z);
-            if (hosts.has(state)) solid++;
+            if (y >= 5 && y < 192 && hosts.has(state)) solid++;
             if (state === id('skyshard_ore')) {
               ore++;
-              if (y > 60) highOre++;
+              if (y < 5 || y > 60) outsideBand++;
+              depthCounts[y] = depthCounts[y]! + 1;
             }
           }
-      if (i < 16) {
+      for (let sy = 13; sy < ChunkColumn.SECTION_COUNT; sy++)
+        expect(column.getSection(sy)?.getPalette() ?? []).not.toContain(id('skyshard_ore'));
+      if (i < 256) {
         const over = new ChunkColumn(cx, cz);
         overworld.generateColumn(1301 + (i % 4), cx, cz, over);
         for (let sy = 0; sy < ChunkColumn.SECTION_COUNT; sy++)
@@ -146,20 +176,29 @@ describe('M20b Hollowdeep', () => {
       }
     }
     const rate = (ore * 1_000_000) / solid;
+    const bins = Array.from({ length: 12 }, (_, bin) =>
+      depthCounts.slice(5 + bin * 5, 10 + bin * 5).reduce((a, b) => a + b, 0),
+    );
+    const peakBinStart = 5 + bins.indexOf(Math.max(...bins)) * 5;
+    const evidence = {
+      columns: 1024,
+      overworldColumns: 256,
+      solid,
+      ore,
+      outsideBand,
+      perMillion: rate,
+      bins,
+      peakBinStart,
+    };
     mkdirSync('artifacts/M20b', { recursive: true });
-    writeFileSync(
-      'artifacts/M20b/ore-rate.json',
-      JSON.stringify({ columns: 1024, solid, ore, highOre, perMillion: rate }),
-    );
-    process.stdout.write(
-      'M20b Skyshard ' +
-        JSON.stringify({ columns: 1024, solid, ore, highOre, perMillion: rate }) +
-        '\n',
-    );
+    writeFileSync('artifacts/M20b/ore-rate.json', JSON.stringify(evidence));
+    process.stdout.write('M20b Skyshard ' + JSON.stringify(evidence) + '\n');
     expect(solid).toBeGreaterThan(10_000_000);
     expect(rate).toBeGreaterThanOrEqual(20);
     expect(rate).toBeLessThanOrEqual(30);
-    expect(highOre).toBeGreaterThan(0);
+    expect(outsideBand).toBe(0);
+    expect(peakBinStart).toBeGreaterThanOrEqual(15);
+    expect(peakBinStart).toBeLessThanOrEqual(20);
   }, 60_000);
 
   it('registers append-only blocks with textures, palettes, icons, light and loot', () => {

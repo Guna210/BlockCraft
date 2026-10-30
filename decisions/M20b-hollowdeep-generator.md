@@ -14,16 +14,22 @@
    generated above it. Smooth seeded 2D fields form broad cavern floors and uneven ceilings.
    Lava fills openings through y 40; coherent ceiling shafts fall to that sea. Jittered world
    cells place flattened Driftstone islands above chasms, hollow Voidglass geodes in the floor,
-   and Glowcap trees in forest areas. Veilroot hangs from caps and ceilings. Features use global
+   and Glowcap trees in forest areas. Veilroot hangs from caps and ceilings. Base biome labels follow the terrain: dry floors at or above y 40 are Glowcap Forest
+   (including clearings), wet floors at y 32–39 are Magma Sea, and deeper chasms are Driftstone
+   Expanse. Feature islands and geodes retain their existing biome overrides. Features use global
    anchors and clip their writes to the requested column, including at negative coordinates.
-4. **Whole-height Skyshard, isolated from Overworld.** The owner overrides Appendix A.4's
-   y 5–60 band: probability is 25 / 1,000,000 per mineable Hollowdeep terrain block at y 5–191,
-   with the foundation and roof preserved. The denominator is Duskrock, Driftstone, Emberite,
-   Voidglass and their replaced ore cells, excluding air, lava and plant blocks. Position hashes
-   select individual rare crystals after features so geodes cannot erase the ore. The existing
-   `skyshard_ore` registry entry, drop and textures are reused. No Overworld ore code changes.
-   The unit test samples 1,024 widely spaced columns across four seeds, permits 20–30 per million,
-   checks ore above y 60 and scans every section palette of 16 default Overworld columns for absence.
+4. **Skyshard band and whole-height rarity, isolated from Overworld.** Appendix A.4 places
+   Skyshard only at y 5–60, with a triangular depth distribution peaking at y 20. The table
+   introduction defines the rate denominator across the Hollowdeep's whole height, not the
+   placement range. Count mineable terrain at y 5–191 (Duskrock, Driftstone, Emberite and
+   Voidglass), excluding foundation, roof, air, lava and plants. Normalize the depth weights
+   against that whole-height count to expect 25 ore blocks per million solids in each column.
+   Both the count and placement happen during generation; no load-time scans are added.
+   Position hashes select rare crystals after features, and the sealed floor and roof stay intact.
+   Reuse the existing `skyshard_ore` block, drop and textures; change no Overworld ore code.
+   The unit test samples 1,024 widely spaced Hollowdeep columns across four seeds, asserts
+   20–30 per million, rejects ore below 5 or above 60, and checks that the busiest five-height
+   bin starts at 15 or 20. It scans all section palettes of 256 Overworld columns for absence.
 5. **Eight original blocks, append-only ids.** `data/blocks/hollowdeep.json`,
    `data/items/hollowdeep.json` and `data/loot/hollowdeep.json` define self-dropping block items.
    IDs after 824: Duskrock 825, Driftstone 826, Glowcap Stem 827, Glowcap 828, Glowcap Gills 829,
@@ -69,3 +75,11 @@ The first complete quick run also exposed seams in new fungal textures. Fix thos
 `src/render/textures/hollowdeep.ts`, keeping the existing seamless-tiling test unchanged:
 mirror the rib phase across horizontal tile edges and keep Veilroot leaves away from its
 vertical tile junction, where the continuous stem joins at the same x coordinate.
+
+## Round 1 corrections
+
+The owner's review corrects the earlier placement interpretation: there is no override of
+Appendix A.4's y 5–60 band or peak 20. Implement the band and rate normalization above, widen
+Overworld sampling to 256 columns, and test the terrain-based biome labels. The original
+PR head's Verify run 40888159167 succeeded; the revision must also pass PR CI. Keep
+`Full verify: PR CI` as the full-verify evidence and publish all round 1 fixes in one push.

@@ -41,12 +41,9 @@ export const hollowdeepShapeStage: TerrainStage = {
       for (let x = 0; x < 16; x++) {
         const wx = cx * 16 + x;
         const wz = cz * 16 + z;
-        const { floor, ceiling, forest } = heights(wx, wz);
-        column.biomes[z * 16 + x] = forest
-          ? 'glowcap_forest'
-          : floor < 32
-            ? 'driftstone_expanse'
-            : 'magma_sea';
+        const { floor, ceiling } = heights(wx, wz);
+        column.biomes[z * 16 + x] =
+          floor >= MAGMA_LEVEL ? 'glowcap_forest' : floor < 32 ? 'driftstone_expanse' : 'magma_sea';
         for (let y = 0; y <= HOLLOWDEEP_TOP; y++) {
           let state = 0;
           if (y <= 4) state = foundation;
