@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M16b Audio integration | PR #79 green after fix 89dba7b, reviewer prompt given | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
+| M16b Audio integration | PR #79 round 1 CHANGES NEEDED, fix msg given (reviewer session_0155bUSAdE1XU4SUvDQs2LFL) | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
 | M20a Dimensions & portals | PR #81 green (b16cae7), reviewer prompt given; merges LAST | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
 | M20b Hollowdeep generator | PR #80 green (e7d6290), reviewer prompt given; ids 825-832 | Codex small model, GitHub plugin (claude/m20b) | - | - | many block ids append after 824; second of M20a/M20b renumbers |
 
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-30: #79 M16b round 1 CHANGES NEEDED (session_0155bUSAdE1XU4SUvDQs2LFL): music never plays (new sequence object per schedule -> WeakMap cache miss every time); Cinderwraith has no voices; first play of uncached buffer dropped, tests only check lastSounds -> add activeVoices > 0 assertion. Also asked: idle per-frame updateListener (gains only on settings change), scratch arrays at play() call sites, block material regexes vs real ids, unsubscribe onTone/onPiston per world, note-block pitch in coalesce key, progress Status verified. Round 2 same reviewer.
 - 2026-10-30: All 3 green: #79 M16b (fix 89dba7b: cached buffers + coalesced explosions), #80 M20b (e7d6290, ids duskrock 825..emberite 832, title still [INCOMPLETE] -> owner retitle), #81 M20a (b16cae7, portal 825-826). Trial merges: #79 vs #80 clean; #79 vs #81 conflict player-controller.ts; #80 vs #81 conflict ids + m19c test (M20b also removed unused ids line). Plan: merge #79 and #80 first (Codex, can't merge master), then M20a Claude session merges master, renumbers portal to 833-834, resolves player-controller, wires M20b pipeline+environment, fresh CI. Gave 3 Sonnet reviewer prompts.
 - 2026-10-29: CORRECTION: #79 is M16b (Codex), not M20a; M20a is #81, M20b is #80. My m14 fix message went to M20a by mistake (retracted). Gave owner the same fix for Codex M16b: explosion audio path through new service likely causes frame spikes/missed detonation.
 - 2026-10-29: (wrong attribution) #79 opened (owner approved gate). CI red shard 4: m14:26 chain failed x3 (detonations 26/27, then frameCpuMsMax 121.5, 141.8 > 100); m18b:92 flaky. Master push CI 89777d7 green incl m14:26 -> likely M20a regression. Sent builder: A/B master vs branch, suspects per-edit/per-frame work in world-manager/save/portal index on batched removals, missing detonation; fix in own code, no test edits.
