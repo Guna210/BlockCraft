@@ -45,14 +45,13 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 832.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M16b (#79 0b44c73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 832.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M16b Audio integration | PR #79 round 3 PASS; Update branch + green, then merge (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
-| M20a Dimensions & portals | PR #81 round 1 PASS (reviewer session_0155bUSAs5hRGDVLLvCTE6YE); merges LAST after #79/#80 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
+| M20a Dimensions & portals | PR #81 PASS; merge push requested (master, ids 833-834, wire M20b) | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -92,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #79 M16b merged (0b44c73). Sent M20a builder the merge push: merge master, portal ids 833-834, m19c test take master, keep both in player-controller, wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT + biome strings + music mood, re-check portal Y range vs real cavern with e2e, travelThroughPortal catch -> cancel() + test. Then I check diff; owner merges. After #81: M20c ready (needs M20a, M20b, M16b).
 - 2026-10-31: #79 M16b round 3 PASS. Told owner: optional Codex docs push (progress Status verified + CI totals), then Update branch (bring in #80), fresh green, merge. Non-blocking: pendingPlaybacks entries accumulate only after a failed explosion render; node creation moved to next macrotask (not removed).
 - 2026-10-31: #79 fix f77081f green (offline tests for new recipes, keyed pending explosions, enqueue-only explosion path, occlusion batching; m14 max 72.7 ms, A/B vs master in handoff). Round 3 (last) sent. Branch still lacks #80 -> Update branch before merge.
 - 2026-10-31: #79 M16b round 2 CHANGES NEEDED: only blocker = no offline RMS/peak test for cinderwraith voices, ambience.cave, mechanism.note (m16a.spec hardcoded list; add in M16b's own spec). Music, first-play, idle cost, listeners, pitch key all FIXED. Also asked: pending explosion slot overwrite (key by position), recentPlaybacks mutate in place, m14:26 A/B vs master (91 ms max vs 100 bound) and remove any M16b cost from the explosion path. Round 3 is the last.
