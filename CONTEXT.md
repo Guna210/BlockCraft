@@ -45,15 +45,14 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 824.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 832.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M16b Audio integration | PR #79 round 1 CHANGES NEEDED, fix msg given (reviewer session_0155bUSAdE1XU4SUvDQs2LFL) | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
+| M16b Audio integration | PR #79 fixes e1acd33 green, round 2 sent (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
 | M20a Dimensions & portals | PR #81 round 1 PASS (reviewer session_0155bUSAs5hRGDVLLvCTE6YE); merges LAST after #79/#80 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
-| M20b Hollowdeep generator | PR #80 round 2 PASS, merge now (retitle) (reviewer session_0155bUSD2fDQ7yLGcWGYLCev); ids 825-832 | Codex small model, GitHub plugin (claude/m20b) | - | - | many block ids append after 824; second of M20a/M20b renumbers |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #80 M20b merged (23c5e91). #79 fixes 0a4a821/9b77477/e1acd33 green (doesn't contain #80 yet, no conflict). Sent round 2. After PASS: owner clicks Update branch, fresh green, merge; then M20a merge push.
 - 2026-10-31: #80 M20b round 2 PASS (Skyshard y 5-60 peak 20, 25.25/1M; labels fixed; Overworld check 256 cols). Told owner: retitle and merge #80 (contains master 89777d7, no conflict with #79). Carried to M20a merge push: Hollowdeep biome strings, lava falls on dry land (non-blocking).
 - 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
 - 2026-10-30: #80 fix 5376339 (Hollowdeep ores/shape only) red: shard 1 m02:54 meshMsP95 x3 (8.5, 6.3 > 6). Fix touches no mesher/Overworld code; same e7d6290 passed. Known borderline (open item). Told owner: re-run failed jobs; if it fails again, escalate m02:54 budget (owner's call).
