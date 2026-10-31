@@ -53,7 +53,7 @@ In flight:
 | --- | --- | --- | --- | --- | --- |
 | M16b Audio integration | PR #79 round 1 CHANGES NEEDED, fix msg given (reviewer session_0155bUSAdE1XU4SUvDQs2LFL) | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
 | M20a Dimensions & portals | PR #81 round 1 PASS (reviewer session_0155bUSAs5hRGDVLLvCTE6YE); merges LAST after #79/#80 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
-| M20b Hollowdeep generator | PR #80 round 1 CHANGES NEEDED (Skyshard y), fix msg given (reviewer session_0155bUSD2fDQ7yLGcWGYLCev); ids 825-832 | Codex small model, GitHub plugin (claude/m20b) | - | - | many block ids append after 824; second of M20a/M20b renumbers |
+| M20b Hollowdeep generator | PR #80 fix 5376339 green (after m02 re-run), round 2 sent (reviewer session_0155bUSD2fDQ7yLGcWGYLCev); ids 825-832 | Codex small model, GitHub plugin (claude/m20b) | - | - | many block ids append after 824; second of M20a/M20b renumbers |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
 - 2026-10-30: #80 fix 5376339 (Hollowdeep ores/shape only) red: shard 1 m02:54 meshMsP95 x3 (8.5, 6.3 > 6). Fix touches no mesher/Overworld code; same e7d6290 passed. Known borderline (open item). Told owner: re-run failed jobs; if it fails again, escalate m02:54 budget (owner's call).
 - 2026-10-30: #81 M20a round 1 PASS. For its merge push (after #79+#80 merge): merge master, portal ids -> 833-834, resolve player-controller (M16b) + m19c test (take M20b version), wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT, re-check portalMinY/MaxY vs real cavern, travelThroughPortal catch -> portalTravel.cancel(), remove unused ids lint, totals in handoff. Non-blocking left: shader compiles when index non-empty; no rollback after World swap; workers recreated per travel; warp overlay over stale frame; unnamed worlds lose inactive dimension.
 - 2026-10-30: #80 M20b round 1 CHANGES NEEDED (session_0155bUSD2fDQ7yLGcWGYLCev): Skyshard spans y 5-191; my builder prompt wrongly said 'over the whole height' (A.4 intro = denominator only; row = y 5-60 peak 20). Decided: y 5-60 peak 20, ~25/1M of whole-height underground volume, test asserts none above 60, decisions file corrected (no owner override). Also: swapped biome labels (shape.ts:36-40), Overworld absence check wider, Status verified. Lava falls onto dry land OK (non-blocking).
