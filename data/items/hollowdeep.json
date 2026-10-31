@@ -1,0 +1,50 @@
+{
+  "duskrock": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "duskrock",
+    "texture": "duskrock"
+  },
+  "driftstone": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "driftstone",
+    "texture": "driftstone"
+  },
+  "glowcap_stem": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "glowcap_stem",
+    "texture": "glowcap_stem"
+  },
+  "glowcap": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "glowcap",
+    "texture": "glowcap"
+  },
+  "glowcap_gills": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "glowcap_gills",
+    "texture": "glowcap_gills"
+  },
+  "veilroot": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "veilroot",
+    "texture": "veilroot"
+  },
+  "voidglass": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "voidglass",
+    "texture": "voidglass"
+  },
+  "emberite": {
+    "kind": "block",
+    "maxStack": 64,
+    "block": "emberite",
+    "texture": "emberite"
+  }
+}

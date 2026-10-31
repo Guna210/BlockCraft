@@ -1,0 +1,115 @@
+{
+  "duskrock": {
+    "hardness": 2,
+    "blastResistance": 6,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "duskrock",
+      "side": "duskrock",
+      "bottom": "duskrock"
+    }
+  },
+  "driftstone": {
+    "hardness": 1.5,
+    "blastResistance": 4.5,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "driftstone",
+      "side": "driftstone",
+      "bottom": "driftstone"
+    }
+  },
+  "glowcap_stem": {
+    "hardness": 1,
+    "blastResistance": 3,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "minTier": 0,
+    "textures": {
+      "top": "glowcap_stem",
+      "side": "glowcap_stem",
+      "bottom": "glowcap_stem"
+    }
+  },
+  "glowcap": {
+    "hardness": 0.5,
+    "blastResistance": 1.5,
+    "lightEmission": 9,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "minTier": 0,
+    "textures": {
+      "top": "glowcap",
+      "side": "glowcap",
+      "bottom": "glowcap"
+    }
+  },
+  "glowcap_gills": {
+    "hardness": 0.5,
+    "blastResistance": 1.5,
+    "lightEmission": 9,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "axe",
+    "minTier": 0,
+    "textures": {
+      "top": "glowcap_gills",
+      "side": "glowcap_gills",
+      "bottom": "glowcap_gills"
+    }
+  },
+  "veilroot": {
+    "hardness": 0.2,
+    "blastResistance": 0.6,
+    "lightEmission": 0,
+    "renderLayer": "cutout",
+    "fullOpaqueCube": false,
+    "tool": "none",
+    "minTier": 0,
+    "textures": {
+      "top": "veilroot",
+      "side": "veilroot",
+      "bottom": "veilroot"
+    },
+    "model": "cross"
+  },
+  "voidglass": {
+    "hardness": 1.5,
+    "blastResistance": 4.5,
+    "lightEmission": 0,
+    "renderLayer": "translucent",
+    "fullOpaqueCube": false,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "voidglass",
+      "side": "voidglass",
+      "bottom": "voidglass"
+    }
+  },
+  "emberite": {
+    "hardness": 3,
+    "blastResistance": 9,
+    "lightEmission": 0,
+    "renderLayer": "opaque",
+    "fullOpaqueCube": true,
+    "tool": "pickaxe",
+    "minTier": 0,
+    "textures": {
+      "top": "emberite",
+      "side": "emberite",
+      "bottom": "emberite"
+    }
+  }
+}
