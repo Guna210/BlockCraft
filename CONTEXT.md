@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M16b Audio integration | PR #79 fix f77081f green, round 3 (last) sent (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
+| M16b Audio integration | PR #79 round 3 PASS; Update branch + green, then merge (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
 | M20a Dimensions & portals | PR #81 round 1 PASS (reviewer session_0155bUSAs5hRGDVLLvCTE6YE); merges LAST after #79/#80 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
@@ -60,6 +60,8 @@ Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update br
 Merge rule: the second PR to merge clicks Update branch and needs a fresh green run with normal shard times (shard 2 ~12-25 min; check the log for "flaky"). Block IDs: append only, flag it.
 
 ## Open items for the owner
+
+- m14:26 27-charge chain frameCpuMsMax is near its 100 ms bound on master itself (98.3 ms in M16b's A/B, 2026-10-31). Treat a one-off failure as possible flake; if it recurs, the owner decides (profile explosions or budget).
 
 - CI shard 2 ~25 min with m04:221/276 flaky on master itself: INFRA-stream (#70) found SwiftShader backpressure, no game fix; owner approved longer time limits in m04.spec.ts. Further options are harness-side (SwiftShader flags, runner size) and the owner's call.
 - Worldgen tuning (later): bigger biomes (needs a SPEC edit to the M03c ≥ 10 biomes in 2048² test) plus fewer Mire patches (surface.ts patchNoise > 0.25).
@@ -90,6 +92,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #79 M16b round 3 PASS. Told owner: optional Codex docs push (progress Status verified + CI totals), then Update branch (bring in #80), fresh green, merge. Non-blocking: pendingPlaybacks entries accumulate only after a failed explosion render; node creation moved to next macrotask (not removed).
 - 2026-10-31: #79 fix f77081f green (offline tests for new recipes, keyed pending explosions, enqueue-only explosion path, occlusion batching; m14 max 72.7 ms, A/B vs master in handoff). Round 3 (last) sent. Branch still lacks #80 -> Update branch before merge.
 - 2026-10-31: #79 M16b round 2 CHANGES NEEDED: only blocker = no offline RMS/peak test for cinderwraith voices, ambience.cave, mechanism.note (m16a.spec hardcoded list; add in M16b's own spec). Music, first-play, idle cost, listeners, pitch key all FIXED. Also asked: pending explosion slot overwrite (key by position), recentPlaybacks mutate in place, m14:26 A/B vs master (91 ms max vs 100 bound) and remove any M16b cost from the explosion path. Round 3 is the last.
 - 2026-10-31: #80 M20b merged (23c5e91). #79 fixes 0a4a821/9b77477/e1acd33 green (doesn't contain #80 yet, no conflict). Sent round 2. After PASS: owner clicks Update branch, fresh green, merge; then M20a merge push.
