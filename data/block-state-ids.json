@@ -823,5 +823,13 @@
   "spawner": 821,
   "silkmesh": 822,
   "decorative_rail[axis=x]": 823,
-  "decorative_rail[axis=z]": 824
+  "decorative_rail[axis=z]": 824,
+  "duskrock": 825,
+  "driftstone": 826,
+  "glowcap_stem": 827,
+  "glowcap": 828,
+  "glowcap_gills": 829,
+  "veilroot": 830,
+  "voidglass": 831,
+  "emberite": 832
 }
