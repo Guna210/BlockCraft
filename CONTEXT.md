@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M20a Dimensions & portals | Merge push 5ed9cef green; round 2 sent (wiring review) | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
+| M20a Dimensions & portals | Round 2 PASS on 5ed9cef; merge now | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #81 M20a round 2 PASS (wiring, ids 833-834, revert on return, spores zero alloc, e2e lands in real cavern, cancel fix). Told owner to merge. Non-blocking: u_dimensionFog uniform per terrain pass in Overworld; platform seal pass ~500 lookups on fallback; handoff final CI totals missing. Next: M20c ready after merge.
 - 2026-10-31: #81 merge push 5ed9cef green (contains master 0b44c73, portal 833-834, M20b wired: pipeline, biome ids, fog uniform, spores.ts, lava delay; portal y 41-150; cancel() fix + test). Substantial new wiring code -> sent round 2 to session_0155bUSAs5hRGDVLLvCTE6YE instead of self-check.
 - 2026-10-31: #79 M16b merged (0b44c73). Sent M20a builder the merge push: merge master, portal ids 833-834, m19c test take master, keep both in player-controller, wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT + biome strings + music mood, re-check portal Y range vs real cavern with e2e, travelThroughPortal catch -> cancel() + test. Then I check diff; owner merges. After #81: M20c ready (needs M20a, M20b, M16b).
 - 2026-10-31: #79 M16b round 3 PASS. Told owner: optional Codex docs push (progress Status verified + CI totals), then Update branch (bring in #80), fresh green, merge. Non-blocking: pendingPlaybacks entries accumulate only after a failed explosion render; node creation moved to next macrotask (not removed).
