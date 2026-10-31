@@ -1,4 +1,4 @@
-import { createDefaultPipeline } from '../gen/pipeline';
+import type { TerrainPipeline } from '../gen/pipeline';
 import { deriveSeed } from '../engine/rng';
 import { withTerrainVariant } from '../gen/world-options';
 import { STRUCTURE_REGISTRATIONS } from '../gen/structures/registrations';
@@ -8,37 +8,33 @@ import type { PackedChunkStorage } from '../world/chunk';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { WorldType } from '../gen/world-options';
 import type { OverworldBiomeId } from '../gen/biomes';
+import { DIMENSIONS, type DimensionId } from '../world/dimension';
 const ctx: Worker = self as unknown as Worker;
 
 // Ensure registry is loaded in worker
 BlockRegistry.getInstance();
-const pipelineWithStructures = createDefaultPipeline(STRUCTURE_REGISTRATIONS);
-const pipelineWithoutStructures = createDefaultPipeline();
+// One generator per dimension and structure setting, built the first time a column asks for it.
+const pipelines = new Map<string, TerrainPipeline>();
+function pipelineFor(dimension: DimensionId, structures: boolean): TerrainPipeline {
+  const key = `${dimension}:${structures}`;
+  let pipeline = pipelines.get(key);
+  if (!pipeline) {
+    pipeline = DIMENSIONS[dimension].createPipeline(structures ? STRUCTURE_REGISTRATIONS : []);
+    pipelines.set(key, pipeline);
+  }
+  return pipeline;
+}
 
-const OVERWORLD_BIOME_IDS = [
-  'plains',
-  'meadow',
-  'oakwood_forest',
-  'birch_grove',
-  'pine_taiga',
-  'snowy_tundra',
-  'frost_peaks',
-  'stony_heights',
-  'desert',
-  'badlands',
-  'savanna',
-  'swampland',
-  'rainforest',
-  'beach',
-  'stony_shore',
-  'river',
-  'ocean',
-  'deep_ocean',
-  'frozen_ocean',
-] as const;
-
-const biomeIndexMap = new Map<string, number>();
-OVERWORLD_BIOME_IDS.forEach((id, idx) => biomeIndexMap.set(id, idx));
+// Each dimension's biome names, as the compact indices its columns are sent with.
+const biomeIndexMaps = new Map<DimensionId, Map<string, number>>();
+function biomeIndexMap(dimension: DimensionId): Map<string, number> {
+  let map = biomeIndexMaps.get(dimension);
+  if (!map) {
+    map = new Map(DIMENSIONS[dimension].biomeIds.map((id, idx) => [id, idx]));
+    biomeIndexMaps.set(dimension, map);
+  }
+  return map;
+}
 
 export interface GenWorkerRequest {
   id: number;
@@ -49,6 +45,8 @@ export interface GenWorkerRequest {
   /** The biome of a Single Biome world. */
   biome?: OverworldBiomeId;
   structures?: boolean;
+  /** The dimension the column belongs to; Overworld when absent. */
+  dimension?: DimensionId;
 }
 
 export interface SectionDataTransfer {
@@ -77,14 +75,24 @@ export interface GenWorkerResponse {
 }
 
 export function processGenMessage(event: MessageEvent): void {
-  const { id, seed, cx, cz, type, biome, structures = true } = event.data as GenWorkerRequest;
+  const {
+    id,
+    seed,
+    cx,
+    cz,
+    type,
+    biome,
+    structures = true,
+    dimension = 'overworld',
+  } = event.data as GenWorkerRequest;
 
   // The clock covers everything the worker spends on this column, packaging included
   const start = performance.now();
   const col = new ChunkColumn(cx, cz);
-  const pipeline = structures ? pipelineWithStructures : pipelineWithoutStructures;
+  const pipeline = pipelineFor(dimension, structures);
 
-  if (type === 'flat') {
+  // A Superflat world is flat in the Overworld only; other dimensions use their own generator.
+  if (type === 'flat' && dimension === 'overworld') {
     generateFlatColumn(col);
     col.worldSeed = seed;
     const structureStage = pipeline.getStages().find((stage) => stage.name === 'structures');
@@ -125,10 +133,8 @@ export function processGenMessage(event: MessageEvent): void {
 
   // Convert biome names to Uint8Array indices (256)
   const biomes = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) {
-    const bName = col.biomes[i] || 'plains';
-    biomes[i] = biomeIndexMap.get(bName) ?? 0;
-  }
+  const biomeIndices = biomeIndexMap(dimension);
+  for (let i = 0; i < 256; i++) biomes[i] = biomeIndices.get(col.biomes[i] ?? '') ?? 0;
 
   // Transferable biome and tint buffers
   const grassTints = new Uint8Array(col.grassTints);

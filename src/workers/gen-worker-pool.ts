@@ -4,6 +4,7 @@ import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 import type { TerrainVariant } from '../gen/world-options';
 import type { StructureMarker } from '../gen/structures/stage';
+import type { DimensionId } from '../world/dimension';
 
 // Number of most recent columns the percentile statistics cover
 const GEN_STATS_WINDOW = 100;
@@ -29,6 +30,7 @@ interface GenJob {
   cz: number;
   variant: TerrainVariant;
   structures: boolean;
+  dimension: DimensionId;
   resolve: (result: GenResult) => void;
   reject: (err: Error) => void;
 }
@@ -186,6 +188,7 @@ export class GenWorkerPool {
     cz: number,
     variant: TerrainVariant['type'] | TerrainVariant,
     structures = true,
+    dimension: DimensionId = 'overworld',
   ): Promise<GenResult> {
     const id = this.nextJobId++;
 
@@ -197,6 +200,7 @@ export class GenWorkerPool {
         cz,
         variant: typeof variant === 'string' ? { type: variant } : variant,
         structures,
+        dimension,
         resolve,
         reject,
       };
@@ -229,6 +233,7 @@ export class GenWorkerPool {
         type: job.variant.type,
         biome: job.variant.biome,
         structures: job.structures,
+        dimension: job.dimension,
       });
     }
   }

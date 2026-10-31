@@ -831,5 +831,7 @@
   "glowcap_gills": 829,
   "veilroot": 830,
   "voidglass": 831,
-  "emberite": 832
+  "emberite": 832,
+  "portal[axis=x]": 833,
+  "portal[axis=z]": 834
 }

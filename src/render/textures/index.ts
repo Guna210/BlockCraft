@@ -25,6 +25,7 @@ import {
 import { genLadder, genVine, PAL_LADDER, PAL_VINE } from './climbing';
 import { genHayTop, genHaySide, PAL_HAY } from './hay';
 import { genTorch, genLumiteBlock, PAL_TORCH } from './light-sources';
+import { genPortal, PAL_PORTAL } from './portal';
 import {
   genKilnFront,
   genKilnFrontLit,
@@ -327,6 +328,7 @@ export const textureGenerators: Record<string, TextureGenerator> = {
   hay_side: genHaySide,
   torch: genTorch,
   lumite_block: genLumiteBlock,
+  portal: genPortal,
   workbench_top: genWorkbenchTop,
   workbench_side: genWorkbenchSide,
   chest_top: genChestTop,
@@ -575,6 +577,7 @@ export const texturePalettes: Record<string, RGBA[]> = {
   hay_side: PAL_HAY,
   torch: PAL_TORCH,
   lumite_block: PAL_LUMITE,
+  portal: PAL_PORTAL,
   workbench_top: PAL_WORKBENCH,
   workbench_side: PAL_WORKBENCH,
   chest_top: PAL_CHEST,
