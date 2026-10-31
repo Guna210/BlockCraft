@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M16b Audio integration | PR #79 fixes e1acd33 green, round 2 sent (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
+| M16b Audio integration | PR #79 round 2 CHANGES NEEDED (1 small blocker), round 3 = last (reviewer session_0155bUSAdE1XU4SUvDQs2LFL); needs Update branch before merge | Codex small model, GitHub plugin (claude/m16b) | - | - | perf: occlusion raycasts rate-limited |
 | M20a Dimensions & portals | PR #81 round 1 PASS (reviewer session_0155bUSAs5hRGDVLLvCTE6YE); merges LAST after #79/#80 | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
@@ -90,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-10-31: #79 M16b round 2 CHANGES NEEDED: only blocker = no offline RMS/peak test for cinderwraith voices, ambience.cave, mechanism.note (m16a.spec hardcoded list; add in M16b's own spec). Music, first-play, idle cost, listeners, pitch key all FIXED. Also asked: pending explosion slot overwrite (key by position), recentPlaybacks mutate in place, m14:26 A/B vs master (91 ms max vs 100 bound) and remove any M16b cost from the explosion path. Round 3 is the last.
 - 2026-10-31: #80 M20b merged (23c5e91). #79 fixes 0a4a821/9b77477/e1acd33 green (doesn't contain #80 yet, no conflict). Sent round 2. After PASS: owner clicks Update branch, fresh green, merge; then M20a merge push.
 - 2026-10-31: #80 M20b round 2 PASS (Skyshard y 5-60 peak 20, 25.25/1M; labels fixed; Overworld check 256 cols). Told owner: retitle and merge #80 (contains master 89777d7, no conflict with #79). Carried to M20a merge push: Hollowdeep biome strings, lava falls on dry land (non-blocking).
 - 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
