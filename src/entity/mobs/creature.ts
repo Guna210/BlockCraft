@@ -90,6 +90,12 @@ interface Creature {
 export const CreatureC = defineComponent<Creature>('creature');
 
 const contexts = new WeakMap<EntityWorld, CreatureContext>();
+const registeredCreatureTypes = new Set<string>();
+
+/** A snapshot for integrations that need coverage of every registered creature. */
+export function creatureTypeIds(): string[] {
+  return [...registeredCreatureTypes];
+}
 
 /**
  * The creature context of an ECS world. The first creature spawned installs the creature system,
@@ -239,6 +245,7 @@ export interface CreatureRegistration {
 /** Registers a creature's models, entity type and 'use' handler. */
 export function registerCreature(registration: CreatureRegistration): void {
   const definition = registration.definition;
+  registeredCreatureTypes.add(definition.type);
   for (const [model, skin] of registration.models) registerEntityModel(model, skin);
   registerEntityType(definition.type, (spawn, x, y, z, options) =>
     spawnCreature(spawn, definition, x, y, z, options),

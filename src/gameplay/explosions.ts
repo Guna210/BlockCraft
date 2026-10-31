@@ -2,6 +2,7 @@ import { PRNG, deriveSeed } from '../engine/rng';
 import type { Vec3 } from '../entity/ecs/model';
 import type { World, RemovedBlock } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
+import { playExplosion } from '../audio/explosion';
 import { blast, type BlastScene } from './blast';
 import { rollBlockLoot } from './loot';
 
@@ -147,6 +148,7 @@ function* commitExplosionSteps(
   onDetonate?: () => void,
 ): Generator<void | 'lighting', number> {
   const world = scene.world;
+  playExplosion(center, Math.max(1, power * 0.5));
   blocks = blocks.filter((b) => world.getBlockStateId(b.x, b.y, b.z) === b.state);
   const hurt = blast(scene, center, power, source),
     fx = effects.get(world);

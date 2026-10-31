@@ -16,7 +16,7 @@ export const entities: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.2, 0.4, 0.01);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.2);
     },
@@ -36,7 +36,7 @@ export const entities: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.8, 0.7, 0.05);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.8);
     },
@@ -57,7 +57,7 @@ export const entities: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 1.0, 0.4, 0.02);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 1.0);
     },

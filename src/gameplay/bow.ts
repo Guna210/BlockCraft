@@ -18,6 +18,8 @@ export class BowController {
   private useDown = false;
   private active = false;
   private chargeTicks = 0;
+  onDraw: () => void = () => {};
+  onRelease: () => void = () => {};
 
   constructor(
     readonly player: Player,
@@ -41,15 +43,18 @@ export class BowController {
       this.useDown = true;
       this.chargeTicks = 0;
       this.active = this.canCharge();
+      if (this.active) this.onDraw();
       return true;
     }
     if (!this.useDown) return false;
     const charge = this.charge;
     const shouldFire = this.active && charge >= BOW_MIN_CHARGE;
+    const wasActive = this.active;
     this.useDown = false;
     this.active = false;
     this.chargeTicks = 0;
     if (shouldFire) this.fire(charge);
+    if (wasActive) this.onRelease();
     return true;
   }
 

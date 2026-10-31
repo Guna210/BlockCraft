@@ -22,7 +22,7 @@ function createCreatureVoice(
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, duration, peak, duration * 0.1);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + duration);
 
@@ -88,4 +88,9 @@ export const creatures: Record<string, SoundRecipe> = {
   'creature.magmaw.idle': createCreatureVoice(0.9, 50, 'square', 1.05, 'lowpass', 0.4),
   'creature.magmaw.hurt': createCreatureVoice(0.6, 90, 'square', 1.2, 'bandpass', 0.6),
   'creature.magmaw.death': createCreatureVoice(1.4, 30, 'square', 0.7, 'lowpass', 0.6),
+
+  // Cinderwraith: embering low drones, a sharp crackle, and a falling ash-like moan.
+  'creature.cinderwraith.idle': createCreatureVoice(0.7, 92, 'sawtooth', 1.18, 'lowpass', 0.38),
+  'creature.cinderwraith.hurt': createCreatureVoice(0.32, 315, 'square', 0.58, 'bandpass', 0.56),
+  'creature.cinderwraith.death': createCreatureVoice(1.1, 128, 'sawtooth', 0.42, 'lowpass', 0.62),
 };
