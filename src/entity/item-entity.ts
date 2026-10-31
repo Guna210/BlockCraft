@@ -37,6 +37,7 @@ export interface EntitySnapshot {
 export class ItemEntityManager {
   readonly pool = Array.from({ length: ITEM_CAPACITY }, () => new ItemEntity());
   readonly collision: BlockCollision;
+  onPickup: ((entity: ItemEntity) => void) | null = null;
   private readonly random: PRNG;
   private nextId = 1;
   constructor(readonly world: World) {
@@ -154,7 +155,10 @@ export class ItemEntityManager {
       };
       if (player.inventory.capacity(entity.item.id, variant) < entity.count) continue;
       if (distance < 0.4) {
-        if (player.inventory.insert(entity.item.id, entity.count, variant)) entity.active = false;
+        if (player.inventory.insert(entity.item.id, entity.count, variant)) {
+          entity.active = false;
+          this.onPickup?.(entity);
+        }
       } else {
         // Attraction is velocity; collision remains authoritative, so walls cannot be crossed.
         const pull = 6 / distance;

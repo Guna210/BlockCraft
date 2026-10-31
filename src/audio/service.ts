@@ -4,7 +4,6 @@ import type { Camera } from '../render/camera';
 import type { EntityWorld } from '../entity/ecs/world';
 import { EntityKindC, HealthC, TransformC } from '../entity/ecs/components';
 import type { Player } from '../entity/player';
-import type { ItemEntity, ItemEntityManager } from '../entity/item-entity';
 import type { World } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
 import { VoxelRaycaster, createRayHit } from '../world/raycast';
@@ -19,6 +18,9 @@ export type SoundCategory = 'music' | 'effects' | 'ambient';
 
 export interface SoundPlayOptions {
   pos?: ArrayLike<number>;
+  x?: number;
+  y?: number;
+  z?: number;
   priority?: number;
   category?: SoundCategory;
   volume?: number;
@@ -33,7 +35,7 @@ interface Voice {
   id: string;
   category: SoundCategory;
   source: AudioBufferSourceNode;
-  panner: PannerNode;
+  panner: PannerNode | null;
   filter: BiquadFilterNode;
   gain: GainNode;
   reverbSend: GainNode;
@@ -43,6 +45,7 @@ interface Voice {
   positional: boolean;
   importance: number;
   priority: number;
+  occluded: boolean | null;
   endsAt: number;
 }
 
@@ -60,6 +63,27 @@ interface RecentPlayback {
   z: number;
 }
 
+interface PendingPlayback {
+  id: string;
+  time: number;
+  x: number;
+  y: number;
+  z: number;
+  positional: boolean;
+  priority: number;
+  category?: SoundCategory;
+  volume?: number;
+  pitch?: number;
+  duration?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+interface PendingMusic {
+  sequence: NonNullable<SoundRecipeContext['sequence']>;
+  duration: number;
+}
+
 interface CreatureVoiceState {
   nextIdleTick: number;
   hurtActive: boolean;
@@ -72,17 +96,71 @@ const HEARING_DISTANCE = 36;
 const IDLE_HEARING_DISTANCE = 24;
 const COALESCE_WINDOW_MS = 100;
 const COALESCE_DISTANCE_SQUARED = 25;
+const PENDING_PLAYBACK_WINDOW_MS = 2500;
+
+const BLOCK_MATERIALS: Record<
+  string,
+  'grass' | 'sand' | 'gravel' | 'snow' | 'glass' | 'foliage' | 'wood'
+> = {
+  glass: 'glass',
+  blackglass: 'glass',
+  red_stained_glass: 'glass',
+  orange_stained_glass: 'glass',
+  yellow_stained_glass: 'glass',
+  green_stained_glass: 'glass',
+  cyan_stained_glass: 'glass',
+  blue_stained_glass: 'glass',
+  purple_stained_glass: 'glass',
+  pink_stained_glass: 'glass',
+  sand: 'sand',
+  red_sand: 'sand',
+  gravel: 'gravel',
+  snow: 'snow',
+  snow_layer: 'snow',
+  ice: 'snow',
+  packed_ice: 'snow',
+  grass_block: 'grass',
+  dirt: 'grass',
+  coarse_dirt: 'grass',
+  mud: 'grass',
+  farmland: 'grass',
+  mire: 'grass',
+  hay_bale: 'grass',
+  tall_grass: 'foliage',
+  wheat_crop: 'foliage',
+  bluebell: 'foliage',
+  buttercup: 'foliage',
+  marigold: 'foliage',
+  violet: 'foliage',
+  daisy: 'foliage',
+  wild_rose: 'foliage',
+  lupine: 'foliage',
+  heather: 'foliage',
+  sugar_reeds: 'foliage',
+  brown_mushroom: 'foliage',
+  red_mushroom: 'foliage',
+  cactus: 'foliage',
+  vine: 'foliage',
+  oak_leaves: 'foliage',
+  birch_leaves: 'foliage',
+  pine_leaves: 'foliage',
+  rainwood_leaves: 'foliage',
+  acacia_leaves: 'foliage',
+  torch: 'wood',
+  wall_torch: 'wood',
+  inverter_torch: 'wood',
+  wooden_button: 'wood',
+};
 
 export function blockSoundMaterial(
   id: string,
 ): 'grass' | 'stone' | 'sand' | 'wood' | 'gravel' | 'snow' | 'glass' | 'foliage' {
-  if (/glass|crystal/.test(id)) return 'glass';
-  if (/sand|sandstone/.test(id)) return 'sand';
-  if (/gravel/.test(id)) return 'gravel';
-  if (/snow|ice/.test(id)) return 'snow';
-  if (/log|plank|wood|stem|bark|fence|door/.test(id)) return 'wood';
-  if (/leaf|foliage|fern|flower|grass$|rose|mushroom|vine/.test(id)) return 'foliage';
-  if (/grass|moss|dirt|soil|mud/.test(id)) return 'grass';
+  const material = BLOCK_MATERIALS[id];
+  if (material) return material;
+  const tool = BlockRegistry.getInstance().getBlockDefinition(id)?.tool;
+  if (tool === 'axe') return 'wood';
+  if (tool === 'shovel') return 'grass';
+  if (tool === 'shears/hoe' || tool === 'shears/sword' || tool === 'hoe') return 'foliage';
   return 'stone';
 }
 /** One browser audio device and mixer for every game sound. */
@@ -101,22 +179,38 @@ class AudioService {
   private readonly failedBuffers = new Set<string>();
   private readonly failedSequences = new WeakSet<object>();
   private readonly bufferQueue: BufferPreparation[] = [];
+  private readonly priorityBufferQueue: BufferPreparation[] = [];
+  private readonly priorityBufferIds = new Set<string>();
+  private readonly prioritySequences = new WeakSet<object>();
   private readonly recentPlaybacks = new Map<string, RecentPlayback>();
+  private readonly pendingPlaybacks = new Map<string, PendingPlayback>();
   private bufferPreparationScheduled = false;
+  private explosionPlaybackScheduled = false;
   private readonly recentSounds: string[] = Array.from({ length: SOUND_RING_SIZE }, () => '');
   private lastSoundIndex = 0;
   private lastSoundCount = 0;
   private listenerX = 0;
   private listenerY = 0;
   private listenerZ = 0;
-  private forwardX = 1;
-  private forwardY = 0;
-  private forwardZ = 0;
+  private listenerYaw = 0;
+  private listenerPitch = 0;
+  private audioListenerX = Number.NaN;
+  private audioListenerY = Number.NaN;
+  private audioListenerZ = Number.NaN;
+  private audioForwardX = Number.NaN;
+  private audioForwardY = Number.NaN;
+  private audioForwardZ = Number.NaN;
+  private appliedMasterVolume = Number.NaN;
+  private appliedMusicVolume = Number.NaN;
+  private appliedEffectsVolume = Number.NaN;
+  private appliedAmbientVolume = Number.NaN;
   private rayWorld: World | null = null;
   private raycaster: VoxelRaycaster | null = null;
+  private positionalVoiceCount = 0;
+  private occlusionPhasesDue = 0;
+  private occlusionScheduled = false;
   private readonly rayHit = createRayHit();
   private readonly creatures = new Map<number, CreatureVoiceState>();
-  private readonly activeItems = new Map<ItemEntity, number>();
   private sessionWorld: World | null = null;
   private sessionEcs: EntityWorld | null = null;
   private random = new PRNG(1);
@@ -131,10 +225,13 @@ class AudioService {
   private nextKilnTick = 0;
   private nextCaveTick = 0;
   private nextMusicTick = 0;
+  private pendingMusic: PendingMusic | null = null;
   private caveLevel = 0;
   private targetCaveLevel = 0;
+  private appliedReverbLevel = Number.NaN;
   private musicSeed = 0;
   private readonly onGesture = () => this.activateFromGesture();
+  private readonly onOcclusionTimer = () => this.flushOcclusion();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -169,37 +266,118 @@ class AudioService {
     const recipe = id === 'music.sequence' ? musicSequenceRecipe : soundLibrary[id];
     if (!recipe) return false;
 
-    const positional = options.pos !== undefined;
-    const x = positional ? (options.pos?.[0] ?? 0) : this.listenerX;
-    const y = positional ? (options.pos?.[1] ?? 0) : this.listenerY;
-    const z = positional ? (options.pos?.[2] ?? 0) : this.listenerZ;
+    const positional =
+      options.pos !== undefined ||
+      options.x !== undefined ||
+      options.y !== undefined ||
+      options.z !== undefined;
+    const x = options.x ?? (positional ? (options.pos?.[0] ?? 0) : this.listenerX);
+    const y = options.y ?? (positional ? (options.pos?.[1] ?? 0) : this.listenerY);
+    const z = options.z ?? (positional ? (options.pos?.[2] ?? 0) : this.listenerZ);
     const dx = x - this.listenerX;
     const dy = y - this.listenerY;
     const dz = z - this.listenerZ;
     const distance = positional ? Math.hypot(dx, dy, dz) : 0;
     if (positional && distance > HEARING_DISTANCE) return false;
 
-    const sequence = options.sequence;
-    const buffer = sequence ? this.sequenceBuffers.get(sequence) : this.buffers.get(id);
-    if (!buffer) {
-      this.queueBufferPreparation({
-        id,
-        recipe,
-        duration: Math.max(recipe.duration, options.duration ?? recipe.duration),
-        ...(sequence ? { sequence } : {}),
-      });
-      return false;
+    if (id === 'entity.explosion') {
+      for (let i = 0; i < this.voices.length; i++) {
+        const voice = this.voices[i]!;
+        if (
+          voice.id === id &&
+          (voice.x - x) ** 2 + (voice.y - y) ** 2 + (voice.z - z) ** 2 <= COALESCE_DISTANCE_SQUARED
+        )
+          return false;
+      }
     }
+
+    const coalesceKey = options.pitch === undefined ? id : `${id}:${options.pitch}`;
     const nowMs = performance.now();
-    const recent = this.recentPlaybacks.get(id);
+    const recent = this.recentPlaybacks.get(coalesceKey);
     if (
       recent &&
       nowMs - recent.time < COALESCE_WINDOW_MS &&
       (x - recent.x) ** 2 + (y - recent.y) ** 2 + (z - recent.z) ** 2 <= COALESCE_DISTANCE_SQUARED
     )
       return false;
-    this.recentPlaybacks.set(id, { time: nowMs, x, y, z });
+    this.recentPlaybacks.set(coalesceKey, { time: nowMs, x, y, z });
 
+    const sequence = options.sequence;
+    if (!sequence && this.failedBuffers.has(id)) return false;
+    const buffer = sequence ? this.sequenceBuffers.get(sequence) : this.buffers.get(id);
+    if (!buffer) {
+      this.queueBufferPreparation(
+        {
+          id,
+          recipe,
+          duration: Math.max(recipe.duration, options.duration ?? recipe.duration),
+          ...(sequence ? { sequence } : {}),
+        },
+        true,
+      );
+      if (!sequence) {
+        this.pendingPlaybacks.set(coalesceKey, {
+          id,
+          time: nowMs,
+          x,
+          y,
+          z,
+          positional,
+          priority: options.priority ?? this.defaultImportance(id),
+          ...(options.category ? { category: options.category } : {}),
+          ...(options.volume !== undefined ? { volume: options.volume } : {}),
+          ...(options.pitch !== undefined ? { pitch: options.pitch } : {}),
+          ...(options.duration !== undefined ? { duration: options.duration } : {}),
+          ...(options.fadeIn !== undefined ? { fadeIn: options.fadeIn } : {}),
+          ...(options.fadeOut !== undefined ? { fadeOut: options.fadeOut } : {}),
+        });
+      }
+      return false;
+    }
+    if (id === 'entity.explosion') {
+      this.pendingPlaybacks.set(coalesceKey, {
+        id,
+        time: nowMs,
+        x,
+        y,
+        z,
+        positional,
+        priority: options.priority ?? this.defaultImportance(id),
+        ...(options.category ? { category: options.category } : {}),
+        ...(options.volume !== undefined ? { volume: options.volume } : {}),
+        ...(options.pitch !== undefined ? { pitch: options.pitch } : {}),
+        ...(options.duration !== undefined ? { duration: options.duration } : {}),
+        ...(options.fadeIn !== undefined ? { fadeIn: options.fadeIn } : {}),
+        ...(options.fadeOut !== undefined ? { fadeOut: options.fadeOut } : {}),
+      });
+      this.scheduleExplosionPlayback(buffer);
+      return true;
+    }
+    return this.startVoice(id, recipe, buffer, options, positional, x, y, z, distance);
+  }
+
+  private scheduleExplosionPlayback(buffer: AudioBuffer): void {
+    if (this.explosionPlaybackScheduled) return;
+    this.explosionPlaybackScheduled = true;
+    window.setTimeout(() => {
+      this.explosionPlaybackScheduled = false;
+      this.playPendingBuffer('entity.explosion', buffer);
+    }, 0);
+  }
+
+  private startVoice(
+    id: string,
+    recipe: SoundRecipe,
+    buffer: AudioBuffer,
+    options: SoundPlayOptions | PendingPlayback,
+    positional: boolean,
+    x: number,
+    y: number,
+    z: number,
+    distance: number,
+  ): boolean {
+    const context = this.context;
+    if (!context || context.state !== 'running') return false;
     this.pruneVoices();
     const importance = Math.max(0, options.priority ?? this.defaultImportance(id));
     const priority = importance / (1 + distance / 10);
@@ -211,16 +389,20 @@ class AudioService {
       this.removeVoice(lowest, true);
     }
 
+    this.syncListener(context);
+    this.syncVolumes(context);
     const category = options.category ?? this.categoryFor(id);
-    const panner = context.createPanner();
-    panner.panningModel = 'HRTF';
-    panner.distanceModel = 'inverse';
-    panner.refDistance = 1;
-    panner.maxDistance = HEARING_DISTANCE;
-    panner.rolloffFactor = 1;
-    panner.positionX.value = x;
-    panner.positionY.value = y;
-    panner.positionZ.value = z;
+    const panner = positional ? context.createPanner() : null;
+    if (panner) {
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = 1;
+      panner.maxDistance = HEARING_DISTANCE;
+      panner.rolloffFactor = 1;
+      panner.positionX.value = x;
+      panner.positionY.value = y;
+      panner.positionZ.value = z;
+    }
     const filter = context.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = 22000;
@@ -233,21 +415,23 @@ class AudioService {
     const duration = Math.max(0.01, options.duration ?? recipe.duration);
     const fadeIn = Math.max(0.005, options.fadeIn ?? 0.01);
     const fadeOut = Math.max(0, options.fadeOut ?? 0);
-    const now = context.currentTime;
-    const peak = options.volume ?? 1;
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(peak, now + Math.min(fadeIn, duration));
-    if (fadeOut > 0 && duration > fadeOut) {
-      gain.gain.setValueAtTime(peak, now + duration - fadeOut);
-      gain.gain.linearRampToValueAtTime(0, now + duration);
-    }
     reverbSend.gain.value = this.caveLevel * 0.22;
     source.connect(filter);
-    filter.connect(panner);
-    panner.connect(gain);
+    if (panner) {
+      filter.connect(panner);
+      panner.connect(gain);
+    } else filter.connect(gain);
     gain.connect(categoryGain);
     gain.connect(reverbSend);
     reverbSend.connect(this.reverbs![category]);
+    const startAt = context.currentTime + 0.05;
+    const peak = options.volume ?? 1;
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(peak, startAt + Math.min(fadeIn, duration));
+    if (fadeOut > 0 && duration > fadeOut) {
+      gain.gain.setValueAtTime(peak, startAt + duration - fadeOut);
+      gain.gain.linearRampToValueAtTime(0, startAt + duration);
+    }
     const voice: Voice = {
       id,
       category,
@@ -262,12 +446,18 @@ class AudioService {
       positional,
       importance,
       priority,
-      endsAt: now + duration,
+      occluded: null,
+      endsAt: startAt + duration,
     };
     this.voices.push(voice);
+    if (positional) this.positionalVoiceCount++;
+    source.onended = () => {
+      const index = this.voices.indexOf(voice);
+      if (index >= 0) this.removeVoice(index, false);
+    };
     try {
-      source.start(now);
-      source.stop(now + duration);
+      source.start(startAt);
+      source.stop(startAt + duration);
     } catch (error) {
       this.removeVoice(this.voices.length - 1, true);
       throw error;
@@ -279,51 +469,25 @@ class AudioService {
   updateListener(camera: Camera): void {
     const context = this.context;
     if (!context) return;
-    const listener = context.listener;
     this.listenerX = camera.position[0];
     this.listenerY = camera.position[1];
     this.listenerZ = camera.position[2];
-    const cosPitch = Math.cos(camera.pitch);
-    this.forwardX = Math.cos(camera.yaw) * cosPitch;
-    this.forwardY = Math.sin(camera.pitch);
-    this.forwardZ = Math.sin(camera.yaw) * cosPitch;
-    this.setParam(listener.positionX, this.listenerX, context.currentTime);
-    this.setParam(listener.positionY, this.listenerY, context.currentTime);
-    this.setParam(listener.positionZ, this.listenerZ, context.currentTime);
-    this.setParam(listener.forwardX, this.forwardX, context.currentTime);
-    this.setParam(listener.forwardY, this.forwardY, context.currentTime);
-    this.setParam(listener.forwardZ, this.forwardZ, context.currentTime);
-    this.setParam(listener.upX, 0, context.currentTime);
-    this.setParam(listener.upY, 1, context.currentTime);
-    this.setParam(listener.upZ, 0, context.currentTime);
-    this.setParam(this.masterGain!.gain, settings.masterVolume, context.currentTime);
-    this.setParam(this.musicGain!.gain, settings.musicVolume, context.currentTime);
-    this.setParam(this.effectsGain!.gain, settings.effectsVolume, context.currentTime);
-    this.setParam(this.ambientGain!.gain, settings.ambientVolume, context.currentTime);
-
-    this.pruneVoices();
-    for (let i = 0; i < this.voices.length; i++) {
-      const voice = this.voices[i]!;
-      if (!voice.positional) {
-        voice.panner.positionX.value = this.listenerX;
-        voice.panner.positionY.value = this.listenerY;
-        voice.panner.positionZ.value = this.listenerZ;
-      }
-    }
+    this.listenerYaw = camera.yaw;
+    this.listenerPitch = camera.pitch;
+    if (this.voices.length === 0) return;
+    if (this.positionalVoiceCount > 0) this.syncListener(context);
+    this.syncVolumes(context);
   }
 
   /** Fixed-tick integration owns source polling, cadence, and rate-limited occlusion. */
-  tick(world: World, player: Player, ecs: EntityWorld, items: ItemEntityManager): void {
+  tick(world: World, player: Player, ecs: EntityWorld): void {
     if (world !== this.sessionWorld || ecs !== this.sessionEcs)
       this.startWorldSession(world, ecs, player);
     this.tickCount++;
-    this.pruneVoices();
     this.updateFootsteps(world, player);
-    this.updatePlayerEvents(player, items);
-    if (this.tickCount % 4 === 0) {
-      this.updateCreatureVoices(ecs, player);
-      this.updateOcclusion(world);
-    }
+    this.updatePlayerEvents(player);
+    if (this.tickCount % 4 === 0) this.updateCreatureVoices(ecs, player);
+    this.updateOcclusion(world);
     const weather = getWeather();
     if (weather !== this.previousWeather) {
       this.previousWeather = weather;
@@ -345,7 +509,11 @@ class AudioService {
   }
 
   private activateFromGesture(): void {
-    if (this.context || typeof AudioContext === 'undefined') return;
+    if (typeof AudioContext === 'undefined') return;
+    if (this.context) {
+      void this.resumeFromGesture(this.context);
+      return;
+    }
     const context = new AudioContext();
     this.context = context;
     this.masterGain = context.createGain();
@@ -378,11 +546,24 @@ class AudioService {
     this.musicGain.gain.value = settings.musicVolume;
     this.effectsGain.gain.value = settings.effectsVolume;
     this.ambientGain.gain.value = settings.ambientVolume;
+    this.appliedMasterVolume = settings.masterVolume;
+    this.appliedMusicVolume = settings.musicVolume;
+    this.appliedEffectsVolume = settings.effectsVolume;
+    this.appliedAmbientVolume = settings.ambientVolume;
     this.prewarmRecipeBuffers();
-    void context.resume().catch(() => {});
-    window.removeEventListener('pointerdown', this.onGesture, { capture: true });
-    window.removeEventListener('keydown', this.onGesture, { capture: true });
-    window.removeEventListener('click', this.onGesture, { capture: true });
+    void this.resumeFromGesture(context);
+  }
+
+  private async resumeFromGesture(context: AudioContext): Promise<void> {
+    try {
+      await context.resume();
+      if (context.state !== 'running') return;
+      window.removeEventListener('pointerdown', this.onGesture, { capture: true });
+      window.removeEventListener('keydown', this.onGesture, { capture: true });
+      window.removeEventListener('click', this.onGesture, { capture: true });
+    } catch {
+      // Keep the gesture listeners so a later user action can retry a blocked resume.
+    }
   }
 
   private startWorldSession(world: World, ecs: EntityWorld, player: Player): void {
@@ -398,57 +579,82 @@ class AudioService {
     this.nextFluidTick = 0;
     this.nextKilnTick = 0;
     this.nextCaveTick = 60;
-    this.nextMusicTick = 600;
+    this.nextMusicTick = 20;
+    this.pendingMusic = null;
     this.caveLevel = 0;
     this.targetCaveLevel = 0;
     this.musicSeed = world.worldSeed;
     this.creatures.clear();
-    this.activeItems.clear();
     this.random = new PRNG(deriveSeed(world.worldSeed, 'audio-integration'));
     this.rayWorld = world;
     this.raycaster = new VoxelRaycaster(world);
+    this.occlusionPhasesDue = 0;
   }
 
   private prewarmRecipeBuffers(): void {
-    const recipes = Object.entries(soundLibrary).sort(([a], [b]) => {
-      if (a === 'entity.explosion') return -1;
-      if (b === 'entity.explosion') return 1;
-      return a.localeCompare(b);
-    });
-    for (const [id, recipe] of recipes)
-      this.queueBufferPreparation({ id, recipe, duration: recipe.duration });
+    const recipe = soundLibrary['entity.explosion'];
+    if (recipe)
+      this.queueBufferPreparation({ id: 'entity.explosion', recipe, duration: recipe.duration });
   }
 
-  private queueBufferPreparation(request: BufferPreparation): void {
+  private queueBufferPreparation(request: BufferPreparation, prioritize = false): void {
     if (request.sequence) {
-      if (
-        this.sequenceBuffers.has(request.sequence) ||
-        this.pendingSequences.has(request.sequence) ||
-        this.failedSequences.has(request.sequence)
-      )
+      if (this.sequenceBuffers.has(request.sequence) || this.failedSequences.has(request.sequence))
         return;
+      if (this.pendingSequences.has(request.sequence)) {
+        if (prioritize && !this.prioritySequences.has(request.sequence)) {
+          this.prioritySequences.add(request.sequence);
+          this.priorityBufferQueue.push(request);
+          this.scheduleBufferPreparation();
+        }
+        return;
+      }
       this.pendingSequences.add(request.sequence);
     } else {
-      if (
-        this.buffers.has(request.id) ||
-        this.pendingBuffers.has(request.id) ||
-        this.failedBuffers.has(request.id)
-      )
+      if (this.buffers.has(request.id) || this.failedBuffers.has(request.id)) return;
+      if (this.pendingBuffers.has(request.id)) {
+        if (prioritize && !this.priorityBufferIds.has(request.id)) {
+          this.priorityBufferIds.add(request.id);
+          this.priorityBufferQueue.push(request);
+          this.scheduleBufferPreparation();
+        }
         return;
+      }
       this.pendingBuffers.add(request.id);
     }
-    this.bufferQueue.push(request);
+    if (prioritize) {
+      if (request.sequence) this.prioritySequences.add(request.sequence);
+      else this.priorityBufferIds.add(request.id);
+      this.priorityBufferQueue.push(request);
+    } else this.bufferQueue.push(request);
     this.scheduleBufferPreparation();
   }
 
   private scheduleBufferPreparation(): void {
-    if (this.bufferPreparationScheduled || this.bufferQueue.length === 0) return;
+    if (
+      this.bufferPreparationScheduled ||
+      (this.priorityBufferQueue.length === 0 && this.bufferQueue.length === 0)
+    )
+      return;
     this.bufferPreparationScheduled = true;
     const run = () => {
       this.bufferPreparationScheduled = false;
-      const request = this.bufferQueue.shift();
+      const request = this.priorityBufferQueue.shift() ?? this.bufferQueue.shift();
       if (!request) return;
-      void this.renderBuffer(request).finally(() => this.scheduleBufferPreparation());
+      const cached = request.sequence
+        ? this.sequenceBuffers.has(request.sequence)
+        : this.buffers.has(request.id);
+      if (cached) {
+        if (request.sequence) this.prioritySequences.delete(request.sequence);
+        else this.priorityBufferIds.delete(request.id);
+        this.scheduleBufferPreparation();
+        return;
+      }
+      void this.renderBuffer(request).finally(() => {
+        if (request.sequence) this.prioritySequences.delete(request.sequence);
+        else this.priorityBufferIds.delete(request.id);
+        this.scheduleBufferPreparation();
+      });
     };
     const idleWindow = window as Window & {
       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -459,6 +665,7 @@ class AudioService {
 
   private async renderBuffer(request: BufferPreparation): Promise<void> {
     const cacheKey = request.sequence ? null : request.id;
+    let rendered: AudioBuffer | null = null;
     try {
       if (typeof OfflineAudioContext === 'undefined') return;
       const sampleRate = this.context?.sampleRate ?? 44100;
@@ -470,9 +677,9 @@ class AudioService {
         random: new LCG(deriveSeed(0x16b0cafe, request.id)),
         ...(request.sequence ? { sequence: request.sequence } : {}),
       });
-      const buffer = await offline.startRendering();
-      if (request.sequence) this.sequenceBuffers.set(request.sequence, buffer);
-      else this.buffers.set(request.id, buffer);
+      rendered = await offline.startRendering();
+      if (request.sequence) this.sequenceBuffers.set(request.sequence, rendered);
+      else this.buffers.set(request.id, rendered);
     } catch {
       // A sound that cannot be rendered is silently unavailable; play() remains bounded and safe.
       if (request.sequence) this.failedSequences.add(request.sequence);
@@ -480,6 +687,36 @@ class AudioService {
     } finally {
       if (request.sequence) this.pendingSequences.delete(request.sequence);
       else if (cacheKey) this.pendingBuffers.delete(cacheKey);
+    }
+    if (rendered && request.sequence) this.tryStartPendingMusic(request.sequence);
+    else if (rendered) this.playPendingBuffer(request.id, rendered);
+  }
+
+  private playPendingBuffer(id: string, buffer: AudioBuffer): void {
+    const now = performance.now();
+    const recipe = soundLibrary[id];
+    if (!recipe) return;
+    for (const [key, pending] of this.pendingPlaybacks) {
+      if (pending.id !== id) continue;
+      this.pendingPlaybacks.delete(key);
+      if (now - pending.time > PENDING_PLAYBACK_WINDOW_MS) continue;
+      if (!this.context || this.context.state !== 'running') continue;
+      const dx = pending.x - this.listenerX;
+      const dy = pending.y - this.listenerY;
+      const dz = pending.z - this.listenerZ;
+      const distance = pending.positional ? Math.hypot(dx, dy, dz) : 0;
+      if (pending.positional && distance > HEARING_DISTANCE) continue;
+      this.startVoice(
+        id,
+        recipe,
+        buffer,
+        pending,
+        pending.positional,
+        pending.x,
+        pending.y,
+        pending.z,
+        distance,
+      );
     }
   }
 
@@ -509,26 +746,18 @@ class AudioService {
       const blockId = BlockRegistry.getInstance().getResolvedState(state)?.blockId ?? 'grass_block';
       id = this.footstepForBlock(blockId);
     }
-    this.play(id, { pos: [player.pos[0], player.pos[1] + 0.1, player.pos[2]], priority: 0.9 });
+    this.play(id, { x: player.pos[0], y: player.pos[1] + 0.1, z: player.pos[2], priority: 0.9 });
   }
 
-  private updatePlayerEvents(player: Player, items: ItemEntityManager): void {
+  private updatePlayerEvents(player: Player): void {
     const eatingTicks = player.survival.eatingTicks;
     if (player.isEating && eatingTicks > 0 && eatingTicks % 8 === 1)
       this.play('item.eat', {
-        pos: [player.pos[0], player.pos[1] + player.eye, player.pos[2]],
+        x: player.pos[0],
+        y: player.pos[1] + player.eye,
+        z: player.pos[2],
         priority: 0.8,
       });
-    for (let i = 0; i < items.pool.length; i++) {
-      const item = items.pool[i]!;
-      const previousId = this.activeItems.get(item);
-      if (item.active) this.activeItems.set(item, item.id);
-      else if (previousId !== undefined) {
-        this.activeItems.delete(item);
-        if (item.id === previousId && item.age < 6000)
-          this.play('item.pickup', { pos: [item.pos[0], item.pos[1], item.pos[2]], priority: 0.7 });
-      }
-    }
   }
 
   private updateCreatureVoices(ecs: EntityWorld, player: Player): void {
@@ -568,34 +797,61 @@ class AudioService {
   }
 
   private updateOcclusion(world: World): void {
+    if (this.positionalVoiceCount === 0 || !this.context) return;
+    const phase = this.tickCount & 3;
+    let hasPositionalVoiceInPhase = false;
+    for (let i = phase; i < this.voices.length; i += 4) {
+      if (this.voices[i]!.positional) {
+        hasPositionalVoiceInPhase = true;
+        break;
+      }
+    }
+    if (!hasPositionalVoiceInPhase) return;
     if (!this.raycaster || this.rayWorld !== world) {
       this.rayWorld = world;
       this.raycaster = new VoxelRaycaster(world);
     }
+    this.occlusionPhasesDue |= 1 << phase;
+    if (this.occlusionScheduled) return;
+    this.occlusionScheduled = true;
+    window.setTimeout(this.onOcclusionTimer, 0);
+  }
+
+  private flushOcclusion(): void {
+    this.occlusionScheduled = false;
+    const voiceCount = this.voices.length;
+    const phasesDue = this.occlusionPhasesDue;
+    this.occlusionPhasesDue = 0;
+    if (this.positionalVoiceCount === 0 || !this.context || !this.raycaster) return;
     const context = this.context;
-    if (!context) return;
     const now = context.currentTime;
-    for (let i = 0; i < this.voices.length; i++) {
-      const voice = this.voices[i]!;
-      if (!voice.positional) continue;
-      const dx = voice.x - this.listenerX;
-      const dy = voice.y - this.listenerY;
-      const dz = voice.z - this.listenerZ;
-      const distance = Math.hypot(dx, dy, dz);
-      voice.priority = voice.importance / (1 + distance / 10);
-      if (distance < 1.5) continue;
-      this.raycaster.cast(
-        this.listenerX,
-        this.listenerY,
-        this.listenerZ,
-        dx,
-        dy,
-        dz,
-        distance - 0.2,
-        this.rayHit,
-      );
-      const blocked = this.rayHit.hit;
-      voice.filter.frequency.setTargetAtTime(blocked ? 820 : 22000, now, 0.16);
+    for (let phase = 0; phase < 4; phase++) {
+      if ((phasesDue & (1 << phase)) === 0) continue;
+      for (let i = phase; i < voiceCount; i += 4) {
+        const voice = this.voices[i]!;
+        if (!voice.positional) continue;
+        const dx = voice.x - this.listenerX;
+        const dy = voice.y - this.listenerY;
+        const dz = voice.z - this.listenerZ;
+        const distance = Math.hypot(dx, dy, dz);
+        voice.priority = voice.importance / (1 + distance / 10);
+        if (distance < 1.5) continue;
+        this.raycaster.cast(
+          this.listenerX,
+          this.listenerY,
+          this.listenerZ,
+          dx,
+          dy,
+          dz,
+          distance - 0.2,
+          this.rayHit,
+        );
+        const blocked = this.rayHit.hit;
+        if (voice.occluded !== blocked) {
+          voice.occluded = blocked;
+          voice.filter.frequency.setTargetAtTime(blocked ? 820 : 22000, now, 0.16);
+        }
+      }
     }
   }
 
@@ -627,7 +883,9 @@ class AudioService {
     }
     if (fluid && this.tickCount >= this.nextFluidTick) {
       this.play('ambience.fluid', {
-        pos: [fluidX, fluidY, fluidZ],
+        x: fluidX,
+        y: fluidY,
+        z: fluidZ,
         category: 'ambient',
         volume: fluid === 'lava' ? 0.55 : 0.35,
         priority: 0.35,
@@ -659,7 +917,9 @@ class AudioService {
     }
     if (kilnDistance <= 12 && this.tickCount >= this.nextKilnTick) {
       this.play('mechanism.kiln_crackle', {
-        pos: [kilnX, kilnY, kilnZ],
+        x: kilnX,
+        y: kilnY,
+        z: kilnZ,
         category: 'ambient',
         volume: 0.6,
         priority: 0.3,
@@ -679,11 +939,9 @@ class AudioService {
     this.targetCaveLevel = underground ? 1 : 0;
     if (underground && this.tickCount >= this.nextCaveTick) {
       this.play('ambience.cave', {
-        pos: [
-          player.pos[0] + (this.random.next() - 0.5) * 8,
-          player.pos[1] + 1,
-          player.pos[2] + (this.random.next() - 0.5) * 8,
-        ],
+        x: player.pos[0] + (this.random.next() - 0.5) * 8,
+        y: player.pos[1] + 1,
+        z: player.pos[2] + (this.random.next() - 0.5) * 8,
         category: 'ambient',
         volume: 0.3,
         priority: 0.25,
@@ -699,8 +957,10 @@ class AudioService {
   private updateReverbSends(): void {
     const context = this.context;
     if (!context) return;
-    const now = context.currentTime;
     const target = this.caveLevel * 0.22;
+    if (Math.abs(target - this.appliedReverbLevel) < 0.001) return;
+    this.appliedReverbLevel = target;
+    const now = context.currentTime;
     for (let i = 0; i < this.voices.length; i++)
       this.voices[i]!.reverbSend.gain.setTargetAtTime(target, now, 0.25);
   }
@@ -728,33 +988,82 @@ class AudioService {
   }
 
   private scheduleMusic(world: World, player: Player): void {
+    if (!this.context || this.context.state !== 'running') {
+      this.nextMusicTick = this.tickCount + 20;
+      return;
+    }
     const hasMusic = this.voices.some((voice) => voice.id === 'music.sequence');
     if (hasMusic) {
       this.nextMusicTick = this.tickCount + 20;
       return;
     }
-    const contextId =
-      player.dimension !== 'overworld'
-        ? player.dimension
-        : world.getBiome(player.pos[0], player.pos[2]);
-    const seed = `${this.musicSeed}:${Math.floor(this.random.next() * 0xffffffff)}`;
-    const sequence = composeSequence(seed, contextId);
-    let duration = 0;
-    for (const event of sequence.events)
-      duration = Math.max(
-        duration,
-        ((event.startTime + event.durationInBeats) * 60) / sequence.tempo,
+    if (!this.pendingMusic) {
+      const contextId =
+        player.dimension !== 'overworld'
+          ? player.dimension
+          : world.getBiome(player.pos[0], player.pos[2]);
+      const seed = `${this.musicSeed}:${Math.floor(this.random.next() * 0xffffffff)}`;
+      const sequence = composeSequence(seed, contextId);
+      let duration = 0;
+      for (const event of sequence.events)
+        duration = Math.max(
+          duration,
+          ((event.startTime + event.durationInBeats) * 60) / sequence.tempo,
+        );
+      this.pendingMusic = { sequence, duration: Math.max(1, duration) };
+      this.queueBufferPreparation(
+        {
+          id: 'music.sequence',
+          recipe: musicSequenceRecipe,
+          duration: this.pendingMusic.duration + 2,
+          sequence,
+        },
+        true,
       );
-    duration = Math.max(1, duration);
-    this.play('music.sequence', {
-      sequence,
+    }
+
+    const pending = this.pendingMusic;
+    if (!pending) return;
+    if (this.failedSequences.has(pending.sequence)) {
+      this.pendingMusic = null;
+      this.nextMusicTick = this.tickCount + 1200;
+      return;
+    }
+    if (!this.sequenceBuffers.has(pending.sequence)) {
+      this.nextMusicTick = this.tickCount + 20;
+      return;
+    }
+    this.tryStartPendingMusic(pending.sequence);
+  }
+
+  private tryStartPendingMusic(sequence: NonNullable<SoundRecipeContext['sequence']>): boolean {
+    const pending = this.pendingMusic;
+    if (
+      !pending ||
+      pending.sequence !== sequence ||
+      !this.context ||
+      this.context.state !== 'running' ||
+      !this.sequenceBuffers.has(sequence)
+    )
+      return false;
+    if (this.voices.some((voice) => voice.id === 'music.sequence')) return false;
+    const started = this.play('music.sequence', {
+      sequence: pending.sequence,
       category: 'music',
-      duration: duration + 2,
+      duration: pending.duration + 2,
       fadeIn: 2,
       fadeOut: 2,
       priority: 0.2,
     });
-    this.nextMusicTick = this.tickCount + Math.floor(1200 + this.random.next() * 1200);
+    if (!started) {
+      this.nextMusicTick = this.tickCount + 20;
+      return false;
+    }
+    this.pendingMusic = null;
+    const totalInterval = Math.floor(1200 + this.random.next() * 1200);
+    const pieceTicks = Math.ceil((pending.duration + 2) * 20);
+    this.nextMusicTick = this.tickCount + Math.max(20, totalInterval - pieceTicks);
+    return true;
   }
 
   private footstepForBlock(id: string): string {
@@ -800,6 +1109,7 @@ class AudioService {
     const voice = this.voices[index];
     if (!voice) return;
     this.voices.splice(index, 1);
+    if (voice.positional) this.positionalVoiceCount--;
     if (fade && this.context) {
       const now = this.context.currentTime;
       voice.gain.gain.cancelScheduledValues(now);
@@ -813,9 +1123,62 @@ class AudioService {
     }
     voice.source.disconnect();
     voice.filter.disconnect();
-    voice.panner.disconnect();
+    voice.panner?.disconnect();
     voice.gain.disconnect();
     voice.reverbSend.disconnect();
+  }
+
+  private syncListener(context: AudioContext): void {
+    const listener = context.listener;
+    const now = context.currentTime;
+    if (this.audioListenerX !== this.listenerX) {
+      this.setParam(listener.positionX, this.listenerX, now);
+      this.audioListenerX = this.listenerX;
+    }
+    if (this.audioListenerY !== this.listenerY) {
+      this.setParam(listener.positionY, this.listenerY, now);
+      this.audioListenerY = this.listenerY;
+    }
+    if (this.audioListenerZ !== this.listenerZ) {
+      this.setParam(listener.positionZ, this.listenerZ, now);
+      this.audioListenerZ = this.listenerZ;
+    }
+    const cosPitch = Math.cos(this.listenerPitch);
+    const forwardX = Math.cos(this.listenerYaw) * cosPitch;
+    const forwardY = Math.sin(this.listenerPitch);
+    const forwardZ = Math.sin(this.listenerYaw) * cosPitch;
+    if (this.audioForwardX !== forwardX) {
+      this.setParam(listener.forwardX, forwardX, now);
+      this.audioForwardX = forwardX;
+    }
+    if (this.audioForwardY !== forwardY) {
+      this.setParam(listener.forwardY, forwardY, now);
+      this.audioForwardY = forwardY;
+    }
+    if (this.audioForwardZ !== forwardZ) {
+      this.setParam(listener.forwardZ, forwardZ, now);
+      this.audioForwardZ = forwardZ;
+    }
+  }
+
+  private syncVolumes(context: AudioContext): void {
+    const now = context.currentTime;
+    if (this.appliedMasterVolume !== settings.masterVolume) {
+      this.setParam(this.masterGain!.gain, settings.masterVolume, now);
+      this.appliedMasterVolume = settings.masterVolume;
+    }
+    if (this.appliedMusicVolume !== settings.musicVolume) {
+      this.setParam(this.musicGain!.gain, settings.musicVolume, now);
+      this.appliedMusicVolume = settings.musicVolume;
+    }
+    if (this.appliedEffectsVolume !== settings.effectsVolume) {
+      this.setParam(this.effectsGain!.gain, settings.effectsVolume, now);
+      this.appliedEffectsVolume = settings.effectsVolume;
+    }
+    if (this.appliedAmbientVolume !== settings.ambientVolume) {
+      this.setParam(this.ambientGain!.gain, settings.ambientVolume, now);
+      this.appliedAmbientVolume = settings.ambientVolume;
+    }
   }
 
   private setParam(param: AudioParam, value: number, now: number): void {

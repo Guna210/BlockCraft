@@ -30,12 +30,31 @@ test.describe('M16b gameplay audio', () => {
       api.teleport!(0.5, 65, 10.5, 0, 0);
       await api.waitForTerrain!(1);
     });
-    await page.mouse.click(640, 360);
+    await page.keyboard.press('Space');
     await page.waitForFunction(
       () => window.__blockcraft!.getAudioStats!().contextState === 'running',
       undefined,
       { timeout: 5000 },
     );
+  });
+
+  test('starts a composed music voice after the context runs', async ({ page }) => {
+    await page.evaluate(async () => window.__blockcraft!.tick!(20));
+    const statsHandle = await page.waitForFunction(
+      () => {
+        const stats = window.__blockcraft!.getAudioStats!();
+        return stats.activeVoices > 0 && stats.lastSounds.includes('music.sequence')
+          ? stats
+          : false;
+      },
+      undefined,
+      { timeout: 15000, polling: 10 },
+    );
+    const stats = await statsHandle.jsonValue();
+    if (!stats) throw new Error('Music voice did not become active');
+    expect(stats.contextState).toBe('running');
+    expect(stats.activeVoices).toBeGreaterThan(0);
+    expect(stats.lastSounds).toContain('music.sequence');
   });
 
   test('grass and stone footsteps have different sound IDs', async ({ page }) => {
@@ -63,29 +82,89 @@ test.describe('M16b gameplay audio', () => {
   });
 
   test('block break and Blast Charge detonation log their material sounds', async ({ page }) => {
+    const breakStats = await page.evaluate(async () => {
+      const api = window.__blockcraft!;
+      const prototype = AudioBufferSourceNode.prototype;
+      const originalStart = prototype.start;
+      let activeVoicesAtBreak = 0;
+      // Capture the short voice when its source starts instead of missing it on a later poll.
+      prototype.start = function (
+        this: AudioBufferSourceNode,
+        ...args: Parameters<AudioBufferSourceNode['start']>
+      ) {
+        const result = originalStart.apply(this, args);
+        const stats = api.getAudioStats!();
+        if (stats.lastSounds.includes('break.stone')) {
+          activeVoicesAtBreak = Math.max(activeVoicesAtBreak, stats.activeVoices);
+        }
+        return result;
+      };
+      try {
+        api.setBlock!(3, 66, 10, 'stone');
+        api.teleport!(0.5, 65, 10.5, 0, 0);
+        api.input!('attack', true);
+        await api.tick!(1);
+        api.input!('attack', false);
+        const deadline = performance.now() + 5000;
+        while (activeVoicesAtBreak === 0 && performance.now() < deadline)
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        return {
+          activeVoices: activeVoicesAtBreak,
+          lastSounds: api.getAudioStats!().lastSounds,
+        };
+      } finally {
+        prototype.start = originalStart;
+      }
+    });
+    expect(breakStats.lastSounds).toContain('break.stone');
+    expect(breakStats.activeVoices).toBeGreaterThan(0);
+    await page.waitForFunction(
+      () => window.__blockcraft!.getAudioStats!().activeVoices === 0,
+      undefined,
+      { timeout: 10000, polling: 10 },
+    );
+
     const result = await page.evaluate(async () => {
       const api = window.__blockcraft!;
-      api.setBlock!(3, 66, 10, 'stone');
-      api.teleport!(0.5, 65, 10.5, 0, 0);
-      api.input!('attack', true);
-      await api.tick!(1);
-      api.input!('attack', false);
       api.setBlock!(8, 65, 10, 'blast_charge');
       const before = api.getExplosionStats!().detonations;
       const id = api.primeBlastCharge!(8, 65, 10);
       api.resume!();
       let frames = 0;
+      let explosionVoiceActive = false;
+      let explosionActiveVoices = 0;
       while (api.getExplosionStats!().detonations === before && frames < 100) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const stats = api.getAudioStats!();
+        explosionVoiceActive ||=
+          stats.lastSounds.includes('entity.explosion') && stats.activeVoices > 0;
+        explosionActiveVoices = Math.max(explosionActiveVoices, stats.activeVoices);
         frames++;
       }
+      const deadline = performance.now() + 2000;
+      while (!explosionVoiceActive && performance.now() < deadline) {
+        const stats = api.getAudioStats!();
+        explosionVoiceActive =
+          stats.lastSounds.includes('entity.explosion') && stats.activeVoices > 0;
+        explosionActiveVoices = Math.max(explosionActiveVoices, stats.activeVoices);
+        if (!explosionVoiceActive)
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
       api.pause!();
-      return { id, frames, sounds: api.getAudioStats!().lastSounds };
+      return {
+        id,
+        frames,
+        sounds: api.getAudioStats!().lastSounds,
+        explosionVoiceActive,
+        explosionActiveVoices,
+      };
     });
     expect(result.id).not.toBeNull();
     expect(result.frames).toBeLessThan(100);
     expect(result.sounds).toContain('break.stone');
     expect(result.sounds).toContain('entity.explosion');
+    expect(result.explosionVoiceActive).toBe(true);
+    expect(result.explosionActiveVoices).toBeGreaterThan(0);
   });
 
   test('27-charge chain never exceeds the 32-voice limit', async ({ page }) => {
