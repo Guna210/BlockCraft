@@ -1,3 +1,4 @@
+import { hollowdeepTextureGenerators, HOLLOWDEEP_PALETTES } from './hollowdeep';
 import { genBlackglass, PAL_BLACKGLASS } from './blackglass';
 import {
   genPlayerHead,
@@ -244,6 +245,7 @@ export type TextureGenerator = (seed?: number) => TextureData | TextureData[];
 import { genBlastCharge, BLAST_PALETTE } from './explosions';
 
 export const textureGenerators: Record<string, TextureGenerator> = {
+  ...hollowdeepTextureGenerators,
   blast_charge: (seed) => genBlastCharge(seed),
   blast_charge_top: (seed) => genBlastCharge(seed, true),
   ...Object.fromEntries(
@@ -501,6 +503,7 @@ export const M01_REQUIRED_TEXTURES = [
 import { RGBA } from './noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
+  ...HOLLOWDEEP_PALETTES,
   blast_charge: BLAST_PALETTE,
   blast_charge_top: BLAST_PALETTE,
   ...Object.fromEntries(

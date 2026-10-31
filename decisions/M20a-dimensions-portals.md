@@ -7,7 +7,7 @@ each one was carried out.
 
 - `src/world/dimension.ts` exports `type DimensionId = 'overworld' | 'hollowdeep'`, the 1:4
   `scaleCoordinate()`, and `DIMENSIONS`: one `DimensionDefinition` per dimension. A definition
-  gives the portal y range, the fallback platform block and `createPipeline()`.
+  gives the portal y range, the fallback platform block, the biome list and `createPipeline()`.
 - `WorldManager.dimension` is the active dimension. Travel (`WorldManager.changeDimension`) does
   the following:
   1. Saves the session (`save('exit')`).
@@ -28,18 +28,47 @@ each one was carried out.
 - Generation requests carry `dimension` (`GenWorkerRequest.dimension`, `enqueueGenJob(…,
   dimension)`). The worker keeps one lazily built `TerrainPipeline` per dimension and structure
   setting.
-- The flat-world shortcut applies only to the Overworld.
-- **M20b is not on master**, so `DIMENSIONS.hollowdeep.createPipeline` returns an empty
-  `TerrainPipeline` and the Hollowdeep is all air. Arrival portals there stand on their own safe
-  platform.
-- M20b wires itself in by replacing that one `createPipeline` with
-  `() => createHollowdeepPipeline()`, and by applying `HOLLOWDEEP_ENVIRONMENT` where
-  `WorldManager.dimension === 'hollowdeep'`.
+- The flat-world shortcut applies only to the Overworld. Superflat and Single Biome shape only the
+  Overworld: the Hollowdeep's `World` always has world type `default`.
+- `DIMENSIONS.hollowdeep.createPipeline` is M20b's `createHollowdeepPipeline()` (wired after M20b
+  merged). The main-thread fallback generator (`generateColumnMainThread`) uses the same per-dimension
+  pipeline.
+- Biomes: each definition lists its biomes (`biomeIds`): the Overworld list, or M20b's
+  `HOLLOWDEEP_BIOME_IDS`.
+  - The worker encodes a column's biome names with its dimension's list.
+  - The receiver decodes with the active dimension's list.
+  - Restored saved columns have their stored indices re-named with that list.
+  - Hollowdeep columns therefore report `glowcap_forest`, `magma_sea`, `driftstone_expanse` or
+    `voidglass_geodes`, never Overworld names.
+  - The weather lookups treat unknown biomes as rain, and they are not run in the Hollowdeep.
+
+## 2b. The Hollowdeep environment
+
+`HOLLOWDEEP_ENVIRONMENT` applies while `WorldManager.dimension === 'hollowdeep'`. Every frame reads
+it from the active dimension, so it reverts as soon as the player returns.
+
+- **Fog:** the chunk shader has a `u_dimensionFog` colour that replaces the sky's fog colour.
+  - The fog range comes from the exponential density: it ends at `min(render distance,
+    2.3 / fogDensity)` and starts at 15 % of that.
+  - The frame is cleared to the fog colour with `clearBufferfv`, so the clear colour state set by
+    `main.ts` is untouched.
+- **No sky light:** sky brightness is `skyLight` (0) for terrain, entities, drops and moving
+  blocks.
+- **No sky:** the sky, clouds and weather are neither drawn nor ticked.
+- **Spores:** `SporeRenderer` (`src/render/spores.ts`) draws 96 points (particles per second ×
+  lifetime) in one call. Each point's position, rise and fade come from its vertex id and the time
+  in the shader, in a box that wraps around the camera, so there is no CPU work per spore. It
+  follows the Particles setting.
+- **Lava:** `FluidSimulation.lavaTickDelay` is set per World. It is `lavaFlowTickRate` (10) in the
+  Hollowdeep and the default 30 elsewhere.
+- **Music:** M16b's audio service already picks its music context from `player.dimension`, which
+  travel sets. No change was needed.
 
 ## 3. Portal block, frames and the surface shader
 
-- One new block, `portal`, with an `axis` state (`x` | `z`). New ids: `portal[axis=x]` = 825 and
-  `portal[axis=z]` = 826, appended after 824. No existing id changed.
+- One new block, `portal`, with an `axis` state (`x` | `z`). New ids: `portal[axis=x]` = 833 and
+  `portal[axis=z]` = 834, appended after M20b's `emberite` (832). (They were 825/826 before M20b
+  merged; no save ever stored those.) No existing id changed.
 - Block properties: model `none` (not meshed, no collision), light emission 11 with a violet tint,
   hardness 0, and no drops. Its texture (`genPortal`) exists for its item icon.
 - Frame detection (`findPortalFrame`):
@@ -79,6 +108,16 @@ each one was carried out.
     in the 4 rows above.
   - The search yields every 2 ms.
   - Otherwise, `buildPlatformPortal` builds a 6×5 platform with an air pocket.
+    - It goes at the first open cell at or above the clamped point, out of rock and fluid.
+    - Any water or lava touching the pocket is replaced with the platform block, so nothing flows
+      in.
+- The Hollowdeep's portal range fits the real cavern.
+  - `portalMinY` is `MAGMA_LEVEL + 1` (41): lava fills every floor below 40, so a portal never
+    stands in or on the magma sea.
+  - `portalMaxY` is 150, so the 5-block frame stays under the lowest ceiling (172 − 14 = 158).
+  - Platforms there are `duskrock`.
+- If a dimension change fails at any point, `travelThroughPortal` calls `portalTravel.cancel()`, so
+  the player is never left marked as travelling. This was a round-1 review finding.
 - Travel waits until the arrival region has generated (the streamer's `requestRegion` and
   `waitForTerrain`). Terrain drawing is held off (`initialLoadCount`) while the dimension swaps.
 
@@ -115,8 +154,7 @@ The owner approved both edits through the orchestrator.
 
 - `tests/unit/m19c-structures.test.ts`: the global `Math.max(...ids) === 824` assertion was
   removed, because any block appended after M19c breaks it. The exact checks for M19c's own ids
-  (821–824) stay. M20b makes the identical edit, so the two branches merge cleanly. The `ids` local
-  it used is now unused (one lint warning). It is left in place so the edit stays identical to
-  M20b's.
+  (821–824) stay. After merging master, the file is master's version (M20b's edit), which also
+  removed the unused `ids` local.
 - `tests/unit/m10a-reachability.test.ts`: a `portal` exemption (task `M20a`). The portal is lit
   with Ember Flint, never crafted or mined, and drops nothing.

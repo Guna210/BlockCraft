@@ -25,30 +25,16 @@ function pipelineFor(dimension: DimensionId, structures: boolean): TerrainPipeli
   return pipeline;
 }
 
-const OVERWORLD_BIOME_IDS = [
-  'plains',
-  'meadow',
-  'oakwood_forest',
-  'birch_grove',
-  'pine_taiga',
-  'snowy_tundra',
-  'frost_peaks',
-  'stony_heights',
-  'desert',
-  'badlands',
-  'savanna',
-  'swampland',
-  'rainforest',
-  'beach',
-  'stony_shore',
-  'river',
-  'ocean',
-  'deep_ocean',
-  'frozen_ocean',
-] as const;
-
-const biomeIndexMap = new Map<string, number>();
-OVERWORLD_BIOME_IDS.forEach((id, idx) => biomeIndexMap.set(id, idx));
+// Each dimension's biome names, as the compact indices its columns are sent with.
+const biomeIndexMaps = new Map<DimensionId, Map<string, number>>();
+function biomeIndexMap(dimension: DimensionId): Map<string, number> {
+  let map = biomeIndexMaps.get(dimension);
+  if (!map) {
+    map = new Map(DIMENSIONS[dimension].biomeIds.map((id, idx) => [id, idx]));
+    biomeIndexMaps.set(dimension, map);
+  }
+  return map;
+}
 
 export interface GenWorkerRequest {
   id: number;
@@ -147,10 +133,8 @@ export function processGenMessage(event: MessageEvent): void {
 
   // Convert biome names to Uint8Array indices (256)
   const biomes = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) {
-    const bName = col.biomes[i] || 'plains';
-    biomes[i] = biomeIndexMap.get(bName) ?? 0;
-  }
+  const biomeIndices = biomeIndexMap(dimension);
+  for (let i = 0; i < 256; i++) biomes[i] = biomeIndices.get(col.biomes[i] ?? '') ?? 0;
 
   // Transferable biome and tint buffers
   const grassTints = new Uint8Array(col.grassTints);

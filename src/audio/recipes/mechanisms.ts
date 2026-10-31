@@ -28,7 +28,7 @@ export const mechanisms: Record<string, SoundRecipe> = {
 
       noiseSource.connect(filter);
       filter.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       noiseSource.start(t1);
       noiseSource.stop(t1 + 0.05);
     },
@@ -57,32 +57,20 @@ export const mechanisms: Record<string, SoundRecipe> = {
   'weapon.bow_draw': {
     duration: 0.5,
     render: (ctx: SoundRecipeContext) => {
-      const { ctx: audioCtx, t0 } = ctx;
-      const noiseBuffer = audioCtx.createBuffer(
-        1,
-        Math.ceil(audioCtx.sampleRate * 0.5),
-        audioCtx.sampleRate,
-      );
-      const data = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.5; // String stretching noise (can just use Math.random here or LCG if strict determinism needed, let's use LCG)
-
-      const noiseSource = audioCtx.createBufferSource();
-      noiseSource.buffer = noiseBuffer; // Should use LCG, fixing below
-
-      // We will just use the standard playNoise with a pitch bend effect for stretching
+      const { ctx: audioCtx, t0, pitch = 1 } = ctx;
       SynthesisEngine.playNoise(ctx, 0.5, 'bandpass', 2000, 0.3);
 
       // Stretching creak
       const osc = audioCtx.createOscillator();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(100, t0);
-      osc.frequency.linearRampToValueAtTime(150, t0 + 0.5);
+      osc.frequency.setValueAtTime(100 * pitch, t0);
+      osc.frequency.linearRampToValueAtTime(150 * pitch, t0 + 0.5);
 
       const gain = audioCtx.createGain();
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.5, 0.2, 0.1);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.5);
     },
@@ -102,7 +90,7 @@ export const mechanisms: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.15, 0.3, 0.01);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.15);
     },

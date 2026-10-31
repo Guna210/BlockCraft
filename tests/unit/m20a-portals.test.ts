@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { World } from '../../src/world/world';
 import {
@@ -6,6 +6,7 @@ import {
   DIMENSION_SCALE,
   otherDimension,
   scaleCoordinate,
+  type DimensionId,
 } from '../../src/world/dimension';
 import {
   PORTAL_ARRIVAL_COOLDOWN,
@@ -28,6 +29,7 @@ import {
 } from '../../src/world/portals';
 import { SaveManager, type SaveSession } from '../../src/persist/save-manager';
 import { createFakeIdb } from './helpers/fake-idb';
+import { WorldManager } from '../../src/world/world-manager';
 
 const Y = 65;
 const registry = () => BlockRegistry.getInstance();
@@ -82,9 +84,24 @@ describe('M20a — dimensions', () => {
     expect(otherDimension('hollowdeep')).toBe('overworld');
   });
 
-  it('gives each dimension its own generator; the Hollowdeep has no stages until M20b', () => {
+  it("gives each dimension its own generator and biome list; the Hollowdeep is M20b's cavern", () => {
     expect(DIMENSIONS.overworld.createPipeline([]).getStages().length).toBeGreaterThan(0);
-    expect(DIMENSIONS.hollowdeep.createPipeline([]).getStages()).toHaveLength(0);
+    expect(
+      DIMENSIONS.hollowdeep
+        .createPipeline([])
+        .getStages()
+        .map((stage) => stage.name),
+    ).toEqual(['hollowdeep:shape', 'hollowdeep:features', 'hollowdeep:ores']);
+    expect(DIMENSIONS.overworld.biomeIds).toContain('plains');
+    expect(DIMENSIONS.hollowdeep.biomeIds).toEqual([
+      'glowcap_forest',
+      'magma_sea',
+      'driftstone_expanse',
+      'voidglass_geodes',
+    ]);
+    // Portals there stand above the magma sea and under the lowest ceiling.
+    expect(DIMENSIONS.hollowdeep.portalMinY).toBe(41);
+    expect(DIMENSIONS.hollowdeep.portalMaxY + 5).toBeLessThan(158);
   });
 });
 
@@ -306,9 +323,39 @@ describe('M20a — arrival portals', () => {
     for (let w = -2; w <= 2; w++)
       for (let u = -2; u <= 3; u++)
         expect(world.getBlock(portal.x + w, portal.y - 1, portal.z + u).id).toBe(
-          u >= -1 && u <= 2 && w === 0 ? 'lumite_block' : 'stone',
+          u >= -1 && u <= 2 && w === 0 ? 'lumite_block' : 'duskrock',
         );
     expect(world.getBlock(portal.x + 1, portal.y, portal.z).id).toBe('air');
+  });
+
+  it('raises a fallback platform out of rock and lava, and seals the lava around its pocket', async () => {
+    const { world, index } = makeWorld();
+    // A magma sea up to y 45 over solid rock: nothing is safe, and the point is inside the lava.
+    world.fill(80, 20, -20, 120, 30, 20, 'duskrock');
+    world.fill(80, 31, -20, 120, 45, 20, 'lava');
+    const portal = await placeArrivalPortal(
+      world,
+      index,
+      DIMENSIONS.hollowdeep,
+      'x',
+      100,
+      25,
+      0,
+      5,
+      noPause,
+    );
+    expect(portal).toEqual({ x: 100, y: 46, z: 0, axis: 'x' });
+    expect(portalIntact(world, portal)).toBe(true);
+    // The pocket's floor seals the lava under it, and no lava touches the pocket.
+    for (let u = -2; u <= 3; u++)
+      for (let w = -2; w <= 2; w++) {
+        const below = world.getBlock(portal.x + u, 45, portal.z + w).id;
+        expect(below === 'duskrock' || below === 'lumite_block').toBe(true);
+      }
+    for (let u = -3; u <= 4; u++)
+      for (let w = -3; w <= 3; w++)
+        for (let y = 45; y <= 50; y++)
+          expect(world.getBlock(portal.x + u, y, portal.z + w).id).not.toBe('lava');
   });
 
   it('yields while it searches so no slice runs past its budget', async () => {
@@ -448,4 +495,37 @@ describe('M20a — saving portals and dimensions', () => {
     overIndex.load(first.entities?.portals);
     expect(overIndex.all()).toEqual([{ x: 0, y: Y, z: 0, axis: 'x' }]);
   });
+});
+
+describe('M20a — failed travel', () => {
+  for (const failure of ['throws', 'rejects'] as const) {
+    it(`clears the travelling state when the dimension change ${failure}`, async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const travel = new PortalTravel();
+      travel.travelling = true;
+      travel.ticksInside = PORTAL_TRAVEL_TICKS;
+      travel.warp = 1;
+      const manager = Object.create(WorldManager.prototype) as {
+        dimension: DimensionId;
+        portalTravel: PortalTravel;
+        changeDimension: () => Promise<PortalRecord>;
+      };
+      manager.dimension = 'overworld';
+      manager.portalTravel = travel;
+      manager.changeDimension =
+        failure === 'throws'
+          ? () => {
+              throw new Error('no session');
+            }
+          : () => Promise.reject(new Error('store closed'));
+      await (
+        manager as unknown as { travelThroughPortal(p: PortalRecord): Promise<void> }
+      ).travelThroughPortal({ x: 0, y: 64, z: 0, axis: 'x' });
+      expect(travel.travelling).toBe(false);
+      expect(travel.ticksInside).toBe(0);
+      expect(travel.warp).toBe(0);
+      expect(warn).toHaveBeenCalledOnce();
+      warn.mockRestore();
+    });
+  }
 });

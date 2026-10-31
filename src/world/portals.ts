@@ -422,10 +422,18 @@ export async function placeArrivalPortal(
       sliceStart = performance.now();
     }
   }
-  return buildPlatformPortal(world, index, dimension, axis, baseX, baseY, baseZ);
+  // Nowhere safe: the platform goes at the first open cell at or above the point, out of rock and fluid.
+  let platformY = baseY;
+  while (platformY < dimension.portalMaxY && world.getBlockStateId(baseX, platformY, baseZ) !== 0)
+    platformY++;
+  if (world.getBlockStateId(baseX, platformY, baseZ) !== 0) platformY = baseY;
+  return buildPlatformPortal(world, index, dimension, axis, baseX, platformY, baseZ);
 }
 
-/** A 6×5 platform under the portal and an air pocket four blocks high above it. */
+/**
+ * A 6×5 platform under the portal and an air pocket four blocks high above it. Any water or lava
+ * touching the pocket is sealed off with the platform block, so nothing flows in.
+ */
 export function buildPlatformPortal(
   world: World,
   index: PortalIndex,
@@ -445,6 +453,16 @@ export function buildPlatformPortal(
       world.setBlockStateId(cx, y - 1, cz, floor);
       for (let v = 0; v <= PORTAL_HEIGHT; v++) world.setBlockStateId(cx, y + v, cz, 0);
     }
+  for (let w = -3; w <= 3; w++)
+    for (let u = -3; u <= PORTAL_WIDTH + 2; u++)
+      for (let v = -1; v <= PORTAL_HEIGHT + 1; v++) {
+        const inside = w >= -2 && w <= 2 && u >= -2 && u <= PORTAL_WIDTH + 1 && v <= PORTAL_HEIGHT;
+        if (inside) continue;
+        const cx = cellX(portal, u, w);
+        const cz = cellZ(portal, u, w);
+        const id = registry.getResolvedState(world.getBlockStateId(cx, y + v, cz))?.blockId;
+        if (id === 'water' || id === 'lava') world.setBlockStateId(cx, y + v, cz, floor);
+      }
   buildPortal(world, index, portal);
   return portal;
 }

@@ -17,7 +17,7 @@ import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
 import { createDefaultPipeline, TerrainPipeline } from '../gen/pipeline';
 import { deriveSeed, hash2, hashString } from '../engine/rng';
-import { OVERWORLD_BIOME_IDS, type OverworldBiomeId } from '../gen/biomes';
+import type { OverworldBiomeId } from '../gen/biomes';
 import {
   DEFAULT_WORLD_OPTIONS,
   normalizeWorldOptions,
@@ -80,6 +80,9 @@ import {
   type PortalRecord,
 } from './portals';
 import { PortalRenderer, WarpOverlay } from '../render/portal';
+import { SporeRenderer } from '../render/spores';
+import { LAVA_TICK_DELAY } from './fluids';
+import { HOLLOWDEEP_ENVIRONMENT } from '../gen/hollowdeep/environment';
 import type { RayHit } from './raycast';
 import { getToolDurability } from '../gameplay/tools';
 import { SaveManager, type LoadedWorld, type RestoredColumn } from '../persist/save-manager';
@@ -95,6 +98,7 @@ import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../render/frustum';
 import { frameStats } from '../engine/frame-stats';
 import { settings, type LeavesSetting } from '../engine/settings';
+import { sound } from '../audio/service';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
 import { MeshAttempts } from './mesh-attempts';
 import { fadeStartFor } from '../render/column-fade';
@@ -124,6 +128,7 @@ export const PANORAMA_CENTER = { x: -64, z: -224 } as const;
 const PANORAMA_RENDER_DISTANCE = 4;
 const PANORAMA_TIME = 6000;
 const NO_ACTIVE_PARTICLES = { rain: 0, snow: 0 };
+const NO_DRAWS = { drawCalls: 0, triangles: 0 };
 
 /** What a new world is created with: the debug `createWorld` options and the Create World screen. */
 /** What the panorama left behind when it was torn down (read through the debug API). */
@@ -166,12 +171,21 @@ type StreamedGenResult = GenResult & { restored?: RestoredColumn };
  * The steps that store a generation result in a world column: the column with its biome data, then
  * one step per section. The streamer runs them a few milliseconds at a time.
  */
-function applyGenSteps(world: World, res: GenResult, queueForSpawning: boolean): Array<() => void> {
+function applyGenSteps(
+  world: World,
+  res: GenResult,
+  queueForSpawning: boolean,
+  biomeIds: readonly string[],
+): Array<() => void> {
   const restored = (res as StreamedGenResult).restored;
   if (restored) {
     // A saved column replaces generation: it is adopted whole, with its block entities and ticks.
     return [
-      () => applyRestoredColumn(world, restored),
+      () => {
+        // Saves keep compact biome indices; they name this dimension's biomes.
+        restored.column.setBiomeIndices(restored.column.biomeIndices, biomeIds);
+        applyRestoredColumn(world, restored);
+      },
       () => weatherManager.heightmap.updateColumn(world, res.cx, res.cz),
       () => world.current.settleRestored(),
       () => world.notifyColumnLoaded(res.cx, res.cz, false, queueForSpawning),
@@ -181,7 +195,7 @@ function applyGenSteps(world: World, res: GenResult, queueForSpawning: boolean):
     () => {
       const col = world.getColumn(res.cx, res.cz, true)!;
       if (res.biomes) {
-        col.setBiomeIndices(res.biomes, OVERWORLD_BIOME_IDS);
+        col.setBiomeIndices(res.biomes, biomeIds);
       }
       if (res.grassTints) {
         col.grassTints.set(res.grassTints);
@@ -272,6 +286,12 @@ export class WorldManager {
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
   public pipeline: TerrainPipeline;
+  /** The main-thread generator of the active non-Overworld dimension, built when first needed. */
+  private dimensionPipeline: TerrainPipeline | null = null;
+  /** The Hollowdeep's spore particles, created the first time they are drawn. */
+  private sporeRenderer: SporeRenderer | null = null;
+  /** The clear colour of the Hollowdeep's fog, reused every frame. */
+  private readonly cavernClear = new Float32Array([0, 0, 0, 1]);
   public tables: MeshLookupTables | null = null;
   private tileResolver: ((texName: string) => number) | null = null;
   private tablesFastLeaves = false;
@@ -557,7 +577,7 @@ export class WorldManager {
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
-        return applyGenSteps(world, res, this.spawning);
+        return applyGenSteps(world, res, this.spawning, DIMENSIONS[this.dimension].biomeIds);
       },
       requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
@@ -828,7 +848,7 @@ export class WorldManager {
     this.world = world;
     this.configureLighting(world);
     world.worldSeed = this.worldSeed;
-    world.worldType = this.worldType;
+    world.worldType = this.dimensionWorldType();
     // Not the debug API's world: debug calls made in the menu keep addressing their own world.
     this.panoramaSavedRenderDistance = this.streamer.renderDistance;
     this.streamer.setRenderDistance(PANORAMA_RENDER_DISTANCE);
@@ -957,9 +977,9 @@ export class WorldManager {
     this.world = new World();
     this.configureLighting(this.world);
     this.resetDimensions('overworld');
-    this.attachPortals(this.world);
+    this.attachDimension(this.world);
     this.world.worldSeed = this.worldSeed;
-    this.world.worldType = this.worldType;
+    this.world.worldType = this.dimensionWorldType();
     setWorldInstance(this.world);
     this.mainThreadGenCount = 0;
     // Tests build this world by hand (generateColumnMainThread): nothing streams into it.
@@ -972,7 +992,10 @@ export class WorldManager {
     this.mainThreadGenCount++;
     const col = this.world.getColumn(cx, cz, true)!;
     col.worldSeed = this.worldSeed;
-    if (this.worldType === 'flat') {
+    if (this.dimension !== 'overworld') {
+      this.dimensionPipeline ??= DIMENSIONS[this.dimension].createPipeline(STRUCTURE_REGISTRATIONS);
+      this.dimensionPipeline.generateColumn(this.worldSeed, cx, cz, col, this.terrainVariant);
+    } else if (this.worldType === 'flat') {
       const registry = BlockRegistry.getInstance();
       const stoneState = registry.getDefaultStateId('stone') ?? 1;
       const dirtState = registry.getDefaultStateId('dirt') ?? 1;
@@ -1007,7 +1030,8 @@ export class WorldManager {
     } else {
       this.pipeline.generateColumn(this.worldSeed, cx, cz, col, this.terrainVariant);
     }
-    applyStructureMarkers(this.world, this.pipeline.takeStructureMarkers(cx, cz));
+    if (this.dimension === 'overworld')
+      applyStructureMarkers(this.world, this.pipeline.takeStructureMarkers(cx, cz));
 
     weatherManager.heightmap.updateColumn(this.world, cx, cz);
     this.streamer.adoptColumn(cx, cz);
@@ -1259,9 +1283,9 @@ export class WorldManager {
     this.world = world;
     this.lightBatchTimes = [];
     this.configureLighting(world);
-    this.attachPortals(world);
+    this.attachDimension(world);
     this.world.worldSeed = this.worldSeed;
-    this.world.worldType = this.worldType;
+    this.world.worldType = this.dimensionWorldType();
     setWorldInstance(this.world);
     this.saves.detach();
     if (restore) applyWorldRecord(world, restore.record);
@@ -1418,10 +1442,20 @@ export class WorldManager {
     this.portalGuard = null;
   }
 
-  /** Keeps the active dimension's portals whole as `world` is edited. */
-  private attachPortals(world: World): void {
+  /** The world type the active dimension's World follows: Superflat and Single Biome shape only the Overworld. */
+  private dimensionWorldType(): WorldType {
+    return this.dimension === 'overworld' ? this.worldType : 'default';
+  }
+
+  /**
+   * Fits a new World to the active dimension: its portals stay whole as it is edited, and its lava
+   * flows at the dimension's rate.
+   */
+  private attachDimension(world: World): void {
     this.portalGuard = new PortalGuard(world, this.portalIndices[this.dimension]);
     world.listeners.add(this.portalGuard);
+    world.fluids.lavaTickDelay =
+      this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT.lavaFlowTickRate : LAVA_TICK_DELAY;
   }
 
   /** Called after every tick: counts the player's time in a portal. Free while none is near. */
@@ -1474,6 +1508,8 @@ export class WorldManager {
         portal.axis,
       );
     } catch (error) {
+      // Whatever failed, the player is still here: let the portal count from the start again.
+      this.portalTravel.cancel();
       console.warn('[portals] travel did not complete:', error);
     }
   }
@@ -1551,9 +1587,9 @@ export class WorldManager {
       this.world = world;
       this.lightBatchTimes = [];
       this.configureLighting(world);
-      this.attachPortals(world);
+      this.attachDimension(world);
       world.worldSeed = this.worldSeed;
-      world.worldType = this.worldType;
+      world.worldType = this.dimensionWorldType();
       world.ticks.time = departing.ticks.time;
       world.breakCount = departing.breakCount;
       setWorldInstance(world);
@@ -1837,35 +1873,58 @@ export class WorldManager {
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const ticks = getWorldTime();
-      if (this.world) {
+      sound.updateListener(this.camera);
+      // The Hollowdeep is an enclosed cavern: no sky, clouds or weather, and its own fog.
+      const cavern = this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT : null;
+      if (this.world && !cavern) {
         weatherManager.tick(this.world, ticks, this.camera.position);
       }
       const weatherState = getWeather();
-      const rainFactor = weatherState === 'clear' ? 0.0 : weatherState === 'rain' ? 1.0 : 1.25;
-      const lightningFlash = weatherManager.flashIntensity;
+      const rainFactor = cavern
+        ? 0
+        : weatherState === 'clear'
+          ? 0.0
+          : weatherState === 'rain'
+            ? 1.0
+            : 1.25;
+      const lightningFlash = cavern ? 0 : weatherManager.flashIntensity;
 
-      const skyStats = this.skyRenderer
-        ? this.skyRenderer.render(
-            this.camera,
-            this.atlasTexture,
-            this.atlas,
-            ticks,
-            rainFactor,
-            lightningFlash,
-          )
-        : { drawCalls: 0, triangles: 0 };
+      if (cavern) {
+        const fog = this.cavernClear;
+        fog[0] = cavern.fogColor[0];
+        fog[1] = cavern.fogColor[1];
+        fog[2] = cavern.fogColor[2];
+        this.glWrapper!.gl.clearBufferfv(this.glWrapper!.gl.COLOR, 0, fog);
+      }
+      const skyStats = cavern
+        ? NO_DRAWS
+        : this.skyRenderer
+          ? this.skyRenderer.render(
+              this.camera,
+              this.atlasTexture,
+              this.atlas,
+              ticks,
+              rainFactor,
+              lightningFlash,
+            )
+          : { drawCalls: 0, triangles: 0 };
 
       const maxFogDist = (this.renderDistance - 1) * 16;
-      const skyBrightness = skyLightMultiplier(ticks);
+      const skyBrightness = cavern ? cavern.skyLight : skyLightMultiplier(ticks);
       if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
       const underwater = this.underwaterView;
+      // Exponential fog density as a linear range: the fog is nearly opaque at 2.3 / density.
+      const airFogEnd = cavern ? Math.min(maxFogDist, 2.3 / cavern.fogDensity) : maxFogDist;
+      const airFogStart = cavern ? airFogEnd * 0.15 : maxFogDist * 0.7;
+      const fogStart = underwater.submerged ? underwater.fogStart : airFogStart;
+      const fogEnd = underwater.submerged ? underwater.fogEnd : airFogEnd;
       const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
-      this.chunkRenderer.setSkyBrightness?.(skyLightMultiplier(ticks));
+      this.chunkRenderer.setSkyBrightness?.(skyBrightness);
       this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
-        fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
-        fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
+        fogStart,
+        fogEnd,
         underwater,
         sunDir: sunDirection(ticks),
         dayFactor,
@@ -1873,6 +1932,7 @@ export class WorldManager {
         nightFactor,
         rainFactor,
         lightningFlash,
+        dimensionFog: cavern?.fogColor ?? null,
       });
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
@@ -1889,8 +1949,8 @@ export class WorldManager {
             dayFactor,
             twilightFactor,
             nightFactor,
-            underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
-            underwater.submerged ? underwater.fogEnd : maxFogDist,
+            fogStart,
+            fogEnd,
           ) ?? 0;
         const entityDraws =
           this.entityRenderer?.render(
@@ -1907,8 +1967,8 @@ export class WorldManager {
               day: dayFactor,
               twilight: twilightFactor,
               night: nightFactor,
-              fogStart: underwater.submerged ? underwater.fogStart : maxFogDist * 0.7,
-              fogEnd: underwater.submerged ? underwater.fogEnd : maxFogDist,
+              fogStart,
+              fogEnd,
             },
             spawnerMiniatures(this.world),
           ) ?? 0;
@@ -1943,25 +2003,36 @@ export class WorldManager {
         this.blockSelection?.render(this.playerController?.interaction ?? null, this.viewProj) ?? 0;
       renderStats.drawCalls += selectionDraws;
       if (selectionDraws === 2) renderStats.triangles += 12;
-      const cloudStats = this.cloudRenderer
-        ? this.cloudRenderer.render(
-            this.camera,
-            ticks,
-            this.renderDistance,
-            rainFactor,
-            lightningFlash,
-          )
-        : { drawCalls: 0, triangles: 0 };
+      const cloudStats = cavern
+        ? NO_DRAWS
+        : this.cloudRenderer
+          ? this.cloudRenderer.render(
+              this.camera,
+              ticks,
+              this.renderDistance,
+              rainFactor,
+              lightningFlash,
+            )
+          : { drawCalls: 0, triangles: 0 };
       renderStats.cloudWindOffset = this.cloudRenderer?.windOffset ?? 0;
       this.underwaterTint?.render(underwater);
 
       const weatherStats =
-        this.weatherRenderer && this.world
+        this.weatherRenderer && this.world && !cavern
           ? this.weatherRenderer.render(this.camera, this.world, ticks)
-          : { drawCalls: 0, triangles: 0 };
+          : NO_DRAWS;
+      const sporeDraws =
+        cavern && settings.particles && this.glWrapper
+          ? (this.sporeRenderer ??= new SporeRenderer(this.glWrapper)).render(
+              cavern.spores,
+              this.viewProj,
+              this.camera,
+              performance.now() / 1000,
+            )
+          : 0;
 
       renderStats.weather.state = weatherState;
-      if (settings.particles && this.weatherRenderer && this.world) {
+      if (settings.particles && this.weatherRenderer && this.world && !cavern) {
         renderStats.weather.activeParticles = this.weatherRenderer.getActiveParticleCounts(
           this.camera.position,
           this.world,
@@ -1977,6 +2048,7 @@ export class WorldManager {
         skyStats.drawCalls +
         cloudStats.drawCalls +
         weatherStats.drawCalls +
+        sporeDraws +
         Number(underwater.submerged);
       renderStats.triangles +=
         skyStats.triangles +

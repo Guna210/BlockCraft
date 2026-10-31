@@ -18,7 +18,7 @@ export const items: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 0.1, 0.2, 0.01);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 0.1);
     },
@@ -52,7 +52,7 @@ export const items: Record<string, SoundRecipe> = {
 
       noiseSource.connect(filter);
       filter.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       noiseSource.start(t1);
       noiseSource.stop(t1 + 0.1);
     },

@@ -35,7 +35,7 @@ export const weather: Record<string, SoundRecipe> = {
       SynthesisEngine.applySimpleEnvelope(gain.gain, t0, 2.0, 0.2, 0.5);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctx.output ?? audioCtx.destination);
       osc.start(t0);
       osc.stop(t0 + 2.0);
 

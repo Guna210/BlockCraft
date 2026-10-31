@@ -168,6 +168,14 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
   cinder_shard: { task: 'M13h', reason: 'Dropped by Cinderwraith neutral creature' },
 
   // M20 Hollowdeep dimension ores, creatures, and items
+  duskrock: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  driftstone: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  glowcap_stem: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  glowcap: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  glowcap_gills: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  veilroot: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  voidglass: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
+  emberite: { task: 'M20b', reason: 'Generates only in the Hollowdeep' },
   skyshard_ore: {
     task: 'M20b',
     reason: 'Generates only in the Hollowdeep dimension (Hollowdeep generator)',

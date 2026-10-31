@@ -824,6 +824,14 @@
   "silkmesh": 822,
   "decorative_rail[axis=x]": 823,
   "decorative_rail[axis=z]": 824,
-  "portal[axis=x]": 825,
-  "portal[axis=z]": 826
+  "duskrock": 825,
+  "driftstone": 826,
+  "glowcap_stem": 827,
+  "glowcap": 828,
+  "glowcap_gills": 829,
+  "veilroot": 830,
+  "voidglass": 831,
+  "emberite": 832,
+  "portal[axis=x]": 833,
+  "portal[axis=z]": 834
 }

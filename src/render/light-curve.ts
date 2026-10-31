@@ -20,4 +20,6 @@ export const EMITTER_TINTS: Readonly<Record<string, readonly [number, number, nu
   lumite_block: [0.45, 0.85, 1],
   portal: [0.65, 0.5, 1],
   lava: [1, 0.45, 0.15],
+  glowcap: [0.55, 1, 0.8],
+  glowcap_gills: [0.55, 1, 0.8],
 };

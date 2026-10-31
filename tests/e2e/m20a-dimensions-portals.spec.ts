@@ -113,8 +113,40 @@ async function travelThrough(page: Page, portal: PortalRecord) {
   }, portal);
 }
 
+/**
+ * How the player landed at the arrival portal in the real Hollowdeep: the ground under the frame
+ * and both sides of it, fluid around the opening, and the player's own state after 40 ticks there.
+ */
+async function landing(page: Page, portal: PortalRecord) {
+  return page.evaluate(async (p) => {
+    const api = window.__blockcraft!;
+    await api.tick!(40);
+    const cell = (u: number, w: number, y: number) =>
+      p.axis === 'x'
+        ? api.getBlock!(p.x + u, y, p.z + w).id
+        : api.getBlock!(p.x + w, y, p.z + u).id;
+    const ground: string[] = [];
+    const fluids: string[] = [];
+    for (let u = -1; u <= 2; u++)
+      for (let w = -1; w <= 1; w++) {
+        ground.push(cell(u, w, p.y - 1));
+        for (let v = 0; v <= 3; v++) {
+          const id = cell(u, w, p.y + v);
+          if (id === 'lava' || id === 'water') fluids.push(id);
+        }
+      }
+    const player = api.getPlayer!();
+    return { ground, fluids, player, biome: api.getBiome!(p.x, p.z) };
+  }, portal);
+}
+
+const HOLLOWDEEP_BIOMES = ['glowcap_forest', 'magma_sea', 'driftstone_expanse', 'voidglass_geodes'];
+// The arrival search tries spots up to 16 blocks from the scaled point.
+const ARRIVAL_REACH = 18;
+
 test('M20a: Ember Flint lights a Lumite frame and 4 s inside carries the player to the Hollowdeep and back', async ({
   page,
+  assertAndSaveScreenshot,
 }) => {
   await newWorld(page, 'M20a travel');
   const lit = await buildAndLight(page, 2, 6);
@@ -134,8 +166,27 @@ test('M20a: Ember Flint lights a Lumite frame and 4 s inside carries the player 
   expect(there.after.changes).toBe(there.before + 1);
   expect(there.portals).toHaveLength(1);
   const arrival = there.portals[0]!;
-  expect(Math.abs(arrival.x - 3 / 4)).toBeLessThanOrEqual(2);
-  expect(Math.abs(arrival.z - 6.5 / 4)).toBeLessThanOrEqual(2);
+  expect(Math.hypot(arrival.x - 3 / 4, arrival.z - 6.5 / 4)).toBeLessThanOrEqual(ARRIVAL_REACH);
+  // The real cavern: the player stands on solid ground in a dry opening, not in lava.
+  const landed = await landing(page, arrival);
+  console.log('[m20a landed]', JSON.stringify(landed));
+  expect(arrival.y).toBeGreaterThanOrEqual(41);
+  for (const id of landed.ground) expect(['air', 'lava', 'water']).not.toContain(id);
+  expect(landed.fluids).toEqual([]);
+  expect(landed.player.inFluid).toBeNull();
+  expect(landed.player.burning).toBe(false);
+  expect(landed.player.onGround).toBe(true);
+  expect(landed.player.health).toBe(20);
+  expect(HOLLOWDEEP_BIOMES).toContain(landed.biome);
+  await page.evaluate(async () => {
+    await window.__blockcraft!.waitForTerrain!(2);
+  });
+  const cavern = await assertAndSaveScreenshot({
+    name: 'm20a-hollowdeep-arrival',
+    milestone: MILESTONE,
+  });
+  assertNotBlank(cavern);
+  assertNoMissingTexture(cavern);
 
   // Standing on in the arrival portal does not bounce the player straight back.
   const stay = await page.evaluate(async () => {
@@ -182,10 +233,15 @@ test('M20a: a portal at (400, y, 400) opens near (100, y, 100) in the Hollowdeep
   expect(there.dimension).toBe('hollowdeep');
   expect(there.portals).toHaveLength(1);
   const arrival = there.portals[0]!;
-  expect(Math.abs(arrival.x - 100)).toBeLessThanOrEqual(4);
-  expect(Math.abs(arrival.z - 100)).toBeLessThanOrEqual(4);
-  expect(Math.abs(there.player.pos[0] - 100.25)).toBeLessThanOrEqual(4);
-  expect(Math.abs(there.player.pos[2] - 100.125)).toBeLessThanOrEqual(4);
+  expect(Math.hypot(arrival.x - 100, arrival.z - 100)).toBeLessThanOrEqual(ARRIVAL_REACH);
+  expect(
+    Math.hypot(there.player.pos[0] - 100.25, there.player.pos[2] - 100.125),
+  ).toBeLessThanOrEqual(ARRIVAL_REACH + 1);
+  const landed = await landing(page, arrival);
+  console.log('[m20a scaled landed]', JSON.stringify(landed));
+  for (const id of landed.ground) expect(['air', 'lava', 'water']).not.toContain(id);
+  expect(landed.fluids).toEqual([]);
+  expect(landed.player.inFluid).toBeNull();
 
   // Save in the Hollowdeep, reload the page and load the world: the player is back there.
   await page.evaluate(async (arrival) => {

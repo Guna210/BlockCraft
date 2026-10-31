@@ -54,7 +54,6 @@ import { buildIconSheet } from '../../src/ui/icons';
 import { BlockRegistry } from '../../src/world/blocks/registry';
 import { ChunkColumn } from '../../src/world/column';
 import { World } from '../../src/world/world';
-import blockStateIds from '../../data/block-state-ids.json';
 import { GROUND, flatWorld, makeMob, scene } from './helpers/m13c-mobs';
 
 const DEFAULT: TerrainVariant = { type: 'default' };
@@ -129,7 +128,6 @@ const sortedMarkers = (markers: StructureMarker[]) =>
 describe('M19c blocks', () => {
   it('appends the spawner, Silkmesh and decorative rail states after 820', () => {
     const registry = BlockRegistry.getInstance();
-    const ids = blockStateIds as Record<string, number>;
     expect(registry.getDefaultStateId('spawner')).toBe(821);
     expect(registry.getDefaultStateId('silkmesh')).toBe(822);
     expect(registry.getStateId('decorative_rail', { axis: 'x' })).toBe(823);

@@ -27,7 +27,7 @@ import { slowPlayer } from '../entity/player-slow';
 import { ProjectileRuntime } from '../entity/projectiles';
 import { BowController } from '../gameplay/bow';
 import { BlastCharges } from '../entity/blast-charge';
-import { playExplosion, prepareExplosionSound } from '../audio/explosion';
+import { blockSoundMaterial, sound } from '../audio/service';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -57,6 +57,7 @@ export class PlayerController {
   private perspectiveDown = false;
   private world: World | null = null;
   private worldSpawnPoint: [number, number, number] | null = null;
+  private readonly mechanicsUnsubscribes: Array<() => void> = [];
   private hitRoll = 0;
   private hitRollUntil = 0;
   /** While set (a dimension change is loading the other world) ticks simulate nothing. */
@@ -78,6 +79,9 @@ export class PlayerController {
     if (this.player) this.itemEntities?.tick(this.player);
     this.ecs?.tick();
     this.particles?.tick();
+    if (this.world && this.player && this.ecs) {
+      sound.tick(this.world, this.player, this.ecs);
+    }
     this.onTick?.();
   });
   private x = 0;
@@ -126,6 +130,7 @@ export class PlayerController {
     preserveCamera = false,
     spawning = true,
   ): void {
+    this.clearMechanicsListeners();
     this.perspective = 0;
     this.perspectiveDown = false;
     this.camera.roll = 0;
@@ -140,9 +145,23 @@ export class PlayerController {
     this.player.survival.onDamage = (event) => {
       this.hitRoll = this.damageRoll(event.source);
       this.hitRollUntil = performance.now() + 260;
+      sound.play('player.hurt', {
+        x: this.player!.pos[0],
+        y: this.player!.pos[1] + this.player!.eye,
+        z: this.player!.pos[2],
+        priority: 1.3,
+      });
       this.onDamage(event);
     };
     const itemEntities = new ItemEntityManager(world);
+    itemEntities.onPickup = (item) => {
+      sound.play('item.pickup', {
+        x: item.pos[0],
+        y: item.pos[1],
+        z: item.pos[2],
+        priority: 0.7,
+      });
+    };
     this.itemEntities = itemEntities;
     world.itemSpawner = (id, count, x, y, z, velocity, pickupDelay) => {
       itemEntities.spawn(id, count, x, y, z, { velocity, pickupDelay });
@@ -187,6 +206,20 @@ export class PlayerController {
     const player = this.player;
     this.combat = new PlayerCombat(player, ecs, this.interaction);
     this.bow = new BowController(player, ecs);
+    this.bow.onDraw = () =>
+      sound.play('weapon.bow_draw', {
+        x: player.pos[0],
+        y: player.pos[1] + player.eye,
+        z: player.pos[2],
+        priority: 0.8,
+      });
+    this.bow.onRelease = () =>
+      sound.play('weapon.bow_release', {
+        x: player.pos[0],
+        y: player.pos[1] + player.eye,
+        z: player.pos[2],
+        priority: 1,
+      });
     const gaze: ReturnType<NonNullable<MobPlayer['gaze']>> = {
       origin: [0, 0, 0],
       direction: [0, 0, 0],
@@ -224,7 +257,6 @@ export class PlayerController {
       spawning,
     });
     this.charges?.dispose();
-    prepareExplosionSound();
     this.charges = new BlastCharges(
       world,
       ecs,
@@ -239,7 +271,6 @@ export class PlayerController {
         if (distance < 32) {
           this.shake = Math.max(this.shake, (1 - distance / 32) * power * 0.012);
           this.shakeUntil = performance.now() + 350;
-          playExplosion(world.worldSeed + world.breakCount);
         }
       },
     );
@@ -249,8 +280,42 @@ export class PlayerController {
       () => (this.player === player ? player : null),
       () => (this.itemEntities === itemEntities ? itemEntities : null),
     );
-    this.interaction.onUse = (blockId, target) =>
-      world.current.useBlock(target.x, target.y, target.z) || this.onUseBlock(blockId, target);
+    this.projectiles.onArrowHit = (position) =>
+      sound.play('weapon.arrow_hit', { pos: position, priority: 0.85 });
+    this.mechanicsUnsubscribes.push(
+      world.current.mechanics.onPiston((position) =>
+        sound.play('mechanism.piston', {
+          x: position.x + 0.5,
+          y: position.y + 0.5,
+          z: position.z + 0.5,
+          priority: 0.75,
+        }),
+      ),
+    );
+    this.interaction.onUse = (blockId, target) => {
+      const used =
+        world.current.useBlock(target.x, target.y, target.z) || this.onUseBlock(blockId, target);
+      if (used && blockId === 'lever')
+        sound.play('mechanism.lever', { x: target.x + 0.5, y: target.y + 0.5, z: target.z + 0.5 });
+      else if (used && blockId.endsWith('button'))
+        sound.play('mechanism.button', {
+          x: target.x + 0.5,
+          y: target.y + 0.5,
+          z: target.z + 0.5,
+        });
+      return used;
+    };
+    this.mechanicsUnsubscribes.push(
+      world.current.mechanics.onTone((event) => {
+        sound.play('mechanism.note', {
+          x: event.x + 0.5,
+          y: event.y + 0.5,
+          z: event.z + 0.5,
+          pitch: event.pitch,
+          priority: 0.9,
+        });
+      }),
+    );
     this.interaction.onBreakBeforeRemove = (_state, x, y, z) => {
       const id = world.getBlock(x, y, z).id;
       if (id !== 'chest' && id !== 'kiln') return true;
@@ -262,6 +327,12 @@ export class PlayerController {
     this.interaction.onBreak = (state, x, y, z, tool) => {
       this.particles!.spawn(state, x, y, z);
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
+      sound.play(`break.${blockSoundMaterial(block.blockId)}`, {
+        x: x + 0.5,
+        y: y + 0.5,
+        z: z + 0.5,
+        priority: 1,
+      });
 
       if (this.player!.mode === 'survival') {
         this.player!.survival.addExhaustion(0.005);
@@ -291,6 +362,15 @@ export class PlayerController {
         this.itemEntities!.spawn(entry.id, entry.count, x + 0.5, y + 0.5, z + 0.5);
       }
     };
+    this.interaction.onPlace = (state, x, y, z) => {
+      const block = BlockRegistry.getInstance().getResolvedState(state)!;
+      sound.play(`place.${blockSoundMaterial(block.blockId)}`, {
+        x: x + 0.5,
+        y: y + 0.5,
+        z: z + 0.5,
+        priority: 0.85,
+      });
+    };
     this.player.setGameMode(mode);
     this.input.actionStates.forEach((_, action) => this.input.actionStates.set(action, false));
     this.loop.resume();
@@ -304,6 +384,7 @@ export class PlayerController {
   }
   reset(): void {
     this.suspended = false;
+    this.clearMechanicsListeners();
     this.charges?.dispose();
     this.charges = null;
     this.shake = this.shakeUntil = 0;
@@ -334,6 +415,10 @@ export class PlayerController {
     this.hitRollUntil = 0;
     this.loop.resume();
     this.rememberCamera();
+  }
+  private clearMechanicsListeners(): void {
+    for (let i = 0; i < this.mechanicsUnsubscribes.length; i++) this.mechanicsUnsubscribes[i]!();
+    this.mechanicsUnsubscribes.length = 0;
   }
   /** Turns natural spawning off or on for the attached world's mob runtime. */
   setSpawning(enabled: boolean): void {
@@ -396,6 +481,12 @@ export class PlayerController {
     const player = this.player;
     if (!player || player.dead !== true) return;
     clearPlayerInvulnerability(player);
+    sound.play('player.death', {
+      x: player.pos[0],
+      y: player.pos[1] + player.eye,
+      z: player.pos[2],
+      priority: 2,
+    });
     player.clearInput();
     this.bow?.clear();
     this.interaction?.clear();

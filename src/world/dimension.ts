@@ -1,4 +1,7 @@
-import { TerrainPipeline, createDefaultPipeline } from '../gen/pipeline';
+import { OVERWORLD_BIOME_IDS } from '../gen/biomes';
+import { createHollowdeepPipeline, HOLLOWDEEP_BIOME_IDS } from '../gen/hollowdeep';
+import { MAGMA_LEVEL } from '../gen/hollowdeep/shape';
+import { type TerrainPipeline, createDefaultPipeline } from '../gen/pipeline';
 import type { StructureRegistration } from '../gen/structures/stage';
 
 /** The worlds a save holds. Each one has its own columns, streaming, lighting and block entities. */
@@ -31,6 +34,8 @@ export interface DimensionDefinition {
   portalMaxY: number;
   /** The block a fallback portal platform is made of. */
   platformBlock: string;
+  /** The biomes its generator writes, in the order of the compact indices sent from the worker. */
+  biomeIds: readonly string[];
   /** The terrain generator of this dimension; `structures` only applies where it has any. */
   createPipeline(structures: readonly StructureRegistration[]): TerrainPipeline;
 }
@@ -41,15 +46,18 @@ export const DIMENSIONS: Readonly<Record<DimensionId, DimensionDefinition>> = {
     portalMinY: 4,
     portalMaxY: 300,
     platformBlock: 'stone',
+    biomeIds: OVERWORLD_BIOME_IDS,
     createPipeline: (structures) => createDefaultPipeline(structures),
   },
   hollowdeep: {
     id: 'hollowdeep',
-    portalMinY: 8,
-    portalMaxY: 180,
-    platformBlock: 'stone',
-    // The Hollowdeep generator (M20b) is not part of this build: its columns are empty air, and a
-    // portal arriving there stands on its own safe platform.
-    createPipeline: () => new TerrainPipeline(),
+    // Above the magma sea (lava fills every floor below MAGMA_LEVEL), and with the 5-block frame
+    // under the lowest ceiling (172 − 14), so a fallback platform never sits in lava or ceiling rock.
+    portalMinY: MAGMA_LEVEL + 1,
+    portalMaxY: 150,
+    platformBlock: 'duskrock',
+    biomeIds: HOLLOWDEEP_BIOME_IDS,
+    // The enclosed cavern of M20b; Overworld structures never generate there.
+    createPipeline: () => createHollowdeepPipeline(),
   },
 };

@@ -719,6 +719,9 @@ test('M12c weather, rain streaks animation, desert climate check, and thundersto
   console.log('m12c plains rain frame diff fraction:', rainDiff);
   expect(rainDiff).toBeGreaterThan(0.02); // consecutive frames differ by > 2%
 
+  const rainAudio = await page.evaluate(() => window.__blockcraft!.getAudioStats!());
+  expect(rainAudio.lastSounds).toContain('weather.rain');
+
   const plainsStats = await page.evaluate(() => window.__blockcraft!.getRenderStats());
   console.log('m12c plains weather stats:', JSON.stringify(plainsStats.weather));
   expect(plainsStats.weather.state).toBe('rain');

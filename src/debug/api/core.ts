@@ -121,6 +121,11 @@ export interface BlockCraftDebugAPI {
   look?: (yaw: number, pitch: number) => void;
   showTestScene?: () => Promise<void>;
   audio?: typeof import('./audio').audioApi;
+  getAudioStats?: () => {
+    contextState: AudioContextState | 'not-created';
+    activeVoices: number;
+    lastSounds: string[];
+  };
   createWorld?: (opts?: {
     name?: string;
     seed?: string;
