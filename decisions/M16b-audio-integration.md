@@ -1,6 +1,6 @@
 # M16b — Audio integration decisions
 
-1. **One runtime audio service.** `src/audio/service.ts` owns playback on top of M16a recipes and the M16c composer. Game code calls `sound.play(id, { pos?, priority? })`. M14 explosions use this service; no separate synthesis path is retained.
+1. **One runtime audio service.** `src/audio/service.ts` owns playback on top of M16a recipes and the M16c composer. Game code calls `sound.play(id, { pos?, priority? })`. M14 explosions use the same service's scalar `enqueueExplosion` fast path; both paths share its buffers, voices, mixing and coalescing, with no separate synthesis path.
 2. **Gesture activation.** The service creates and resumes its `AudioContext` on the first pointer or key gesture. Before that, `play()` records the sound ID in `lastSounds` and returns without creating audio nodes.
 3. **Spatial playback.** Positional voices use HRTF panners with inverse distance attenuation. The listener follows the camera once per rendered frame. A reusable voxel raycaster checks occlusion every four simulation ticks per voice and ramps a low-pass filter when a solid block is found. Listener/ray scratch state is reused.
 4. **Voice budget.** Playback is limited to 32 active voices. Priority is importance multiplied by inverse distance falloff. At capacity, the service steals the lowest-priority voice only when the new voice is more important; otherwise it drops the new voice.

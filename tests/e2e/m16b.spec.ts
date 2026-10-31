@@ -13,6 +13,27 @@ test('M16b: audio context starts on the first user gesture', async ({ page }) =>
   expect(after.contextState).toBe('running');
 });
 
+test('M16b: integration recipes render with non-silent, unclipped output', async ({ page }) => {
+  await page.goto('/?debug=1');
+  const ids = [
+    'creature.cinderwraith.idle',
+    'creature.cinderwraith.hurt',
+    'creature.cinderwraith.death',
+    'ambience.cave',
+    'mechanism.note',
+  ];
+
+  for (const id of ids) {
+    const rendered = await page.evaluate(
+      async (soundId) => window.__blockcraft!.audio!.renderOffline(soundId, 42),
+      id,
+    );
+    expect(rendered, `${id} should render offline`).not.toBeNull();
+    expect(rendered!.rms, `${id} RMS is too low`).toBeGreaterThan(0.01);
+    expect(rendered!.peak, `${id} peak is clipped`).toBeLessThan(1.0);
+  }
+});
+
 test.describe('M16b gameplay audio', () => {
   test.beforeEach(async ({ page }) => {
     await page.evaluate(async () => {
@@ -55,6 +76,33 @@ test.describe('M16b gameplay audio', () => {
     expect(stats.contextState).toBe('running');
     expect(stats.activeVoices).toBeGreaterThan(0);
     expect(stats.lastSounds).toContain('music.sequence');
+  });
+
+  test('keeps same-task explosions at distant positions as separate voices', async ({ page }) => {
+    const started = await page.evaluate(async () => {
+      const api = window.__blockcraft!;
+      const prototype = AudioBufferSourceNode.prototype;
+      const originalStart = prototype.start;
+      let sourceStarts = 0;
+      prototype.start = function (
+        this: AudioBufferSourceNode,
+        ...args: Parameters<AudioBufferSourceNode['start']>
+      ) {
+        sourceStarts++;
+        return originalStart.apply(this, args);
+      };
+      try {
+        api.explode!(0.5, 65, 10.5, 2);
+        api.explode!(8.5, 65, 10.5, 2);
+        const deadline = performance.now() + 5000;
+        while (sourceStarts < 2 && performance.now() < deadline)
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        return sourceStarts;
+      } finally {
+        prototype.start = originalStart;
+      }
+    });
+    expect(started).toBeGreaterThanOrEqual(2);
   });
 
   test('grass and stone footsteps have different sound IDs', async ({ page }) => {

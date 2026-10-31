@@ -97,6 +97,7 @@ const IDLE_HEARING_DISTANCE = 24;
 const COALESCE_WINDOW_MS = 100;
 const COALESCE_DISTANCE_SQUARED = 25;
 const PENDING_PLAYBACK_WINDOW_MS = 2500;
+const MAX_PENDING_EXPLOSIONS = 64;
 
 const BLOCK_MATERIALS: Record<
   string,
@@ -184,8 +185,18 @@ class AudioService {
   private readonly prioritySequences = new WeakSet<object>();
   private readonly recentPlaybacks = new Map<string, RecentPlayback>();
   private readonly pendingPlaybacks = new Map<string, PendingPlayback>();
+  private readonly pendingExplosionX = new Float64Array(MAX_PENDING_EXPLOSIONS);
+  private readonly pendingExplosionY = new Float64Array(MAX_PENDING_EXPLOSIONS);
+  private readonly pendingExplosionZ = new Float64Array(MAX_PENDING_EXPLOSIONS);
+  private readonly pendingExplosionPriority = new Float32Array(MAX_PENDING_EXPLOSIONS);
+  private pendingExplosionCount = 0;
   private bufferPreparationScheduled = false;
   private explosionPlaybackScheduled = false;
+  private readonly recentExplosionX = new Float64Array(MAX_VOICES);
+  private readonly recentExplosionY = new Float64Array(MAX_VOICES);
+  private readonly recentExplosionZ = new Float64Array(MAX_VOICES);
+  private readonly recentExplosionTime = new Float64Array(MAX_VOICES);
+  private recentExplosionIndex = 0;
   private readonly recentSounds: string[] = Array.from({ length: SOUND_RING_SIZE }, () => '');
   private lastSoundIndex = 0;
   private lastSoundCount = 0;
@@ -232,8 +243,10 @@ class AudioService {
   private musicSeed = 0;
   private readonly onGesture = () => this.activateFromGesture();
   private readonly onOcclusionTimer = () => this.flushOcclusion();
+  private readonly onExplosionPlayback = () => this.flushPendingExplosions();
 
   constructor() {
+    this.recentExplosionTime.fill(Number.NEGATIVE_INFINITY);
     if (typeof window !== 'undefined') {
       window.addEventListener('pointerdown', this.onGesture, { capture: true });
       window.addEventListener('keydown', this.onGesture, { capture: true });
@@ -260,6 +273,19 @@ class AudioService {
 
   /** Records before checking gesture activation, so headless tests can inspect attempted events. */
   play(id: string, options: SoundPlayOptions = {}): boolean {
+    if (id === 'entity.explosion') {
+      const positional =
+        options.pos !== undefined ||
+        options.x !== undefined ||
+        options.y !== undefined ||
+        options.z !== undefined;
+      return this.enqueueExplosion(
+        options.x ?? (positional ? (options.pos?.[0] ?? 0) : this.listenerX),
+        options.y ?? (positional ? (options.pos?.[1] ?? 0) : this.listenerY),
+        options.z ?? (positional ? (options.pos?.[2] ?? 0) : this.listenerZ),
+        options.priority ?? 2,
+      );
+    }
     this.recordSound(id);
     const context = this.context;
     if (!context || context.state !== 'running') return false;
@@ -280,17 +306,6 @@ class AudioService {
     const distance = positional ? Math.hypot(dx, dy, dz) : 0;
     if (positional && distance > HEARING_DISTANCE) return false;
 
-    if (id === 'entity.explosion') {
-      for (let i = 0; i < this.voices.length; i++) {
-        const voice = this.voices[i]!;
-        if (
-          voice.id === id &&
-          (voice.x - x) ** 2 + (voice.y - y) ** 2 + (voice.z - z) ** 2 <= COALESCE_DISTANCE_SQUARED
-        )
-          return false;
-      }
-    }
-
     const coalesceKey = options.pitch === undefined ? id : `${id}:${options.pitch}`;
     const nowMs = performance.now();
     const recent = this.recentPlaybacks.get(coalesceKey);
@@ -300,7 +315,14 @@ class AudioService {
       (x - recent.x) ** 2 + (y - recent.y) ** 2 + (z - recent.z) ** 2 <= COALESCE_DISTANCE_SQUARED
     )
       return false;
-    this.recentPlaybacks.set(coalesceKey, { time: nowMs, x, y, z });
+    if (recent) {
+      recent.time = nowMs;
+      recent.x = x;
+      recent.y = y;
+      recent.z = z;
+    } else {
+      this.recentPlaybacks.set(coalesceKey, { time: nowMs, x, y, z });
+    }
 
     const sequence = options.sequence;
     if (!sequence && this.failedBuffers.has(id)) return false;
@@ -316,7 +338,7 @@ class AudioService {
         true,
       );
       if (!sequence) {
-        this.pendingPlaybacks.set(coalesceKey, {
+        const pending: PendingPlayback = {
           id,
           time: nowMs,
           x,
@@ -330,39 +352,106 @@ class AudioService {
           ...(options.duration !== undefined ? { duration: options.duration } : {}),
           ...(options.fadeIn !== undefined ? { fadeIn: options.fadeIn } : {}),
           ...(options.fadeOut !== undefined ? { fadeOut: options.fadeOut } : {}),
-        });
+        };
+        this.pendingPlaybacks.set(this.pendingPlaybackKey(pending), pending);
       }
       return false;
-    }
-    if (id === 'entity.explosion') {
-      this.pendingPlaybacks.set(coalesceKey, {
-        id,
-        time: nowMs,
-        x,
-        y,
-        z,
-        positional,
-        priority: options.priority ?? this.defaultImportance(id),
-        ...(options.category ? { category: options.category } : {}),
-        ...(options.volume !== undefined ? { volume: options.volume } : {}),
-        ...(options.pitch !== undefined ? { pitch: options.pitch } : {}),
-        ...(options.duration !== undefined ? { duration: options.duration } : {}),
-        ...(options.fadeIn !== undefined ? { fadeIn: options.fadeIn } : {}),
-        ...(options.fadeOut !== undefined ? { fadeOut: options.fadeOut } : {}),
-      });
-      this.scheduleExplosionPlayback(buffer);
-      return true;
     }
     return this.startVoice(id, recipe, buffer, options, positional, x, y, z, distance);
   }
 
-  private scheduleExplosionPlayback(buffer: AudioBuffer): void {
-    if (this.explosionPlaybackScheduled) return;
-    this.explosionPlaybackScheduled = true;
-    window.setTimeout(() => {
-      this.explosionPlaybackScheduled = false;
-      this.playPendingBuffer('entity.explosion', buffer);
-    }, 0);
+  /** Defers all explosion mixing work until after the simulation step that requested it. */
+  enqueueExplosion(x: number, y: number, z: number, priority = 2): boolean {
+    this.recordSound('entity.explosion');
+    if (!this.context || this.context.state !== 'running') return false;
+    if (this.pendingExplosionCount >= MAX_PENDING_EXPLOSIONS) return false;
+    const index = this.pendingExplosionCount++;
+    this.pendingExplosionX[index] = x;
+    this.pendingExplosionY[index] = y;
+    this.pendingExplosionZ[index] = z;
+    this.pendingExplosionPriority[index] = priority;
+    if (!this.explosionPlaybackScheduled) {
+      this.explosionPlaybackScheduled = true;
+      window.setTimeout(this.onExplosionPlayback, 0);
+    }
+    return true;
+  }
+
+  private flushPendingExplosions(): void {
+    this.explosionPlaybackScheduled = false;
+    const count = this.pendingExplosionCount;
+    this.pendingExplosionCount = 0;
+    const context = this.context;
+    const id = 'entity.explosion';
+    const recipe = soundLibrary[id];
+    if (!count || !context || context.state !== 'running' || !recipe) return;
+
+    const nowMs = performance.now();
+    const buffer = this.buffers.get(id);
+    if (!buffer && !this.failedBuffers.has(id)) {
+      this.queueBufferPreparation({ id, recipe, duration: recipe.duration }, true);
+    }
+
+    for (let i = 0; i < count; i++) {
+      const x = this.pendingExplosionX[i]!;
+      const y = this.pendingExplosionY[i]!;
+      const z = this.pendingExplosionZ[i]!;
+      const dx = x - this.listenerX;
+      const dy = y - this.listenerY;
+      const dz = z - this.listenerZ;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance > HEARING_DISTANCE || !this.acceptRecentExplosion(nowMs, x, y, z)) continue;
+
+      if (!buffer) {
+        const pending: PendingPlayback = {
+          id,
+          time: nowMs,
+          x,
+          y,
+          z,
+          positional: true,
+          priority: this.pendingExplosionPriority[i]!,
+        };
+        this.pendingPlaybacks.set(this.pendingPlaybackKey(pending), pending);
+        continue;
+      }
+      this.startVoice(
+        id,
+        recipe,
+        buffer,
+        { priority: this.pendingExplosionPriority[i]! },
+        true,
+        x,
+        y,
+        z,
+        distance,
+      );
+    }
+  }
+
+  private acceptRecentExplosion(time: number, x: number, y: number, z: number): boolean {
+    for (let i = 0; i < MAX_VOICES; i++) {
+      if (
+        time - this.recentExplosionTime[i]! < COALESCE_WINDOW_MS &&
+        (x - this.recentExplosionX[i]!) ** 2 +
+          (y - this.recentExplosionY[i]!) ** 2 +
+          (z - this.recentExplosionZ[i]!) ** 2 <=
+          COALESCE_DISTANCE_SQUARED
+      )
+        return false;
+    }
+    const index = this.recentExplosionIndex++ % MAX_VOICES;
+    this.recentExplosionTime[index] = time;
+    this.recentExplosionX[index] = x;
+    this.recentExplosionY[index] = y;
+    this.recentExplosionZ[index] = z;
+    return true;
+  }
+
+  private pendingPlaybackKey(pending: PendingPlayback): string {
+    if (pending.id === 'entity.explosion')
+      return `${pending.id}:${pending.x}:${pending.y}:${pending.z}`;
+    return pending.pitch === undefined ? pending.id : `${pending.id}:${pending.pitch}`;
   }
 
   private startVoice(
@@ -799,20 +888,13 @@ class AudioService {
   private updateOcclusion(world: World): void {
     if (this.positionalVoiceCount === 0 || !this.context) return;
     const phase = this.tickCount & 3;
-    let hasPositionalVoiceInPhase = false;
-    for (let i = phase; i < this.voices.length; i += 4) {
-      if (this.voices[i]!.positional) {
-        hasPositionalVoiceInPhase = true;
-        break;
-      }
-    }
-    if (!hasPositionalVoiceInPhase) return;
     if (!this.raycaster || this.rayWorld !== world) {
       this.rayWorld = world;
       this.raycaster = new VoxelRaycaster(world);
     }
     this.occlusionPhasesDue |= 1 << phase;
-    if (this.occlusionScheduled) return;
+    // Accumulate the four rate-limit phases and raycast once per voice per four ticks.
+    if (phase !== 3 || this.occlusionScheduled) return;
     this.occlusionScheduled = true;
     window.setTimeout(this.onOcclusionTimer, 0);
   }
