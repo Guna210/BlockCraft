@@ -49,6 +49,8 @@ export interface EntityRecord {
   formatVersion: number;
   /** `serializeItemEntities` bytes. */
   items: Uint8Array;
+  /** The dimension's portal index (M20a): x, y, z and axis (0 = x, 1 = z) per portal. */
+  portals?: Int32Array;
 }
 
 /** One saved column with the state that belongs to it. */

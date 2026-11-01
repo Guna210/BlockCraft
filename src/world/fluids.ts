@@ -26,6 +26,8 @@ interface Fluid {
 export class FluidSimulation {
   private registry = BlockRegistry.getInstance();
   private states = new Map<number, Fluid>();
+  /** Ticks between lava flow steps; the world's dimension sets it (faster in the Hollowdeep). */
+  public lavaTickDelay = LAVA_TICK_DELAY;
   constructor(private world: World) {
     for (const id of this.registry.getAllStateIds()) {
       const s = this.registry.getResolvedState(id)!;
@@ -68,7 +70,7 @@ export class FluidSimulation {
     if (f)
       this.world.ticks.schedule(
         { x, y, z, type: f.kind },
-        f.kind === 'water' ? WATER_TICK_DELAY : LAVA_TICK_DELAY,
+        f.kind === 'water' ? WATER_TICK_DELAY : this.lavaTickDelay,
       );
   }
   private write(

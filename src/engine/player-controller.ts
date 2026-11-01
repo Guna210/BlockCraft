@@ -60,7 +60,12 @@ export class PlayerController {
   private readonly mechanicsUnsubscribes: Array<() => void> = [];
   private hitRoll = 0;
   private hitRollUntil = 0;
+  /** While set (a dimension change is loading the other world) ticks simulate nothing. */
+  public suspended = false;
+  /** Runs after each simulated tick (portal travel). */
+  public onTick: (() => void) | null = null;
   public readonly loop = new TickLoop(() => {
+    if (this.suspended) return;
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
@@ -77,6 +82,7 @@ export class PlayerController {
     if (this.world && this.player && this.ecs) {
       sound.tick(this.world, this.player, this.ecs);
     }
+    this.onTick?.();
   });
   private x = 0;
   private y = 0;
@@ -377,6 +383,7 @@ export class PlayerController {
     else this.render(1);
   }
   reset(): void {
+    this.suspended = false;
     this.clearMechanicsListeners();
     this.charges?.dispose();
     this.charges = null;

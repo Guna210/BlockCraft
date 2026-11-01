@@ -49,6 +49,10 @@ export const REACHABILITY_EXEMPTIONS: Readonly<Record<string, ExemptionEntry>> =
     reason: 'Technical extended-sticky-piston arm; never placed or dropped',
   },
   piston_moving: { task: 'M15b', reason: 'Technical block that stands in for a block in motion' },
+  portal: {
+    task: 'M20a',
+    reason: 'Portal surface lit with Ember Flint in a Lumite frame; drops nothing',
+  },
 
   // Blocks that drop materials/dirt and are never obtainable as items
   spawner: {

@@ -68,6 +68,8 @@ flat out float v_flow;
 out vec3 v_normal;
 uniform float u_rainFactor;
 uniform float u_lightningFlash;
+// A dimension's own fog colour (rgb), in use when a is 1: it replaces the sky's.
+uniform vec4 u_dimensionFog;
 uniform highp int u_isCutout;
 out vec2 v_unwrappedUV;
 flat out vec2 v_tileOrigin;
@@ -189,6 +191,7 @@ void main() {
   if (u_lightningFlash > 0.001) {
     fogCol += vec3(u_lightningFlash * 0.35);
   }
+  if (u_dimensionFog.a > 0.5) fogCol = u_dimensionFog.rgb;
   v_fogColor = fogCol;
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
 }
@@ -358,6 +361,7 @@ export class ChunkRenderer {
   private locNightFactor: WebGLUniformLocation;
   private locRainFactor: WebGLUniformLocation;
   private locLightningFlash: WebGLUniformLocation;
+  private locDimensionFog: WebGLUniformLocation;
   private locSwayOn: WebGLUniformLocation;
   private locWindTime: WebGLUniformLocation;
   private locSwayLeaf: WebGLUniformLocation;
@@ -369,6 +373,7 @@ export class ChunkRenderer {
   } | null = null;
   private rainFactor = 0;
   private lightningFlash = 0;
+  private readonly dimensionFog = new Float32Array(4);
   private skyBrightness = 1;
   private debugLight = false;
   private cameraPos: [number, number, number] = [0, 0, 0];
@@ -457,6 +462,7 @@ export class ChunkRenderer {
     this.locWaterFogColor = gl.getUniformLocation(this.program, 'u_waterFogColor')!;
     this.locRainFactor = gl.getUniformLocation(this.program, 'u_rainFactor')!;
     this.locLightningFlash = gl.getUniformLocation(this.program, 'u_lightningFlash')!;
+    this.locDimensionFog = gl.getUniformLocation(this.program, 'u_dimensionFog')!;
     this.locSwayOn = gl.getUniformLocation(this.program, 'u_swayOn')!;
     this.locWindTime = gl.getUniformLocation(this.program, 'u_windTime')!;
     this.locSwayLeaf = gl.getUniformLocation(this.program, 'u_swayLeaf')!;
@@ -495,6 +501,7 @@ export class ChunkRenderer {
       'locWaterFogColor',
       'locRainFactor',
       'locLightningFlash',
+      'locDimensionFog',
       'locSwayOn',
       'locWindTime',
       'locSwayLeaf',
@@ -532,6 +539,8 @@ export class ChunkRenderer {
     underwater?: UnderwaterView;
     rainFactor?: number;
     lightningFlash?: number;
+    /** A dimension's fog colour replacing the sky's, or null for the sky. */
+    dimensionFog?: readonly number[] | null;
   }): void {
     this.cameraPos[0] = params.cameraPos[0] ?? 0;
     this.cameraPos[1] = params.cameraPos[1] ?? 0;
@@ -547,6 +556,11 @@ export class ChunkRenderer {
     this.underwater = params.underwater ?? null;
     this.rainFactor = params.rainFactor ?? 0;
     this.lightningFlash = params.lightningFlash ?? 0;
+    const fog = params.dimensionFog;
+    this.dimensionFog[0] = fog?.[0] ?? 0;
+    this.dimensionFog[1] = fog?.[1] ?? 0;
+    this.dimensionFog[2] = fog?.[2] ?? 0;
+    this.dimensionFog[3] = fog ? 1 : 0;
   }
   public setDebugLight(on: boolean): void {
     this.debugLight = on;
@@ -892,6 +906,7 @@ export class ChunkRenderer {
     gl.uniform3f(this.locWaterFogColor, color?.[0] ?? 0, color?.[1] ?? 0, color?.[2] ?? 0);
     gl.uniform1f(this.locRainFactor, this.rainFactor);
     gl.uniform1f(this.locLightningFlash, this.lightningFlash);
+    gl.uniform4fv(this.locDimensionFog, this.dimensionFog);
     this.fadeUniform.forget();
   }
 

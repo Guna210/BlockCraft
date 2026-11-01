@@ -99,6 +99,7 @@ async function main() {
     worldManager.streamer.canSimulate(Math.floor(x / 16), Math.floor(z / 16)),
   );
   worldManager.playerController = playerController;
+  playerController.onTick = () => worldManager.tickPortals();
   // The icon atlas is built once, in one pass over the registries, from tiles already generated.
   // It is built right after the first frame, off the path to the first frame, or on first use.
   let iconSheet: IconSheet | null = null;
@@ -175,6 +176,12 @@ async function main() {
   };
   ui.onRespawn = () => playerController.respawn();
   playerController.onUseBlock = (blockId, target) => {
+    // Ember Flint lights an empty Lumite frame (M20a).
+    if (
+      playerController.player?.inventory.held?.id === 'ember_flint' &&
+      worldManager.useEmberFlint(target)
+    )
+      return true;
     if (blockId === 'bed') {
       const player = playerController.player;
       const world = worldManager.world;
