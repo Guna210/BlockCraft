@@ -45,13 +45,13 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M16b (#79 0b44c73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 832.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M20a (#81 526e13f; portal 833-834), M16b (#79 0b44c73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 834.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M20a Dimensions & portals | Round 2 PASS on 5ed9cef; merge now | Claude cloud (claude/m20a) | - | - | portal block id append; wires M20b if merged first |
+| M20c Updrafts, creatures & close-out | Prompt given 2026-11-01 | Claude cloud (claude/m20c) | - | - | last M20 task |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-01: #81 M20a merged (526e13f). Gave M20c prompt (Claude cloud). Decisions: Updraft = deterministic region field from M20b driftstone_expanse (no per-tick scans; lookup by column), gravity x0.4 for player/mobs/items/falling blocks via one shared gravity hook, soft glow particles/tint capped; Glowwing via creature kit + bounded 3D A* over voxel grid (budgeted per tick, cached), circles then dives; Magmaw swims in lava, lunges onto shore within 6, sets fire; spawn rules Hollowdeep-only, respecting caps; Overworld spawn rules excluded from Hollowdeep; voices via M16b; Glowcap Stew recipe (glowcap + bowl) + 30 s night vision as minimal timed player effect (no general effect system); Hollowdeep music mood check; entity/drop shaders use cavern fog; screenshots forest/magma/islands; e2e low-gravity jump >= 2x, pixel + hue vs Overworld.
 - 2026-10-31: #81 M20a round 2 PASS (wiring, ids 833-834, revert on return, spores zero alloc, e2e lands in real cavern, cancel fix). Told owner to merge. Non-blocking: u_dimensionFog uniform per terrain pass in Overworld; platform seal pass ~500 lookups on fallback; handoff final CI totals missing. Next: M20c ready after merge.
 - 2026-10-31: #81 merge push 5ed9cef green (contains master 0b44c73, portal 833-834, M20b wired: pipeline, biome ids, fog uniform, spores.ts, lava delay; portal y 41-150; cancel() fix + test). Substantial new wiring code -> sent round 2 to session_0155bUSAs5hRGDVLLvCTE6YE instead of self-check.
 - 2026-10-31: #79 M16b merged (0b44c73). Sent M20a builder the merge push: merge master, portal ids 833-834, m19c test take master, keep both in player-controller, wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT + biome strings + music mood, re-check portal Y range vs real cavern with e2e, travelThroughPortal catch -> cancel() + test. Then I check diff; owner merges. After #81: M20c ready (needs M20a, M20b, M16b).
