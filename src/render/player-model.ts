@@ -46,6 +46,7 @@ uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform bool u_underwater;
 uniform vec3 u_waterFogColor;
+uniform vec4 u_dimensionFog;
 out vec4 fragColor;
 ${GLSL_SKY_ATMOSPHERE}
 void main() {
@@ -56,6 +57,7 @@ void main() {
   float distance = u_underwater ? length(delta) : length(delta.xz);
   float fog = smoothstep(u_fogStart, u_fogEnd, distance);
   vec3 fogColor = u_underwater ? u_waterFogColor : skyAtmosphereColor(normalize(delta + vec3(0.0, 1e-5, 0.0)), u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
+  if (!u_underwater && u_dimensionFog.a > 0.5) fogColor = u_dimensionFog.rgb;
   fragColor = vec4(mix(color, fogColor, fog), 1.0);
 }`;
 
@@ -100,6 +102,7 @@ export class PlayerModelRenderer {
         'fogEnd',
         'underwater',
         'waterFogColor',
+        'dimensionFog',
       ].map((name) => [name, gl.getUniformLocation(this.program, `u_${name}`)!]),
     );
     this.vao = wrapper.createVertexArray();
@@ -182,6 +185,7 @@ export class PlayerModelRenderer {
     night: number,
     fogStart: number,
     fogEnd: number,
+    dimensionFog: readonly number[] | null = null,
   ): number {
     this.lastPartDraws = 0;
     const p = controller?.player;
@@ -205,6 +209,9 @@ export class PlayerModelRenderer {
     gl.uniform1f(loc.fogEnd!, fogEnd);
     gl.uniform1i(loc.underwater!, underwater.submerged ? 1 : 0);
     gl.uniform3fv(loc.waterFogColor!, underwater.fogColor);
+    if (dimensionFog)
+      gl.uniform4f(loc.dimensionFog!, dimensionFog[0]!, dimensionFog[1]!, dimensionFog[2]!, 1);
+    else gl.uniform4f(loc.dimensionFog!, 0, 0, 0, 0);
     const light = p.collision.world.getLight(
       Math.floor(p.pos[0]),
       Math.floor(p.pos[1] + 1),

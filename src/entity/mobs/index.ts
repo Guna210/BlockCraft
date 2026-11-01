@@ -10,4 +10,7 @@ import './thornling';
 import './skitterer';
 import './sporeburst';
 import './cinderwraith';
+import './glowwing';
+import './magmaw';
 import './spawn-rules';
+import './hollowdeep-spawn-rules';

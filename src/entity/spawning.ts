@@ -22,6 +22,11 @@ export interface SpawnRule {
   where?: (world: World, x: number, y: number, z: number) => boolean;
   /** Dynamic weight for a valid spot, used for cave-biased species. */
   weightAt?: (world: World, x: number, y: number, z: number) => number;
+  /**
+   * Replaces the category's spot test (M20c): open cavern air for flyers, lava for lava swimmers.
+   * The 24–128 block annulus still applies.
+   */
+  spot?: (world: World, x: number, y: number, z: number) => boolean;
 }
 
 /** Appendix B caps, counted over the loaded area around the player. */
@@ -63,11 +68,24 @@ export class SpawnRuleRegistry {
   }
 }
 
-/** The game's rules; creature tasks register theirs here. */
+/** The game's Overworld rules; creature tasks register theirs here. */
 export const spawnRules = new SpawnRuleRegistry();
 
-export function registerSpawnRule(rule: SpawnRule): void {
-  spawnRules.register(rule);
+/** Each dimension spawns only its own rules (M20c); the Overworld's are `spawnRules`. */
+const dimensionRules = new Map<string, SpawnRuleRegistry>([['overworld', spawnRules]]);
+
+/** The rule registry of a dimension, created empty the first time it is asked for. */
+export function spawnRulesFor(dimension: string): SpawnRuleRegistry {
+  let rules = dimensionRules.get(dimension);
+  if (!rules) {
+    rules = new SpawnRuleRegistry();
+    dimensionRules.set(dimension, rules);
+  }
+  return rules;
+}
+
+export function registerSpawnRule(rule: SpawnRule, dimension = 'overworld'): void {
+  spawnRulesFor(dimension).register(rule);
 }
 
 function groupRange(rule: SpawnRule): [number, number] {
@@ -87,6 +105,8 @@ export class MobSpawner {
   private readonly grass: number | undefined;
   private readonly categories: MobCategory[];
   private attemptCursor = 0;
+  /** Categories whose every rule brings its own spot test. */
+  private readonly customSpots = new Set<MobCategory>();
 
   constructor(
     private readonly runtime: MobRuntime,
@@ -96,6 +116,9 @@ export class MobSpawner {
     this.categories = (['passive', 'hostile', 'ambient'] as const).filter(
       (category) => this.rules.forCategory(category).length > 0,
     );
+    for (const category of this.categories)
+      if (this.rules.forCategory(category).every((rule) => rule.spot !== undefined))
+        this.customSpots.add(category);
   }
 
   /** Mobs of a category standing in loaded columns. */
@@ -156,9 +179,17 @@ export class MobSpawner {
     const z = Math.floor(player.pos[2] + Math.sin(angle) * distance);
     if (!world.hasColumn(Math.floor(x / 16), Math.floor(z / 16))) return;
     const top = world.getHeight(x, z);
-    const y = surface ? top + 1 : 1 + Math.floor(runtime.random() * Math.max(1, top + 1));
-    const test = category === 'hostile' ? this.hostileSpot.bind(this) : this.ambientSpot.bind(this);
-    if (!test(x, y, z)) return;
+    const custom = this.customSpots.has(category);
+    // Rules with their own spot test (cavern flyers, lava swimmers) never spawn on the roof.
+    const y =
+      surface && !custom ? top + 1 : 1 + Math.floor(runtime.random() * Math.max(1, top + 1));
+    if (custom) {
+      if (!this.inAnnulus(x, z)) return;
+    } else {
+      const test =
+        category === 'hostile' ? this.hostileSpot.bind(this) : this.ambientSpot.bind(this);
+      if (!test(x, y, z)) return;
+    }
     this.spawnGroup(category, x, y, z);
   }
 
@@ -295,16 +326,23 @@ export class MobSpawner {
     return (
       (rule.biomes.length === 0 || rule.biomes.includes(world.getBiome(x, z))) &&
       this.ruleFits(rule, x, y, z) &&
-      (rule.category === 'hostile'
-        ? this.hostileSpot(x, y, z)
-        : rule.category === 'ambient'
-          ? this.ambientSpot(x, y, z)
-          : this.passiveSpot(x, y, z, rule.ground ?? ['grass_block']))
+      (rule.spot
+        ? this.inAnnulus(x, z)
+        : rule.category === 'hostile'
+          ? this.hostileSpot(x, y, z)
+          : rule.category === 'ambient'
+            ? this.ambientSpot(x, y, z)
+            : this.passiveSpot(x, y, z, rule.ground ?? ['grass_block']))
     );
   }
 
   private ruleFits(rule: SpawnRule, x: number, y: number, z: number): boolean {
-    if (rule.category === 'passive' && !this.passiveSpot(x, y, z, rule.ground ?? ['grass_block']))
+    if (rule.spot) {
+      if (!rule.spot(this.runtime.world, x, y, z)) return false;
+    } else if (
+      rule.category === 'passive' &&
+      !this.passiveSpot(x, y, z, rule.ground ?? ['grass_block'])
+    )
       return false;
     return rule.where?.(this.runtime.world, x, y, z) ?? true;
   }

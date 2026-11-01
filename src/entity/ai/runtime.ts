@@ -48,6 +48,8 @@ export interface MobPlayer {
   hurt(amount: number, source: string, from: Readonly<Vec3>): boolean;
   /** Slows the player's walking to `factor` for `ticks` ticks (a spore cloud). */
   slow?(factor: number, ticks: number): void;
+  /** Sets the player on fire for at least `ticks` ticks, through the survival burn path. */
+  ignite?(ticks: number): void;
 }
 
 export interface MobHandle {

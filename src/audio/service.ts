@@ -222,6 +222,8 @@ class AudioService {
   private occlusionScheduled = false;
   private readonly rayHit = createRayHit();
   private readonly creatures = new Map<number, CreatureVoiceState>();
+  /** The biome or dimension the last composed music piece was written for (debug, M20c). */
+  public lastMusicContext: string | null = null;
   private sessionWorld: World | null = null;
   private sessionEcs: EntityWorld | null = null;
   private random = new PRNG(1);
@@ -1084,6 +1086,7 @@ class AudioService {
         player.dimension !== 'overworld'
           ? player.dimension
           : world.getBiome(player.pos[0], player.pos[2]);
+      this.lastMusicContext = contextId;
       const seed = `${this.musicSeed}:${Math.floor(this.random.next() * 0xffffffff)}`;
       const sequence = composeSequence(seed, contextId);
       let duration = 0;

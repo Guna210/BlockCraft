@@ -92,6 +92,7 @@ uniform float u_fogStart;
 uniform float u_fogEnd;
 uniform bool u_underwater;
 uniform vec3 u_waterFogColor;
+uniform vec4 u_dimensionFog;
 out vec4 fragColor;
 ${GLSL_SKY_ATMOSPHERE}
 void main() {
@@ -102,6 +103,7 @@ void main() {
   float distance = u_underwater ? length(delta) : length(delta.xz);
   float fog = smoothstep(u_fogStart, u_fogEnd, distance);
   vec3 fogColor = u_underwater ? u_waterFogColor : skyAtmosphereColor(normalize(delta + vec3(0.0, 1e-5, 0.0)), u_sunDir, u_dayFactor, u_twilightFactor, u_nightFactor);
+  if (!u_underwater && u_dimensionFog.a > 0.5) fogColor = u_dimensionFog.rgb;
   fragColor = vec4(mix(color, fogColor, fog), 1.0);
 }`;
 
@@ -264,6 +266,8 @@ export interface EntityRenderView {
   night: number;
   fogStart: number;
   fogEnd: number;
+  /** A dimension's fog colour replacing the sky's (the Hollowdeep), or null/absent for the sky. */
+  dimensionFog?: readonly number[] | null;
 }
 
 const UNIFORMS = [
@@ -281,6 +285,7 @@ const UNIFORMS = [
   'fogEnd',
   'underwater',
   'waterFogColor',
+  'dimensionFog',
 ] as const;
 
 /**
@@ -382,6 +387,10 @@ export class EntityRenderer {
     gl.uniform1f(loc.fogEnd, view.fogEnd);
     gl.uniform1i(loc.underwater, underwater.submerged ? 1 : 0);
     gl.uniform3fv(loc.waterFogColor, underwater.fogColor);
+    const dimensionFog = view.dimensionFog;
+    if (dimensionFog)
+      gl.uniform4f(loc.dimensionFog, dimensionFog[0]!, dimensionFog[1]!, dimensionFog[2]!, 1);
+    else gl.uniform4f(loc.dimensionFog, 0, 0, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
