@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M20c Updrafts, creatures & close-out | At publish gate (3 local commits) | Claude cloud (claude/m20c) | - | - | last M20 task |
+| M20c Updrafts, creatures & close-out | PR green (b261cd9), reviewer prompt given | Claude cloud (claude/m20c) | Sonnet (new) | #82 | last M20 task |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-02: #82 M20c green on b261cd9 (contains master 526e13f). I checked player.ts: only a gravity local from gravityFactor() (module-level field, early return 1 when no Hollowdeep field), no new fields. Gave Sonnet reviewer prompt.
 - 2026-11-01: M20c gate: quick verify unit 1237, M20 e2e 9; touched e2e 53 passed; jump 3.09 vs 1.23 (2.5x); hue 341/352/265 vs 178; spawn test 37 Glowwing + 3 Magmaw only; no new ids. Touches player.ts (gravity factor) -> reviewer flag (no new fields). Floating-islands screenshot dim (islands unlit, M20b lighting) -> owner judges. Glowwing not truly translucent (renderer has no alpha); 'falling blocks' = primed Blast Charges (no falling sand exists).
 - 2026-11-01: #81 M20a merged (526e13f). Gave M20c prompt (Claude cloud). Decisions: Updraft = deterministic region field from M20b driftstone_expanse (no per-tick scans; lookup by column), gravity x0.4 for player/mobs/items/falling blocks via one shared gravity hook, soft glow particles/tint capped; Glowwing via creature kit + bounded 3D A* over voxel grid (budgeted per tick, cached), circles then dives; Magmaw swims in lava, lunges onto shore within 6, sets fire; spawn rules Hollowdeep-only, respecting caps; Overworld spawn rules excluded from Hollowdeep; voices via M16b; Glowcap Stew recipe (glowcap + bowl) + 30 s night vision as minimal timed player effect (no general effect system); Hollowdeep music mood check; entity/drop shaders use cavern fog; screenshots forest/magma/islands; e2e low-gravity jump >= 2x, pixel + hue vs Overworld.
 - 2026-10-31: #81 M20a round 2 PASS (wiring, ids 833-834, revert on return, spores zero alloc, e2e lands in real cavern, cancel fix). Told owner to merge. Non-blocking: u_dimensionFog uniform per terrain pass in Overworld; platform seal pass ~500 lookups on fallback; handoff final CI totals missing. Next: M20c ready after merge.
