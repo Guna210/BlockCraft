@@ -83,6 +83,10 @@ import { PortalRenderer, WarpOverlay } from '../render/portal';
 import { SporeRenderer } from '../render/spores';
 import { LAVA_TICK_DELAY } from './fluids';
 import { HOLLOWDEEP_ENVIRONMENT } from '../gen/hollowdeep/environment';
+import { clearUpdraftField, setUpdraftField, updraftField, UpdraftField } from './updrafts';
+import { UpdraftGlowRenderer } from '../render/updraft-glow';
+import { NIGHT_VISION_FLOOR } from '../gameplay/survival';
+import { setWorldDimension } from './world-dimension';
 import type { RayHit } from './raycast';
 import { getToolDurability } from '../gameplay/tools';
 import { SaveManager, type LoadedWorld, type RestoredColumn } from '../persist/save-manager';
@@ -280,6 +284,8 @@ export class WorldManager {
   public cloudRenderer: CloudRenderer | null = null;
   public dropRenderer: DropRenderer | null = null;
   public entityRenderer: EntityRenderer | null = null;
+  /** Rising motes in nearby Updrafts (M20c); built the first time one is in view. */
+  public updraftGlow: UpdraftGlowRenderer | null = null;
   public movingBlockRenderer: MovingBlockRenderer | null = null;
   public weatherRenderer: WeatherRenderer | null = null;
   public workerPool: WorkerPool;
@@ -885,6 +891,7 @@ export class WorldManager {
       glBuffersAtStart: this.panoramaGlBuffersAtStart,
     };
     resetWeather();
+    clearUpdraftField();
     this.world = null;
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
     if (this.panoramaSavedRenderDistance !== null)
@@ -919,6 +926,7 @@ export class WorldManager {
     this.playerController?.reset();
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
+    clearUpdraftField();
     this.world = null;
     this.resetDimensions('overworld');
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
@@ -1456,6 +1464,10 @@ export class WorldManager {
     world.listeners.add(this.portalGuard);
     world.fluids.lavaTickDelay =
       this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT.lavaFlowTickRate : LAVA_TICK_DELAY;
+    // M20c: creature spawn rules follow the dimension, and only the Hollowdeep has Updrafts.
+    setWorldDimension(world, this.dimension);
+    clearUpdraftField();
+    if (this.dimension === 'hollowdeep') setUpdraftField(world, new UpdraftField(this.worldSeed));
   }
 
   /** Called after every tick: counts the player's time in a portal. Free while none is near. */
@@ -1579,6 +1591,8 @@ export class WorldManager {
       this.meshAttempts.clear();
       weatherManager.heightmap.clear();
       if (this.portalGuard) departing.listeners.delete(this.portalGuard);
+      // The world being left must not stay reachable through its Updraft field.
+      clearUpdraftField();
 
       this.dimension = to;
       const index = this.portalIndices[to];
@@ -1913,6 +1927,9 @@ export class WorldManager {
       const skyBrightness = cavern ? cavern.skyLight : skyLightMultiplier(ticks);
       if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
       const underwater = this.underwaterView;
+      // Night vision (Glowcap Stew) lifts the light curve's floor while it lasts.
+      if ((this.playerController?.player?.survival.nightVisionTicks ?? 0) > 0)
+        underwater.brightnessFloor = Math.max(underwater.brightnessFloor, NIGHT_VISION_FLOOR);
       // Exponential fog density as a linear range: the fog is nearly opaque at 2.3 / density.
       const airFogEnd = cavern ? Math.min(maxFogDist, 2.3 / cavern.fogDensity) : maxFogDist;
       const airFogStart = cavern ? airFogEnd * 0.15 : maxFogDist * 0.7;
@@ -1951,6 +1968,7 @@ export class WorldManager {
             nightFactor,
             fogStart,
             fogEnd,
+            cavern?.fogColor ?? null,
           ) ?? 0;
         const entityDraws =
           this.entityRenderer?.render(
@@ -1969,6 +1987,7 @@ export class WorldManager {
               night: nightFactor,
               fogStart,
               fogEnd,
+              dimensionFog: cavern?.fogColor ?? null,
             },
             spawnerMiniatures(this.world),
           ) ?? 0;
@@ -2030,6 +2049,16 @@ export class WorldManager {
               performance.now() / 1000,
             )
           : 0;
+      const updrafts = cavern && this.world ? updraftField(this.world) : null;
+      const updraftDraws =
+        updrafts && settings.particles && this.glWrapper
+          ? (this.updraftGlow ??= new UpdraftGlowRenderer(this.glWrapper)).render(
+              updrafts,
+              this.viewProj,
+              this.camera,
+              performance.now() / 1000,
+            )
+          : 0;
 
       renderStats.weather.state = weatherState;
       if (settings.particles && this.weatherRenderer && this.world && !cavern) {
@@ -2049,6 +2078,7 @@ export class WorldManager {
         cloudStats.drawCalls +
         weatherStats.drawCalls +
         sporeDraws +
+        updraftDraws +
         Number(underwater.submerged);
       renderStats.triangles +=
         skyStats.triangles +

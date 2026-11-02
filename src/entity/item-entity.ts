@@ -2,6 +2,7 @@ import { PRNG, deriveSeed } from '../engine/rng';
 import { BlockCollision, EPSILON, type Position } from './physics';
 import type { Player } from './player';
 import type { World } from '../world/world';
+import { gravityFactor } from '../world/updrafts';
 import { items, type ItemAffix, type ItemDefinition } from '../gameplay/items';
 
 export const ITEM_CAPACITY = 256;
@@ -98,7 +99,8 @@ export class ItemEntityManager {
       // Keep bounded items in unloaded columns until streaming restores their collision data.
       if (!this.world.hasColumn(Math.floor(entity.pos[0] / 16), Math.floor(entity.pos[2] / 16)))
         continue;
-      entity.vel[1] = Math.max(-20, entity.vel[1] - 12 * 0.05);
+      const gravity = 12 * gravityFactor(this.world, entity.pos[0], entity.pos[1], entity.pos[2]);
+      entity.vel[1] = Math.max(-20, entity.vel[1] - gravity * 0.05);
       for (let axis = 0; axis < 3; axis++) {
         const delta = entity.vel[axis]! * 0.05;
         if (

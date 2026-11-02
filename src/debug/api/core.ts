@@ -189,6 +189,31 @@ export interface BlockCraftDebugAPI {
     cooldown: number;
     changes: number;
   };
+  /** Whether (x, y, z) is inside a Hollowdeep Updraft, and the gravity factor there (M20c). */
+  getUpdraft?: (x: number, y: number, z: number) => { inside: boolean; gravity: number };
+  /** The nearest Updraft zone centre within `maxDistance` blocks of (x, z), or null (M20c). */
+  findUpdraft?: (
+    x: number,
+    z: number,
+    maxDistance?: number,
+  ) => { x: number; z: number; radius: number } | null;
+  /** Ticks of Glowcap Stew night vision the player has left (M20c). */
+  getNightVision?: () => number;
+  /** A Glowwing's or Magmaw's behaviour state, or null for other entities (M20c). */
+  getHollowdeepCreature?: (id: number) => {
+    type: string;
+    phase: string;
+    hits: number;
+    plans?: number;
+    lunges?: number;
+    pathStatus?: string;
+  } | null;
+  /** The shared flight pathfinder: expansions in the last tick, searches done, requests waiting. */
+  getFlightStats?: () => { lastExpansions: number; searches: number; pending: number };
+  /** The biome or dimension the last music piece was composed for, or null (M20c). */
+  getMusicContext?: () => string | null;
+  /** Updraft glow zones drawn in the last frame (M20c). */
+  getUpdraftGlowZones?: () => number;
   getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
   wireframe?: (enabled?: boolean) => boolean;
   setWireframe?: (enabled: boolean) => void;

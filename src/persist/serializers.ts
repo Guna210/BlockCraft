@@ -338,6 +338,8 @@ export interface SerializedPlayerData {
   xpProgress: number;
   /** null means the world spawn. */
   spawnPoint: [number, number, number] | null;
+  /** Ticks of Glowcap Stew night vision left; absent when none (M20c). */
+  nightVisionTicks?: number;
 }
 
 export function serializePlayerData(
@@ -367,6 +369,10 @@ export function serializePlayerData(
           ? [...(player as { spawnPoint: [number, number, number] }).spawnPoint]
           : null,
     };
+    const nightVision =
+      'survival' in player ? (player as { survival: { nightVisionTicks: number } }).survival : null;
+    if (nightVision && nightVision.nightVisionTicks > 0)
+      serializable.nightVisionTicks = nightVision.nightVisionTicks;
   } else {
     serializable = player as SerializedPlayerData;
   }
@@ -399,6 +405,7 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
   const xpLevel = d['xpLevel'];
   const xpProgress = d['xpProgress'];
   const spawnPoint = d['spawnPoint'];
+  const nightVisionTicks = d['nightVisionTicks'];
 
   if (
     !Array.isArray(pos) ||
@@ -437,7 +444,11 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     (spawnPoint !== null &&
       (!Array.isArray(spawnPoint) ||
         spawnPoint.length !== 3 ||
-        !spawnPoint.every((n) => typeof n === 'number' && Number.isFinite(n))))
+        !spawnPoint.every((n) => typeof n === 'number' && Number.isFinite(n)))) ||
+    (nightVisionTicks !== undefined &&
+      (typeof nightVisionTicks !== 'number' ||
+        !Number.isInteger(nightVisionTicks) ||
+        nightVisionTicks < 0))
   ) {
     throw new Error('Invalid player data');
   }
@@ -457,6 +468,7 @@ export function deserializePlayerData(bytes: Uint8Array): SerializedPlayerData {
     spawnPoint: spawnPoint
       ? [spawnPoint[0] as number, spawnPoint[1] as number, spawnPoint[2] as number]
       : null,
+    ...(typeof nightVisionTicks === 'number' && nightVisionTicks > 0 ? { nightVisionTicks } : {}),
   };
 }
 
@@ -479,6 +491,7 @@ export function applyPlayerData(player: Player, data: SerializedPlayerData): voi
   player.xpLevel = data.xpLevel;
   player.xpProgress = data.xpProgress;
   player.spawnPoint = data.spawnPoint ? [...data.spawnPoint] : null;
+  player.survival.nightVisionTicks = data.nightVisionTicks ?? 0;
 }
 
 // ---------------------------------------------------------------------------

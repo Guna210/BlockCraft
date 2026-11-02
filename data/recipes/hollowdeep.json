@@ -1,0 +1,7 @@
+{
+  "glowcap_stew": {
+    "type": "shapeless",
+    "ingredients": ["glowcap", "bowl"],
+    "result": { "id": "glowcap_stew", "count": 1 }
+  }
+}

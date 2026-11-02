@@ -22,6 +22,8 @@ import type { DamageEvent } from '../gameplay/survival';
 import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
 import { clearPlayerInvulnerability, PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
+import { spawnRulesFor } from '../entity/spawning';
+import { worldDimension } from '../world/world-dimension';
 import '../entity/mobs';
 import { slowPlayer } from '../entity/player-slow';
 import { ProjectileRuntime } from '../entity/projectiles';
@@ -248,12 +250,17 @@ export class PlayerController {
         for (let a = 0; a < 3; a++) player.vel[a]! += velocity[a]! * 20;
       },
       slow: (factor, ticks) => slowPlayer(player, factor, ticks),
+      ignite: (ticks) => {
+        if (player.mode !== 'survival' || player.dead) return;
+        player.survival.burningTicks = Math.max(player.survival.burningTicks, ticks);
+      },
     };
     this.mobs?.dispose();
     this.mobs = new MobRuntime(world, ecs, {
       player: () => (this.player === player ? mobPlayer : null),
       spawnContext: { ecs, items: itemEntities, particles: this.particles },
-      spawnRules: 'default',
+      // Each dimension spawns only its own creatures (M20c).
+      spawnRules: spawnRulesFor(worldDimension(world)),
       spawning,
     });
     this.charges?.dispose();

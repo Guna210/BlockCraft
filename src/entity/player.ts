@@ -4,6 +4,7 @@ import type { Action } from '../engine/input';
 import { BlockCollision, EPSILON, type Position } from './physics';
 import { Survival } from '../gameplay/survival';
 import { takePlayerSlow } from './player-slow';
+import { gravityFactor } from '../world/updrafts';
 
 /** Silkmesh (Appendix A): walking speed factor and the vertical speeds it allows, blocks/s. */
 export const SILKMESH_SPEED_FACTOR = 0.25;
@@ -287,6 +288,9 @@ export class Player {
       }
       // Exact constant-acceleration displacement gives the specified jump apex (~1.24 blocks).
     }
+    // Updrafts (M20c) scale gravity through the shared factor; 1 everywhere else.
+    const gravity =
+      32 * gravityFactor(this.collision.world, this.pos[0], this.pos[1] + 0.9, this.pos[2]);
     let dx = this.vel[0] * TICK_SECONDS,
       dz = this.vel[2] * TICK_SECONDS;
     let dy =
@@ -294,7 +298,7 @@ export class Player {
         ? this.vel[1] * TICK_SECONDS
         : Math.max(
             -60 * TICK_SECONDS,
-            this.vel[1] * TICK_SECONDS - 0.5 * 32 * TICK_SECONDS * TICK_SECONDS,
+            this.vel[1] * TICK_SECONDS - 0.5 * gravity * TICK_SECONDS * TICK_SECONDS,
           );
     const surface = this.inFluid ? this.collision.waterSurface(this.pos, this.height) : NaN;
     if (this.inFluid && jump && this.waterExitTicks === 0 && Number.isFinite(surface)) {
@@ -321,7 +325,7 @@ export class Player {
         ) {
           this.vel[1] = 12;
           this.waterExitTicks = 12;
-          dy = this.vel[1] * TICK_SECONDS - 0.5 * 32 * TICK_SECONDS * TICK_SECONDS;
+          dy = this.vel[1] * TICK_SECONDS - 0.5 * gravity * TICK_SECONDS * TICK_SECONDS;
         }
       }
     }
@@ -340,7 +344,7 @@ export class Player {
       return;
     }
     if (!this.flying && !this.climbing && (!this.inFluid || this.waterExitTicks > 0))
-      this.vel[1] = Math.max(-60, this.vel[1] - 32 * TICK_SECONDS);
+      this.vel[1] = Math.max(-60, this.vel[1] - gravity * TICK_SECONDS);
     if (this.waterExitTicks > 0) this.waterExitTicks--;
     if (this.sneaking && wasGrounded && !this.flying) {
       dx = this.clipEdge(dx, 0);

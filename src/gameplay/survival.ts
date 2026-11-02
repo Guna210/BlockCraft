@@ -144,6 +144,12 @@ export interface SurvivalHost {
   };
 }
 
+/** Glowcap Stew (Appendix A): 30 s of night vision. */
+export const NIGHT_VISION_FOOD = 'glowcap_stew';
+export const NIGHT_VISION_TICKS = 600;
+/** While night vision lasts, the light curve never falls below this brightness. */
+export const NIGHT_VISION_FLOOR = 0.72;
+
 export class Survival {
   private _health: number = MAX_HEALTH;
   private _dead = false;
@@ -169,12 +175,15 @@ export class Survival {
   public exhaustion: number = 0;
   public air: number = MAX_AIR;
   public burningTicks: number = 0;
+  /** Ticks of night vision left (Glowcap Stew); saved with the player, cleared on death. */
+  public nightVisionTicks: number = 0;
   get dead(): boolean {
     return this._dead;
   }
   set dead(value: boolean) {
     const wasDead = this._dead;
     this._dead = Boolean(value);
+    if (this._dead) this.nightVisionTicks = 0;
     if (!wasDead && this._dead) this.onDeath(this.deathSource ?? 'killed');
   }
   public useConsumed: boolean = false;
@@ -221,6 +230,7 @@ export class Survival {
     this.cactusTicks = 0;
     this.suffocationTicks = 0;
     this.voidTicks = 0;
+    this.nightVisionTicks = 0;
   }
 
   damage(amount: number, source?: string): void {
@@ -273,6 +283,7 @@ export class Survival {
     const saturationVal = def.saturation ?? 0;
     this.hunger = Math.min(MAX_HUNGER, this.hunger + hungerVal);
     this.saturation = Math.min(this.hunger, this.saturation + saturationVal);
+    if (foodId === NIGHT_VISION_FOOD) this.nightVisionTicks = NIGHT_VISION_TICKS;
     return true;
   }
 
@@ -484,6 +495,7 @@ export class Survival {
 
   tick(world: World, host: SurvivalHost, particles: BreakParticles | null = null): void {
     if (this.dead) return;
+    if (this.nightVisionTicks > 0) this.nightVisionTicks--;
     this.saturation = Math.min(this.saturation, this.hunger);
     this.tickRegenAndStarvation(host.mode);
     this.tickHazards(world, host);

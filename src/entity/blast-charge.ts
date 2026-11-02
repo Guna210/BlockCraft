@@ -1,5 +1,6 @@
 import type { World, WorldListener } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
+import { gravityFactor } from '../world/updrafts';
 import { CURRENT_BLOCK_IDS, NEIGHBOR_OFFSETS } from '../gameplay/current/types';
 import { BlockCollision } from './physics';
 import type { Vec3 } from './ecs/model';
@@ -200,7 +201,7 @@ export class BlastCharges {
           }
         }
       }
-      charge.vel[1] -= 0.04;
+      charge.vel[1] -= 0.04 * gravityFactor(this.world, t.pos[0], t.pos[1] + 0.49, t.pos[2]);
       for (const axis of COLLISION_AXES) {
         const move = this.collision.sweep(t.pos, 0.98, axis, charge.vel[axis]!, 0.49);
         t.pos[axis]! += move;
