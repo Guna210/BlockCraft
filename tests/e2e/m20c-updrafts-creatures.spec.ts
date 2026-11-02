@@ -15,8 +15,14 @@ const SEED = 'blockcraft-m20c';
 // Found from the seed's own fields (M20b's height field, the Updraft field and the island grid);
 // each test checks its spot before using it.
 const UPDRAFT = { x: 60.5, z: 22.5 };
-// A floating island with an Updraft rising through its middle.
-const ISLAND = { x: 167, z: -274, top: 97, updraft: { x: 168.5, z: -273.5 } };
+// A floating island pierced by a lavafall (a 2x2 ceiling fall), with an Updraft over its east half.
+const ISLAND = {
+  x: -223,
+  z: -26,
+  top: 116,
+  updraft: { x: -215.5, z: -25.5 },
+  fall: { x: -235, z: -29 },
+};
 const FOREST = { x: -15, z: 19 };
 const SHORE = { x: -29, z: -96 };
 
@@ -245,19 +251,25 @@ test('M20c: Hollowdeep forest, magma sea and floating islands look unlike the Ov
     height: sea.height / 2,
   });
 
-  // A floating island from its eastern rim, looking across its top through the Updraft's motes,
-  // with two Glowwings drifting over it.
+  // A floating island from beside its lavafall, looking east across the lava-lit top through the
+  // Updraft's motes, with two Glowwings drifting over it.
   await page.evaluate((island) => {
     const api = window.__blockcraft!;
-    api.spawn!('glowwing', island.x + 4.5, island.top + 7, island.z - 3.5);
-    api.spawn!('glowwing', island.x - 3.5, island.top + 10, island.z + 4.5);
+    api.spawn!('glowwing', island.x - 1.5, island.top + 6, island.z - 1.5);
+    api.spawn!('glowwing', island.x + 8.5, island.top + 9, island.z + 2.5);
   }, ISLAND);
-  await view(page, ISLAND.x + 14.5, ISLAND.top + 3, ISLAND.z + 0.5, Math.PI, -0.1);
-  const updraftHere = await page.evaluate(
-    (u) => window.__blockcraft!.findUpdraft!(u.x, u.z, 4),
-    ISLAND.updraft,
-  );
-  expect(updraftHere).toMatchObject(ISLAND.updraft);
+  await view(page, ISLAND.x - 17.5, ISLAND.top + 4, ISLAND.z - 0.5, 0.1, -0.4);
+  const spot = await page.evaluate((island) => {
+    const api = window.__blockcraft!;
+    return {
+      updraft: api.findUpdraft!(island.updraft.x, island.updraft.z, 4),
+      fall: api.getBlock!(island.fall.x, island.top + 2, island.fall.z).id,
+      ground: api.getBlock!(island.x, island.top, island.z).id,
+    };
+  }, ISLAND);
+  expect(spot.updraft).toMatchObject(ISLAND.updraft);
+  expect(spot.fall).toBe('lava');
+  expect(spot.ground).toBe('driftstone');
   biomes.island = await biomeAt(ISLAND);
   const islands = await assertAndSaveScreenshot({
     name: 'm20-floating-islands',

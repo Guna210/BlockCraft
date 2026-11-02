@@ -83,7 +83,7 @@ import { PortalRenderer, WarpOverlay } from '../render/portal';
 import { SporeRenderer } from '../render/spores';
 import { LAVA_TICK_DELAY } from './fluids';
 import { HOLLOWDEEP_ENVIRONMENT } from '../gen/hollowdeep/environment';
-import { setUpdraftField, updraftField, UpdraftField } from './updrafts';
+import { clearUpdraftField, setUpdraftField, updraftField, UpdraftField } from './updrafts';
 import { UpdraftGlowRenderer } from '../render/updraft-glow';
 import { NIGHT_VISION_FLOOR } from '../gameplay/survival';
 import { setWorldDimension } from './world-dimension';
@@ -891,6 +891,7 @@ export class WorldManager {
       glBuffersAtStart: this.panoramaGlBuffersAtStart,
     };
     resetWeather();
+    clearUpdraftField();
     this.world = null;
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
     if (this.panoramaSavedRenderDistance !== null)
@@ -925,6 +926,7 @@ export class WorldManager {
     this.playerController?.reset();
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
+    clearUpdraftField();
     this.world = null;
     this.resetDimensions('overworld');
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
@@ -1464,10 +1466,8 @@ export class WorldManager {
       this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT.lavaFlowTickRate : LAVA_TICK_DELAY;
     // M20c: creature spawn rules follow the dimension, and only the Hollowdeep has Updrafts.
     setWorldDimension(world, this.dimension);
-    setUpdraftField(
-      world,
-      this.dimension === 'hollowdeep' ? new UpdraftField(this.worldSeed) : null,
-    );
+    clearUpdraftField();
+    if (this.dimension === 'hollowdeep') setUpdraftField(world, new UpdraftField(this.worldSeed));
   }
 
   /** Called after every tick: counts the player's time in a portal. Free while none is near. */
@@ -1591,6 +1591,8 @@ export class WorldManager {
       this.meshAttempts.clear();
       weatherManager.heightmap.clear();
       if (this.portalGuard) departing.listeners.delete(this.portalGuard);
+      // The world being left must not stay reachable through its Updraft field.
+      clearUpdraftField();
 
       this.dimension = to;
       const index = this.portalIndices[to];

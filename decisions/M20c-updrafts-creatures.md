@@ -10,7 +10,8 @@
    scanned and nothing is allocated per tick.
 2. **One shared gravity factor, zero Overworld cost.** `gravityFactor(world, x, y, z)` returns 0.4
    inside an Updraft and 1 elsewhere. Only one world (the active Hollowdeep) holds a field, set by
-   `WorldManager.attachDimension`. Every other world returns 1 after two comparisons. The player
+   `WorldManager.attachDimension` and dropped by `clearUpdraftField()` on travel, quit to menu and
+   panorama teardown. Every other world returns 1 after two comparisons. The player
    (32 b/s²), mobs (`MOB_GRAVITY`), item entities (12 b/s²) and primed Blast Charges (0.04/tick)
    multiply their gravity by it. Blast Charges are the game's only falling-block entity; no
    falling sand or gravel exists. No properties are added to World or Player; the dimension tag is
@@ -45,8 +46,8 @@
    - Swimming: in lava it swims (`flying` while in lava, so no gravity) toward random lava cells
      within 8 blocks. It refuses any step whose next cell is not lava.
    - Lunge: with the player within 6 blocks and the 60-tick cooldown elapsed, it leaps toward
-     them. Contact deals 5 damage through `hurtTarget` (i-frames) and sets them on fire for 100
-     ticks through the new `MobPlayer.ignite`, which raises `survival.burningTicks` (the existing
+     them. Contact deals 5 damage through `hurtTarget` (i-frames) and, only when that hit lands,
+     sets them on fire for 100 ticks through the new `MobPlayer.ignite`, which raises `survival.burningTicks` (the existing
      burn path, survival mode only).
    - Out of lava it crawls straight back to the last lava cell it was in, never wandering.
    - No mob takes lava or fire damage in this codebase, so it is immune by construction; a unit

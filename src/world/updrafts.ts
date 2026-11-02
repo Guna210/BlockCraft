@@ -130,6 +130,12 @@ export function setUpdraftField(world: World, next: UpdraftField | null): void {
   }
 }
 
+/** Drops the field whichever world holds it, so a world left behind is not kept alive. */
+export function clearUpdraftField(): void {
+  fieldWorld = null;
+  field = null;
+}
+
 /** The Updraft field of `world`, if it has one. */
 export function updraftField(world: World): UpdraftField | null {
   return fieldWorld === world ? field : null;

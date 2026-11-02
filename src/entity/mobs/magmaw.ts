@@ -234,8 +234,11 @@ export class MagmawGoal extends MobGoal {
         const own = this.runtime.entityBounds(this.id)!;
         const box = this.runtime.targetBounds(PLAYER_TARGET)!;
         if (boxGap(own, box) <= 0.35) {
-          if (this.runtime.hurtTarget(PLAYER_TARGET, MAGMAW_DAMAGE, this.id)) state.hits++;
-          target.ignite?.(MAGMAW_BURN_TICKS);
+          // Only a hit that lands (not one absorbed by i-frames) sets the player on fire.
+          if (this.runtime.hurtTarget(PLAYER_TARGET, MAGMAW_DAMAGE, this.id)) {
+            state.hits++;
+            target.ignite?.(MAGMAW_BURN_TICKS);
+          }
           this.setMode('return');
           return;
         }

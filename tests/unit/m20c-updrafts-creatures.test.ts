@@ -11,6 +11,7 @@ import {
   UPDRAFT_MAX_Y,
   UPDRAFT_MIN_Y,
   UpdraftField,
+  clearUpdraftField,
   gravityFactor,
   setUpdraftField,
   updraftField,
@@ -156,6 +157,14 @@ describe('M20c Updraft field', () => {
     setUpdraftField(overworld, null); // removing another world's field is a no-op
     expect(updraftField(world)).not.toBeNull();
     setUpdraftField(world, null);
+    expect(gravityFactor(world, z.x, 100, z.z)).toBe(1);
+  });
+
+  it('clearUpdraftField drops the field whichever world holds it', () => {
+    const { world, z } = updraftWorld();
+    expect(updraftField(world)).not.toBeNull();
+    clearUpdraftField();
+    expect(updraftField(world)).toBeNull();
     expect(gravityFactor(world, z.x, 100, z.z)).toBe(1);
   });
 });
@@ -503,6 +512,18 @@ describe('M20c Magmaw', () => {
     expect(near.player.hits[0]!.amount).toBe(5);
     expect(near.player.burning).toBe(MAGMAW_BURN_TICKS);
     near.runtime.dispose();
+  });
+
+  it('does not ignite a player whose i-frames absorb the hit', () => {
+    const s = lavaScene([5.5, GROUND, 0.5]);
+    const hurt = vi.spyOn(s.player, 'hurt').mockReturnValue(false);
+    const id = s.runtime.spawn(MAGMAW, 0.5, 61, 0.5);
+    run(s.ecs, 120);
+    expect(s.ecs.get(id, MagmawC)!.lunges).toBeGreaterThan(0);
+    expect(hurt).toHaveBeenCalled();
+    expect(s.ecs.get(id, MagmawC)!.hits).toBe(0);
+    expect(s.player.burning).toBe(0);
+    s.runtime.dispose();
   });
 
   it('goes straight back into the lava after landing on the shore', () => {
