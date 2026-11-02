@@ -51,7 +51,7 @@ In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M20c Updrafts, creatures & close-out | Fixes a97a9f8 green; round 2 sent | Claude cloud (claude/m20c) | session_0155bUSFJF8zqF49LSmecwby | #82 | last M20 task |
+| M20c Updrafts, creatures & close-out | Round 2 PASS on a97a9f8; merge now | Claude cloud (claude/m20c) | session_0155bUSFJF8zqF49LSmecwby | #82 | last M20 task |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +91,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
 - 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
 - 2026-11-02: Owner chose reshoot; I sent M20c builder (session_0155bUSAtZkJMYBBcbMy8C9p) the fix: reframe islands shot, clear updraft field on travel/unload, ignite only on successful Magmaw hit. Round 2 to session_0155bUSFJF8zqF49LSmecwby when green.
 - 2026-11-02: #82 M20c round 1 CHANGES NEEDED, only blocker = m20-floating-islands.png fails 'coloured lighting visible' (lower half black); all code checks OK. Asked owner (visuals are owner's call): reshoot (reframe toward lava/glowcap light) + cheap non-blocking (clear updraft field on travel/unload, ignite only on successful Magmaw hit), or accept as is.
