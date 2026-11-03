@@ -45,13 +45,12 @@ Last updated: 2026-10-16 (before compaction)
 
 ## Task status
 
-Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M20a (#81 526e13f; portal 833-834), M16b (#79 0b44c73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 834.
+Done (merged; notes in `progress/`): all of M00a–M13 (M13a #64, M13b, M13c #65, M13d #68, M13e #69, M13f #74, M13h #75 Cinderwraith (owner-added task, SPEC b635115), M13g #76 9a1250d = M13 complete), M15a/M15b, M16a, M16c, M17a–M17c, M18a (#66), M18b (#71), M18c (#73), M20c (#82 c7e03dd = M20 complete), M20a (#81 526e13f; portal 833-834), M16b (#79 0b44c73), M20b (#80 23c5e91; ids 825-832), M19c (#77 89777d7; ids 821-824), M14 (#78 d4167d8, blast_charge 820), M19a (#67), M19b (#72; ids 811-819), INFRA-ci, INFRA-stream (#70, longer m04 limits), INFRA-win, BLOCKS-shapes, plus earlier fix tasks. Last block id on master: 834.
 
 In flight:
 
 | Task | State | Builder | Reviewer | PR | Notes |
 | --- | --- | --- | --- | --- | --- |
-| M20c Updrafts, creatures & close-out | Round 2 PASS on a97a9f8; merge now | Claude cloud (claude/m20c) | session_0155bUSFJF8zqF49LSmecwby | #82 | last M20 task |
 
 Ready now (not started): none. Optional for an idle slot: M18c-fix (/fill into unloaded chunks, rebound menu keys inside chat, creative search IME) - offered, not requested.
 Next after merges: M14 -> M16b (needs M14, M16a, M16c). M19c -> M20a + M20b (need M19b, M19c). M20c needs M20a, M20b, M16b. M21a needs M20c, M18b, M18c.
@@ -91,6 +90,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21a -> M21b -> M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
 - 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
 - 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
 - 2026-11-02: Owner chose reshoot; I sent M20c builder (session_0155bUSAtZkJMYBBcbMy8C9p) the fix: reframe islands shot, clear updraft field on travel/unload, ignite only on successful Magmaw hit. Round 2 to session_0155bUSFJF8zqF49LSmecwby when green.
