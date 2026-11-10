@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-07 (before compaction)
+Last updated: 2026-11-10
 
 ## Setup
 
@@ -63,7 +63,8 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 
 ## Open items for the owner
 
-- PENDING (2026-11-03..07) hosting: owner considering Railway Hobby ($5/mo incl. $5 usage; my unverified figures ~$20/vCPU-mo, $10/GB-RAM-mo, $0.05/GB egress; railway.com blocked by this session's network policy) vs free Cloudflare Tunnel from old laptop (i7-7500U, 2c/4t: fine as dedicated server for 2-4 friends; don't also play on it). Cloudflare domain (~$5/yr) can point at Pages now; CNAME to Railway works (SSL Full if proxied). Decision not needed until after M21c.
+- DECIDED (owner, 2026-11-10) hosting: build all of M21 but host no server for now (maybe later on old laptop or Railway). Cloudflare Pages stays static single-player. On the hosted build the Multiplayer button opens an info popup: open source, clone repo, run your own server. Proposed (owner to confirm): build-time flag set only in Cloudflare Pages env (e.g. VITE_HOSTED_INFO_ONLY=1) -> info popup; default/local builds show the normal address screen, so M21 e2e unchanged; popup unit-tested. Suggested M21b also serve dist/ over http from the server so friends just open http://host:port (https page can't reach ws:// LAN servers). m18a-menus.spec:71 asserts no Multiplayer button -> M21c must edit it (owner approves). No LICENSE in repo: owner must pick one (e.g. MIT) to be truly open source.
+- PENDING owner-added task README (not in SPEC): marketing README with fresh screenshots; best after M22c/M23 for final visuals (or now + refresh). Play link added later (domain not bought; *.pages.dev link could go in now).
 - PENDING spec decision: optional server password (and/or whitelist) for M21 - SPEC has none, so anyone with the address can join. Suggested wording: "Optional server password set with --password; client sends it in the handshake, rejected with a clear error if wrong."
 - PENDING suggestion: owner could edit SPEC so M22a (culling/batching = laptop performance) depends only on M20c and runs alongside M21.
 
@@ -98,6 +99,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-10: Owner decided no hosted server for now; Pages Multiplayer = info popup (see open items). Proposed build flag, server serving client, LICENSE, README task.
 - 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21a -> M21b -> M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
 - 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
 - 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
@@ -117,4 +119,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
 - 2026-10-30: #80 fix 5376339 (Hollowdeep ores/shape only) red: shard 1 m02:54 meshMsP95 x3 (8.5, 6.3 > 6). Fix touches no mesher/Overworld code; same e7d6290 passed. Known borderline (open item). Told owner: re-run failed jobs; if it fails again, escalate m02:54 budget (owner's call).
 - 2026-10-30: #81 M20a round 1 PASS. For its merge push (after #79+#80 merge): merge master, portal ids -> 833-834, resolve player-controller (M16b) + m19c test (take M20b version), wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT, re-check portalMinY/MaxY vs real cavern, travelThroughPortal catch -> portalTravel.cancel(), remove unused ids lint, totals in handoff. Non-blocking left: shader compiles when index non-empty; no rollback after World swap; workers recreated per travel; warp overlay over stale frame; unnamed worlds lose inactive dimension.
-- 2026-10-30: #80 M20b round 1 CHANGES NEEDED (session_0155bUSD2fDQ7yLGcWGYLCev): Skyshard spans y 5-191; my builder prompt wrongly said 'over the whole height' (A.4 intro = denominator only; row = y 5-60 peak 20). Decided: y 5-60 peak 20, ~25/1M of whole-height underground volume, test asserts none above 60, decisions file corrected (no owner override). Also: swapped biome labels (shape.ts:36-40), Overworld absence check wider, Status verified. Lava falls onto dry land OK (non-blocking).
