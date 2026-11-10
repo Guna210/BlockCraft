@@ -13,6 +13,7 @@ import {
   encodeMessage,
   rejectIncompatibleVersion,
   entityMove,
+  createEntityMove,
   applyEntityMove,
   type Messages,
   type Message,
@@ -236,18 +237,20 @@ describe('M21a protocol', () => {
   it('encodes changed masks and exact small deltas with absolute fallback, then applies in place', () => {
     const pose = { x: 0, y: 50, z: 20, yaw: 0, pitch: 0 };
     const next = { x: -8, y: 50 + 32767 / 4096, z: 1000, yaw: 0.125, pitch: 0.1 };
-    const move = entityMove(8, pose, next),
+    const receiver = { ...pose };
+    const move = entityMove(8, pose, next, createEntityMove(8)),
       encoded = bytes(move);
     expect(encoded[5]).toBe(31);
-    expect(encoded[6]).toBe(20); // z and pitch are absolute.
+    expect(encoded[6]).toBe(4); // z is absolute.
     expect(move.changes.x).toEqual({ delta: -8 });
     roundTrip(move);
-    applyEntityMove(pose, move);
-    expect(pose).toEqual(next);
+    applyEntityMove(receiver, move);
+    expect(receiver).toEqual(pose);
+    expect(Math.abs(pose.pitch - next.pitch)).toBeLessThanOrEqual(1 / 8192);
     expect(bytes({ type: T.EntityMove, id: 8, changes: { x: { delta: 1 / 4096 } } }).length).toBe(
       9,
     );
-    expect(bytes(entityMove(8, pose, next)).length).toBe(7);
+    expect(bytes(entityMove(8, pose, next, createEntityMove(8))).length).toBe(7);
     expect(() => bytes({ type: T.EntityMove, id: 8, changes: { x: { delta: 0.1 } } })).toThrow(
       RangeError,
     );
@@ -262,6 +265,40 @@ describe('M21a protocol', () => {
       error(bad);
     }
     roundTrip({ ...cases[T.EntitySpawn], name: undefined });
+  });
+  it('quantizes ordinary movement against a reconstructed baseline without drift', () => {
+    const sender = { x: 0, y: 80, z: 0, yaw: 0, pitch: 0 };
+    const receiver = { ...sender };
+    const actual = { ...sender };
+    const reusable = createEntityMove(42);
+    let total = 0,
+      deltas = 0;
+    for (let tick = 0; tick < 10000; tick++) {
+      actual.x += 0.1137;
+      actual.y -= 0.0317;
+      actual.z += 0.0731;
+      actual.yaw += 0.0137;
+      actual.pitch += 0.0013;
+      const move = entityMove(42, sender, actual, reusable);
+      expect(move).toBe(reusable);
+      const decoded = decodeMessage(bytes(move));
+      expect(decoded.ok).toBe(true);
+      if (!decoded.ok || decoded.message.type !== T.EntityMove)
+        throw new Error('Expected movement');
+      applyEntityMove(receiver, decoded.message);
+      for (const key of ['x', 'y', 'z', 'yaw', 'pitch'] as const) {
+        total++;
+        if (move.changes[key] && 'delta' in move.changes[key]!) deltas++;
+        expect(receiver[key]).toBe(sender[key]);
+        expect(Math.abs(receiver[key] - actual[key])).toBeLessThanOrEqual(1 / 8192 + 1e-10);
+      }
+    }
+    expect(deltas / total).toBeGreaterThan(0.99);
+    actual.x += 100;
+    const teleport = entityMove(42, sender, actual, reusable);
+    expect(teleport.changes.x).toEqual({ absolute: actual.x });
+    applyEntityMove(receiver, teleport);
+    expect(receiver).toEqual(sender);
   });
   it('rejects unknown types, nonfinite numbers, invalid enums, trailing data and every truncated frame', () => {
     error(new Uint8Array([255]), 'type');

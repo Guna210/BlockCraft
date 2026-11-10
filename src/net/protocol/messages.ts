@@ -192,26 +192,54 @@ export function rejectIncompatibleVersion(
       };
 }
 
-/** Produces a lossless delta packet against the last sent pose, including absolute teleport fallback. */
+/** Allocate one message and its field storage per recipient; reuse it for every update. */
+export function createEntityMove(id: number): Messages[MessageType.EntityMove] {
+  const message: Messages[MessageType.EntityMove] = {
+    type: MessageType.EntityMove,
+    id,
+    changes: {},
+  };
+  moveStorage.set(
+    message,
+    MOVE_FIELDS.map(() => ({ delta: 0, absolute: 0 })),
+  );
+  return message;
+}
+const moveStorage = new WeakMap<
+  Messages[MessageType.EntityMove],
+  Array<{ delta: number; absolute: number }>
+>();
+
+/** Quantize against the reconstructed sender baseline, updating it in place. */
 export function entityMove(
   id: number,
   previous: EntityPose,
   next: EntityPose,
+  message: Messages[MessageType.EntityMove],
 ): Messages[MessageType.EntityMove] {
-  const changes: EntityChanges = {};
-  for (const key of MOVE_FIELDS) {
-    if (previous[key] === next[key]) continue;
-    const delta = next[key] - previous[key];
-    const scaled = delta * 4096;
-    changes[key] =
-      Number.isInteger(scaled) &&
-      scaled >= -32768 &&
-      scaled <= 32767 &&
-      previous[key] + delta === next[key]
-        ? { delta }
-        : { absolute: next[key] };
+  const storage = moveStorage.get(message);
+  if (!storage) throw new Error('Use createEntityMove to allocate reusable movement storage');
+  message.id = id;
+  for (let i = 0; i < MOVE_FIELDS.length; i++) {
+    const key = MOVE_FIELDS[i]!;
+    const q = Math.round((next[key] - previous[key]) * 4096);
+    if (q === 0) {
+      delete message.changes[key];
+      continue;
+    }
+    const value = storage[i]!;
+    if (Number.isFinite(next[key]) && q >= -32768 && q <= 32767) {
+      delete (value as Partial<typeof value>).absolute;
+      value.delta = q / 4096;
+      previous[key] += value.delta;
+    } else {
+      delete (value as Partial<typeof value>).delta;
+      value.absolute = next[key];
+      previous[key] = next[key];
+    }
+    message.changes[key] = value;
   }
-  return { type: MessageType.EntityMove, id, changes };
+  return message;
 }
 /** Apply in place; the caller owns the pose and its interpolation history. */
 export function applyEntityMove(pose: EntityPose, message: Messages[MessageType.EntityMove]): void {

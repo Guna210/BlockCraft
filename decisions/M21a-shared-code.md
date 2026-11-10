@@ -5,7 +5,7 @@
 - The existing lint script discovers a scoped override in `eslint.config.mjs` for
   `src/world`, `src/gen`, `src/gameplay`, `src/entity`, and `src/net`. Browser globals
   are forbidden by `no-restricted-globals`, including access through `globalThis`.
-  `HTML*Element` names come from the installed TypeScript DOM declarations.
+  `HTML*Element` and `WebGL*` names come from the installed TypeScript DOM declarations.
   `performance.now()` remains allowed. Inline ESLint configuration is ignored in
   these directories; there are no disables.
 - The TypeScript extension of `no-restricted-imports` forbids runtime imports and
@@ -17,8 +17,7 @@
   `src/world/light-curve.ts`, and pure texture/noise helpers to
   `src/gen/texture-noise.ts`. All users import the same implementation.
 - `src/world/timing.ts` owns the unchanged fixed timestep; `engine/loop.ts` re-exports
-  it for existing callers. `src/gameplay/input-state.ts` owns the action and plain
-  input-state types. Shared controllers retain their existing plain `(action, down)`
+  it for existing callers. `src/gameplay/input-state.ts` owns the action type. Shared controllers retain their existing plain `(action, down)`
   input API; they never read the browser input engine. The engine re-exports Action
   to preserve its client-facing API.
 
@@ -126,9 +125,7 @@ slots, and inventory revision validation belong to M21b.
 EntityMove's five low changed-mask bits correspond to x/y/z/yaw/pitch. Absolute
 bits must be a subset of changed bits. Each changed field uses i16 delta in units
 of 1/4096 unless its absolute bit is set, in which case it uses f64. No baseline
-is hidden in the codec. `entityMove(id, previous, next)` uses a small delta only
-when exactly representable and reconstructing the next value losslessly; otherwise
-it sends absolute. `applyEntityMove(pose, message)` mutates the caller's pose.
+is hidden in the codec. `entityMove(id, previous, next, message)` quantizes each position and rotation delta to the nearest 1/4096, using i16 when it fits and f64 otherwise. It updates the caller-owned sender baseline to the reconstructed value, bounding error to half a quantization step without drift. Use `createEntityMove(id)` once per recipient and pass the result as the fourth argument on each call to reuse message and field storage. `applyEntityMove(pose, message)` mutates the caller's pose.
 M21b tracks the last sent pose per recipient; M21c applies packets in reliable
 WebSocket order and keeps its own interpolation history. Teleports and values
 outside [-8, 32767/4096] naturally take the absolute path.

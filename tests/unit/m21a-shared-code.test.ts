@@ -56,6 +56,7 @@ describe('M21a shared boundary lint', () => {
     }
     for (const name of [
       'window',
+      'self',
       'document',
       'navigator',
       'location',
@@ -68,6 +69,8 @@ describe('M21a shared boundary lint', () => {
       'AudioContext',
       'OffscreenCanvas',
       'WebGL2RenderingContext',
+      'WebGLRenderingContext',
+      'WebGLTexture',
       'HTMLCanvasElement',
       'HTMLVideoElement',
       'alert',
@@ -80,6 +83,12 @@ describe('M21a shared boundary lint', () => {
         name,
       ).toBe(true);
     }
+  });
+  it('rejects bare WebGL globals in the world folder', async () => {
+    const [result] = await lint.lintText('export const gl = WebGLRenderingContext;', {
+      filePath: 'src/world/m21a-planted.ts',
+    });
+    expect(result!.messages.some((m) => m.ruleId === 'no-restricted-globals')).toBe(true);
   });
   it('allows type imports, shared imports, rng and Node performance.now', async () => {
     const [result] = await lint.lintText(

@@ -11,6 +11,7 @@ const dom = readFileSync(
 );
 const browserGlobals = [
   'window',
+  'self',
   'document',
   'navigator',
   'location',
@@ -22,7 +23,7 @@ const browserGlobals = [
   'Image',
   'AudioContext',
   'OffscreenCanvas',
-  'WebGL2RenderingContext',
+  ...new Set([...dom.matchAll(/^declare var (WebGL\w*)\b/gm)].map((match) => match[1])),
   'alert',
   ...new Set([...dom.matchAll(/^declare var (HTML\w*Element)\b/gm)].map((match) => match[1])),
 ];
