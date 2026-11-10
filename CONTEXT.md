@@ -63,8 +63,9 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 
 ## Open items for the owner
 
-- DECIDED (owner, 2026-11-10) hosting: build all of M21 but host no server for now (maybe later on old laptop or Railway). Cloudflare Pages stays static single-player. On the hosted build the Multiplayer button opens an info popup: open source, clone repo, run your own server. Proposed (owner to confirm): build-time flag set only in Cloudflare Pages env (e.g. VITE_HOSTED_INFO_ONLY=1) -> info popup; default/local builds show the normal address screen, so M21 e2e unchanged; popup unit-tested. Suggested M21b also serve dist/ over http from the server so friends just open http://host:port (https page can't reach ws:// LAN servers). m18a-menus.spec:71 asserts no Multiplayer button -> M21c must edit it (owner approves). No LICENSE in repo: owner must pick one (e.g. MIT) to be truly open source.
-- PENDING owner-added task README (not in SPEC): marketing README with fresh screenshots; best after M22c/M23 for final visuals (or now + refresh). Play link added later (domain not bought; *.pages.dev link could go in now).
+- DECIDED (owner, 2026-11-10) hosting: build M21 exactly per SPEC (Multiplayer menu with address entry, also on the Cloudflare Pages site); host no server for now (maybe later on laptop/Railway). Others clone the repo and run their own server. No info popup, no build flag, server does NOT serve the client (owner: too much work). M21c prompt: when the page is https and the address is ws:// (non-localhost), show a clear error saying a wss:// address is needed (browser blocks mixed content). m18a-menus.spec:71 asserts no Multiplayer button -> M21c must edit it (owner approves).
+- LICENSE: owner left it to me -> MIT, copyright Guna210. Owner adds it on GitHub (Add file > LICENSE > choose MIT template); not yet done.
+- README (owner-added task, not in SPEC): last, after M23. Marketing README with fresh screenshots; play link once domain bought.
 - PENDING spec decision: optional server password (and/or whitelist) for M21 - SPEC has none, so anyone with the address can join. Suggested wording: "Optional server password set with --password; client sends it in the handshake, rejected with a clear error if wrong."
 - PENDING suggestion: owner could edit SPEC so M22a (culling/batching = laptop performance) depends only on M20c and runs alongside M21.
 
@@ -99,6 +100,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-10: Owner simplified: M21 per SPEC, address entry on Pages too, no hosted server, no popup; README last; I chose MIT licence.
 - 2026-11-10: Owner decided no hosted server for now; Pages Multiplayer = info popup (see open items). Proposed build flag, server serving client, LICENSE, README task.
 - 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21a -> M21b -> M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
 - 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
@@ -118,4 +120,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-10-31: #80 M20b round 2 PASS (Skyshard y 5-60 peak 20, 25.25/1M; labels fixed; Overworld check 256 cols). Told owner: retitle and merge #80 (contains master 89777d7, no conflict with #79). Carried to M20a merge push: Hollowdeep biome strings, lava falls on dry land (non-blocking).
 - 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
 - 2026-10-30: #80 fix 5376339 (Hollowdeep ores/shape only) red: shard 1 m02:54 meshMsP95 x3 (8.5, 6.3 > 6). Fix touches no mesher/Overworld code; same e7d6290 passed. Known borderline (open item). Told owner: re-run failed jobs; if it fails again, escalate m02:54 budget (owner's call).
-- 2026-10-30: #81 M20a round 1 PASS. For its merge push (after #79+#80 merge): merge master, portal ids -> 833-834, resolve player-controller (M16b) + m19c test (take M20b version), wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT, re-check portalMinY/MaxY vs real cavern, travelThroughPortal catch -> portalTravel.cancel(), remove unused ids lint, totals in handoff. Non-blocking left: shader compiles when index non-empty; no rollback after World swap; workers recreated per travel; warp overlay over stale frame; unnamed worlds lose inactive dimension.
