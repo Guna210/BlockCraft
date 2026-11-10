@@ -50,7 +50,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20
 In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
 
 Remaining SPEC tasks: M21a -> M21b -> M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21a PR #83 (Codex), CI green incl. harness guard + Cloudflare Pages build; Round 1 CHANGES NEEDED; fix 8a29281 green; round 2 sent to reviewer session_0155bUSEmBcB6FfyDSGAm9is. Decision: particles stay injected via existing `particles` params (type-only import allowed, or a shared ParticleSink interface BreakParticles satisfies); module-level sink only for real runtime imports (playExplosion in explosions.ts); no test edits for M11a/M14/M20c.
+In flight: M21a PR #83 (Codex), CI green incl. harness guard + Cloudflare Pages build; Round 2 PASS on 8a29281. Before merge: Codex docs push (progress Status verified, PR body synced, title '— verified'), green, then owner merges. Decision: particles stay injected via existing `particles` params (type-only import allowed, or a shared ParticleSink interface BreakParticles satisfies); module-level sink only for real runtime imports (playExplosion in explosions.ts); no test edits for M11a/M14/M20c.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
 Merge rule: the second PR to merge clicks Update branch and needs a fresh green run (shard 2 ~12-25 min; check log for "flaky"). Block IDs: append only; second PR renumbers. Parallel PRs touching the same test line should make identical edits.
@@ -59,6 +59,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - Keep `ws` and server/ code out of the browser (Vite) build; Cloudflare Pages deploy (static, single-player) must keep working. CI build catches leaks.
 - M21b: gen on Node worker_threads; CLI options `--world <name> --seed <seed> --port <n>` (one world per server process); document a lean server-only install; report real server RAM/CPU idle + with clients, and save size on disk, in the handoff. Needs owner `harness-change` label (Playwright starts the server).
 - M21a: leave room in the handshake for an optional server password (owner deciding, see open items).
+- M21b (from #83 review): entityMove uses `delete` on reused changes/storage objects each call (V8 dictionary mode); switch to explicit kind flag if profiling shows cost.
 - Server needs wss when reached from the https Pages site (Railway and Cloudflare Tunnel both provide TLS).
 
 ## Open items for the owner
@@ -100,6 +101,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-10: #83 M21a round 2 PASS (WebGL lint + self fixed; 3528/3528 deltas, 14.1 B avg, err <= 1/8192 no drift). Non-blocking: status/title/PR body stale; entityMove `delete` dictionary mode (M21b note). Told owner: Codex docs push, then merge.
 - 2026-11-10: #83 fix 8a29281 green (owner). Sent round 2 to reviewer.
 - 2026-11-10: #83 M21a round 1 CHANGES NEEDED: (1) lint misses WebGL* other than WebGL2RenderingContext -> generate from lib.dom like HTML*Element + test; (2) EntityMove delta path never used for real floats (only exact 1/4096 multiples) -> quantise deltas to i16 at 1/4096, sender baseline = reconstructed pose (mutated in place, no alloc), large jumps absolute, multi-tick non-dyadic test (err <= 1/8192, no drift). Non-blocking: status/title verified, unused InputState, add self.*. Everything else verified OK.
 - 2026-11-10: #83 M21a CI green (4 shards, harness guard, Pages build). Gave Sonnet reviewer prompt.
@@ -119,4 +121,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-10-31: #81 merge push 5ed9cef green (contains master 0b44c73, portal 833-834, M20b wired: pipeline, biome ids, fog uniform, spores.ts, lava delay; portal y 41-150; cancel() fix + test). Substantial new wiring code -> sent round 2 to session_0155bUSAs5hRGDVLLvCTE6YE instead of self-check.
 - 2026-10-31: #79 M16b merged (0b44c73). Sent M20a builder the merge push: merge master, portal ids 833-834, m19c test take master, keep both in player-controller, wire createHollowdeepPipeline + HOLLOWDEEP_ENVIRONMENT + biome strings + music mood, re-check portal Y range vs real cavern with e2e, travelThroughPortal catch -> cancel() + test. Then I check diff; owner merges. After #81: M20c ready (needs M20a, M20b, M16b).
 - 2026-10-31: #79 M16b round 3 PASS. Told owner: optional Codex docs push (progress Status verified + CI totals), then Update branch (bring in #80), fresh green, merge. Non-blocking: pendingPlaybacks entries accumulate only after a failed explosion render; node creation moved to next macrotask (not removed).
-- 2026-10-31: #79 fix f77081f green (offline tests for new recipes, keyed pending explosions, enqueue-only explosion path, occlusion batching; m14 max 72.7 ms, A/B vs master in handoff). Round 3 (last) sent. Branch still lacks #80 -> Update branch before merge.
