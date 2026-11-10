@@ -14,7 +14,7 @@ import { interactMob } from '../entity/ai/interactions';
 import { feedMob } from '../entity/ai/goals/breed';
 import type { Player } from '../entity/player';
 import type { BlockInteraction } from './block-interaction';
-import type { Action } from '../engine/input';
+import type { Action } from '../gameplay/input-state';
 import { items } from './items';
 import { getAttackDamage, getToolDurability, getTotalArmorDefense } from './tools';
 

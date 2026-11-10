@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import { killPlayer } from './death';
 import { spawnEntity } from '../../entity/ecs/entity-types';
 import { killEntity, snapshotEcsEntities } from '../../entity/ecs/systems';

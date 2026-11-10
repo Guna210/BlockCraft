@@ -1,7 +1,7 @@
 import { expandBlockColumns, type BlockColumnsSnapshot } from '../../src/world/block-snapshot';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Streamer, type StreamerHost } from '../../src/world/streamer';
-import { WorldManager } from '../../src/world/world-manager';
+import { WorldManager } from '../../src/game/world-manager';
 import { World } from '../../src/world/world';
 import type { LightColumns } from '../../src/world/batch-light';
 

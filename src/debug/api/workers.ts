@@ -1,4 +1,4 @@
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 export function setWorkerPoolSize(size: number): void {
   WorldManager.getInstance().setWorkerPoolSize(size);

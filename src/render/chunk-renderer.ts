@@ -16,7 +16,7 @@ import {
   LIGHT_BRIGHTNESS_RANGE,
   AO_UNOCCLUDED,
   AO_STEP,
-} from './light-curve';
+} from '../world/light-curve';
 import { mat4 } from 'gl-matrix';
 import { GLWrapper } from './gl';
 import { settings } from '../engine/settings';
@@ -28,7 +28,7 @@ import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
 import { mergeMeshBuckets } from '../mesh/models';
-import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from './frustum';
+import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from '../world/frustum';
 import { bayerGlsl } from './dither';
 import { ColumnFades, UniformValueCache } from './column-fade';
 import { GLSL_SKY_ATMOSPHERE } from './sky';

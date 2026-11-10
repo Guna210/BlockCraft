@@ -3,7 +3,15 @@
 // (the period divides 16, so the tile repeats without a seam); log tops use growth rings inside
 // a bark ring; leaves are neutral clusters that the renderer multiplies by the biome foliage tint
 // (tint index 2), with transparent gaps for the cutout pass (ART.md §3).
-import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb, RGBA } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  LCG,
+  setPixel,
+  fillSolid,
+  hexToRgb,
+  RGBA,
+} from '../../gen/texture-noise';
 
 const pal = (hexes: string[]): RGBA[] => hexes.map((h) => hexToRgb(h));
 

@@ -23,7 +23,7 @@ export interface BlockCraftDebugAPI {
     menuVisible: boolean;
     panorama: boolean;
     panoramaStarts: number;
-    lastTeardown: import('../../world/world-manager').PanoramaTeardown | null;
+    lastTeardown: import('../../game/world-manager').PanoramaTeardown | null;
     sectionMeshes: number;
     meshedColumns: number;
     meshedColumnsOutsideWorld: number;
@@ -258,7 +258,7 @@ export interface BlockCraftDebugAPI {
   getMainThreadGenCount?: () => number;
   resetMainThreadGenCount?: () => void;
   setRenderDistance?: (n: number) => number;
-  getStreamingStats?: () => import('../../world/world-manager').WorldStreamingStats;
+  getStreamingStats?: () => import('../../game/world-manager').WorldStreamingStats;
   primeBlastCharge?: (x: number, y: number, z: number) => number | null;
   explode?: (x: number, y: number, z: number, power: number) => number;
   getExplosionStats?: () => {

@@ -1,4 +1,4 @@
-import type { BreakParticles } from '../../render/particles';
+import type { ParticleSink } from '../../gameplay/particle-sink';
 import { PRNG, deriveSeed } from '../../engine/rng';
 import { defineComponent, type EntityWorld } from '../ecs/world';
 import { BodyC, HealthC, RenderableC, TransformC } from '../ecs/components';
@@ -48,7 +48,7 @@ export type Drops = Array<[itemId: string, count: number]>;
 export interface CreatureContext {
   ecs: EntityWorld;
   items: ItemEntityManager;
-  particles?: BreakParticles;
+  particles?: ParticleSink;
   /** Deterministic random number in [0, 1), seeded from the world seed. */
   random(): number;
 }

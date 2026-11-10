@@ -4,14 +4,14 @@ import { BlockSelectionRenderer } from '../render/block-selection';
 import { PlayerModelRenderer } from '../render/player-model';
 import { EntityRenderer } from '../render/entities';
 import type { PlayerController } from '../engine/player-controller';
-import { LightStorage, SKY_15_SECTION } from './lighting';
-import { collectLightPadding } from './light-padding';
-import type { ColumnLight, LightRect } from './batch-light';
-import { columnKey } from './streaming-plan';
+import { LightStorage, SKY_15_SECTION } from '../world/lighting';
+import { collectLightPadding } from '../world/light-padding';
+import type { ColumnLight, LightRect } from '../world/batch-light';
+import { columnKey } from '../world/streaming-plan';
 import { vec3, mat4 } from 'gl-matrix';
-import { World } from './world';
-import { setWorldInstance } from './world-instance';
-import { ChunkSection } from './chunk';
+import { World } from '../world/world';
+import { setWorldInstance } from '../world/world-instance';
+import { ChunkSection } from '../world/chunk';
 import { WorkerPool } from '../mesh/worker-pool';
 import { GenWorkerPool } from '../workers/gen-worker-pool';
 import { LightWorkerPool } from '../workers/light-worker-pool';
@@ -36,7 +36,7 @@ import { ChunkRenderer } from '../render/chunk-renderer';
 import { SkyRenderer } from '../render/sky';
 import { CloudRenderer } from '../render/clouds';
 import { WeatherRenderer } from '../render/weather';
-import { weatherManager, getWeather, resetWeather } from './weather';
+import { weatherManager, getWeather, resetWeather } from '../world/weather';
 import {
   getWorldTime,
   resetWorldTime,
@@ -44,15 +44,19 @@ import {
   skyAtmosphereFactors,
   skyLightMultiplier,
   sunDirection,
-} from './time';
+} from '../world/time';
 import { TextureAtlas, ATLAS_MAX_MIP } from '../render/atlas';
 import { textureGenerators } from '../render/textures/index';
-import { TextureData } from '../render/textures/noise';
+import { TextureData } from '../gen/texture-noise';
 import { createSentinelTile, SENTINEL_KEY } from '../render/texture-resolve';
-import { BlockRegistry } from './blocks/registry';
+import { BlockRegistry } from '../world/blocks/registry';
 import { buildMeshLookupTables, MeshLookupTables } from '../mesh/greedy';
-import { collectBlockPadding, snapshotBlocks, type BlockColumnsSnapshot } from './block-snapshot';
-import { findSpawnPoint } from './spawn';
+import {
+  collectBlockPadding,
+  snapshotBlocks,
+  type BlockColumnsSnapshot,
+} from '../world/block-snapshot';
+import { findSpawnPoint } from '../world/spawn';
 import { readPlayerData } from '../persist/restore';
 import {
   applyPlayerData,
@@ -67,7 +71,7 @@ import {
   otherDimension,
   scaleCoordinate,
   type DimensionId,
-} from './dimension';
+} from '../world/dimension';
 import {
   PortalGuard,
   PortalIndex,
@@ -78,16 +82,16 @@ import {
   portalArrivalPoint,
   type PortalAxis,
   type PortalRecord,
-} from './portals';
+} from '../world/portals';
 import { PortalRenderer, WarpOverlay } from '../render/portal';
 import { SporeRenderer } from '../render/spores';
-import { LAVA_TICK_DELAY } from './fluids';
+import { LAVA_TICK_DELAY } from '../world/fluids';
 import { HOLLOWDEEP_ENVIRONMENT } from '../gen/hollowdeep/environment';
-import { clearUpdraftField, setUpdraftField, updraftField, UpdraftField } from './updrafts';
+import { clearUpdraftField, setUpdraftField, updraftField, UpdraftField } from '../world/updrafts';
 import { UpdraftGlowRenderer } from '../render/updraft-glow';
 import { NIGHT_VISION_FLOOR } from '../gameplay/survival';
-import { setWorldDimension } from './world-dimension';
-import type { RayHit } from './raycast';
+import { setWorldDimension } from '../world/world-dimension';
+import type { RayHit } from '../world/raycast';
 import { getToolDurability } from '../gameplay/tools';
 import { SaveManager, type LoadedWorld, type RestoredColumn } from '../persist/save-manager';
 import {
@@ -99,14 +103,14 @@ import {
 import { Camera } from '../render/camera';
 import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
-import { extractFrustumPlanes } from '../render/frustum';
+import { extractFrustumPlanes } from '../world/frustum';
 import { frameStats } from '../engine/frame-stats';
 import { settings, type LeavesSetting } from '../engine/settings';
 import { sound } from '../audio/service';
-import { Streamer, StreamerHost, StreamerView, StreamingStats } from './streamer';
-import { MeshAttempts } from './mesh-attempts';
+import { Streamer, StreamerHost, StreamerView, StreamingStats } from '../world/streamer';
+import { MeshAttempts } from '../world/mesh-attempts';
 import { fadeStartFor } from '../render/column-fade';
-import { clampRenderDistance } from './streaming-plan';
+import { clampRenderDistance } from '../world/streaming-plan';
 import type { GenResult } from '../workers/gen-worker-pool';
 import type { MeshResult } from '../mesh/worker-pool';
 

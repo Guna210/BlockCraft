@@ -5,7 +5,7 @@ import { TextureAtlas } from '../../src/render/atlas';
 import { textureGenerators } from '../../src/render/textures/index';
 import { createSentinelTile, SENTINEL_KEY } from '../../src/render/texture-resolve';
 import { buildIconSheet, createTileLookup, ICON_SIZE } from '../../src/ui/icons';
-import type { TextureData } from '../../src/render/textures/noise';
+import type { TextureData } from '../../src/gen/texture-noise';
 
 // The same tile set the game builds in WorldManager.initGL.
 function buildSheet() {

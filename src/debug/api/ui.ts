@@ -1,7 +1,7 @@
 import { api } from './core';
 import { activeUi } from '../../ui/ui-manager';
 import { activeMenu } from '../../ui/main-menu';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 function ui() {
   if (!activeUi.manager) throw new Error('The UI is not ready');

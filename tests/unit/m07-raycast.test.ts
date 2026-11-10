@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { VoxelRaycaster, createRayHit, FACES } from '../../src/world/raycast';
 import { BlockRegistry } from '../../src/world/blocks/registry';
-import { LCG } from '../../src/render/textures/noise';
+import { LCG } from '../../src/gen/texture-noise';
 import type { Box } from '../../src/world/block-shapes';
 // Independent exact plane/slab reference, reached by fine marching rather than DDA.
 function exact(o: number[], d: number[], x: number, y: number, z: number, b: Box) {

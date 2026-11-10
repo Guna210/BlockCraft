@@ -1,10 +1,11 @@
+import './blast-charge-model';
 import type { mat4 } from 'gl-matrix';
 import type { GLWrapper } from './gl';
 import type { UnderwaterView } from './underwater';
 import type { World } from '../world/world';
 import type { EntityWorld } from '../entity/ecs/world';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
-import { LIGHT_MIN_BRIGHTNESS, lightBrightness } from './light-curve';
+import { LIGHT_MIN_BRIGHTNESS, lightBrightness } from '../world/light-curve';
 import {
   MAX_MODEL_PARTS,
   cubeFaceRects,

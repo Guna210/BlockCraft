@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import type { SaveStats } from '../../persist/save-manager';
 import { getWorldInstance } from '../../world/world-instance';
 import { activeUi } from '../../ui/ui-manager';

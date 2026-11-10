@@ -1,6 +1,6 @@
-import { TICK_SECONDS } from '../engine/loop';
+import { TICK_SECONDS } from '../world/timing';
 import { Inventory } from '../gameplay/inventory';
-import type { Action } from '../engine/input';
+import type { Action } from '../gameplay/input-state';
 import { BlockCollision, EPSILON, type Position } from './physics';
 import { Survival } from '../gameplay/survival';
 import { takePlayerSlow } from './player-slow';

@@ -1,5 +1,5 @@
 import type { World, RemovedBlock } from './world';
-import { LCG } from '../render/textures/noise';
+import { LCG } from '../gen/texture-noise';
 
 export type WeatherState = 'clear' | 'rain' | 'thunder';
 export type PrecipitationType = 'none' | 'rain' | 'snow';

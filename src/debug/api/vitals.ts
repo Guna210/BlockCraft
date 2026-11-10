@@ -1,4 +1,4 @@
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 export interface PlayerVitals {
   health?: number;

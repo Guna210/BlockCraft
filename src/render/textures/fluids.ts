@@ -1,5 +1,11 @@
 // src/render/textures/fluids.ts
-import { createEmptyTexture, TextureData, PeriodicNoise, setPixel, hexToRgb } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  PeriodicNoise,
+  setPixel,
+  hexToRgb,
+} from '../../gen/texture-noise';
 
 export const PAL_WATER = ['#12345e', '#194572', '#245987', '#3c719b', '#6696b9'].map((h) => {
   const color = hexToRgb(h);

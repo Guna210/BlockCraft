@@ -162,7 +162,7 @@ describe('WorldManager drains after the synchronous terrain frame', () => {
       },
     );
     try {
-      const { WorldManager } = await import('../../src/world/world-manager');
+      const { WorldManager } = await import('../../src/game/world-manager');
       const wm = WorldManager.getInstance();
       const calls: string[] = [];
       const gl = {

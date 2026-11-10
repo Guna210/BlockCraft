@@ -1,5 +1,12 @@
 // src/render/textures/terrain.ts
-import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  LCG,
+  setPixel,
+  fillSolid,
+  hexToRgb,
+} from '../../gen/texture-noise';
 
 export const PAL_STONE = ['#4f5257', '#62666b', '#767a7f', '#8b8f94', '#a3a7ab'].map((h) =>
   hexToRgb(h),

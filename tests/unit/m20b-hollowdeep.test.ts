@@ -8,7 +8,7 @@ import {
   HOLLOWDEEP_BIOME_IDS,
 } from '../../src/gen/hollowdeep';
 import { createDefaultPipeline } from '../../src/gen/pipeline';
-import { EMITTER_TINTS } from '../../src/render/light-curve';
+import { EMITTER_TINTS } from '../../src/world/light-curve';
 import {
   hollowdeepTextureGenerators,
   HOLLOWDEEP_PALETTES,

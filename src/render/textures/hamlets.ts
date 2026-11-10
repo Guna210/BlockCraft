@@ -1,4 +1,10 @@
-import { createEmptyTexture, LCG, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  createEmptyTexture,
+  LCG,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 export const PAL_FARMLAND: RGBA[] = [
   [75, 50, 30, 255],

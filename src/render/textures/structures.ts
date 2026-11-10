@@ -1,4 +1,10 @@
-import { createEmptyTexture, LCG, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  createEmptyTexture,
+  LCG,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 const CLEAR: RGBA = [0, 0, 0, 0];
 

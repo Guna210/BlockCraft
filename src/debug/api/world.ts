@@ -1,6 +1,6 @@
 import { getWorldInstance, setWorldInstance } from '../../world/world-instance';
 import { World } from '../../world/world';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 export function setDebugWorldInstance(world: World): void {
   setWorldInstance(world);

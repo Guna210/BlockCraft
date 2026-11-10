@@ -1,4 +1,4 @@
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 /** Kills the player (entity id 0); `kill` in ./entities routes id 0 here. */
 export function killPlayer(): void {

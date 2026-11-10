@@ -1,4 +1,10 @@
-import { LCG, createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  LCG,
+  createEmptyTexture,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 import { PAL_LUMITE } from './ores';
 
 export { PAL_LUMITE };

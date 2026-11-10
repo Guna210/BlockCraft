@@ -1,4 +1,4 @@
-import { EMITTER_TINTS, tintOffset } from '../render/light-curve';
+import { EMITTER_TINTS, tintOffset } from './light-curve';
 import { BlockRegistry } from './blocks/registry';
 import { World } from './world';
 

@@ -9,7 +9,7 @@ import {
   sunDirection,
 } from '../world/time';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
-import { LCG } from './textures/noise';
+import { LCG } from '../gen/texture-noise';
 
 export const CLOUD_CELL_SIZE = 8; // 8x8-block cells (M12b-fix: smaller cells so clouds look farther away)
 export const CLOUD_GRID_CELLS = 48; // 48x48 cells = 384x384 blocks region

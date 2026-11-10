@@ -1,5 +1,5 @@
 import type { Player } from '../entity/player';
-import type { Action } from '../engine/input';
+import type { Action } from '../gameplay/input-state';
 import { BlockRegistry } from '../world/blocks/registry';
 import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { breakSeconds, BARE_HAND, type MiningTool } from './mining';

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { vec3 } from 'gl-matrix';
 import { mat4 } from 'gl-matrix';
 import { Camera } from '../../src/render/camera';
-import { extractFrustumPlanes } from '../../src/render/frustum';
+import { extractFrustumPlanes } from '../../src/world/frustum';
 import {
   ColumnPhase,
   MAX_RENDER_DISTANCE,

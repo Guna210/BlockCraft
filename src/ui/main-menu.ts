@@ -6,7 +6,7 @@ import { MenuOverlayRenderer, overlayLayer, type OverlayLayer } from '../render/
 import { deriveSeed, hashString } from '../engine/rng';
 import { sampleTerrainTopY } from '../gen/terrain-height';
 import { withTerrainVariant } from '../gen/world-options';
-import { PANORAMA_CENTER, PANORAMA_SEED, type WorldManager } from '../world/world-manager';
+import { PANORAMA_CENTER, PANORAMA_SEED, type WorldManager } from '../game/world-manager';
 import { drawButton, drawPanel, UI, uiScaleFor, type Rect } from './ui-kit';
 import { drawText, GLYPH_HEIGHT, textWidth } from './pixel-font';
 import { renderLogo } from './logo';

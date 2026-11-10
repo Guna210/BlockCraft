@@ -1,4 +1,11 @@
-import { createEmptyTexture, fillSolid, hexToRgb, LCG, setPixel, type TextureData } from './noise';
+import {
+  createEmptyTexture,
+  fillSolid,
+  hexToRgb,
+  LCG,
+  setPixel,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 export const PAL_BLACKGLASS = ['#11151d', '#242d39', '#3a4755', '#596979', '#8595a3'].map((h) =>
   hexToRgb(h),

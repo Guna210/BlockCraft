@@ -1,4 +1,4 @@
-import { createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import { createEmptyTexture, setPixel, type RGBA, type TextureData } from '../../gen/texture-noise';
 
 /** Mauve pressed spore cakes in a copper cage, with a cream three-lobed seal. */
 export const BLAST_PALETTE: RGBA[] = [

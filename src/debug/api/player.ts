@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import type { Action } from '../../engine/input';
 import { look } from './camera';
 

@@ -37,7 +37,7 @@ import {
   getFrameStats,
   getGlResourceCounts,
 } from './streaming';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import { setXp } from './xp';
 import { setVitals } from './vitals';
 import { findDebugPath } from './pathfinding';

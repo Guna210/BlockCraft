@@ -1,5 +1,5 @@
 // src/render/atlas.ts
-import { TextureData } from './textures/noise';
+import { TextureData } from '../gen/texture-noise';
 
 export const TILE_SIZE = 16;
 export const PADDING = 4;

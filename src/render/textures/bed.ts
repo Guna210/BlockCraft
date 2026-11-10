@@ -1,4 +1,4 @@
-import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from './noise';
+import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from '../../gen/texture-noise';
 
 export const PAL_BED: RGBA[] = [
   [43, 31, 39, 255],

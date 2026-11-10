@@ -1,7 +1,7 @@
 import type { mat4 } from 'gl-matrix';
 import type { World } from '../world/world';
 import type { PortalRecord } from '../world/portals';
-import { aabbIntersectsFrustum, extractFrustumPlanes } from './frustum';
+import { aabbIntersectsFrustum, extractFrustumPlanes } from '../world/frustum';
 import type { GLWrapper } from './gl';
 
 // Two triangles over the 2×3 opening, in the plane through the middle of its blocks.

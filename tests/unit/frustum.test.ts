@@ -5,7 +5,7 @@ import {
   columnInFrustum,
   extractFrustumPlanes,
   COLUMN_MAX_Y,
-} from '../../src/render/frustum';
+} from '../../src/world/frustum';
 import { Camera } from '../../src/render/camera';
 
 function viewProjOf(

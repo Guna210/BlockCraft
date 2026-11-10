@@ -1,4 +1,10 @@
-import { LCG, createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  LCG,
+  createEmptyTexture,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 export const PAL_HAY: RGBA[] = [
   [51, 62, 23, 255],

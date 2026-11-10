@@ -9,7 +9,7 @@ import {
 import { STRUCTURE_REGISTRATIONS } from '../../gen/structures/registrations';
 import { structureStartY } from '../../gen/structures/stage';
 import { getWorldInstance } from '../../world/world-instance';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../world-manager';
 
 export function locateStructure(
   id: string,

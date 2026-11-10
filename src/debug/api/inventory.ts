@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 function controller() {
   const c = WorldManager.getInstance().playerController;
   if (!c?.player) throw new Error('Create a world before querying inventory');

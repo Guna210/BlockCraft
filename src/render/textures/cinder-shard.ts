@@ -1,4 +1,4 @@
-import { createEmptyTexture, hexToRgb, setPixel } from './noise';
+import { createEmptyTexture, hexToRgb, setPixel } from '../../gen/texture-noise';
 
 /** A chipped ash-stone splinter with a short red seam; hand-drawn clusters, lit top-left. */
 export const CINDER_SHARD_PALETTE = [

@@ -1,4 +1,4 @@
-import { AO_STEP, lightBrightness } from '../render/light-curve';
+import { AO_STEP, lightBrightness } from '../world/light-curve';
 
 export const FACE_NORMAL_STRIDES = [1, -1, 18, -18, 324, -324] as const;
 export const U_STRIDES = [324, 324, 1, 1, 1, 1] as const;

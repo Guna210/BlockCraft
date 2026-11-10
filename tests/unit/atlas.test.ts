@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { textureGenerators, M01_REQUIRED_TEXTURES } from '../../src/render/textures/index';
 import { TextureAtlas, ATLAS_MAX_MIP, CELL_SIZE, PADDING } from '../../src/render/atlas';
-import { TextureData } from '../../src/render/textures/noise';
+import { TextureData } from '../../src/gen/texture-noise';
 import { PNG } from 'pngjs';
 import * as fs from 'fs';
 import * as path from 'path';

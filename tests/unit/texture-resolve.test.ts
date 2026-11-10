@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TextureAtlas } from '../../src/render/atlas';
 import { textureGenerators } from '../../src/render/textures/index';
-import { TextureData } from '../../src/render/textures/noise';
+import { TextureData } from '../../src/gen/texture-noise';
 import { SCENE_MATERIALS } from '../../src/render/scene-materials';
 import { resolveTexture, createSentinelTile, SENTINEL_KEY } from '../../src/render/texture-resolve';
 import { renderStats } from '../../src/debug/api/core';

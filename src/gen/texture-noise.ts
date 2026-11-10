@@ -1,6 +1,5 @@
-// src/render/textures/noise.ts
+// Shared deterministic texture/noise helpers.
 // Helper to implement pseudo-randomness and noise for procedural textures.
-// Note: Can be migrated to M03a RNG and noise later.
 
 export class LCG {
   private state: number;

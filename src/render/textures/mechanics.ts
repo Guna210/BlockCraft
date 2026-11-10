@@ -1,4 +1,4 @@
-import { createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import { createEmptyTexture, setPixel, type RGBA, type TextureData } from '../../gen/texture-noise';
 
 // Pistons, Dispenser and Note Block. Light comes from the top-left: every ramp's lighter shades
 // sit on top/left edges and its darker shades on bottom/right edges.
