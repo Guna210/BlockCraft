@@ -50,7 +50,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20
 In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
 
 Remaining SPEC tasks: M21a -> M21b -> M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-Ready now: M21a only (deps M20c, M18b, M18c merged). Prompt NOT yet given (owner asked hosting questions first).
+In flight: M21a (Codex, big model, prompt given 2026-11-10, branch claude/m21a). Decision: particles stay injected via existing `particles` params (type-only import allowed, or a shared ParticleSink interface BreakParticles satisfies); module-level sink only for real runtime imports (playExplosion in explosions.ts); no test edits for M11a/M14/M20c.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
 Merge rule: the second PR to merge clicks Update branch and needs a fresh green run (shard 2 ~12-25 min; check log for "flaky"). Block IDs: append only; second PR renumbers. Parallel PRs touching the same test line should make identical edits.
@@ -100,6 +100,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-10: M21a prompt given (Codex). Codex QUESTION: edit M11a/M14/M20c tests for the event sink? Answered: no, keep existing particles injection (already type-only), sink only for playExplosion; no test edits.
 - 2026-11-10: Owner simplified: M21 per SPEC, address entry on Pages too, no hosted server, no popup; README last; I chose MIT licence.
 - 2026-11-10: Owner decided no hosted server for now; Pages Multiplayer = info popup (see open items). Proposed build flag, server serving client, LICENSE, README task.
 - 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21a -> M21b -> M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
@@ -119,4 +120,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-10-31: #80 M20b merged (23c5e91). #79 fixes 0a4a821/9b77477/e1acd33 green (doesn't contain #80 yet, no conflict). Sent round 2. After PASS: owner clicks Update branch, fresh green, merge; then M20a merge push.
 - 2026-10-31: #80 M20b round 2 PASS (Skyshard y 5-60 peak 20, 25.25/1M; labels fixed; Overworld check 256 cols). Told owner: retitle and merge #80 (contains master 89777d7, no conflict with #79). Carried to M20a merge push: Hollowdeep biome strings, lava falls on dry land (non-blocking).
 - 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
-- 2026-10-30: #80 fix 5376339 (Hollowdeep ores/shape only) red: shard 1 m02:54 meshMsP95 x3 (8.5, 6.3 > 6). Fix touches no mesher/Overworld code; same e7d6290 passed. Known borderline (open item). Told owner: re-run failed jobs; if it fails again, escalate m02:54 budget (owner's call).
