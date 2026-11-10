@@ -100,6 +100,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-10: M21a gate (511b414): 40 lint violations fixed, 22 message types, unit 1428/137 files, touched e2e 153 passed 3 failed (m04 pump, m17b:579 known; m17b:232 ordinary autosave NEW - likely container, CI decides). 4 renames R098-R100 (world-manager -> src/game, noise -> src/gen/texture-noise, frustum + light-curve -> src/world); 18 tests import-path only; M11a/M14/M20c untouched. Recommended owner approve.
 - 2026-11-10: M21a prompt given (Codex). Codex QUESTION: edit M11a/M14/M20c tests for the event sink? Answered: no, keep existing particles injection (already type-only), sink only for playExplosion; no test edits.
 - 2026-11-10: Owner simplified: M21 per SPEC, address entry on Pages too, no hosted server, no popup; README last; I chose MIT licence.
 - 2026-11-10: Owner decided no hosted server for now; Pages Multiplayer = info popup (see open items). Proposed build flag, server serving client, LICENSE, README task.
@@ -119,4 +120,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-10-31: #79 M16b round 2 CHANGES NEEDED: only blocker = no offline RMS/peak test for cinderwraith voices, ambience.cave, mechanism.note (m16a.spec hardcoded list; add in M16b's own spec). Music, first-play, idle cost, listeners, pitch key all FIXED. Also asked: pending explosion slot overwrite (key by position), recentPlaybacks mutate in place, m14:26 A/B vs master (91 ms max vs 100 bound) and remove any M16b cost from the explosion path. Round 3 is the last.
 - 2026-10-31: #80 M20b merged (23c5e91). #79 fixes 0a4a821/9b77477/e1acd33 green (doesn't contain #80 yet, no conflict). Sent round 2. After PASS: owner clicks Update branch, fresh green, merge; then M20a merge push.
 - 2026-10-31: #80 M20b round 2 PASS (Skyshard y 5-60 peak 20, 25.25/1M; labels fixed; Overworld check 256 cols). Told owner: retitle and merge #80 (contains master 89777d7, no conflict with #79). Carried to M20a merge push: Hollowdeep biome strings, lava falls on dry land (non-blocking).
-- 2026-10-31: #80 re-run green (m02:54 was the known borderline). Sent round 2 to session_0155bUSD2fDQ7yLGcWGYLCev.
