@@ -29,7 +29,7 @@ import {
 } from '../../src/world/portals';
 import { SaveManager, type SaveSession } from '../../src/persist/save-manager';
 import { createFakeIdb } from './helpers/fake-idb';
-import { WorldManager } from '../../src/world/world-manager';
+import { WorldManager } from '../../src/game/world-manager';
 
 const Y = 65;
 const registry = () => BlockRegistry.getInstance();

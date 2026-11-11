@@ -14,7 +14,7 @@ import {
   LIGHT_BRIGHTNESS_RANGE,
   lightBrightness,
   tintOffset,
-} from '../../src/render/light-curve';
+} from '../../src/world/light-curve';
 import {
   ambientOcclusion,
   sampleFaceCorners,

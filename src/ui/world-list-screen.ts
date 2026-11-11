@@ -1,5 +1,5 @@
 import type { InputEngine } from '../engine/input';
-import type { WorldManager } from '../world/world-manager';
+import type { WorldManager } from '../game/world-manager';
 import type { WorldRecord } from '../persist/world-store';
 import { drawButton, drawInset, drawPanel, fillRect, UI, uiScaleFor, type Rect } from './ui-kit';
 import { isActionCode } from '../engine/keybinds';

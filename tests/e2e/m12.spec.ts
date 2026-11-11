@@ -4,7 +4,7 @@ import { mkdirSync, copyFileSync } from 'node:fs';
 import { waitForStreamingIdle } from './helpers/flight';
 import { isSkyPixel } from './helpers/sky-holes';
 import { diffFraction } from '../harness/pixels';
-import { LCG } from '../../src/render/textures/noise';
+import { LCG } from '../../src/gen/texture-noise';
 import {
   generateCloudGrid,
   CLOUD_CELL_SIZE,

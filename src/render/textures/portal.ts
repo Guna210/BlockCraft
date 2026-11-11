@@ -1,4 +1,10 @@
-import { LCG, createEmptyTexture, hexToRgb, setPixel, type TextureData } from './noise';
+import {
+  LCG,
+  createEmptyTexture,
+  hexToRgb,
+  setPixel,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 /** Deep violet shadows through cyan to a pale glow (hue-shifted: cooler and darker at the bottom). */
 export const PAL_PORTAL = ['#24104a', '#46238a', '#7448d0', '#3aa8d4', '#8eeaff', '#e4fbff'].map(

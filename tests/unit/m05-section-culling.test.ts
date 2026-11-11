@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { mat4, vec3 } from 'gl-matrix';
 import { Camera } from '../../src/render/camera';
-import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from '../../src/render/frustum';
+import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from '../../src/world/frustum';
 
 test('section culling excludes underground/overhead geometry inside a visible column', () => {
   const camera = new Camera(16 / 9);

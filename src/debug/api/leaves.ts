@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import type { LeavesSetting } from '../../engine/settings';
 
 /**

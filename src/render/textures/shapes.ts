@@ -2,7 +2,7 @@
 // drawn with rectangles on top of a plank-board base. Every tile keeps its outermost ring one flat
 // colour, so it repeats without a seam, and uses its wood ramp (dark -> light) plus two iron
 // shades for the handle (ART.md §1, light from the top-left).
-import { createEmptyTexture, setPixel, hexToRgb, TextureData, RGBA } from './noise';
+import { createEmptyTexture, setPixel, hexToRgb, TextureData, RGBA } from '../../gen/texture-noise';
 import { PAL_OAK_WOOD, PAL_BIRCH_WOOD, PAL_PINE_WOOD } from './wood';
 import { PAL_RAINWOOD_WOOD, PAL_ACACIA_WOOD } from './wood-extra';
 

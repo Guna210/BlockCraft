@@ -1,6 +1,6 @@
 import type { Inventory } from '../gameplay/inventory';
 import { PAL_PLAYER_COAT, PAL_PLAYER_HEAD, PAL_PLAYER_LEG } from '../render/textures/player';
-import type { RGBA } from '../render/textures/noise';
+import type { RGBA } from '../gen/texture-noise';
 import { PREVIEW_BOX } from './inventory-layout';
 import { fillRect } from './ui-kit';
 

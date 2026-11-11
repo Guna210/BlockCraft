@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import { BlockRegistry } from '../../world/blocks/registry';
 api.raycast = () => {
   const i = WorldManager.getInstance().playerController?.interaction;

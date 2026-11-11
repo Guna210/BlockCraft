@@ -1,4 +1,4 @@
-import { createEmptyTexture, setPixel, hexToRgb, type RGBA } from './noise';
+import { createEmptyTexture, setPixel, hexToRgb, type RGBA } from '../../gen/texture-noise';
 
 const WOOD = ['#30271e', '#65503b', '#9b7948', '#d8b978'].map((c) => hexToRgb(c));
 const STONE = ['#303342', '#646779', '#989ea9', '#d9d3bd'].map((c) => hexToRgb(c));

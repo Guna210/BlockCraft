@@ -1,5 +1,5 @@
 // src/render/textures/ores.ts
-import { TextureData, LCG, setPixel, RGBA, hexToRgb } from './noise';
+import { TextureData, LCG, setPixel, RGBA, hexToRgb } from '../../gen/texture-noise';
 import { genStone } from './terrain';
 
 export const PAL_COAL = ['#18181b', '#2a2a30', '#44444c'].map((h) => hexToRgb(h));

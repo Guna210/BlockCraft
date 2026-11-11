@@ -6,7 +6,7 @@
  * "Chunk" here is a 16x16 column. Distance is the Chebyshev distance in columns from the camera's
  * column.
  */
-import { columnInFrustum } from '../render/frustum';
+import { columnInFrustum } from './frustum';
 
 export const MIN_RENDER_DISTANCE = 2;
 export const MAX_RENDER_DISTANCE = 32;

@@ -6,7 +6,7 @@ import {
   setPixel,
   type RGBA,
   type TextureData,
-} from './noise';
+} from '../../gen/texture-noise';
 import { PAL_STONE } from './terrain';
 
 export const PAL_KILN_FRONT: RGBA[] = [

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { textureGenerators, texturePalettes } from '../../src/render/textures/index';
-import { TextureData } from '../../src/render/textures/noise';
+import { TextureData } from '../../src/gen/texture-noise';
 
 describe('ART.md Automated Checks', () => {
   it("every pixel of every tile belongs to that tile's declared palette, max 12 colors per palette", () => {

@@ -1,7 +1,7 @@
 import { BlockRegistry } from '../world/blocks/registry';
 import type { Position } from '../entity/physics';
 import type { World } from '../world/world';
-import type { BreakParticles } from '../render/particles';
+import type { ParticleSink } from './particle-sink';
 import { items } from './items';
 
 export const MAX_HEALTH = 20;
@@ -73,7 +73,7 @@ export function getFoodCrumbStateId(
 }
 
 export function spawnFoodCrumbs(
-  particles: BreakParticles,
+  particles: ParticleSink,
   foodId: string,
   pos: Position,
   yaw: number,
@@ -447,7 +447,7 @@ export class Survival {
     }
   }
 
-  tickEating(host: SurvivalHost, particles: BreakParticles | null): void {
+  tickEating(host: SurvivalHost, particles: ParticleSink | null): void {
     if (!host.down('use')) {
       this.useConsumed = false;
     }
@@ -493,7 +493,7 @@ export class Survival {
     }
   }
 
-  tick(world: World, host: SurvivalHost, particles: BreakParticles | null = null): void {
+  tick(world: World, host: SurvivalHost, particles: ParticleSink | null = null): void {
     if (this.dead) return;
     if (this.nightVisionTicks > 0) this.nightVisionTicks--;
     this.saturation = Math.min(this.saturation, this.hunger);

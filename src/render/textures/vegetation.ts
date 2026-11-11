@@ -5,7 +5,14 @@
 // left/top and darker ones on the right/bottom. Every tile declares its palette (≤ 12 colours).
 // The transparent colour of a sprite carries a mid-tone RGB so that the mip chain, which filters
 // RGBA without premultiplying, does not pull a dark fringe into the visible edge.
-import { createEmptyTexture, TextureData, LCG, setPixel, hexToRgb, RGBA } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  LCG,
+  setPixel,
+  hexToRgb,
+  RGBA,
+} from '../../gen/texture-noise';
 import { PAL_STONE, genCobblestone } from './terrain';
 
 const pal = (hexes: string[]): RGBA[] => hexes.map((h) => hexToRgb(h));

@@ -5,7 +5,7 @@ import { SaveDb, WORLD_STORE_NAMES } from '../../src/persist/idb';
 import { SaveManager } from '../../src/persist/save-manager';
 import { createFakeIdb } from './helpers/fake-idb';
 import { World } from '../../src/world/world';
-import { WorldManager } from '../../src/world/world-manager';
+import { WorldManager } from '../../src/game/world-manager';
 import { formatWorldListTime } from '../../src/ui/world-list-screen';
 
 async function saveWorldRecords(db: SaveDb, name: string, marker: string): Promise<void> {

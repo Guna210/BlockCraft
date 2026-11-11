@@ -6,7 +6,7 @@ import {
   type Settings,
 } from './settings';
 import { loadSettings, normalizeSettings, persistSettings } from './settings-persistence';
-import { WorldManager } from '../world/world-manager';
+import { WorldManager } from '../game/world-manager';
 
 export type SettingKey = keyof Settings;
 

@@ -1,4 +1,4 @@
-import type { WorldManager } from '../../world/world-manager';
+import type { WorldManager } from '../world-manager';
 import { items } from '../../gameplay/items';
 import { BlockRegistry } from '../../world/blocks/registry';
 import { spawnEntity, entityTypeIds } from '../../entity/ecs/entity-types';

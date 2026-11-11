@@ -2,7 +2,7 @@ import { mat4, vec3 } from 'gl-matrix';
 import { GLWrapper } from './gl';
 import { Camera } from './camera';
 import { World } from '../world/world';
-import { LCG } from './textures/noise';
+import { LCG } from '../gen/texture-noise';
 import { getWeather, getPrecipitationType, weatherManager } from '../world/weather';
 import { settings } from '../engine/settings';
 

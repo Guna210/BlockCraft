@@ -40,7 +40,7 @@ import {
 } from './kiln';
 // src/render/textures/index.ts
 
-import { TextureData } from './noise';
+import { TextureData } from '../../gen/texture-noise';
 import { genBedFootTop, genBedHeadTop, genBedSide, PAL_BED } from './bed';
 import { terrainToolGenerators, terrainToolPalettes } from './tools';
 import {
@@ -500,7 +500,7 @@ export const M01_REQUIRED_TEXTURES = [
   'skyshard_ore',
 ];
 
-import { RGBA } from './noise';
+import { RGBA } from '../../gen/texture-noise';
 
 export const texturePalettes: Record<string, RGBA[]> = {
   ...HOLLOWDEEP_PALETTES,

@@ -18,7 +18,7 @@ import {
 import { LookTargetC, TransformC } from '../../src/entity/ecs/components';
 import { computePose } from '../../src/entity/ecs/pose';
 import { walkSwing } from '../../src/entity/ecs/animation';
-import { lightBrightness } from '../../src/render/light-curve';
+import { lightBrightness } from '../../src/world/light-curve';
 import { World } from '../../src/world/world';
 import type { EntityWorld } from '../../src/entity/ecs/world';
 import type { GLWrapper } from '../../src/render/gl';

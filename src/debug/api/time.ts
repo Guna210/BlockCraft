@@ -1,6 +1,6 @@
 import { api } from './core';
 import { getWorldTime, setWorldTime, timeOfDay } from '../../world/time';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 /**
  * Sets the world time in simulation ticks (0 = sunrise, 6000 = noon, 12000 = sunset, 18000 = midnight).

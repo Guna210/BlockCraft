@@ -1,5 +1,13 @@
 // src/render/textures/biome-surface.ts
-import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb, RGBA } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  LCG,
+  setPixel,
+  fillSolid,
+  hexToRgb,
+  RGBA,
+} from '../../gen/texture-noise';
 
 // Palettes defined according to ART.md rules and contrast >= 60 requirements
 

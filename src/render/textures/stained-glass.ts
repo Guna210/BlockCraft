@@ -6,7 +6,7 @@ import {
   setPixel,
   type RGBA,
   type TextureData,
-} from './noise';
+} from '../../gen/texture-noise';
 
 export const STAINED_GLASS_COLORS = [
   'red',

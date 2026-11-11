@@ -4,43 +4,18 @@ import { gravityFactor } from '../world/updrafts';
 import { CURRENT_BLOCK_IDS, NEIGHBOR_OFFSETS } from '../gameplay/current/types';
 import { BlockCollision } from './physics';
 import type { Vec3 } from './ecs/model';
-import { registerEntityModel, cubeFaceRects } from './ecs/model';
 import { BodyC, EntityKindC, RenderableC, TransformC } from './ecs/components';
 import { defineComponent, type EntityWorld } from './ecs/world';
-import { buildModel } from './mobs/kit';
-import { genBlastCharge } from '../render/textures/explosions';
 import { PRNG, deriveSeed } from '../engine/rng';
 import { explosionSteps, setExplosionEffects } from '../gameplay/explosions';
 import { blastExposure, type BlastScene } from '../gameplay/blast';
-import type { BreakParticles } from '../render/particles';
+import type { ParticleSink } from '../gameplay/particle-sink';
 
 export const CHARGE_FUSE = 80;
 export const CHARGE_POWER = 4;
 export const PrimedChargeC = defineComponent<{ fuse: number; vel: Vec3 }>('primedCharge');
 const MODEL = 'primed_blast_charge';
 const COLLISION_AXES = [1, 0, 2] as const;
-for (const flash of [false, true]) {
-  const model = buildModel({
-    id: MODEL + (flash ? '_flash' : ''),
-    textureSize: [64, 64],
-    parts: [
-      { name: 'charge', pivot: [0, 0, 0], cubes: [{ from: [-8, 0, -8], size: [16, 16, 16] }] },
-    ],
-  });
-  registerEntityModel(model, (seed) => {
-    const data = new Uint8Array(64 * 64 * 4);
-    for (const [face, rect] of Object.entries(cubeFaceRects(model.parts[0]!.cubes[0]!))) {
-      const tile = genBlastCharge(seed, face === 'top' || face === 'bottom');
-      for (let y = 0; y < rect[3]; y++)
-        for (let x = 0; x < rect[2]; x++) {
-          const target = ((rect[1] + y) * 64 + rect[0] + x) * 4;
-          for (let c = 0; c < 4; c++) data[target + c] = flash ? 255 : tile[(y * 16 + x) * 4 + c]!;
-        }
-    }
-    return data;
-  });
-}
-
 /** World-local event-driven priming; the ECS physics system exists only while charges are active. */
 export class BlastCharges {
   private readonly rng: PRNG;
@@ -59,7 +34,7 @@ export class BlastCharges {
     readonly world: World,
     readonly ecs: EntityWorld,
     private readonly scene: BlastScene,
-    private readonly particles: BreakParticles,
+    private readonly particles: ParticleSink,
     private readonly feedback: (center: Readonly<Vec3>, power: number) => void,
   ) {
     this.rng = new PRNG(deriveSeed(world.worldSeed, 'blast-charges'));

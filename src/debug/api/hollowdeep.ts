@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import { gravityFactor, updraftField } from '../../world/updrafts';
 import { sound } from '../../audio/service';
 import { EntityKindC } from '../../entity/ecs/components';

@@ -1,5 +1,5 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 import { explode } from '../../gameplay/explosions';
 import { hurtPlayer } from '../../gameplay/combat';
 function controller() {

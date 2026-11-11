@@ -1,4 +1,4 @@
 import { api } from './core';
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 api.setSpawning = (enabled: boolean) => WorldManager.getInstance().setSpawning(enabled);

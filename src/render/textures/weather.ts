@@ -1,4 +1,4 @@
-import { LCG, TextureData } from './noise';
+import { LCG, TextureData } from '../../gen/texture-noise';
 
 /**
  * Palette for Ice: cool crystalline cyan-blue tones with distinct highlight glints.

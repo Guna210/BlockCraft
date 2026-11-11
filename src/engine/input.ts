@@ -1,18 +1,8 @@
 import { actionsForCode, KEYBIND_ACTIONS, mouseCode } from './keybinds';
 import { settings } from './settings';
 
-export type Action =
-  | 'forward'
-  | 'back'
-  | 'left'
-  | 'right'
-  | 'jump'
-  | 'sneak'
-  | 'sprint'
-  | 'attack'
-  | 'use'
-  | 'perspective'
-  | 'pick';
+import type { Action } from '../gameplay/input-state';
+export type { Action } from '../gameplay/input-state';
 
 export class InputEngine {
   /** Compatibility view for older callers; the source of truth is settings.keyBindings. */

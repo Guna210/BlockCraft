@@ -1,4 +1,11 @@
-import { createEmptyTexture, fillSolid, LCG, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  createEmptyTexture,
+  fillSolid,
+  LCG,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 
 /** Cool shadows shift toward warm mineral/fungal highlights; all shapes wrap at tile edges. */
 export const HOLLOWDEEP_PALETTES: Record<string, RGBA[]> = {

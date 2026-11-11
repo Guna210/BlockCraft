@@ -3,7 +3,7 @@ import { Camera } from './camera';
 import { GLWrapper } from './gl';
 import { TextureAtlas, ATLAS_MAX_MIP } from './atlas';
 import { textureGenerators } from './textures/index';
-import { TextureData } from './textures/noise';
+import { TextureData } from '../gen/texture-noise';
 import { createSentinelTile, resolveTexture, SENTINEL_KEY } from './texture-resolve';
 import { SCENE_MATERIALS, CubeMaterial } from './scene-materials';
 import { renderStats } from '../debug/api/core';

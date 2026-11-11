@@ -1,4 +1,4 @@
-import type { Action } from '../engine/input';
+import type { Action } from '../gameplay/input-state';
 import { PLAYER_TARGET } from '../entity/ai/components';
 import type { EntityWorld } from '../entity/ecs/world';
 import { fireProjectile } from '../entity/projectiles';

@@ -1,4 +1,10 @@
-import { LCG, createEmptyTexture, setPixel, type RGBA, type TextureData } from './noise';
+import {
+  LCG,
+  createEmptyTexture,
+  setPixel,
+  type RGBA,
+  type TextureData,
+} from '../../gen/texture-noise';
 export const CRACK_PALETTE: RGBA[] = [
   [0, 0, 0, 0],
   [27, 24, 33, 230],

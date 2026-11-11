@@ -1,7 +1,7 @@
 import { CINDER_SHARD_PALETTE, genCinderShard } from './cinder-shard';
 import { toolGenerators, toolPalettes, TERRAIN_TOOL_IDS } from './tools';
 import { items } from '../../gameplay/items';
-import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from './noise';
+import { createEmptyTexture, hexToRgb, setPixel, type RGBA } from '../../gen/texture-noise';
 import { BED_ITEM_PALETTE, genBedItem } from './bed';
 
 // World-drop sprites. Inventory icons and UI remain owned by M09b.

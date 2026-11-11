@@ -14,7 +14,7 @@ import { FluidAnimationClock } from '../../src/render/fluid-animation';
 import { TextureAtlas } from '../../src/render/atlas';
 import { atlasTileIndex, buildSwayMasks, packedMaskHas } from '../../src/render/foliage';
 import type { MeshBucketData } from '../../src/mesh/greedy';
-import type { TextureData } from '../../src/render/textures/noise';
+import type { TextureData } from '../../src/gen/texture-noise';
 
 const registry = BlockRegistry.getInstance();
 const tileOf = new Map<string, number>();

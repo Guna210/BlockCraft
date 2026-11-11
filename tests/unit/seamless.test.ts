@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { textureGenerators } from '../../src/render/textures/index';
-import { TextureData } from '../../src/render/textures/noise';
+import { TextureData } from '../../src/gen/texture-noise';
 
 describe('Seamless Tiling Unit Test', () => {
   it('wrap-edge difference is no more than 1.5x average adjacent pixel difference', () => {

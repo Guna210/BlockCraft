@@ -1,4 +1,4 @@
-import { WorldManager, type WorldStreamingStats } from '../../world/world-manager';
+import { WorldManager, type WorldStreamingStats } from '../../game/world-manager';
 import { frameStats, type FrameStatsSnapshot } from '../../engine/frame-stats';
 import type { ResourceCounts } from '../../render/gl';
 

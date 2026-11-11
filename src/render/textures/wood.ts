@@ -1,5 +1,13 @@
 // src/render/textures/wood.ts
-import { createEmptyTexture, TextureData, LCG, setPixel, fillSolid, hexToRgb, RGBA } from './noise';
+import {
+  createEmptyTexture,
+  TextureData,
+  LCG,
+  setPixel,
+  fillSolid,
+  hexToRgb,
+  RGBA,
+} from '../../gen/texture-noise';
 
 export const PAL_OAK_BARK = ['#1f140d', '#45311f', '#5b422a', '#7e5b3a'].map((h) => hexToRgb(h));
 export const PAL_OAK_WOOD = ['#6e5230', '#8a6a3f', '#a5824f', '#bf9a62'].map((h) => hexToRgb(h));

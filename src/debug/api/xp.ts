@@ -1,4 +1,4 @@
-import { WorldManager } from '../../world/world-manager';
+import { WorldManager } from '../../game/world-manager';
 
 /** Set the player's XP display state for diagnostics and deterministic visual checks. */
 export function setXp(level: number, progress: number): void {

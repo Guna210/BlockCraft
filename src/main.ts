@@ -1,3 +1,5 @@
+import { setGameEventSink } from './gameplay/event-sink';
+import { playExplosion } from './audio/explosion';
 import { PlayerController } from './engine/player-controller';
 import { initDebugApi } from './debug/api/index';
 import { markReady, renderStats, setGlErrorDrain } from './debug/api/core';
@@ -8,7 +10,7 @@ import { FencedErrorDrain } from './render/fenced-error-drain';
 import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
-import { WorldManager } from './world/world-manager';
+import { WorldManager } from './game/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
 import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
@@ -61,6 +63,7 @@ function hueToRgb(p: number, q: number, t: number) {
 }
 
 async function main() {
+  setGameEventSink({ explosion: playExplosion });
   initDebugApi();
   registerKilnBlockEntity();
 

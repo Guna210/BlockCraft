@@ -1,6 +1,7 @@
 import { advance as advanceWorldTime } from '../world/time';
 
-export const TICK_SECONDS = 1 / 20;
+import { TICK_SECONDS } from '../world/timing';
+export { TICK_SECONDS } from '../world/timing';
 export const MAX_CATCH_UP_TICKS = 5;
 
 /** A bounded accumulator; manual and real-time advancement share the same tick callback. */

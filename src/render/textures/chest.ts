@@ -5,7 +5,7 @@ import {
   setPixel,
   type RGBA,
   type TextureData,
-} from './noise';
+} from '../../gen/texture-noise';
 
 export const PAL_CHEST: RGBA[] = [
   hexToRgb('#2d1b13'),
