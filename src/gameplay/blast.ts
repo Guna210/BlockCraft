@@ -8,7 +8,14 @@ import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { MobBodyC } from '../entity/ai/components';
 
 /** What a blast can hurt; the player hook applies shield and armor. */
+export interface BlastPlayer {
+  readonly pos: Readonly<Vec3>;
+  readonly height: number;
+  impulse?(velocity: Vec3): void;
+  hurt(amount: number, source: string, from: Readonly<Vec3>): boolean;
+}
 export interface BlastScene {
+  players?(): readonly BlastPlayer[];
   ecs: EntityWorld;
   world?: World;
   player(): {
@@ -115,15 +122,16 @@ export function blast(
       }
     }
   }
-  const player = scene.player();
-  if (player) {
+  const single = scene.player();
+  const players = scene.players ? scene.players() : single ? [single] : [];
+  for (const player of players) {
     const p = player.pos;
     const distance = Math.hypot(
       p[0] - center[0],
       p[1] + player.height / 2 - center[1],
       p[2] - center[2],
     );
-    if (distance >= blastRadius(power)) return hurt;
+    if (distance >= blastRadius(power)) continue;
     const exposure = scene.world ? blastExposure(scene.world, center, p, 0.6, player.height) : 1;
     const damage = blastDamage(power, distance, exposure);
     if (damage > 0 && player.hurt(damage, 'blast', center)) {

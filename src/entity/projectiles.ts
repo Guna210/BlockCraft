@@ -246,6 +246,7 @@ export class ProjectileRuntime {
     readonly ecs: EntityWorld,
     getPlayer: () => ProjectilePlayer | null = () => null,
     getItems: () => ItemEntityManager | null = () => null,
+    private readonly getPlayers?: () => readonly ProjectilePlayer[],
   ) {
     this.getPlayer = getPlayer;
     this.getItems = getItems;
@@ -329,7 +330,7 @@ export class ProjectileRuntime {
         ];
         transform.pos.splice(0, 3, ...hit);
         if (projectile.kind === 'arrow') this.onArrowHit(hit);
-        this.hitEntity(projectile, entityHit.id, hit, dir, length);
+        this.hitEntity(projectile, entityHit.id, hit, dir, length, entityHit.player);
         this.ecs.destroy(id);
         continue;
       }
@@ -353,20 +354,22 @@ export class ProjectileRuntime {
         }
       }
     }
-    const player = this.getPlayer();
-    if (
-      projectile.pickup &&
-      player &&
-      !player.dead &&
-      !player.detached &&
-      Math.hypot(
-        transform.pos[0] - player.pos[0],
-        transform.pos[1] - (player.pos[1] + player.height / 2),
-        transform.pos[2] - player.pos[2],
-      ) <= 1 &&
-      this.drop(projectile.kind, transform.pos, [0, 0, 0])
-    )
-      this.ecs.destroy(id);
+    const single = this.getPlayer();
+    for (const player of this.getPlayers ? this.getPlayers() : single ? [single] : []) {
+      if (
+        projectile.pickup &&
+        player &&
+        !player.dead &&
+        !player.detached &&
+        Math.hypot(
+          transform.pos[0] - player.pos[0],
+          transform.pos[1] - (player.pos[1] + player.height / 2),
+          transform.pos[2] - player.pos[2],
+        ) <= 1 &&
+        this.drop(projectile.kind, transform.pos, [0, 0, 0])
+      )
+        this.ecs.destroy(id);
+    }
   }
 
   private drop(kind: string, pos: Readonly<Vec3>, velocity: Vec3): boolean {
@@ -391,8 +394,8 @@ export class ProjectileRuntime {
     start: Readonly<Vec3>,
     dir: Readonly<Vec3>,
     length: number,
-  ): { id: number; distance: number } | null {
-    let nearest: { id: number; distance: number } | null = null;
+  ): { id: number; distance: number; player?: ProjectilePlayer } | null {
+    let nearest: { id: number; distance: number; player?: ProjectilePlayer } | null = null;
     const afterGrace = projectile.ageTicks > PROJECTILE_OWNER_GRACE_TICKS;
     for (const id of this.ecs.query(TransformC, HealthC)) {
       if (id === projectile.owner && !afterGrace) continue;
@@ -415,27 +418,29 @@ export class ProjectileRuntime {
       if (distance !== null && (!nearest || distance < nearest.distance))
         nearest = { id, distance };
     }
-    const player = this.getPlayer();
-    if (
-      player &&
-      !player.dead &&
-      !player.detached &&
-      (projectile.owner !== PLAYER_TARGET || afterGrace)
-    ) {
-      const half = 0.3 + PROJECTILE_RADIUS;
-      const distance = segmentBox(
-        start,
-        dir,
-        length,
-        player.pos[0] - half,
-        player.pos[1] - PROJECTILE_RADIUS,
-        player.pos[2] - half,
-        player.pos[0] + half,
-        player.pos[1] + player.height + PROJECTILE_RADIUS,
-        player.pos[2] + half,
-      );
-      if (distance !== null && (!nearest || distance < nearest.distance))
-        nearest = { id: PLAYER_TARGET, distance };
+    const single = this.getPlayer();
+    for (const player of this.getPlayers ? this.getPlayers() : single ? [single] : []) {
+      if (
+        player &&
+        !player.dead &&
+        !player.detached &&
+        (projectile.owner !== PLAYER_TARGET || afterGrace)
+      ) {
+        const half = 0.3 + PROJECTILE_RADIUS;
+        const distance = segmentBox(
+          start,
+          dir,
+          length,
+          player.pos[0] - half,
+          player.pos[1] - PROJECTILE_RADIUS,
+          player.pos[2] - half,
+          player.pos[0] + half,
+          player.pos[1] + player.height + PROJECTILE_RADIUS,
+          player.pos[2] + half,
+        );
+        if (distance !== null && (!nearest || distance < nearest.distance))
+          nearest = { id: PLAYER_TARGET, distance, player };
+      }
     }
     return nearest;
   }
@@ -446,11 +451,12 @@ export class ProjectileRuntime {
     hit: Readonly<Vec3>,
     direction: Readonly<Vec3>,
     speed: number,
+    targetPlayer?: ProjectilePlayer,
   ): void {
     const damage = Math.ceil(speed * getProjectileKind(projectile.kind).damageScale);
     const source: Vec3 = [hit[0] - direction[0], hit[1] - direction[1], hit[2] - direction[2]];
     if (id === PLAYER_TARGET) {
-      const player = this.getPlayer();
+      const player = targetPlayer ?? this.getPlayer();
       if (!player || !hurtPlayer(player as Player, damage, `projectile:${projectile.kind}`, source))
         return;
       player.vel[0] = direction[0] * PROJECTILE_KNOCKBACK;

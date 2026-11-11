@@ -33,6 +33,15 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
   {
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: ['ws', 'ws/*', 'node:*', '**/server', '**/server/**'] },
+      ],
+    },
+  },
+  {
     files: ['src/{world,gen,gameplay,entity,net}/**/*.ts'],
     linterOptions: { noInlineConfig: true },
     rules: {
@@ -42,6 +51,10 @@ export default tseslint.config(
         'error',
         {
           patterns: [
+            {
+              group: ['ws', 'ws/*', 'node:*', '**/server', '**/server/**'],
+              message: 'Browser code must not import the Node server.',
+            },
             {
               regex:
                 '(^|/)(render|ui|audio|mesh|debug|persist|workers)(/|$)|(^|/)engine(?:$|/(?!rng(?:\\.ts)?$))',
@@ -62,6 +75,7 @@ export default tseslint.config(
   {
     ignores: [
       'dist/',
+      'dist-server/',
       'node_modules/',
       'playwright-report/',
       'test-results/',

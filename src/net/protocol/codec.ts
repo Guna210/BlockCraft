@@ -1,6 +1,8 @@
 import { BinaryReader, BinaryWriter, type DecodeError } from './buffer';
 import {
   MAX_CHUNK_BYTES,
+  BlockActionKind,
+  BLOCK_FACES,
   MAX_INVENTORY_SLOTS,
   CURSOR_SLOT,
   MOVE_FIELDS,
@@ -116,6 +118,19 @@ export function encodeMessage(message: Message, writer: BinaryWriter): Uint8Arra
   w.reset();
   w.u8(message.type);
   switch (message.type) {
+    case MessageType.BlockAction:
+      w.integer(message.action, 0, BlockActionKind.Place);
+      w.u8(message.action);
+      w.i32(message.x);
+      w.integer(message.y, 0, 319);
+      w.u16(message.y);
+      w.i32(message.z);
+      w.integer(BLOCK_FACES.indexOf(message.face), 0, 5);
+      w.u8(BLOCK_FACES.indexOf(message.face));
+      w.integer(message.heldSlot, 0, 8);
+      w.u8(message.heldSlot);
+      w.u32(message.sequence);
+      break;
     case MessageType.ClientHello:
       w.u16(message.version);
       w.string(message.name);
@@ -248,6 +263,18 @@ export function decodeMessage(bytes: Uint8Array): DecodeResult {
   const type = r.u8();
   let message: Message;
   switch (type) {
+    case MessageType.BlockAction:
+      message = {
+        type,
+        action: r.bounded(r.u8(), BlockActionKind.Place),
+        x: r.i32(),
+        y: r.bounded(r.u16(), 319),
+        z: r.i32(),
+        face: BLOCK_FACES[r.bounded(r.u8(), 5)]!,
+        heldSlot: r.bounded(r.u8(), 8),
+        sequence: r.u32(),
+      };
+      break;
     case MessageType.ClientHello:
       message = { type, version: r.u16(), name: r.string() };
       break;

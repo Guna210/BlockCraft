@@ -2,7 +2,7 @@ import type { DimensionId } from '../../world/dimension';
 import type { ItemAffix } from '../../gameplay/items';
 
 /** Change this when any wire layout or enum meaning changes. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const MAX_STRING_BYTES = 256;
 export const MAX_CHUNK_BYTES = 1024 * 1024;
 export const MAX_INVENTORY_SLOTS = 128;
@@ -32,7 +32,16 @@ export enum MessageType {
   ChatBroadcast,
   TimeSync,
   WeatherSync,
+  BlockAction,
 }
+
+export enum BlockActionKind {
+  StartBreak,
+  FinishBreak,
+  AbortBreak,
+  Place,
+}
+export const BLOCK_FACES = ['top', 'bottom', 'north', 'south', 'east', 'west'] as const;
 
 export enum ActionFlag {
   Jump = 1,
@@ -76,6 +85,16 @@ export interface EntityPose {
 }
 
 export interface Messages {
+  [MessageType.BlockAction]: {
+    type: MessageType.BlockAction;
+    action: BlockActionKind;
+    x: number;
+    y: number;
+    z: number;
+    face: (typeof BLOCK_FACES)[number];
+    heldSlot: number;
+    sequence: number;
+  };
   [MessageType.ClientHello]: { type: MessageType.ClientHello; version: number; name: string };
   [MessageType.ServerHello]: {
     type: MessageType.ServerHello;

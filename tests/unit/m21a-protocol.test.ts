@@ -22,6 +22,16 @@ import { deflate, inflate } from '../../src/persist/compress';
 
 // Exhaustive at compile time and runtime. Enum additions must supply a real round-trip fixture.
 const cases: { [K in T]: Messages[K] } = {
+  [T.BlockAction]: {
+    type: T.BlockAction,
+    action: 0,
+    x: -16,
+    y: 319,
+    z: 42,
+    face: 'west',
+    heldSlot: 8,
+    sequence: 0xffffffff,
+  },
   [T.ClientHello]: { type: T.ClientHello, version: PROTOCOL_VERSION, name: 'Ada 🌱' },
   [T.ServerHello]: {
     type: T.ServerHello,

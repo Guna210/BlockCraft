@@ -36,6 +36,7 @@ export class BlastCharges {
     private readonly scene: BlastScene,
     private readonly particles: ParticleSink,
     private readonly feedback: (center: Readonly<Vec3>, power: number) => void,
+    private readonly freezeUnloaded = false,
   ) {
     this.rng = new PRNG(deriveSeed(world.worldSeed, 'blast-charges'));
     this.collision = new BlockCollision(world);
@@ -88,6 +89,10 @@ export class BlastCharges {
     if (this.world.getBlock(x, y, z).id !== 'blast_charge') return null;
     this.world.setBlockStateId(x, y, z, 0);
     return this.spawn(x + 0.5, y, z + 0.5, CHARGE_FUSE);
+  }
+  /** Re-attaches a saved primed charge to its physics and fuse system. */
+  restore(x: number, y: number, z: number, fuse: number): number {
+    return this.spawn(x, y, z, fuse);
   }
   private spawn(x: number, y: number, z: number, fuse: number): number {
     const id = this.ecs.create();
@@ -152,6 +157,11 @@ export class BlastCharges {
         this.active.delete(id);
         continue;
       }
+      if (
+        this.freezeUnloaded &&
+        !this.world.hasColumn(Math.floor(t.pos[0] / 16), Math.floor(t.pos[2] / 16))
+      )
+        continue;
       charge.fuse--;
       // Swept piston cells displace a primed charge before ordinary terrain collision.
       for (const block of moving) {

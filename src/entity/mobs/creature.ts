@@ -145,6 +145,7 @@ function creatureSystem(ctx: CreatureContext): void {
       age.ageTicks++;
       if (age.baby && age.ageTicks >= GROW_UP_TICKS) growUp(ecs, id, creature.definition);
     }
+    mobRuntime(ecs)?.focus(id);
     creature.definition.tick?.(ctx, id);
   }
 }

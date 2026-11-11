@@ -128,8 +128,8 @@ function sporeCloudSystem(ecs: EntityWorld): void {
     const renderable = ecs.get(id, RenderableC);
     if (renderable)
       renderable.scale = Math.min(1, 0.4 + age * 0.1) * Math.min(1, 0.3 + cloud.ticks / 20);
-    const player = mobRuntime(ecs)?.player();
-    if (player && insideSporeCloud(ecs.get(id, TransformC)!.pos, player.pos))
-      player.slow?.(SPORE_SLOW_FACTOR, SPORE_SLOW_TICKS);
+    for (const player of mobRuntime(ecs)?.players() ?? [])
+      if (insideSporeCloud(ecs.get(id, TransformC)!.pos, player.pos))
+        player.slow?.(SPORE_SLOW_FACTOR, SPORE_SLOW_TICKS);
   }
 }
