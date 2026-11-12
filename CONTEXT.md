@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-12 (before compaction)
+Last updated: 2026-11-12
 
 ## Setup
 
@@ -52,7 +52,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M21b (latest: M20c #
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21c PR #85 [INCOMPLETE] (head 130b94f, CI green): only menu + handshake (+290 lines; m18a:71 edit done). Do NOT merge as is (dead-end Multiplayer button on Pages). Owner chose to retry with Codex (new thread, BlockCraft env, big model) continuing on claude/m21c; Codex continuation prompt given 2026-11-12 (ordered steps, AGENTS §11 fallback, publish gate, retitle after green). If Codex stalls again: Claude cloud version of the same prompt is ready (git checkout claude/m21c, gh pr edit 85). Prompt pre-authorises: m21a-protocol.test.ts fixtures for PlayerList (protocol v3).
+In flight: M21c PR #85 "— verified" (head 1a7f8b1, CI green: 4 shards + verify + harness guard + Pages; 44 files, +2701/-7; 18 commits). Codex retry finished the whole task. Sonnet reviewer prompt given 2026-11-12 (round 1 pending). My pre-check: Player gains 3 checkpoint methods, no fields; WorldManager gains remoteExit/remoteColumnSource; session is a dynamic import; existing-test edits only m18a:71 and the PlayerList fixture (both authorised); screenshot shows B's model + name tag. Open points sent to the reviewer: server.ts held-input change (BlockAction only), broadcastPlayerList allocates every 40 ticks, health/hunger/death/mode not synced to the client (known limitation).
 After M21c: review (new Sonnet session), then M21b-fix + M22a/M22c/M22d.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
@@ -103,6 +103,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-12: #85 M21c completed by Codex retry (1a7f8b1, CI green, retitled verified). Checked diff, tests and screenshot; gave Sonnet reviewer prompt. Flagged to owner: no health/hunger/death/mode sync in multiplayer (protocol gap, not in SPEC) - candidate to add to M21b-fix or a separate follow-up.
 - 2026-11-12: #85 M21c opened [INCOMPLETE] by Codex: menu + handshake only. Recommended not merging (would ship a dead-end Multiplayer button to Pages) and continuing on the same branch with a Claude builder; gave continuation prompt.
 - 2026-11-12: #84 M21b merged (b95348a). Gave M21c prompt (Codex). Decisions: client net in src/game/net (not shared src/net); MP mode in world-manager: chunks from ChunkData (deserializeColumn + Hollowdeep biome fix), local light/mesh, no local gen/saves/IndexedDB, no local mob AI/block ticks; prediction ring buffer, compare to predicted pose at acked seq, eps 0.01 -> correction+replay; 100 ms interpolation, shortest-arc yaw; name tags DOM overlay; PlayerList message (names+ping) protocol v3 + server broadcast; RTT via client Ping (server echoes); menu name+address (default ws://localhost:3001), localStorage last values, errors incl. https+ws:// non-localhost needs wss; commands disabled in MP chat; chat via textContent; debug net module for raw far BlockAction; e2e on 3001/3002, kill test spawns own server; SP zero cost (dynamic import).
 - 2026-11-12: #84 M21b round 2 PASS (pickup returns after first, Player identical to master via ServerPlayer subclass, roster-gated focus, chat stripping). Non-blocking: ServerPlayer.down number-as-boolean, chat unicode for M21c UI, iterators, jitter. Told owner to merge.
@@ -122,4 +123,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-10: Owner decided no hosted server for now; Pages Multiplayer = info popup (see open items). Proposed build flag, server serving client, LICENSE, README task.
 - 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
 - 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
-- 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
