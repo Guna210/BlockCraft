@@ -50,7 +50,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20
 In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
 
 Remaining SPEC tasks: M21b -> M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21b PR #84 (Codex). Round 1 CHANGES NEEDED (reviewer session_0155bUSDnZfsMVSzvBwfnKHU); fix message given to owner for Codex.
+In flight: M21b PR #84 (Codex). Fix 0ca0fcf green (owner); round 2 sent to reviewer session_0155bUSDnZfsMVSzvBwfnKHU.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
@@ -102,6 +102,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-12: #84 fix 0ca0fcf green (Player fields removed, arrow pickup test). Sent round 2.
 - 2026-11-12: Owner chose M21b-fix (MP container windows) as follow-up after M21c.
 - 2026-11-11: #84 M21b round 1 CHANGES NEEDED: (1) projectiles.ts:357 tickStuck arrow pickup duplicates with 2 players (probe reproduced) -> stop after first pickup + test; (2) owner perf rule: Player gains movementForward/Right fields (player.ts:122) -> move out; per-mob focus(id) in runtime.ts:332/383 + creature.ts gate on roster; spawning.ts:132 players() per mob hoist; spawners.ts:54 array per call reuse. Also chat control chars stripped. Non-blocking: for..of iterators, jitter vs 100 ms break tolerance, container windows (follow-up).
 - 2026-11-11: #84 M21b green (45 files, +4130). Server: RSS 109 MiB idle / 330 MiB with 2 clients, CPU 0.7% / 20.5% of one core, tick p95 0.2 / 2.5 ms, saves 117 KiB. Protocol v2. Limitations: inventory window 0 only (chests/kilns not usable via client windows?), async server light staleness. Shared changes in M06/M07/M11/M13/M14/M19/M20 code. Gave reviewer prompt.
@@ -121,4 +122,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-02: Owner chose reshoot; I sent M20c builder (session_0155bUSAtZkJMYBBcbMy8C9p) the fix: reframe islands shot, clear updraft field on travel/unload, ignite only on successful Magmaw hit. Round 2 to session_0155bUSFJF8zqF49LSmecwby when green.
 - 2026-11-02: #82 M20c round 1 CHANGES NEEDED, only blocker = m20-floating-islands.png fails 'coloured lighting visible' (lower half black); all code checks OK. Asked owner (visuals are owner's call): reshoot (reframe toward lava/glowcap light) + cheap non-blocking (clear updraft field on travel/unload, ignite only on successful Magmaw hit), or accept as is.
 - 2026-11-02: #82 M20c green on b261cd9 (contains master 526e13f). I checked player.ts: only a gravity local from gravityFactor() (module-level field, early return 1 when no Hollowdeep field), no new fields. Gave Sonnet reviewer prompt.
-- 2026-11-01: M20c gate: quick verify unit 1237, M20 e2e 9; touched e2e 53 passed; jump 3.09 vs 1.23 (2.5x); hue 341/352/265 vs 178; spawn test 37 Glowwing + 3 Magmaw only; no new ids. Touches player.ts (gravity factor) -> reviewer flag (no new fields). Floating-islands screenshot dim (islands unlit, M20b lighting) -> owner judges. Glowwing not truly translucent (renderer has no alpha); 'falling blocks' = primed Blast Charges (no falling sand exists).
