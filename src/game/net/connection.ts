@@ -41,8 +41,13 @@ export class Connection {
         socket.close();
         reject(new Error(reason));
       };
-      socket.onopen = () =>
-        connection.send({ type: MessageType.ClientHello, version: PROTOCOL_VERSION, name });
+      socket.onopen = () => {
+        try {
+          connection.send({ type: MessageType.ClientHello, version: PROTOCOL_VERSION, name });
+        } catch {
+          fail('Player name is limited to 256 UTF-8 bytes');
+        }
+      };
       socket.onerror = () => fail('Connection refused or timed out');
       socket.onclose = () => {
         if (settled) connection.onClose(disconnectReason);

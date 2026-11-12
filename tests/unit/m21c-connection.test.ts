@@ -66,3 +66,31 @@ it('retains ServerHello and subsequent packets until subscription, preserving or
     vi.unstubAllGlobals();
   }
 });
+
+it('rejects oversized UTF-8 names through the connection promise without an uncaught socket handler error', async () => {
+  class Socket {
+    static OPEN = 1;
+    static latest: Socket;
+    readyState = 1;
+    onopen: (() => void) | null = null;
+    constructor() {
+      Socket.latest = this;
+    }
+    close() {
+      this.readyState = 3;
+    }
+    send() {
+      throw new Error('oversized hello must fail before socket.send');
+    }
+  }
+  vi.stubGlobal('WebSocket', Socket);
+  try {
+    const promise = Connection.connect('ws://localhost:3001', '界'.repeat(100));
+    const rejected = expect(promise).rejects.toThrow('256 UTF-8 bytes');
+    expect(() => Socket.latest.onopen?.()).not.toThrow();
+    await rejected;
+    expect(Socket.latest.readyState).toBe(3);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
