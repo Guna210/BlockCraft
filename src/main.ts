@@ -22,6 +22,7 @@ import { commandContext, completionCatalog } from './game/commands/runtime';
 import { WorldListScreen, activeWorldList } from './ui/world-list-screen';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { MainMenu, activeMenu } from './ui/main-menu';
+import { MultiplayerScreen } from './ui/multiplayer-screen';
 import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
@@ -143,6 +144,7 @@ async function main() {
   );
   activeWorldList.screen = new WorldListScreen(input, worldManager);
   const settingsScreen = new SettingsScreen(input);
+  const multiplayerScreen = new MultiplayerScreen(() => menu.refresh());
   const menu = new MainMenu(
     glWrapper,
     camera,
@@ -157,6 +159,7 @@ async function main() {
         menu.refresh();
       });
     },
+    () => multiplayerScreen.show(),
   );
   activeMenu.menu = menu;
   // A world created with an empty seed field got a random seed; the player is told which.

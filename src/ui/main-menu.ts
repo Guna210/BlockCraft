@@ -28,10 +28,11 @@ const LOGO_Y = 26;
 const BUTTON_W = 150;
 const BUTTON_H = 20;
 
-type MenuButton = 'singleplayer' | 'settings' | 'credits' | 'back';
+type MenuButton = 'singleplayer' | 'multiplayer' | 'settings' | 'credits' | 'back';
 
 const BUTTON_LABELS: Record<MenuButton, { text: string; aria: string }> = {
   singleplayer: { text: 'SINGLEPLAYER', aria: 'Singleplayer' },
+  multiplayer: { text: 'MULTIPLAYER', aria: 'Multiplayer' },
   settings: { text: 'SETTINGS', aria: 'Settings' },
   credits: { text: 'CREDITS', aria: 'Credits' },
   back: { text: 'BACK', aria: 'Back' },
@@ -89,6 +90,7 @@ export class MainMenu {
     private readonly manager: WorldManager,
     private readonly openWorldList: () => void,
     private readonly openSettings: () => void = () => {},
+    private readonly openMultiplayer: () => void = () => {},
   ) {
     const logo = renderLogo();
     this.logoCanvas = document.createElement('canvas');
@@ -238,6 +240,7 @@ export class MainMenu {
   private activate(name: MenuButton): void {
     if (!this.visible) return;
     if (name === 'singleplayer') this.openWorldList();
+    else if (name === 'multiplayer') this.openMultiplayer();
     else if (name === 'settings') this.openSettings();
     else if (name === 'credits') this.credits = true;
     else this.credits = false;
@@ -262,8 +265,9 @@ export class MainMenu {
       return { back: { x, y: Math.floor(this.uiH / 2) + 74, w: BUTTON_W, h: BUTTON_H } };
     return {
       singleplayer: { x, y: 110, w: BUTTON_W, h: BUTTON_H },
-      settings: { x, y: 136, w: BUTTON_W, h: BUTTON_H },
-      credits: { x, y: 162, w: BUTTON_W, h: BUTTON_H },
+      multiplayer: { x, y: 136, w: BUTTON_W, h: BUTTON_H },
+      settings: { x, y: 162, w: BUTTON_W, h: BUTTON_H },
+      credits: { x, y: 188, w: BUTTON_W, h: BUTTON_H },
     };
   }
 
