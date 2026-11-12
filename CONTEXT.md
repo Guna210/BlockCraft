@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-10
+Last updated: 2026-11-12 (before compaction)
 
 ## Setup
 
@@ -26,15 +26,17 @@ Last updated: 2026-11-10
 - No local full verify (owner, 2026-10-18): every builder prompt and fix message says, as an explicit owner override of AGENTS.md §3 step 4 / §4 and CLAUDE.md's publish-gate verify table, to run only `MILESTONE=<Mxx> npm run verify:quick` (plus the e2e specs of other milestones whose code it touched); the PR's GitHub CI Verify is the full-verify evidence. The handoff line says "Full verify: PR CI". The '— verified' title is allowed once CI is green. Suggested the owner write this into CLAUDE.md/AGENTS.md (owner files).
 - Reviewers: new Sonnet session per task; rounds 2–3 in the same session; at most 3 rounds, then ask the owner.
 - Known 2-core container-only failures (list them in EVERY builder and fix prompt, Codex especially (owner, 2026-10-18): say they are expected, don't retry, investigate or write blockers for them; CI decides):
-  - m02:54 mesh p95
+  - m02:54 mesh p95 (borderline on CI too; re-run once)
   - m04:66 pump > 50 ms
-  - m04:221 heap timeout
-  - m04:276 RD12
+  - m04:131/221/276 streaming idle / heap / RD12
   - M04b mid-flight blank
   - m05-streaming timeout
   - M01a GL count
   - pathfinding 2 ms benchmark
-  - general timeouts when the container is starved
+  - m17b:232 and m17b:579 autosave budgets
+  - m14:26 frame time (tight on master)
+  - general timeouts in untouched code when the container is starved
+- Codex container: `npx playwright install --with-deps chromium` can't authenticate as root; bundled Chromium without deps works (M21a-c). Codex threads must run in the BlockCraft environment (a CryptKeep-environment thread hit 403 on cdn.playwright.dev, 2026-11-12).
 - CI: `Verify` (pull_request) is skipped on conflicted PRs; the harness guard (pull_request_target) still runs. Retries are 2 on CI.
 - Owner-approved test edits so far:
   - setClouds('off') ×3: m12 RD8, m12 M12a time-of-day, m04:276
@@ -45,12 +47,13 @@ Last updated: 2026-11-10
 
 ## Task status
 
-Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20 complete (latest: M14 #78, M19c #77, M16b #79, M20b #80, M20a #81, M20c #82 = master c7e03dd), plus M13h (owner-added Cinderwraith), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Last block id on master: 834 (blast_charge 820, M19c 821-824, M20b 825-832, portal 833-834).
+Done (merged; notes in `progress/`): every SPEC task M00a–M21b (latest: M20c #82, M21a #83 a60a64a, M21b #84 = master b95348a), plus M13h (owner-added Cinderwraith), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Last block id on master: 834 (blast_charge 820, M19c 821-824, M20b 825-832, portal 833-834).
 
-In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
+Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21c PR #85 [INCOMPLETE] (Codex, head 130b94f, CI green): only menu + handshake (+290 lines; m18a:71 edit done); no remote world/prediction/entities/tab list/chat/disconnect/e2e/screenshot. Codex stalled twice (wrong CryptKeep env, then refused to start). Recommended: do NOT merge; continue on claude/m21c with a Claude cloud builder (continuation prompt given 2026-11-12); pushes update #85.
+In flight: M21c PR #85 [INCOMPLETE] (head 130b94f, CI green): only menu + handshake (+290 lines; m18a:71 edit done). Do NOT merge as is (dead-end Multiplayer button on Pages). Owner chose to retry with Codex (new thread, BlockCraft env, big model) continuing on claude/m21c; Codex continuation prompt given 2026-11-12 (ordered steps, AGENTS §11 fallback, publish gate, retitle after green). If Codex stalls again: Claude cloud version of the same prompt is ready (git checkout claude/m21c, gh pr edit 85). Prompt pre-authorises: m21a-protocol.test.ts fixtures for PlayerList (protocol v3).
+After M21c: review (new Sonnet session), then M21b-fix + M22a/M22c/M22d.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
@@ -58,19 +61,16 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 
 ### For the M21 prompts (decided / to include)
 - Keep `ws` and server/ code out of the browser (Vite) build; Cloudflare Pages deploy (static, single-player) must keep working. CI build catches leaks.
-- M21b: gen on Node worker_threads; CLI options `--world <name> --seed <seed> --port <n>` (one world per server process); document a lean server-only install; report real server RAM/CPU idle + with clients, and save size on disk, in the handoff. Needs owner `harness-change` label (Playwright starts the server).
-- M21a: leave room in the handshake for an optional server password (owner deciding, see open items).
 - M21c (from #84 review): chat UI must render text safely (textContent; U+2028/2029, zero-width and bidi chars not stripped by server); break tolerance 100 ms vs real jitter (maybe tick-based later).
-- M21b (from #83 review): entityMove uses `delete` on reused changes/storage objects each call (V8 dictionary mode); switch to explicit kind flag if profiling shows cost.
+- Later/M22 notes: entityMove uses `delete` on reused objects (V8 dictionary mode); server tick for..of iterators; ServerPlayer.down returns number-as-boolean (needs comment). Server measured (#84): RSS 109/330 MiB idle/2 clients, CPU 0.7%/20% of one core, tick p95 0.2/2.5 ms.
 - Server needs wss when reached from the https Pages site (Railway and Cloudflare Tunnel both provide TLS).
 
 ## Open items for the owner
 
 - DECIDED (owner, 2026-11-10) hosting: build M21 exactly per SPEC (Multiplayer menu with address entry, also on the Cloudflare Pages site); host no server for now (maybe later on laptop/Railway). Others clone the repo and run their own server. No info popup, no build flag, server does NOT serve the client (owner: too much work). M21c prompt: when the page is https and the address is ws:// (non-localhost), show a clear error saying a wss:// address is needed (browser blocks mixed content). m18a-menus.spec:71 asserts no Multiplayer button -> M21c must edit it (owner approves).
-- LICENSE: owner left it to me -> MIT, copyright Guna210. Owner adds it on GitHub (Add file > LICENSE > choose MIT template); not yet done.
+- LICENSE: MIT, added by owner on master (4260ce4).
 - README (owner-added task, not in SPEC): last, after M23. Marketing README with fresh screenshots; play link once domain bought.
-- PENDING spec decision: optional server password (and/or whitelist) for M21 - SPEC has none, so anyone with the address can join. Suggested wording: "Optional server password set with --password; client sends it in the handshake, rejected with a clear error if wrong."
-- PENDING suggestion: owner could edit SPEC so M22a (culling/batching = laptop performance) depends only on M20c and runs alongside M21.
+- PENDING (low priority, owner hosts no server): optional server password/whitelist - SPEC has none, anyone with the address can join. Would be a protocol version bump + server flag; candidate follow-up if the owner ever hosts.
 
 - m14:26 27-charge chain frameCpuMsMax is near its 100 ms bound on master itself (98.3 ms in M16b's A/B, 2026-10-31). Treat a one-off failure as possible flake; if it recurs, the owner decides (profile explosions or budget).
 
