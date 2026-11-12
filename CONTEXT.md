@@ -50,7 +50,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20
 In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
 
 Remaining SPEC tasks: M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21c (Codex, prompt given 2026-11-12, branch claude/m21c). Prompt pre-authorises (owner gives it): m18a-menus.spec:71 Multiplayer count 0 -> visible; fixture entries for new message types in m21a-protocol.test.ts.
+In flight: M21c PR #85 [INCOMPLETE] (Codex, head 130b94f, CI green): only menu + handshake (+290 lines; m18a:71 edit done); no remote world/prediction/entities/tab list/chat/disconnect/e2e/screenshot. Codex stalled twice (wrong CryptKeep env, then refused to start). Recommended: do NOT merge; continue on claude/m21c with a Claude cloud builder (continuation prompt given 2026-11-12); pushes update #85.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
@@ -103,6 +103,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-12: #85 M21c opened [INCOMPLETE] by Codex: menu + handshake only. Recommended not merging (would ship a dead-end Multiplayer button to Pages) and continuing on the same branch with a Claude builder; gave continuation prompt.
 - 2026-11-12: #84 M21b merged (b95348a). Gave M21c prompt (Codex). Decisions: client net in src/game/net (not shared src/net); MP mode in world-manager: chunks from ChunkData (deserializeColumn + Hollowdeep biome fix), local light/mesh, no local gen/saves/IndexedDB, no local mob AI/block ticks; prediction ring buffer, compare to predicted pose at acked seq, eps 0.01 -> correction+replay; 100 ms interpolation, shortest-arc yaw; name tags DOM overlay; PlayerList message (names+ping) protocol v3 + server broadcast; RTT via client Ping (server echoes); menu name+address (default ws://localhost:3001), localStorage last values, errors incl. https+ws:// non-localhost needs wss; commands disabled in MP chat; chat via textContent; debug net module for raw far BlockAction; e2e on 3001/3002, kill test spawns own server; SP zero cost (dynamic import).
 - 2026-11-12: #84 M21b round 2 PASS (pickup returns after first, Player identical to master via ServerPlayer subclass, roster-gated focus, chat stripping). Non-blocking: ServerPlayer.down number-as-boolean, chat unicode for M21c UI, iterators, jitter. Told owner to merge.
 - 2026-11-12: #84 fix 0ca0fcf green (Player fields removed, arrow pickup test). Sent round 2.
@@ -122,4 +123,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-03: #82 M20c merged (c7e03dd). Remaining SPEC tasks: M21c (serial), then M22a/M22c/M22d (parallel), M22b after M22a, M23 last. Only M21a ready. Optional fix tasks: M18c-fix, M19c spawner follow-ups.
 - 2026-11-02: #82 M20c round 2 PASS (islands reshoot passes, updraft clear + Magmaw ignite fixed). Told owner to merge. Next: M21a (needs M20c, M18b, M18c). Non-blocking: no night-vision pixel test.
 - 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
-- 2026-11-02: Owner chose reshoot; I sent M20c builder (session_0155bUSAtZkJMYBBcbMy8C9p) the fix: reframe islands shot, clear updraft field on travel/unload, ignite only on successful Magmaw hit. Round 2 to session_0155bUSFJF8zqF49LSmecwby when green.
