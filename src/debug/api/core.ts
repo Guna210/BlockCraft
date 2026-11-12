@@ -1,5 +1,12 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  getNetStats?: () => {
+    connected: boolean;
+    rttMs: number;
+    playerCount: number;
+    predictionCorrections: number;
+  };
+  netFinishBreak?: (x: number, y: number, z: number) => void;
   getSettings?: () => import('../../engine/settings').Settings;
   setSetting?: (
     key: keyof import('../../engine/settings').Settings,

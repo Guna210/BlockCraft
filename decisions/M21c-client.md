@@ -9,3 +9,7 @@ The remaining implementation must use server-provided columns and local lighting
 ## Step 1 — remote entry
 
 Connection retains messages until the dynamically loaded session subscribes. A serial async receive chain preserves order across column decompression and portal resets. WorldManager supplies generation jobs exclusively from received columns; its existing light/mesh workers remain in use. The controller's remote spawn creates only a player, with no world ticks, mobs, spawning, fluids, block ticks or save session. Quit restores the original controller frame method before returning to the menu.
+
+## Step 2 — prediction and diagnostics
+
+A 256-entry preallocated ring stores input sequence, intent, post-tick pose and shared Player checkpoints. Corrections compare the acknowledged pose at 0.01 blocks, restore that simulation phase, apply authoritative position/velocity, and replay outstanding intent. Checkpoint methods add no fields or work to single-player. Client Ping/Pong measures RTT; the debug domain exposes real counters and a raw FinishBreak message for reach rejection tests. BlockInteraction predicts edits and emits Start/Finish/Abort/Place through the transport.

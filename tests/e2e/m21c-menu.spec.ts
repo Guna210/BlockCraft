@@ -15,7 +15,8 @@ test('multiplayer form validates addresses and remembers connection details', as
     .poll(() => page.evaluate(() => window.__blockcraft?.getPlayer?.().dimension))
     .toBe('overworld');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Save & Quit', exact: true }).click();
+  const quit = await page.evaluate(() => window.__blockcraft!.getScreen!().saveQuitButton!);
+  await page.mouse.click(quit.x + quit.w / 2, quit.y + quit.h / 2);
   await expect(form).toBeHidden();
   await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
   await expect(form.getByLabel('Server address')).toHaveValue('ws://localhost:3001');
