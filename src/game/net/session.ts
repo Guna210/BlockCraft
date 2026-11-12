@@ -43,9 +43,13 @@ export class RemoteSession {
   private immediateTick = false;
   private actionSequence = 0;
   private breaking = false;
+  private breakStartedAt = 0;
+  private breakSeconds = 0;
   private breakX = 0;
   private breakY = 0;
   private breakZ = 0;
+  private breakSlot = 0;
+  private breakState = -1;
   private connected = true;
   private rttMs = 0;
   private pingId = 0;
@@ -216,14 +220,29 @@ export class RemoteSession {
     interaction.updateTarget();
     const t = interaction.target;
     const attacking = p.down('attack') && t.hit;
-    const same = this.breaking && t.x === this.breakX && t.y === this.breakY && t.z === this.breakZ;
+    const same =
+      this.breaking &&
+      t.x === this.breakX &&
+      t.y === this.breakY &&
+      t.z === this.breakZ &&
+      p.selectedSlot === this.breakSlot &&
+      t.stateId === this.breakState;
+    if (this.breaking && !same) interaction.reset();
     if (this.breaking && (!attacking || !same))
       this.blockAction(BlockActionKind.AbortBreak, this.breakX, this.breakY, this.breakZ, 'top');
-    if (attacking && !same) this.blockAction(BlockActionKind.StartBreak, t.x, t.y, t.z, t.face);
+    if (attacking && !same) {
+      this.breakStartedAt = performance.now();
+      this.breakSeconds = interaction.miningSeconds(t.stateId);
+      this.blockAction(BlockActionKind.StartBreak, t.x, t.y, t.z, t.face);
+    } else if (attacking) {
+      this.breakSeconds = Math.max(this.breakSeconds, interaction.miningSeconds(t.stateId));
+    }
     this.breaking = attacking;
     this.breakX = t.x;
     this.breakY = t.y;
     this.breakZ = t.z;
+    this.breakSlot = p.selectedSlot;
+    this.breakState = t.stateId;
     interaction.tick();
   }
   private async receive(message: Message): Promise<void> {
@@ -274,6 +293,9 @@ export class RemoteSession {
         c.interaction = new BlockInteraction(c.player!, (x, y, z) =>
           m.requestInteractionMesh(x, y, z),
         );
+        // Match the server's start/finish timing constraint even if airborne/fluid penalties change.
+        c.interaction.onBreakBeforeRemove = () =>
+          performance.now() - this.breakStartedAt >= this.breakSeconds * 1000;
         c.interaction.onBreak = (_state, x, y, z) => {
           this.blockAction(BlockActionKind.FinishBreak, x, y, z, c.interaction!.target.face);
           this.breaking = false;

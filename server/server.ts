@@ -510,6 +510,8 @@ export class AuthoritativeServer {
   }
   private configureActor(peer: Peer): void {
     const actor = peer.actor!;
+    // Held combat input must not also mine/place locally: BlockAction owns validated edits.
+    actor.interaction.input = () => actor.interaction.clear();
     actor.onInteraction = () => this.processBlockActions(peer);
     peer.correction.position = actor.player.pos;
     peer.correction.velocity = actor.player.vel;

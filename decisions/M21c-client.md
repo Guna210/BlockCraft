@@ -24,7 +24,7 @@ Server physics continues every authoritative tick, including ticks without fresh
 
 The server's input queue has seven usable entries. Ordinary ticks keep at most six unacknowledged inputs, reserving the seventh for immediate next-frame input. Missed timer deadlines do not create catch-up bursts. This bounds queued work when generation or rendering stalls; repeated acknowledgements still advance the authoritative checkpoint while input is backpressured. No counter or acceptance threshold is filtered or relaxed.
 
-BlockInteraction predicts edits and sends StartBreak, FinishBreak, AbortBreak and Place through the real transport. Input precedes related actions; the server retains its independent ray, reach, timing and inventory checks. Authoritative BlockUpdate restores rejected predictions.
+BlockInteraction predicts edits and sends StartBreak, FinishBreak, AbortBreak and Place through the real transport. Input precedes related actions; the server retains its independent ray, reach, timing and inventory checks. Authoritative BlockUpdate restores rejected predictions. Network actors clear implicit held block-interaction input, so combat intent cannot also mine/place outside BlockAction validation. Entity combat and bow input remain active. The client gates removal against elapsed time and the largest observed mining penalty during the break, matching the server's start/finish timing requirement; changing the target state or held slot aborts and restarts the break.
 
 ## Roster, inventory and UI
 

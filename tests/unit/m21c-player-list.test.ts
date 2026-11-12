@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { startServer } from '../../server/server';
 import { HeadlessClient } from '../helpers/m21b-client';
-import { MessageType as T } from '../../src/net/protocol';
+import { MessageType as T, ActionFlag, BlockActionKind as B } from '../../src/net/protocol';
 it('broadcasts names and measured ping on join, periodically, and on leave', async () => {
   await promisify(execFile)('npm', ['run', 'build:server']);
   const root = await mkdtemp(join(tmpdir(), 'm21c-list-'));
@@ -45,6 +45,33 @@ it('broadcasts names and measured ping on join, periodically, and on leave', asy
     expect(
       (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 2)).position[0],
     ).toBeGreaterThan(first.position[0]);
+    // Held combat input cannot bypass the explicit validated BlockAction edit path.
+    a.send({
+      type: T.PlayerInput,
+      sequence: 3,
+      movement: [0, 0],
+      look: [0, 0],
+      actions: ActionFlag.Attack,
+    });
+    await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 3);
+    actor.player.teleport(2.5, 250, 4.5, 0, 0);
+    actor.dimension.world.setBlock(4, 251, 4, 'stone');
+    await a.wait(T.BlockUpdate, (m) => m.x === 4 && m.y === 251 && m.z === 4);
+    for (let i = 0; i < 4; i++) await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 3);
+    expect(actor.dimension.world.getBlock(4, 251, 4).id).toBe('stone');
+    for (const [index, action] of [B.StartBreak, B.FinishBreak].entries())
+      a.send({
+        type: T.BlockAction,
+        action,
+        x: 4,
+        y: 251,
+        z: 4,
+        face: 'west',
+        heldSlot: 0,
+        sequence: index + 1,
+      });
+    await a.wait(T.BlockUpdate, (m) => m.x === 4 && m.y === 251 && m.z === 4 && m.stateId === 0);
+    expect(actor.dimension.world.getBlock(4, 251, 4).id).toBe('air');
     b.close();
     expect((await a.wait(T.PlayerList, (m) => m.players.length === 1)).players[0]!.name).toBe(
       'list-A',
