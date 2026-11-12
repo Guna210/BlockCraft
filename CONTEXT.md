@@ -50,7 +50,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M20c, i.e. M00–M20
 In flight: none. All builder slots free (2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model, owner quota).
 
 Remaining SPEC tasks: M21b -> M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21b PR #84 (Codex). Fix 0ca0fcf green (owner); round 2 sent to reviewer session_0155bUSDnZfsMVSzvBwfnKHU.
+In flight: M21b PR #84 round 2 PASS on 0ca0fcf, CI green on head; told owner to merge. Next: M21c (needs M21b).
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
@@ -60,6 +60,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - Keep `ws` and server/ code out of the browser (Vite) build; Cloudflare Pages deploy (static, single-player) must keep working. CI build catches leaks.
 - M21b: gen on Node worker_threads; CLI options `--world <name> --seed <seed> --port <n>` (one world per server process); document a lean server-only install; report real server RAM/CPU idle + with clients, and save size on disk, in the handoff. Needs owner `harness-change` label (Playwright starts the server).
 - M21a: leave room in the handshake for an optional server password (owner deciding, see open items).
+- M21c (from #84 review): chat UI must render text safely (textContent; U+2028/2029, zero-width and bidi chars not stripped by server); break tolerance 100 ms vs real jitter (maybe tick-based later).
 - M21b (from #83 review): entityMove uses `delete` on reused changes/storage objects each call (V8 dictionary mode); switch to explicit kind flag if profiling shows cost.
 - Server needs wss when reached from the https Pages site (Railway and Cloudflare Tunnel both provide TLS).
 
@@ -102,6 +103,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-12: #84 M21b round 2 PASS (pickup returns after first, Player identical to master via ServerPlayer subclass, roster-gated focus, chat stripping). Non-blocking: ServerPlayer.down number-as-boolean, chat unicode for M21c UI, iterators, jitter. Told owner to merge.
 - 2026-11-12: #84 fix 0ca0fcf green (Player fields removed, arrow pickup test). Sent round 2.
 - 2026-11-12: Owner chose M21b-fix (MP container windows) as follow-up after M21c.
 - 2026-11-11: #84 M21b round 1 CHANGES NEEDED: (1) projectiles.ts:357 tickStuck arrow pickup duplicates with 2 players (probe reproduced) -> stop after first pickup + test; (2) owner perf rule: Player gains movementForward/Right fields (player.ts:122) -> move out; per-mob focus(id) in runtime.ts:332/383 + creature.ts gate on roster; spawning.ts:132 players() per mob hoist; spawners.ts:54 array per call reuse. Also chat control chars stripped. Non-blocking: for..of iterators, jitter vs 100 ms break tolerance, container windows (follow-up).
@@ -121,4 +123,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-02: #82 fixes b15ff11+a97a9f8 green (islands reshoot facing lava fall, updraft field cleared on travel/unload, Magmaw ignite gated). Sent round 2.
 - 2026-11-02: Owner chose reshoot; I sent M20c builder (session_0155bUSAtZkJMYBBcbMy8C9p) the fix: reframe islands shot, clear updraft field on travel/unload, ignite only on successful Magmaw hit. Round 2 to session_0155bUSFJF8zqF49LSmecwby when green.
 - 2026-11-02: #82 M20c round 1 CHANGES NEEDED, only blocker = m20-floating-islands.png fails 'coloured lighting visible' (lower half black); all code checks OK. Asked owner (visuals are owner's call): reshoot (reframe toward lava/glowcap light) + cheap non-blocking (clear updraft field on travel/unload, ignite only on successful Magmaw hit), or accept as is.
-- 2026-11-02: #82 M20c green on b261cd9 (contains master 526e13f). I checked player.ts: only a gravity local from gravityFactor() (module-level field, early return 1 when no Hollowdeep field), no new fields. Gave Sonnet reviewer prompt.
