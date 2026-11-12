@@ -1,3 +1,4 @@
+import { networkText } from './text';
 import { UI } from '../../ui/ui-kit';
 /** Only installed during a remote session; holding Tab shows the current server roster. */
 export class PlayerList {
@@ -31,7 +32,7 @@ export class PlayerList {
     this.root.replaceChildren();
     for (const player of players) {
       const row = document.createElement('div');
-      row.textContent = `${player.name}  ${player.pingMs} ms`;
+      row.textContent = `${networkText(player.name)}  ${player.pingMs} ms`;
       this.root.append(row);
     }
   }

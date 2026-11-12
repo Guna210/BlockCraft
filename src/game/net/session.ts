@@ -1,3 +1,7 @@
+import type { Chat } from '../../ui/chat';
+import { DisconnectScreen } from './disconnect-screen';
+import { networkText } from './text';
+import { RemoteInventory } from './inventory';
 import { PlayerList } from './player-list';
 import { RemoteEntities } from './entities';
 import { Prediction } from './prediction';
@@ -16,6 +20,8 @@ import { setWeather } from '../../world/weather';
 
 /** One ordered stream owns one presentation world. It never attaches a save session. */
 export class RemoteSession {
+  private disconnectScreen: DisconnectScreen | null = null;
+  private inventory: RemoteInventory | null = null;
   private playerCount = 0;
   private readonly playerList: PlayerList;
   private entities: RemoteEntities | null = null;
@@ -34,8 +40,31 @@ export class RemoteSession {
   constructor(
     readonly connection: Connection,
     readonly manager: WorldManager,
+    readonly chat: Chat,
+    readonly leave: () => Promise<void>,
   ) {
     const controller = manager.playerController!;
+    chat.multiplayerSubmit = (line) => {
+      if (line.startsWith('/')) {
+        chat.message('Commands are unavailable in multiplayer');
+        return;
+      }
+      if (new TextEncoder().encode(line).length > 256) {
+        chat.message('Chat is limited to 256 bytes', true);
+        return;
+      }
+      connection.send({ type: MessageType.ChatSend, text: line });
+    };
+    connection.onClose = (reason) => {
+      if (!this.connected) return;
+      this.connected = false;
+      window.clearInterval(this.pingTimer);
+      chat.close();
+      controller.player?.clearInput();
+      controller.input.setCapture(true);
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.disconnectScreen = new DisconnectScreen(reason, leave);
+    };
     this.playerList = new PlayerList(() => controller.input.captured);
     const originalFrame = controller.frame;
     const originalTick = controller.tick;
@@ -61,6 +90,10 @@ export class RemoteSession {
     );
 
     manager.remoteExit = () => {
+      this.disconnectScreen?.dispose();
+      chat.multiplayerSubmit = null;
+      chat.close();
+      controller.input.setCapture(false);
       this.playerList.dispose();
       this.entities?.dispose();
       this.connected = false;
@@ -147,6 +180,10 @@ export class RemoteSession {
             : new Promise((resolve) => this.waiting.set(key, resolve));
         });
         this.entities = new RemoteEntities(m);
+        this.inventory = new RemoteInventory(
+          m.playerController!.player!.inventory,
+          this.connection,
+        );
         this.prediction = new Prediction(m.playerController!.player!, (input) =>
           this.connection.send(input),
         );
@@ -209,6 +246,17 @@ export class RemoteSession {
       case MessageType.PlayerList:
         this.playerCount = message.players.length;
         this.playerList.update(message.players);
+        break;
+      case MessageType.ChatBroadcast:
+        this.chat.message(`${networkText(message.name)}: ${networkText(message.text)}`);
+        break;
+      case MessageType.InventorySync:
+      case MessageType.InventorySlot:
+        this.inventory?.sync(message);
+        this.inventory?.resume();
+        break;
+      case MessageType.InventoryResult:
+        this.inventory?.result(message);
         break;
       case MessageType.EntitySpawn:
         this.entities?.spawn(message);

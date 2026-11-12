@@ -1,3 +1,4 @@
+import { networkText } from './text';
 import { mat4, vec4 } from 'gl-matrix';
 import {
   applyEntityMove,
@@ -71,7 +72,7 @@ export class RemoteEntities {
       source = { player, camera: this.manager.camera!, perspective: 1, renderAlpha: 1 };
       label = document.createElement('div');
       label.className = 'remote-name';
-      label.textContent = message.name ?? 'Player';
+      label.textContent = networkText(message.name ?? 'Player');
       label.dataset.entityId = String(message.id);
       Object.assign(label.style, {
         position: 'fixed',

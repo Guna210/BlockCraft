@@ -148,7 +148,13 @@ async function main() {
     () => menu.refresh(),
     async (connection) => {
       const { RemoteSession } = await import('./game/net/session');
-      new RemoteSession(connection, worldManager);
+      new RemoteSession(connection, worldManager, chat, async () => {
+        chat.close();
+        creativeInventory.close();
+        ui.close();
+        await worldManager.quitToMenu();
+        menu.show();
+      });
     },
   );
   const menu = new MainMenu(

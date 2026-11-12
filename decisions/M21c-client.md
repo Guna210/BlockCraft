@@ -21,3 +21,7 @@ Each entity has a 32-pose timestamp ring sampled 100 ms behind receipt time. Pos
 ## Step 4 — roster
 
 Protocol v3 appends PlayerList (bounded roster, UTF-8 names and u32 ping milliseconds). The server measures its Ping/Pong RTT and broadcasts names and ping on successful join, leave and every 40 ticks. A dedicated server integration test checks all three triggers. The existing exhaustive protocol fixture map includes the new message; the fuzz test is unchanged. The Tab overlay installs listeners only during multiplayer.
+
+## Step 5 — chat, inventory and disconnect
+
+The existing Chat gets an event-only multiplayer submission handler. Broadcast text uses textContent; separators, zero-width and bidi controls are escaped visibly. Commands show a short unavailable message. Window-zero inventory operations are queued through authoritative revisions; snapshots update the owned inventory. Containers remain deferred. Disconnect stops prediction, keep-alive and interaction, displays the reason, captures input and offers a menu return that restores local callbacks and frees name labels/models.
