@@ -722,7 +722,6 @@ export class AuthoritativeServer {
         player.yaw = input.look[0] % (2 * Math.PI);
         player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, input.look[1]));
         player.setMovement(input.movement[0], input.movement[1]);
-        peer.actor.inputReady = true;
         player.input('jump', !!(input.actions & F.Jump));
         player.input('sneak', !!(input.actions & F.Sneak));
         player.input('sprint', !!(input.actions & F.Sprint));

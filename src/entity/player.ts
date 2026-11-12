@@ -224,6 +224,14 @@ export class Player {
       bit <<= 1;
     }
   }
+  /** Align private simulation phase with the server's ordered fixed-tick correction stream. */
+  alignPredictionClock(tick: number): void {
+    const delta = tick - this.ticks;
+    this.ticks = tick;
+    this.lastForward += delta;
+    this.lastJump += delta;
+    if (delta > 0) this.waterExitTicks = Math.max(0, this.waterExitTicks - delta);
+  }
   /** Keep look and input edges received since the latest predicted tick when replaying. */
   restorePredictionInput(state: Float64Array): void {
     this.yaw = state[9]!;

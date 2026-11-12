@@ -39,6 +39,7 @@ export class RemoteSession {
   private entities: RemoteEntities | null = null;
   private prediction: Prediction | null = null;
   private tickTimer = 0;
+  private nextTickAt = 0;
   private immediateTick = false;
   private actionSequence = 0;
   private breaking = false;
@@ -184,6 +185,7 @@ export class RemoteSession {
     }
     if (this.immediateTick) {
       this.simulate();
+      this.nextTickAt = performance.now() + 50;
       this.scheduleTick();
     }
     c.render(1);
@@ -192,10 +194,15 @@ export class RemoteSession {
   private scheduleTick(): void {
     window.clearTimeout(this.tickTimer);
     if (!this.connected || this.disposed) return;
-    this.tickTimer = window.setTimeout(() => {
-      this.simulate();
-      this.scheduleTick();
-    }, 50);
+    this.tickTimer = window.setTimeout(
+      () => {
+        this.simulate();
+        this.nextTickAt += 50;
+        if (this.nextTickAt < performance.now() - 150) this.nextTickAt = performance.now() + 50;
+        this.scheduleTick();
+      },
+      Math.max(1, this.nextTickAt - performance.now()),
+    );
   }
   /** Fixed networking clock continues when a browser puts the other player's tab in the background. */
   private simulate(): void {
@@ -276,6 +283,7 @@ export class RemoteSession {
         };
         // Replace the entry points only for the lifetime of this session: no single-player hook.
         c.frame = () => this.frame();
+        this.nextTickAt = performance.now() + 50;
         this.scheduleTick();
         c.tick = () => {
           throw new Error('Remote simulation is driven by the server');

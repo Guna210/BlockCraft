@@ -38,9 +38,9 @@ it('broadcasts names and measured ping on join, periodically, and on leave', asy
     a.send({ type: T.PlayerInput, sequence: 1, movement: [1, 0], look: [0, 0], actions: 0 });
     const first = await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1);
     for (let i = 0; i < 4; i++)
-      expect((await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1)).position).toEqual(
-        first.position,
-      );
+      expect(
+        (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1)).position[0],
+      ).toBeGreaterThan(first.position[0]);
     a.send({ type: T.PlayerInput, sequence: 2, movement: [1, 0], look: [0, 0], actions: 0 });
     expect(
       (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 2)).position[0],

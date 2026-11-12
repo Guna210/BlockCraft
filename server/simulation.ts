@@ -81,8 +81,6 @@ class ServerPlayer extends Player {
 }
 
 export class Actor {
-  /** Physics advances once per newly consumed input, matching the acknowledged sequence. */
-  inputReady = false;
   onInteraction: (() => void) | null = null;
   readonly player: ServerPlayer;
   readonly interaction: BlockInteraction;
@@ -414,10 +412,7 @@ export class SimulationDimension {
     this.charges.beginFrame();
     this.world.tick();
     for (const actor of this.actors) {
-      if (actor.inputReady) {
-        actor.player.tick();
-        actor.inputReady = false;
-      }
+      actor.player.tick();
       actor.bow.tick();
       if (!actor.player.dead) {
         actor.combat.tick();

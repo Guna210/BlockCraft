@@ -18,6 +18,7 @@ export class Prediction {
     flags: number[];
   }> = [];
   private hasInput = false;
+  private serverTicks = 0;
   private readonly liveInput = new Float64Array(48);
   private head = 0;
   private count = 0;
@@ -61,6 +62,7 @@ export class Prediction {
     this.player.writePredictionState(frame.state);
   }
   correct(message: Messages[T.PlayerCorrection]): void {
+    this.serverTicks++;
     let found = -1;
     for (let i = 0; i < this.count; i++) {
       if (this.frames[(this.head + i) % CAPACITY]!.sequence === message.acknowledged) {
@@ -71,6 +73,7 @@ export class Prediction {
     if (found < 0) {
       if (!this.hasInput) {
         this.player.teleport(...message.position);
+        this.player.alignPredictionClock(this.serverTicks);
         for (let a = 0; a < 3; a++) this.player.vel[a] = message.velocity[a]!;
       }
       return;
@@ -84,34 +87,39 @@ export class Prediction {
       ) > 0.01;
     this.head = (this.head + found + 1) % CAPACITY;
     this.count -= found + 1;
-    if (!mismatch) return;
-    this.corrections++;
-    this.trace.push({
-      sequence: message.acknowledged,
-      predicted: [frame.state[0]!, frame.state[1]!, frame.state[2]!],
-      authoritative: [...message.position],
-      movement: [...frame.movement],
-      actions: frame.actions,
-      look: [...frame.look],
-      predictedVelocity: [frame.state[3]!, frame.state[4]!, frame.state[5]!],
-      authoritativeVelocity: [...message.velocity],
-      flags: [
-        frame.state[11]!,
-        frame.state[26]!,
-        frame.state[28]!,
-        frame.state[30]!,
-        frame.state[23]!,
-      ],
-    });
-    if (this.trace.length > 32) this.trace.shift();
+    const phaseChanged = frame.state[23] !== this.serverTicks;
+    if (!mismatch && !phaseChanged) return;
+    if (mismatch) {
+      this.corrections++;
+      this.trace.push({
+        sequence: message.acknowledged,
+        predicted: [frame.state[0]!, frame.state[1]!, frame.state[2]!],
+        authoritative: [...message.position],
+        movement: [...frame.movement],
+        actions: frame.actions,
+        look: [...frame.look],
+        predictedVelocity: [frame.state[3]!, frame.state[4]!, frame.state[5]!],
+        authoritativeVelocity: [...message.velocity],
+        flags: [
+          frame.state[11]!,
+          frame.state[26]!,
+          frame.state[28]!,
+          frame.state[30]!,
+          frame.state[23]!,
+        ],
+      });
+      if (this.trace.length > 32) this.trace.shift();
+    }
     // Restore the acknowledged simulation phase before replacing the authoritative pose.
     this.player.writePredictionState(this.liveInput);
     this.player.readPredictionState(frame.state);
-    for (let a = 0; a < 3; a++) {
-      this.player.pos[a] = message.position[a]!;
-      this.player.previous[a] = message.position[a]!;
-      this.player.vel[a] = message.velocity[a]!;
-    }
+    this.player.alignPredictionClock(this.serverTicks);
+    if (mismatch)
+      for (let a = 0; a < 3; a++) {
+        this.player.pos[a] = message.position[a]!;
+        this.player.previous[a] = message.position[a]!;
+        this.player.vel[a] = message.velocity[a]!;
+      }
     this.player.onGround = this.player.collision.supported(...message.position, 1e-5);
     for (let i = 0; i < this.count; i++) {
       const pending = this.frames[(this.head + i) % CAPACITY]!;

@@ -105,3 +105,24 @@ it('samples raw input transitions exactly as the server sees them', () => {
   authority.tick();
   expect(p.snapshot()).toEqual(authority.snapshot());
 });
+it('aligns simulation phase from every ordered correction without counting an exact pose as a correction', () => {
+  const p = player(),
+    prediction = new Prediction(p, () => {});
+  p.input('forward', true);
+  prediction.tick();
+  const first = [...p.pos] as [number, number, number];
+  const velocity = [...p.vel] as [number, number, number];
+  for (let i = 0; i < 4; i++) prediction.tick();
+  for (let i = 0; i < 3; i++)
+    prediction.correct({
+      type: T.PlayerCorrection,
+      acknowledged: 0,
+      position: [0.5, 65, 0.5],
+      velocity: [0, 0, 0],
+    });
+  prediction.correct({ type: T.PlayerCorrection, acknowledged: 1, position: first, velocity });
+  const state = new Float64Array(48);
+  p.writePredictionState(state);
+  expect(prediction.corrections).toBe(0);
+  expect(state[23]).toBe(8);
+});
