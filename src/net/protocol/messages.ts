@@ -2,7 +2,7 @@ import type { DimensionId } from '../../world/dimension';
 import type { ItemAffix } from '../../gameplay/items';
 
 /** Change this when any wire layout or enum meaning changes. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_STRING_BYTES = 256;
 export const MAX_CHUNK_BYTES = 1024 * 1024;
 export const MAX_INVENTORY_SLOTS = 128;
@@ -33,6 +33,7 @@ export enum MessageType {
   TimeSync,
   WeatherSync,
   BlockAction,
+  PlayerList,
 }
 
 export enum BlockActionKind {
@@ -85,6 +86,10 @@ export interface EntityPose {
 }
 
 export interface Messages {
+  [MessageType.PlayerList]: {
+    type: MessageType.PlayerList;
+    players: readonly { name: string; pingMs: number }[];
+  };
   [MessageType.BlockAction]: {
     type: MessageType.BlockAction;
     action: BlockActionKind;

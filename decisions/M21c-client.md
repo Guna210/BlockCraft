@@ -17,3 +17,7 @@ A 256-entry preallocated ring stores input sequence, intent, post-tick pose and 
 ## Step 3 — remote presentation
 
 Each entity has a 32-pose timestamp ring sampled 100 ms behind receipt time. Positions and pitch interpolate linearly; yaw takes the shortest arc. Player presentation uses the existing player model renderer. Other registered creatures/items use their existing render components without advancing ECS/AI or item physics. DOM name labels use the shared UI palette, textContent, projected head positions and transform-only frame updates. Renderer replacement is restored on exit and ServerHello.
+
+## Step 4 — roster
+
+Protocol v3 appends PlayerList (bounded roster, UTF-8 names and u32 ping milliseconds). The server measures its Ping/Pong RTT and broadcasts names and ping on successful join, leave and every 40 ticks. A dedicated server integration test checks all three triggers. The existing exhaustive protocol fixture map includes the new message; the fuzz test is unchanged. The Tab overlay installs listeners only during multiplayer.

@@ -1,3 +1,4 @@
+import { PlayerList } from './player-list';
 import { RemoteEntities } from './entities';
 import { Prediction } from './prediction';
 import { BlockInteraction } from '../../gameplay/block-interaction';
@@ -15,6 +16,8 @@ import { setWeather } from '../../world/weather';
 
 /** One ordered stream owns one presentation world. It never attaches a save session. */
 export class RemoteSession {
+  private playerCount = 0;
+  private readonly playerList: PlayerList;
   private entities: RemoteEntities | null = null;
   private prediction: Prediction | null = null;
   private elapsed = 0;
@@ -33,6 +36,7 @@ export class RemoteSession {
     readonly manager: WorldManager,
   ) {
     const controller = manager.playerController!;
+    this.playerList = new PlayerList(() => controller.input.captured);
     const originalFrame = controller.frame;
     const originalTick = controller.tick;
     const originalAction = controller.input.onAction;
@@ -50,13 +54,14 @@ export class RemoteSession {
       () => ({
         connected: this.connected,
         rttMs: this.rttMs,
-        playerCount: 0,
+        playerCount: this.playerCount,
         predictionCorrections: this.prediction?.corrections ?? 0,
       }),
       (x, y, z) => this.blockAction(BlockActionKind.FinishBreak, x, y, z, 'top'),
     );
 
     manager.remoteExit = () => {
+      this.playerList.dispose();
       this.entities?.dispose();
       this.connected = false;
       window.clearInterval(this.pingTimer);
@@ -200,6 +205,10 @@ export class RemoteSession {
         break;
       case MessageType.PlayerCorrection:
         this.prediction?.correct(message);
+        break;
+      case MessageType.PlayerList:
+        this.playerCount = message.players.length;
+        this.playerList.update(message.players);
         break;
       case MessageType.EntitySpawn:
         this.entities?.spawn(message);

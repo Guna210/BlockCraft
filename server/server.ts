@@ -120,6 +120,7 @@ interface Peer {
   baselines: Map<number, Baseline>;
   chatAt: number;
   pingAt: number;
+  rttMs: number;
   ping: Messages[T.Ping];
   timeSync: Messages[T.TimeSync];
   weatherSync: Messages[T.WeatherSync];
@@ -228,6 +229,7 @@ export class AuthoritativeServer {
         centerZ: Infinity,
         baselines: new Map(),
         chatAt: -Infinity,
+        rttMs: 0,
         pingAt: performance.now(),
         ping: { type: T.Ping, id: 0 },
         timeSync: { type: T.TimeSync, dimension: 'overworld', time: 0 },
@@ -334,7 +336,11 @@ export class AuthoritativeServer {
       peer.transport.send({ type: T.Pong, id: message.id });
       return;
     }
-    if (message.type === T.Pong) return;
+    if (message.type === T.Pong) {
+      if (message.id === peer.ping.id)
+        peer.rttMs = Math.max(0, Math.round(performance.now() - peer.pingAt));
+      return;
+    }
     if (message.type === T.Disconnect) {
       peer.transport.close();
       return;
@@ -497,6 +503,7 @@ export class AuthoritativeServer {
       });
       this.syncInventory(peer, false);
       this.syncTimeWeather(peer);
+      this.broadcastPlayerList();
     } finally {
       dimension.pendingArrivals--;
     }
@@ -532,7 +539,15 @@ export class AuthoritativeServer {
       void save.catch(console.error);
       peer.actor.dimension.detach(peer.actor);
       peer.actor = null;
+      this.broadcastPlayerList();
     }
+  }
+  private broadcastPlayerList(): void {
+    const players: { name: string; pingMs: number }[] = [];
+    for (const peer of this.peers)
+      if (peer.actor) players.push({ name: peer.name, pingMs: peer.rttMs });
+    const message: Messages[T.PlayerList] = { type: T.PlayerList, players };
+    for (const peer of this.peers) if (peer.actor) peer.transport.send(message);
   }
   private syncInventory(peer: Peer, detect = true): void {
     const player = peer.actor?.player;
@@ -742,6 +757,7 @@ export class AuthoritativeServer {
       if (this.ticks % 100 === 0 || weatherChanged) this.syncTimeWeather(peer);
       this.syncInventory(peer);
     }
+    if (this.ticks % 40 === 0) this.broadcastPlayerList();
     this.unloadDistantColumns();
     if (this.ticks % 1200 === 0) this.saveRequested = true;
     if (this.saveRequested && !this.saving) {
