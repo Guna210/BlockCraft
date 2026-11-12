@@ -10,8 +10,12 @@ test('multiplayer form validates addresses and remembers connection details', as
   await expect(form.getByRole('status')).toHaveText('Invalid server address');
   await form.getByLabel('Server address').fill('ws://localhost:3001');
   await form.getByRole('button', { name: 'Connect' }).click();
-  await expect(form.getByRole('status')).toHaveText('Connected', { timeout: 60000 });
-  await form.getByRole('button', { name: 'Back' }).click();
+  await expect(form).toBeHidden({ timeout: 60000 });
+  await expect
+    .poll(() => page.evaluate(() => window.__blockcraft?.getPlayer?.().dimension))
+    .toBe('overworld');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Save & Quit', exact: true }).click();
   await expect(form).toBeHidden();
   await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
   await expect(form.getByLabel('Server address')).toHaveValue('ws://localhost:3001');

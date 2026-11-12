@@ -511,7 +511,11 @@ export class WorldManager {
   }
 
   /** A saved column if the world has one at (cx, cz), otherwise generation from the seed. */
+  public remoteExit: (() => void) | null = null;
+  public remoteColumnSource: ((cx: number, cz: number) => Promise<GenResult>) | null = null;
+
   private requestColumn(cx: number, cz: number): Promise<GenResult> {
+    if (this.remoteColumnSource) return this.remoteColumnSource(cx, cz);
     const saved = this.saves.has(cx, cz) ? this.saves.restoreColumn(cx, cz) : null;
     if (saved) {
       return saved.then(
@@ -577,6 +581,15 @@ export class WorldManager {
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
+        if (this.remoteColumnSource) {
+          const column = (res as StreamedGenResult).restored!.column;
+          return [
+            () => {
+              world.setColumn(column);
+              weatherManager.heightmap.updateColumn(world, res.cx, res.cz);
+            },
+          ];
+        }
         return applyGenSteps(world, res, this.spawning, DIMENSIONS[this.dimension].biomeIds);
       },
       requestLight: (columns) => this.requestColumnLight(columns),
@@ -906,7 +919,9 @@ export class WorldManager {
    */
   public async quitToMenu(): Promise<void> {
     if (this.panorama) return;
+    this.remoteExit?.();
     await this.exitWorld();
+    this.remoteColumnSource = null;
     this.worldEpoch++;
     this.streamer.reset();
     this.streamer.active = false;
@@ -926,6 +941,32 @@ export class WorldManager {
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
     resetWorldTime();
     resetWeather();
+  }
+
+  /** ServerHello starts a fresh presentation world, including on portal travel. */
+  public beginRemote(
+    seed: number,
+    dimension: DimensionId,
+    spawn: readonly number[],
+    time: number,
+    source: (cx: number, cz: number) => Promise<GenResult>,
+  ): void {
+    this.resetWorldToEmpty();
+    this.remoteColumnSource = source;
+    this.saves.detach();
+    this.worldSeed = seed;
+    this.resetDimensions(dimension);
+    const world = this.world!;
+    world.worldSeed = seed;
+    setWorldDimension(world, dimension);
+    clearUpdraftField();
+    if (dimension === 'hollowdeep') setUpdraftField(new UpdraftField(seed));
+    setWorldTime(time);
+    this.streamer.reset(Math.floor(spawn[0]! / 16), Math.floor(spawn[2]! / 16));
+    this.streamer.active = true;
+    this.streamer.backgroundEnabled = true;
+    this.playerController?.spawnRemote(world, spawn[0]!, spawn[1]!, spawn[2]!);
+    if (this.playerController?.player) this.playerController.player.dimension = dimension;
   }
 
   /** A createWorld or a region request (waitForTerrain) is waiting: its columns are not shown yet. */

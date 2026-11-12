@@ -10,6 +10,13 @@ import {
 /** Owns a browser WebSocket and its handshake; subsequent messages retain wire order. */
 export class Connection {
   private readonly writer = new BinaryWriter();
+  private pending: Message[] = [];
+  private receiver: ((message: Message) => void) | null = null;
+  listen(receiver: (message: Message) => void): void {
+    this.receiver = receiver;
+    for (const message of this.pending) receiver(message);
+    this.pending = [];
+  }
   onClose: (reason: string) => void = () => {};
   private constructor(private readonly socket: WebSocket) {}
 
@@ -54,7 +61,11 @@ export class Connection {
         } else if (message.type === MessageType.ServerHello && !settled) {
           settled = true;
           window.clearTimeout(timeout);
+          connection.pending.push(message);
           resolve(connection);
+        } else if (settled) {
+          if (connection.receiver) connection.receiver(message);
+          else connection.pending.push(message);
         }
       };
     });

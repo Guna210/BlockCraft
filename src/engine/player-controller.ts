@@ -365,6 +365,18 @@ export class PlayerController {
     if (preserveCamera) this.rememberCamera();
     else this.render(1);
   }
+  /** Presentation-only player: multiplayer owns simulation and input dispatch. */
+  spawnRemote(world: World, x: number, y: number, z: number): void {
+    this.reset();
+    this.world = world;
+    this.player = new Player(new BlockCollision(world), (px, pz) =>
+      world.hasColumn(Math.floor(px / 16), Math.floor(pz / 16)),
+    );
+    this.player.teleport(x, y, z);
+    this.player.onGround = this.player.collision.supported(x, y, z, 1e-5);
+    this.previousEye = this.player.eye;
+    this.render(1);
+  }
   reset(): void {
     this.suspended = false;
     this.clearMechanicsListeners();

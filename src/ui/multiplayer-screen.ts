@@ -8,7 +8,12 @@ export class MultiplayerScreen {
   private connection: { close(): void } | null = null;
   private attempt = 0;
 
-  constructor(private readonly onBack: () => void) {
+  constructor(
+    private readonly onBack: () => void,
+    private readonly onConnect: (
+      connection: import('../game/net/connection').Connection,
+    ) => Promise<void>,
+  ) {
     this.root.id = 'multiplayer-screen';
     Object.assign(this.root.style, {
       position: 'fixed',
@@ -122,7 +127,8 @@ export class MultiplayerScreen {
         this.error.textContent = reason;
         this.connect.disabled = false;
       };
-      this.error.textContent = 'Connected';
+      await this.onConnect(connection);
+      this.hide();
     } catch (error) {
       if (attempt !== this.attempt) return;
       this.error.textContent =

@@ -144,7 +144,13 @@ async function main() {
   );
   activeWorldList.screen = new WorldListScreen(input, worldManager);
   const settingsScreen = new SettingsScreen(input);
-  const multiplayerScreen = new MultiplayerScreen(() => menu.refresh());
+  const multiplayerScreen = new MultiplayerScreen(
+    () => menu.refresh(),
+    async (connection) => {
+      const { RemoteSession } = await import('./game/net/session');
+      new RemoteSession(connection, worldManager);
+    },
+  );
   const menu = new MainMenu(
     glWrapper,
     camera,
