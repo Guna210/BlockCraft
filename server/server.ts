@@ -52,6 +52,7 @@ import { DiskStorage, atomicWrite, readOptional } from './storage';
 import { SimulationDimension, Actor } from './simulation';
 import { Transport } from './transport';
 import { InventoryState } from './inventory-state';
+import { MovementClock, MAX_INPUT_STEPS } from '../src/net/movement-clock';
 import { transactInventory } from './inventory';
 import { parseOptions, type ServerOptions } from './options';
 
@@ -86,6 +87,7 @@ interface Peer {
   inputHead: number;
   inputTail: number;
   receivedInputs: number;
+  movementClock: MovementClock;
   revision: number;
   inventoryState: InventoryState;
   inventory: Messages[T.InventorySync];
@@ -200,6 +202,7 @@ export class AuthoritativeServer {
         inputHead: 0,
         inputTail: 0,
         receivedInputs: 0,
+        movementClock: new MovementClock(),
         revision: 0,
         inventoryState: new InventoryState(),
         inventory: { type: T.InventorySync, windowId: 0, revision: 0, slots: [], cursor: null },
@@ -510,6 +513,7 @@ export class AuthoritativeServer {
   }
   private configureActor(peer: Peer): void {
     const actor = peer.actor!;
+    peer.movementClock.reset();
     // Held combat input must not also mine/place locally: BlockAction owns validated edits.
     actor.interaction.input = () => actor.interaction.clear();
     actor.onInteraction = () => this.processBlockActions(peer);
@@ -718,8 +722,9 @@ export class AuthoritativeServer {
       }
       peer.receivedInputs = 0;
       if (!peer.actor || peer.travel.travelling) continue;
-      const input = peer.inputHead !== peer.inputTail ? peer.inputs[peer.inputHead] : null;
-      if (input) {
+      let appliedInputs = 0;
+      while (peer.inputHead !== peer.inputTail && appliedInputs < MAX_INPUT_STEPS) {
+        const input = peer.inputs[peer.inputHead]!;
         const player = peer.actor.player;
         player.yaw = input.look[0] % (2 * Math.PI);
         player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, input.look[1]));
@@ -731,11 +736,14 @@ export class AuthoritativeServer {
         peer.actor.combat.input('attack', !!(input.actions & F.Attack));
         peer.actor.combat.input('use', !!(input.actions & F.Use));
         peer.actor.bow.input('use', !!(input.actions & F.Use));
+        peer.movementClock.input(player);
+        appliedInputs++;
         peer.sequence = input.sequence;
         peer.hasSequence = true;
         peer.inputs[peer.inputHead] = null;
         peer.inputHead = (peer.inputHead + 1) % 8;
       }
+      peer.movementClock.finishTick(peer.actor.player, appliedInputs);
     }
     for (const dimension of this.dimensions.values()) dimension.tick();
     advance();

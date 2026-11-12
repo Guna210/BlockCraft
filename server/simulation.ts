@@ -412,7 +412,6 @@ export class SimulationDimension {
     this.charges.beginFrame();
     this.world.tick();
     for (const actor of this.actors) {
-      actor.player.tick();
       actor.bow.tick();
       if (!actor.player.dead) {
         actor.combat.tick();

@@ -6,25 +6,36 @@ import {
   PROTOCOL_VERSION,
   type Message,
 } from '../../net/protocol';
+import { WorkerSocket } from './worker-socket';
+import type { Messages } from '../../net/protocol';
 
 /** Owns a browser WebSocket and its handshake; subsequent messages retain wire order. */
 export class Connection {
   private readonly writer = new BinaryWriter();
   private pending: Message[] = [];
-  private receiver: ((message: Message) => void) | null = null;
-  listen(receiver: (message: Message) => void): void {
+  private receiver: ((message: Message, immediateReceipt?: boolean) => void) | null = null;
+  listen(receiver: (message: Message, immediateReceipt?: boolean) => void): void {
     this.receiver = receiver;
     for (const message of this.pending) receiver(message);
     this.pending = [];
   }
   onClose: (reason: string) => void = () => {};
-  private constructor(private readonly socket: WebSocket) {}
+  private constructor(private readonly socket: WebSocket | WorkerSocket) {}
+  get threaded(): boolean {
+    return this.socket instanceof WorkerSocket;
+  }
+  startInputs(sequence: number): void {
+    if (this.socket instanceof WorkerSocket) this.socket.start(sequence);
+  }
+  updateIntent(input: Messages[MessageType.PlayerInput], immediate: boolean): void {
+    if (this.socket instanceof WorkerSocket) this.socket.intent(input, immediate);
+  }
 
-  static connect(address: string, name: string): Promise<Connection> {
+  static connect(address: string, name: string, threaded = false): Promise<Connection> {
     return new Promise((resolve, reject) => {
-      let socket: WebSocket;
+      let socket: WebSocket | WorkerSocket;
       try {
-        socket = new WebSocket(address);
+        socket = threaded ? new WorkerSocket(address) : new WebSocket(address);
       } catch {
         reject(new Error('Invalid server address'));
         return;
@@ -69,7 +80,8 @@ export class Connection {
           connection.pending.push(message);
           resolve(connection);
         } else if (settled) {
-          if (connection.receiver) connection.receiver(message);
+          if (connection.receiver)
+            connection.receiver(message, socket instanceof WorkerSocket && socket.inputImmediate);
           else connection.pending.push(message);
         }
         if (message.type === MessageType.Disconnect && settled) {

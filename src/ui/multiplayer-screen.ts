@@ -136,7 +136,7 @@ export class MultiplayerScreen {
     const attempt = ++this.attempt;
     try {
       const { Connection } = await import('../game/net/connection');
-      const connection = await Connection.connect(url.href, this.name.value);
+      const connection = await Connection.connect(url.href, this.name.value, true);
       if (attempt !== this.attempt) {
         connection.close();
         return;

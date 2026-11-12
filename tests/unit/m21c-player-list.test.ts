@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { it, expect } from 'vitest';
+import { Player } from '../../src/entity/player';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,12 +36,19 @@ it('broadcasts names and measured ping on join, periodically, and on leave', asy
     actor.player.setGameMode('creative');
     actor.player.flying = true;
     actor.player.teleport(0.5, 250, 0.5, 0, 0);
+    const reference = new Player(actor.player.collision, () => true);
+    reference.setGameMode('creative');
+    reference.flying = true;
+    reference.teleport(0.5, 250, 0.5, 0, 0);
+    reference.input('forward', true);
+    reference.tick();
     a.send({ type: T.PlayerInput, sequence: 1, movement: [1, 0], look: [0, 0], actions: 0 });
     const first = await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1);
+    expect(first.position[0]).toBeCloseTo(reference.pos[0]);
     for (let i = 0; i < 4; i++)
       expect(
         (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1)).position[0],
-      ).toBeGreaterThan(first.position[0]);
+      ).toBeCloseTo(reference.pos[0]);
     a.send({ type: T.PlayerInput, sequence: 2, movement: [1, 0], look: [0, 0], actions: 0 });
     expect(
       (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 2)).position[0],

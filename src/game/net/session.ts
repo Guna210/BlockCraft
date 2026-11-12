@@ -21,6 +21,8 @@ import type { GenResult } from '../../workers/gen-worker-pool';
 import { setWorldTime } from '../../world/time';
 import { setWeather } from '../../world/weather';
 
+const INPUT_ACTIONS = ['jump', 'sneak', 'sprint', 'attack', 'use', 'pick'] as const;
+
 /** One ordered stream owns one presentation world. It never attaches a save session. */
 export class RemoteSession {
   private readonly updates: Array<{
@@ -41,6 +43,13 @@ export class RemoteSession {
   private tickTimer = 0;
   private nextTickAt = 0;
   private immediateTick = false;
+  private readonly networkIntent = {
+    type: MessageType.PlayerInput as const,
+    sequence: 0,
+    movement: [0, 0] as [number, number],
+    look: [0, 0] as [number, number],
+    actions: 0,
+  };
   private actionSequence = 0;
   private breaking = false;
   private breakStartedAt = 0;
@@ -106,7 +115,13 @@ export class RemoteSession {
     const originalAction = controller.input.onAction;
     controller.input.onAction = (action, down) => {
       if (action === 'perspective') originalAction?.(action, down);
-      else controller.interaction?.input(action, down);
+      else if (action === 'attack' || action === 'use' || action === 'pick') {
+        // Preserve even a press/release between frames as a real sequenced input.
+        if (connection.threaded) {
+          if (this.connected && !this.disposed && this.prediction && controller.player)
+            this.refreshIntent(down);
+        } else controller.interaction?.input(action, down);
+      }
       // Start a movement tick in the next animation frame, without waiting for a round trip.
       if (down && ['forward', 'back', 'left', 'right', 'jump'].includes(action))
         this.immediateTick = true;
@@ -148,8 +163,10 @@ export class RemoteSession {
       controller.frame = originalFrame;
       manager.remoteExit = null;
     };
-    connection.listen((message) => {
-      this.serial = this.serial.then(() => this.receive(message)).catch(() => connection.close());
+    connection.listen((message, immediateReceipt = false) => {
+      this.serial = this.serial
+        .then(() => this.receive(message, immediateReceipt))
+        .catch(() => connection.close());
     });
   }
   private blockAction(
@@ -160,6 +177,7 @@ export class RemoteSession {
     face: (typeof BLOCK_FACES)[number],
   ): void {
     if (!this.connected) return;
+    if (this.connection.threaded) this.refreshIntent();
     this.connection.send({
       type: MessageType.BlockAction,
       action,
@@ -187,7 +205,8 @@ export class RemoteSession {
       );
       input.mouseMovement.x = input.mouseMovement.y = 0;
     }
-    if (this.immediateTick) {
+    if (this.connection.threaded) this.refreshIntent(this.immediateTick);
+    else if (this.immediateTick) {
       this.simulate(true);
       this.nextTickAt = performance.now() + 50;
       this.scheduleTick();
@@ -195,6 +214,25 @@ export class RemoteSession {
     this.entities?.sample();
     c.render(1);
     this.entities?.projectLabels();
+  }
+  private refreshIntent(immediate = false): void {
+    const c = this.manager.playerController!,
+      p = c.player!,
+      intent = this.networkIntent;
+    const states = c.input.actionStates;
+    intent.movement[0] =
+      Number(states.get('forward') ?? false) - Number(states.get('back') ?? false);
+    intent.movement[1] = Number(states.get('right') ?? false) - Number(states.get('left') ?? false);
+    intent.look[0] = p.yaw;
+    intent.look[1] = p.pitch;
+    intent.actions = 0;
+    for (let i = 0; i < INPUT_ACTIONS.length; i++)
+      if (states.get(INPUT_ACTIONS[i]!)) intent.actions |= 1 << i;
+    this.connection.updateIntent(
+      intent,
+      immediate && (this.prediction?.speculate(intent) ?? false),
+    );
+    this.immediateTick = false;
   }
   private scheduleTick(): void {
     window.clearTimeout(this.tickTimer);
@@ -216,7 +254,17 @@ export class RemoteSession {
     if (!this.connected || !p || !this.prediction) return;
     this.immediateTick = false;
     if (!this.prediction.tick(immediate)) return;
+    this.interact();
+  }
+  private interact(): void {
+    const c = this.manager.playerController!,
+      p = c.player!;
     const interaction = c.interaction!;
+    // Block progress must use the same sequenced intent as this movement step.
+    // Raw button events can be newer than worker inputs queued on the main thread.
+    interaction.input('attack', p.down('attack'));
+    interaction.input('use', p.down('use'));
+    interaction.input('pick', p.down('pick'));
     interaction.updateTarget();
     const t = interaction.target;
     const attacking = p.down('attack') && t.hit;
@@ -245,7 +293,7 @@ export class RemoteSession {
     this.breakState = t.stateId;
     interaction.tick();
   }
-  private async receive(message: Message): Promise<void> {
+  private async receive(message: Message, immediateReceipt = false): Promise<void> {
     if (this.disposed) return;
     const m = this.manager;
     switch (message.type) {
@@ -306,8 +354,13 @@ export class RemoteSession {
         };
         // Replace the entry points only for the lifetime of this session: no single-player hook.
         c.frame = () => this.frame();
-        this.nextTickAt = performance.now() + 50;
-        this.scheduleTick();
+        if (this.connection.threaded) {
+          this.refreshIntent();
+          this.connection.startInputs(sequence);
+        } else {
+          this.nextTickAt = performance.now() + 50;
+          this.scheduleTick();
+        }
         c.tick = () => {
           throw new Error('Remote simulation is driven by the server');
         };
@@ -316,6 +369,7 @@ export class RemoteSession {
       case MessageType.ChunkData: {
         if (message.dimension !== m.dimension) break;
         const column = await deserializeColumn(message.payload);
+        if (!column || this.disposed || message.dimension !== m.dimension) break;
         column.setBiomeIndices(column.biomeIndices, DIMENSIONS[message.dimension].biomeIds);
         const result = {
           cx: message.cx,
@@ -361,6 +415,12 @@ export class RemoteSession {
         break;
       case MessageType.Disconnect:
         this.connection.onClose(message.reason || 'Connection lost');
+        break;
+      case MessageType.PlayerInput:
+        if (this.connected && this.connection.threaded) {
+          this.prediction?.receiveInput(message, immediateReceipt);
+          this.interact();
+        }
         break;
       case MessageType.PlayerCorrection:
         this.prediction?.correct(message);
