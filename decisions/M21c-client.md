@@ -13,3 +13,7 @@ Connection retains messages until the dynamically loaded session subscribes. A s
 ## Step 2 — prediction and diagnostics
 
 A 256-entry preallocated ring stores input sequence, intent, post-tick pose and shared Player checkpoints. Corrections compare the acknowledged pose at 0.01 blocks, restore that simulation phase, apply authoritative position/velocity, and replay outstanding intent. Checkpoint methods add no fields or work to single-player. Client Ping/Pong measures RTT; the debug domain exposes real counters and a raw FinishBreak message for reach rejection tests. BlockInteraction predicts edits and emits Start/Finish/Abort/Place through the transport.
+
+## Step 3 — remote presentation
+
+Each entity has a 32-pose timestamp ring sampled 100 ms behind receipt time. Positions and pitch interpolate linearly; yaw takes the shortest arc. Player presentation uses the existing player model renderer. Other registered creatures/items use their existing render components without advancing ECS/AI or item physics. DOM name labels use the shared UI palette, textContent, projected head positions and transform-only frame updates. Renderer replacement is restored on exit and ServerHello.

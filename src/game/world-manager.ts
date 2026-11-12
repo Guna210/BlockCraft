@@ -960,7 +960,7 @@ export class WorldManager {
     world.worldSeed = seed;
     setWorldDimension(world, dimension);
     clearUpdraftField();
-    if (dimension === 'hollowdeep') setUpdraftField(new UpdraftField(seed));
+    if (dimension === 'hollowdeep') setUpdraftField(world, new UpdraftField(seed));
     setWorldTime(time);
     this.streamer.reset(Math.floor(spawn[0]! / 16), Math.floor(spawn[2]! / 16));
     this.streamer.active = true;

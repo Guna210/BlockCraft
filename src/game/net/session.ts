@@ -1,3 +1,4 @@
+import { RemoteEntities } from './entities';
 import { Prediction } from './prediction';
 import { BlockInteraction } from '../../gameplay/block-interaction';
 import { BlockActionKind, type Messages, type BLOCK_FACES } from '../../net/protocol';
@@ -14,6 +15,7 @@ import { setWeather } from '../../world/weather';
 
 /** One ordered stream owns one presentation world. It never attaches a save session. */
 export class RemoteSession {
+  private entities: RemoteEntities | null = null;
   private prediction: Prediction | null = null;
   private elapsed = 0;
   private actionSequence = 0;
@@ -55,6 +57,7 @@ export class RemoteSession {
     );
 
     manager.remoteExit = () => {
+      this.entities?.dispose();
       this.connected = false;
       window.clearInterval(this.pingTimer);
       installNetDebug(null, null);
@@ -122,11 +125,13 @@ export class RemoteSession {
       interaction.tick();
     }
     c.render(1);
+    this.entities?.frame();
   }
   private async receive(message: Message): Promise<void> {
     const m = this.manager;
     switch (message.type) {
       case MessageType.ServerHello:
+        this.entities?.dispose();
         this.columns.clear();
         this.waiting.clear();
         m.beginRemote(message.seed, message.dimension, message.spawn, message.time, (cx, cz) => {
@@ -136,6 +141,7 @@ export class RemoteSession {
             ? Promise.resolve(result)
             : new Promise((resolve) => this.waiting.set(key, resolve));
         });
+        this.entities = new RemoteEntities(m);
         this.prediction = new Prediction(m.playerController!.player!, (input) =>
           this.connection.send(input),
         );
@@ -167,6 +173,9 @@ export class RemoteSession {
           cx: message.cx,
           cz: message.cz,
           sections: [],
+          biomes: column.biomeIndices,
+          grassTints: column.grassTints,
+          foliageTints: column.foliageTints,
           columnMs: 0,
           sectionCount: 0,
           perSectionMs: 0,
@@ -187,10 +196,19 @@ export class RemoteSession {
         break;
       case MessageType.BlockUpdate:
         if (message.dimension === m.dimension)
-          m.world?.setBlock(message.x, message.y, message.z, message.stateId);
+          m.world?.setBlockStateId(message.x, message.y, message.z, message.stateId);
         break;
       case MessageType.PlayerCorrection:
         this.prediction?.correct(message);
+        break;
+      case MessageType.EntitySpawn:
+        this.entities?.spawn(message);
+        break;
+      case MessageType.EntityMove:
+        this.entities?.move(message);
+        break;
+      case MessageType.EntityRemove:
+        this.entities?.remove(message.id);
         break;
       case MessageType.Pong:
         if (message.id === this.pingId) this.rttMs = performance.now() - this.pingAt;

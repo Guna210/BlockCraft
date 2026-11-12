@@ -1,0 +1,23 @@
+import { expect, it } from 'vitest';
+import { PoseBuffer } from '../../src/game/net/interpolation';
+it('interpolates timestamped positions with shortest-arc yaw and clamps at endpoints', () => {
+  const buffer = new PoseBuffer();
+  const a = { x: 0, y: 2, z: 4, yaw: Math.PI - 0.1, pitch: 0 };
+  const b = { x: 10, y: 4, z: 8, yaw: -Math.PI + 0.1, pitch: 1 };
+  buffer.push(100, a);
+  buffer.push(200, b);
+  const out = { ...a };
+  buffer.sample(150, out);
+  expect(out.x).toBe(5);
+  expect(out.y).toBe(3);
+  expect(out.z).toBe(6);
+  expect(out.yaw).toBeCloseTo(Math.PI);
+  expect(out.pitch).toBe(0.5);
+  buffer.sample(50, out);
+  expect(out).toEqual(a);
+  buffer.sample(300, out);
+  expect(out.x).toBe(10);
+  for (let i = 0; i < 100; i++) buffer.push(300 + i, { ...b, x: i });
+  buffer.sample(399, out);
+  expect(out.x).toBe(99);
+});
