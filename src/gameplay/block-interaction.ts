@@ -92,7 +92,7 @@ export class BlockInteraction {
     this.reset();
     this.target.hit = false;
   }
-  updateTarget(): void {
+  updateTarget(reach = this.player.mode === 'creative' ? 5 : 4.5): void {
     const p = this.player;
     if (p.detached) {
       this.target.hit = false;
@@ -111,7 +111,7 @@ export class BlockInteraction {
       this.look[0]!,
       this.look[1]!,
       this.look[2]!,
-      p.mode === 'creative' ? 5 : 4.5,
+      reach,
       this.target,
     );
     const t = this.target;
@@ -122,6 +122,37 @@ export class BlockInteraction {
     this.updateTarget();
     const t = this.target,
       p = this.player;
+    this.refreshTool();
+    if (this.pickPressed && t.hit && p.mode === 'creative') {
+      const id = this.registry.getResolvedState(t.stateId)!.blockId;
+      p.heldBlock = this.registry.getDefaultStateId(id)!;
+      p.inventory.pickBlock(id);
+    }
+    this.pickPressed = false;
+    if (this.usePressed && t.hit) {
+      this.useTarget();
+    }
+    this.usePressed = false;
+    if (!t.hit || !this.attack || p.detached) {
+      this.reset();
+      return;
+    }
+    this.bx = t.x;
+    this.by = t.y;
+    this.bz = t.z;
+    this.state = t.stateId;
+    const def = this.registry.getResolvedState(t.stateId)!.definition;
+    const seconds = breakSeconds(def, this.tool, p.inFluid === 'water', !p.onGround);
+    if (seconds === Infinity) return;
+    this.progress =
+      p.mode === 'creative' || seconds === 0 ? 1 : Math.min(1, this.progress + 0.05 / seconds);
+    if (this.progress >= 1 - 1e-10) {
+      this.finishBreak();
+    }
+  }
+  /** Resolves exactly the tool/affix used by both timed mining and server validation. */
+  refreshTool(): void {
+    const p = this.player;
     const selected = p.inventory.held;
     const selectedId = selected?.id ?? null;
     const selectedAffix = selected?.affix;
@@ -143,44 +174,39 @@ export class BlockInteraction {
       }
       this.tool = this.cachedMiningTool;
     }
-    if (this.pickPressed && t.hit && p.mode === 'creative') {
-      const id = this.registry.getResolvedState(t.stateId)!.blockId;
-      p.heldBlock = this.registry.getDefaultStateId(id)!;
-      p.inventory.pickBlock(id);
-    }
-    this.pickPressed = false;
-    if (this.usePressed && t.hit) {
-      const blockId = this.registry.getResolvedState(t.stateId)!.blockId;
-      const consumedByBlock = Boolean(this.onUse?.(blockId, t) || this.toggle());
-      if (consumedByBlock) {
-        this.player.survival.useConsumed = true;
-      } else {
-        this.place();
-      }
-    }
-    this.usePressed = false;
-    if (!t.hit || !this.attack || p.detached) {
-      this.reset();
-      return;
-    }
-    this.bx = t.x;
-    this.by = t.y;
-    this.bz = t.z;
-    this.state = t.stateId;
-    const def = this.registry.getResolvedState(t.stateId)!.definition;
-    const seconds = breakSeconds(def, this.tool, p.inFluid === 'water', !p.onGround);
-    if (seconds === Infinity) return;
-    this.progress =
-      p.mode === 'creative' || seconds === 0 ? 1 : Math.min(1, this.progress + 0.05 / seconds);
-    if (this.progress >= 1 - 1e-10) {
-      const brokenState = t.stateId;
-      if (this.onBreakBeforeRemove?.(brokenState, t.x, t.y, t.z) === false) return;
-      for (const cell of removeShapeBlock(this.registry, p.collision.world, t.x, t.y, t.z))
-        this.edited(cell.x, cell.y, cell.z);
-      this.onBreak?.(brokenState, t.x, t.y, t.z, this.tool);
-      this.reset();
-      t.hit = false;
-    }
+  }
+  miningSeconds(stateId: number): number {
+    this.refreshTool();
+    const definition = this.registry.getResolvedState(stateId)!.definition;
+    const seconds = breakSeconds(
+      definition,
+      this.tool,
+      this.player.inFluid === 'water',
+      !this.player.onGround,
+    );
+    return Number.isFinite(seconds) && this.player.mode === 'creative' ? 0 : seconds;
+  }
+  /** Commits a validated target; both local held mining and the server use the same edit path. */
+  finishBreak(): boolean {
+    const t = this.target;
+    if (!t.hit) return false;
+    const state = t.stateId;
+    if (this.onBreakBeforeRemove?.(state, t.x, t.y, t.z) === false) return false;
+    for (const cell of removeShapeBlock(this.registry, this.player.collision.world, t.x, t.y, t.z))
+      this.edited(cell.x, cell.y, cell.z);
+    this.onBreak?.(state, t.x, t.y, t.z, this.tool);
+    this.reset();
+    t.hit = false;
+    return true;
+  }
+  /** Places or uses the server-ray target through the same orientation and collision rules. */
+  useTarget(): boolean {
+    const t = this.target;
+    if (!t.hit) return false;
+    const blockId = this.registry.getResolvedState(t.stateId)!.blockId;
+    const used = Boolean(this.onUse?.(blockId, t) || this.toggle());
+    if (used) this.player.survival.useConsumed = true;
+    return used || this.place();
   }
   /** Right-clicking a door or trapdoor opens or closes it instead of placing a block. */
   private toggle(): boolean {

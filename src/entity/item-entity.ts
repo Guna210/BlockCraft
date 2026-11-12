@@ -87,7 +87,8 @@ export class ItemEntityManager {
     }
     return entity;
   }
-  tick(player: Player): void {
+  tick(player: Player | null, players?: readonly Player[]): void {
+    const fallbackPlayer = player;
     for (let i = 0; i < this.pool.length; i++) {
       const entity = this.pool[i]!;
       if (!entity.active) continue;
@@ -139,7 +140,29 @@ export class ItemEntityManager {
           break;
         }
       }
+      player = fallbackPlayer;
+      if (players) {
+        let nearest = Infinity;
+        for (const candidate of players) {
+          if (
+            candidate.dead ||
+            candidate.detached ||
+            candidate.inventory.capacity(entity.item.id, entity) < entity.count
+          )
+            continue;
+          const distance = Math.hypot(
+            candidate.pos[0] - entity.pos[0],
+            candidate.pos[1] + 0.6 - (entity.pos[1] + 0.125),
+            candidate.pos[2] - entity.pos[2],
+          );
+          if (distance < nearest) {
+            nearest = distance;
+            player = candidate;
+          }
+        }
+      }
       if (
+        !player ||
         !entity.active ||
         entity.age < Math.max(4, entity.pickupDelay) ||
         player.detached ||

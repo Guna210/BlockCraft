@@ -15,7 +15,9 @@
     "test:e2e": "playwright test",
     "verify": "node scripts/verify.mjs",
     "verify:quick": "node scripts/verify-quick.mjs",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "build:server": "vite build --config vite.server.config.ts",
+    "server": "npm run build:server && node dist-server/main.js"
   },
   "repository": {
     "type": "git",
@@ -35,6 +37,7 @@
     "@types/gl-matrix": "^2.4.5",
     "@types/node": "^26.6.3",
     "@types/pngjs": "^6.0.5",
+    "@types/ws": "^8.18.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-playwright": "^2.12.0",
@@ -48,6 +51,7 @@
   },
   "dependencies": {
     "gl-matrix": "^3.4.4",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "ws": "^8.22.2"
   }
 }

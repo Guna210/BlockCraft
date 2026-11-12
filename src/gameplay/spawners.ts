@@ -49,9 +49,14 @@ function key(entity: BlockEntityInstance): string {
   return entity.x + ',' + entity.y + ',' + entity.z;
 }
 
+const spawnerPosition: [number, number, number] = [0, 0, 0];
+
 /** Distance from the player's feet to the spawner block's centre, or Infinity with no player. */
 function playerDistance(runtime: MobRuntime | undefined, entity: BlockEntityInstance): number {
-  const player = runtime?.player();
+  spawnerPosition[0] = entity.x + 0.5;
+  spawnerPosition[1] = entity.y + 0.5;
+  spawnerPosition[2] = entity.z + 0.5;
+  const player = runtime?.player(spawnerPosition);
   if (!player) return Infinity;
   return Math.hypot(
     player.pos[0] - (entity.x + 0.5),

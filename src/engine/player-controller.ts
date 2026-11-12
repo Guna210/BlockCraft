@@ -1,3 +1,4 @@
+import { finishBlockDrops } from '../gameplay/block-drops';
 import { BlockInteraction } from '../gameplay/block-interaction';
 import { settings } from './settings';
 import { TickLoop } from './loop';
@@ -10,16 +11,17 @@ import { ItemEntityManager } from '../entity/item-entity';
 import type { EntityWorld } from '../entity/ecs/world';
 import { createEntityWorld, queryEcsEntities } from '../entity/ecs/systems';
 import { BreakParticles } from '../render/particles';
-import { canHarvest } from '../gameplay/mining';
-import { rollBlockLoot } from '../gameplay/loot';
 import { BlockRegistry } from '../world/blocks/registry';
 import type { RayHit } from '../world/raycast';
 import { spillChestContents } from '../gameplay/chests';
 import { spillKilnContents } from '../gameplay/kiln';
-import { getToolDurability } from '../gameplay/tools';
 import type { QueriedEntity } from '../entity/query';
 import type { DamageEvent } from '../gameplay/survival';
-import { deathCauseForDamageSource, resolveBedRespawn } from '../gameplay/death-beds';
+import {
+  deathCauseForDamageSource,
+  resolveBedRespawn,
+  dropDeathInventory,
+} from '../gameplay/death-beds';
 import { clearPlayerInvulnerability, PlayerCombat, hurtPlayer } from '../gameplay/combat';
 import { MobRuntime, type MobPlayer } from '../entity/ai/runtime';
 import { spawnRulesFor } from '../entity/spawning';
@@ -341,33 +343,7 @@ export class PlayerController {
         priority: 1,
       });
 
-      if (this.player!.mode === 'survival') {
-        this.player!.survival.addExhaustion(0.005);
-        const held = this.player!.inventory.held;
-        if (held) {
-          const durability = getToolDurability(held);
-          if (durability !== null && durability > 0) {
-            held.damage = (held.damage ?? 0) + 1;
-            if (held.damage >= durability) {
-              this.particles!.spawn(
-                state,
-                this.player!.pos[0],
-                this.player!.pos[1] + this.player!.eye,
-                this.player!.pos[2],
-              );
-              this.player!.inventory.slots[this.player!.inventory.selectedSlot] = null;
-            }
-          }
-        }
-      }
-
-      if (this.player!.mode === 'creative' || !canHarvest(block.definition, tool)) return;
-      const breakCount = world.breakCount++;
-      const loot = rollBlockLoot(block.blockId, world.worldSeed, x, y, z, breakCount);
-      for (let n = 0; n < loot.length; n++) {
-        const entry = loot[n]!;
-        this.itemEntities!.spawn(entry.id, entry.count, x + 0.5, y + 0.5, z + 0.5);
-      }
+      finishBlockDrops(this.player!, this.itemEntities!, state, x, y, z, tool, this.particles!);
     };
     this.interaction.onPlace = (state, x, y, z) => {
       const block = BlockRegistry.getInstance().getResolvedState(state)!;
@@ -500,26 +476,7 @@ export class PlayerController {
     this.combat?.clear();
     this.spawnView = false;
     this.onDeath(deathCauseForDamageSource(source));
-    const [x, y, z] = player.pos;
-    const drops = this.itemEntities;
-    for (let slot = 0; slot < player.inventory.slots.length; slot++) {
-      const stack = player.inventory.slots[slot];
-      if (!stack || !drops) continue;
-      const entity = drops.spawn(
-        stack.id,
-        stack.count,
-        x + (Math.random() - 0.5) * 0.7,
-        y + Math.random() * 0.25,
-        z + (Math.random() - 0.5) * 0.7,
-        {
-          velocity: [(Math.random() - 0.5) * 1.2, 1.6 + Math.random(), (Math.random() - 0.5) * 1.2],
-          pickupDelay: 40,
-        },
-      );
-      if (entity) player.inventory.slots[slot] = null;
-    }
-    player.xpLevel = 0;
-    player.xpProgress = 0;
+    dropDeathInventory(player, this.itemEntities);
   }
 
   /** Derive the roll side from the nearby hazard block when the damage event has one. */

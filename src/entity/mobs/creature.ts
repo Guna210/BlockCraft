@@ -127,7 +127,9 @@ export function creatureContext(ecs: EntityWorld): CreatureContext | undefined {
 /** Growing up, death drops and per-type ticks. */
 function creatureSystem(ctx: CreatureContext): void {
   const ecs = ctx.ecs,
-    world = ctx.items.world;
+    world = ctx.items.world,
+    runtime = mobRuntime(ecs),
+    roster = runtime?.hasPlayerRoster ? runtime : null;
   for (const id of ecs.query(CreatureC)) {
     const creature = ecs.get(id, CreatureC)!;
     const health = ecs.get(id, HealthC);
@@ -145,6 +147,7 @@ function creatureSystem(ctx: CreatureContext): void {
       age.ageTicks++;
       if (age.baby && age.ageTicks >= GROW_UP_TICKS) growUp(ecs, id, creature.definition);
     }
+    if (roster) roster.focus(id);
     creature.definition.tick?.(ctx, id);
   }
 }

@@ -1,3 +1,5 @@
+import type { Player } from '../entity/player';
+import type { ItemEntityManager } from '../entity/item-entity';
 import type { Position } from '../entity/physics';
 import type { World } from '../world/world';
 import { BlockRegistry } from '../world/blocks/registry';
@@ -146,4 +148,27 @@ export function hostileWithin(world: BedWorld, position: Position, radius = 8): 
       const dz = (entity.minZ + entity.maxZ) / 2 - z;
       return Math.hypot(dx, dy, dz) <= radius;
     });
+}
+
+/** Shared authoritative inventory loss on death; sound and screens stay in the client. */
+export function dropDeathInventory(player: Player, drops: ItemEntityManager | null): void {
+  const [x, y, z] = player.pos;
+  for (let slot = 0; slot < player.inventory.slots.length; slot++) {
+    const stack = player.inventory.slots[slot];
+    if (!stack || !drops) continue;
+    const entity = drops.spawn(
+      stack.id,
+      stack.count,
+      x + (Math.random() - 0.5) * 0.7,
+      y + Math.random() * 0.25,
+      z + (Math.random() - 0.5) * 0.7,
+      {
+        velocity: [(Math.random() - 0.5) * 1.2, 1.6 + Math.random(), (Math.random() - 0.5) * 1.2],
+        pickupDelay: 40,
+      },
+    );
+    if (entity) player.inventory.slots[slot] = null;
+  }
+  player.xpLevel = 0;
+  player.xpProgress = 0;
 }

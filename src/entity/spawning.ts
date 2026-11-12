@@ -126,9 +126,19 @@ export class MobSpawner {
     const ecs = this.runtime.ecs,
       world = this.runtime.world;
     let n = 0;
+    const multiplePlayers = this.runtime.hasPlayerRoster && this.runtime.players().length > 1;
     for (const id of ecs.query(MobC, TransformC)) {
       if (ecs.get(id, MobC)!.category !== category) continue;
       const pos = ecs.get(id, TransformC)!.pos;
+      if (multiplePlayers) {
+        const player = this.runtime.player(null);
+        if (
+          player &&
+          Math.hypot(pos[0] - player.pos[0], pos[1] - player.pos[1], pos[2] - player.pos[2]) >
+            SPAWN_MAX_DISTANCE
+        )
+          continue;
+      }
       if (world.hasColumn(Math.floor(pos[0] / 16), Math.floor(pos[2] / 16))) n++;
     }
     return n;
@@ -153,11 +163,12 @@ export class MobSpawner {
 
   /** Removes far hostiles: always beyond 128 blocks, 1/800 per tick beyond 32. */
   private despawn(): void {
-    const ecs = this.runtime.ecs,
-      player = this.runtime.player()!;
+    const ecs = this.runtime.ecs;
     for (const id of ecs.query(MobC, TransformC)) {
       if (ecs.get(id, MobC)!.category !== 'hostile') continue;
       const pos = ecs.get(id, TransformC)!.pos;
+      const player = this.runtime.player(pos);
+      if (!player) continue;
       const d = Math.hypot(pos[0] - player.pos[0], pos[1] - player.pos[1], pos[2] - player.pos[2]);
       if (d > SPAWN_MAX_DISTANCE) this.runtime.removeNow(id);
       else if (d > DESPAWN_NEAR_DISTANCE && this.runtime.random() < DESPAWN_CHANCE)

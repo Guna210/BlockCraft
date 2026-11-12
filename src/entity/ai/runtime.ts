@@ -144,6 +144,7 @@ export function mobRuntime(ecs: EntityWorld): MobRuntime | undefined {
 
 export interface MobRuntimeOptions {
   player?: () => MobPlayer | null;
+  players?: () => readonly MobPlayer[];
   /** Needed to spawn mobs (spawning, breeding). */
   spawnContext?: EntitySpawnContext;
   /** Natural spawning and despawning; off unless rules are given. */
@@ -165,6 +166,9 @@ export class MobRuntime implements NavigationHost {
   private readonly removals = new Set<number>();
   private readonly getPlayer: () => MobPlayer | null;
   private spawnSystem: EcsSystem | null = null;
+  private readonly getPlayers?: () => readonly MobPlayer[];
+  private readonly singlePlayer: MobPlayer[] = [];
+  private focusPosition: Readonly<Vec3> | null = null;
   private spawning = false;
 
   constructor(
@@ -181,6 +185,7 @@ export class MobRuntime implements NavigationHost {
     this.pathfinder = shared.pathfinder;
     this.scheduler = new PathScheduler(this.pathfinder);
     this.rng = new PRNG(options.seed ?? deriveSeed(world.worldSeed, 'mobs'));
+    this.getPlayers = options.players;
     this.getPlayer = options.player ?? (() => null);
     this.spawnContext = options.spawnContext ?? null;
     const rules = options.spawnRules === 'default' ? spawnRules : options.spawnRules;
@@ -188,7 +193,11 @@ export class MobRuntime implements NavigationHost {
     ecs.addSystem(() => this.aiSystem(), AI_ORDER);
     ecs.addSystem(() => this.navigationSystem(), NAV_ORDER);
     ecs.addSystem(() => this.movementSystem(), MOVE_ORDER);
-    if (this.spawner) this.spawnSystem = () => this.spawner!.tick();
+    if (this.spawner)
+      this.spawnSystem = () => {
+        this.focusPosition = null;
+        this.spawner!.tick();
+      };
     this.setSpawning(options.spawning ?? true);
   }
 
@@ -233,8 +242,37 @@ export class MobRuntime implements NavigationHost {
     return this.rng.next();
   }
 
-  player(): MobPlayer | null {
-    return this.getPlayer();
+  /** Roster is supplied only by multiplayer; single-player keeps its existing callback. */
+  players(): readonly MobPlayer[] {
+    if (this.getPlayers) return this.getPlayers();
+    const player = this.getPlayer();
+    this.singlePlayer.length = player ? 1 : 0;
+    if (player) this.singlePlayer[0] = player;
+    return this.singlePlayer;
+  }
+  get hasPlayerRoster(): boolean {
+    return this.getPlayers !== undefined;
+  }
+  focus(id: number): void {
+    this.focusPosition = this.ecs.get(id, TransformC)?.pos ?? null;
+  }
+  player(origin: Readonly<Vec3> | null = this.focusPosition): MobPlayer | null {
+    if (!this.getPlayers) return this.getPlayer();
+    const players = this.getPlayers();
+    if (!origin) return players[this.ecs.time % Math.max(1, players.length)] ?? null;
+    let nearest: MobPlayer | null = null,
+      distance = Infinity;
+    for (const player of players) {
+      const d =
+        (player.pos[0] - origin[0]) ** 2 +
+        (player.pos[1] - origin[1]) ** 2 +
+        (player.pos[2] - origin[2]) ** 2;
+      if (d < distance) {
+        nearest = player;
+        distance = d;
+      }
+    }
+    return nearest;
   }
 
   handle(id: number): MobHandle {
@@ -294,6 +332,7 @@ export class MobRuntime implements NavigationHost {
       if (love.cooldown > 0) love.cooldown--;
     }
     for (const id of ecs.query(AiC, TransformC)) {
+      if (this.getPlayers) this.focus(id);
       const ai = ecs.get(id, AiC)!;
       if (ecs.get(id, HealthC) && entityState(ecs, id) === 'dying') {
         if (ai.selector) {
@@ -343,7 +382,10 @@ export class MobRuntime implements NavigationHost {
     const ecs = this.ecs;
     this.scheduler.prune((id) => ecs.exists(id) && entityState(ecs, id) === 'alive');
     this.scheduler.tick();
-    for (const id of ecs.query(NavC)) ecs.get(id, NavC)!.navigator.tick();
+    for (const id of ecs.query(NavC)) {
+      if (this.getPlayers) this.focus(id);
+      ecs.get(id, NavC)!.navigator.tick();
+    }
   }
 
   private movementSystem(): void {

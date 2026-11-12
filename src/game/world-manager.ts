@@ -1,3 +1,4 @@
+import { useEmberFlint } from '../gameplay/portal-use';
 import { DropRenderer } from '../render/drops';
 import { MovingBlockRenderer } from '../render/moving-blocks';
 import { BlockSelectionRenderer } from '../render/block-selection';
@@ -77,7 +78,6 @@ import {
   PortalIndex,
   PortalTravel,
   findLinkedPortal,
-  lightPortal,
   placeArrivalPortal,
   portalArrivalPoint,
   type PortalAxis,
@@ -92,7 +92,6 @@ import { UpdraftGlowRenderer } from '../render/updraft-glow';
 import { NIGHT_VISION_FLOOR } from '../gameplay/survival';
 import { setWorldDimension } from '../world/world-dimension';
 import type { RayHit } from '../world/raycast';
-import { getToolDurability } from '../gameplay/tools';
 import { SaveManager, type LoadedWorld, type RestoredColumn } from '../persist/save-manager';
 import {
   applyEntityRecord,
@@ -119,15 +118,6 @@ import type { MeshResult } from '../mesh/worker-pool';
  * needs all eight neighbour columns of its own column, so the ring is one column wide.
  */
 const PERIMETER_RING = 1;
-
-const FACE_OFFSETS: Readonly<Record<RayHit['face'], readonly [number, number, number]>> = {
-  top: [0, 1, 0],
-  bottom: [0, -1, 0],
-  north: [0, 0, -1],
-  south: [0, 0, 1],
-  east: [1, 0, 0],
-  west: [-1, 0, 0],
-};
 
 /** The world behind the main menu (decisions/M18a-menus.md). */
 export const PANORAMA_SEED = 'blockcraft-panorama';
@@ -1491,23 +1481,12 @@ export class WorldManager {
   public useEmberFlint(target: RayHit): boolean {
     const world = this.world;
     if (!world) return false;
-    const [dx, dy, dz] = FACE_OFFSETS[target.face];
-    const portal = lightPortal(
+    return useEmberFlint(
       world,
       this.portalIndices[this.dimension],
-      target.x + dx,
-      target.y + dy,
-      target.z + dz,
+      target,
+      this.playerController?.player ?? null,
     );
-    if (!portal) return false;
-    const player = this.playerController?.player;
-    const held = player?.inventory.held;
-    const durability = getToolDurability(held);
-    if (player && held && player.mode === 'survival' && durability !== null) {
-      held.damage = (held.damage ?? 0) + 1;
-      if (held.damage >= durability) player.inventory.slots[player.inventory.selectedSlot] = null;
-    }
-    return true;
   }
 
   /** A player stood in `portal` long enough: they go to the other dimension at the 1:4 point. */
