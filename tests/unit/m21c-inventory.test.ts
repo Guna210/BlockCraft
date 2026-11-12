@@ -15,15 +15,12 @@ it('serializes window-zero intent by revision and updates only from authoritativ
     slots: [{ id: 'dirt', count: 4 }],
     cursor: null,
   });
-  inventory.leftClick(0);
-  inventory.rightClick(1);
-  expect(messages).toHaveLength(1);
   expect(messages[0]).toMatchObject({
     type: T.InventoryTransaction,
+    action: A.SelectSlot,
+    slot: 0,
     revision: 10,
-    action: A.LeftClick,
   });
-  expect(inventory.slots[0]?.count).toBe(4);
   adapter.result({
     type: T.InventoryResult,
     requestId: 1,
@@ -31,12 +28,29 @@ it('serializes window-zero intent by revision and updates only from authoritativ
     accepted: true,
     reason: '',
   });
+  messages.length = 0;
+  inventory.leftClick(0);
+  inventory.rightClick(1);
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({
+    type: T.InventoryTransaction,
+    revision: 11,
+    action: A.LeftClick,
+  });
+  expect(inventory.slots[0]?.count).toBe(4);
+  adapter.result({
+    type: T.InventoryResult,
+    requestId: 2,
+    revision: 12,
+    accepted: true,
+    reason: '',
+  });
   expect(messages).toHaveLength(2);
-  expect(messages[1]).toMatchObject({ revision: 11, action: A.RightClick });
+  expect(messages[1]).toMatchObject({ revision: 12, action: A.RightClick });
   adapter.sync({
     type: T.InventorySync,
     windowId: 0,
-    revision: 11,
+    revision: 12,
     slots: [],
     cursor: { id: 'dirt', count: 4 },
   });

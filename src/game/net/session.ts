@@ -223,6 +223,7 @@ export class RemoteSession {
     const m = this.manager;
     switch (message.type) {
       case MessageType.ServerHello: {
+        const selectedSlot = this.prediction ? (m.playerController?.player?.selectedSlot ?? 0) : 0;
         this.entities?.dispose();
         this.columns.clear();
         this.waiting.clear();
@@ -243,6 +244,7 @@ export class RemoteSession {
         });
         this.entities = new RemoteEntities(m);
         this.portals = new RemotePortals(m.world!, m.portalIndices[m.dimension]);
+        m.playerController!.player!.selectedSlot = selectedSlot;
         this.inventory = new RemoteInventory(
           m.playerController!.player!.inventory,
           this.connection,

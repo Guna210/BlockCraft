@@ -11,6 +11,7 @@ export class RemoteInventory {
   private revision = 0;
   private requestId = 0;
   private pending = false;
+  private initialized = false;
   private readonly queue: Array<{ action: A; slot: number; slots: readonly number[] }> = [];
   constructor(
     private readonly inventory: Inventory,
@@ -44,6 +45,10 @@ export class RemoteInventory {
       for (let i = 0; i < 41; i++)
         this.inventory.slots[i] = message.slots[i] ? { ...message.slots[i]!, slot: i } : null;
       this.inventory.cursor = message.cursor ? { ...message.cursor } : null;
+      if (!this.initialized) {
+        this.initialized = true;
+        this.enqueue(A.SelectSlot, this.inventory.selectedSlot);
+      }
     } else if (message.slot === CURSOR_SLOT) this.inventory.cursor = message.stack;
     else
       this.inventory.slots[message.slot] = message.stack
