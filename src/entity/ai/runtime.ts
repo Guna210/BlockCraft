@@ -250,6 +250,9 @@ export class MobRuntime implements NavigationHost {
     if (player) this.singlePlayer[0] = player;
     return this.singlePlayer;
   }
+  get hasPlayerRoster(): boolean {
+    return this.getPlayers !== undefined;
+  }
   focus(id: number): void {
     this.focusPosition = this.ecs.get(id, TransformC)?.pos ?? null;
   }
@@ -329,7 +332,7 @@ export class MobRuntime implements NavigationHost {
       if (love.cooldown > 0) love.cooldown--;
     }
     for (const id of ecs.query(AiC, TransformC)) {
-      this.focus(id);
+      if (this.getPlayers) this.focus(id);
       const ai = ecs.get(id, AiC)!;
       if (ecs.get(id, HealthC) && entityState(ecs, id) === 'dying') {
         if (ai.selector) {
@@ -380,7 +383,7 @@ export class MobRuntime implements NavigationHost {
     this.scheduler.prune((id) => ecs.exists(id) && entityState(ecs, id) === 'alive');
     this.scheduler.tick();
     for (const id of ecs.query(NavC)) {
-      this.focus(id);
+      if (this.getPlayers) this.focus(id);
       ecs.get(id, NavC)!.navigator.tick();
     }
   }

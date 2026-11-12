@@ -433,8 +433,14 @@ export class AuthoritativeServer {
         this.syncInventory(peer, false);
         break;
       }
-      case T.ChatSend:
-        if (performance.now() - peer.chatAt < 1000 || !message.text.trim()) break;
+      case T.ChatSend: {
+        const text = [...message.text]
+          .filter((character) => {
+            const code = character.codePointAt(0)!;
+            return code >= 32 && !(code >= 127 && code <= 159);
+          })
+          .join('');
+        if (performance.now() - peer.chatAt < 1000 || !text.trim()) break;
         peer.chatAt = performance.now();
         for (const recipient of this.peers)
           if (recipient.actor)
@@ -442,9 +448,10 @@ export class AuthoritativeServer {
               type: T.ChatBroadcast,
               senderId: peer.id,
               name: peer.name,
-              text: message.text,
+              text,
             });
         break;
+      }
       default:
         this.disconnect(peer, 'Message is not valid from a client');
     }

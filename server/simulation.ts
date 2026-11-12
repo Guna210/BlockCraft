@@ -41,9 +41,48 @@ import '../src/gameplay/spawners';
 const noParticles: ParticleSink = { spawn() {}, explosion() {}, ember() {} };
 registerKilnBlockEntity();
 
+/** Network-only adapter: the shared physics converts directional inputs with Number(). */
+class ServerPlayer extends Player {
+  private forwardIntent = 0;
+  private rightIntent = 0;
+  setMovement(forward: number, right: number): void {
+    this.forwardIntent = Math.max(-1, Math.min(1, forward));
+    this.rightIntent = Math.max(-1, Math.min(1, right));
+    this.input('forward', forward > 0);
+    this.input('back', forward < 0);
+    this.input('right', right > 0);
+    this.input('left', right < 0);
+  }
+  override down(action: string): boolean {
+    let amount: number;
+    switch (action) {
+      case 'forward':
+        amount = Math.max(0, this.forwardIntent);
+        break;
+      case 'back':
+        amount = Math.max(0, -this.forwardIntent);
+        break;
+      case 'right':
+        amount = Math.max(0, this.rightIntent);
+        break;
+      case 'left':
+        amount = Math.max(0, -this.rightIntent);
+        break;
+      default:
+        return super.down(action);
+    }
+    return amount as unknown as boolean;
+  }
+  override clearInput(): void {
+    this.forwardIntent = 0;
+    this.rightIntent = 0;
+    super.clearInput();
+  }
+}
+
 export class Actor {
   onInteraction: (() => void) | null = null;
-  readonly player: Player;
+  readonly player: ServerPlayer;
   readonly interaction: BlockInteraction;
   readonly combat: PlayerCombat;
   readonly bow: BowController;
@@ -64,7 +103,7 @@ export class Actor {
   ) {
     this.bounds.id = `player:${id}`;
     const world = dimension.world;
-    const player = (this.player = new Player(new BlockCollision(world), (x, z) =>
+    const player = (this.player = new ServerPlayer(new BlockCollision(world), (x, z) =>
       world.hasColumn(Math.floor(x / 16), Math.floor(z / 16)),
     ));
     player.dimension = dimension.id;

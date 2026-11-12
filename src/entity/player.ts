@@ -119,8 +119,6 @@ export class Player {
   private jumpDown = false;
   private forwardPressed = false;
   private jumpPressed = false;
-  private movementForward: number | null = null;
-  private movementRight: number | null = null;
   private readonly actions = new Map<Action, boolean>();
   constructor(
     public readonly collision: BlockCollision,
@@ -143,18 +141,8 @@ export class Player {
     }
     this.actions.set(action, down);
   }
-  /** Analog network input uses the same acceleration, speed limits and collision as keyboard input. */
-  setMovement(forward: number, right: number): void {
-    this.movementForward = Math.max(-1, Math.min(1, forward));
-    this.movementRight = Math.max(-1, Math.min(1, right));
-    this.input('forward', forward > 0);
-    this.input('back', forward < 0);
-    this.input('right', right > 0);
-    this.input('left', right < 0);
-  }
   clearInput(): void {
     this.actions.clear();
-    this.movementForward = this.movementRight = null;
     this.forwardPressed = false;
     this.jumpPressed = false;
     this.forwardDown = false;
@@ -265,8 +253,8 @@ export class Player {
     if (meshed) speed *= SILKMESH_SPEED_FACTOR;
     const slow = takePlayerSlow(this);
     if (!this.flying) speed *= slow;
-    const f = this.movementForward ?? Number(forward) - Number(this.down('back'));
-    const r = this.movementRight ?? Number(this.down('right')) - Number(this.down('left'));
+    const f = Number(forward) - Number(this.down('back'));
+    const r = Number(this.down('right')) - Number(this.down('left'));
     const scale = speed / Math.max(1, Math.hypot(f, r));
     const tx = (Math.cos(this.yaw) * f - Math.sin(this.yaw) * r) * scale;
     const tz = (Math.sin(this.yaw) * f + Math.cos(this.yaw) * r) * scale;

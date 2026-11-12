@@ -126,10 +126,11 @@ export class MobSpawner {
     const ecs = this.runtime.ecs,
       world = this.runtime.world;
     let n = 0;
+    const multiplePlayers = this.runtime.hasPlayerRoster && this.runtime.players().length > 1;
     for (const id of ecs.query(MobC, TransformC)) {
       if (ecs.get(id, MobC)!.category !== category) continue;
       const pos = ecs.get(id, TransformC)!.pos;
-      if (this.runtime.players().length > 1) {
+      if (multiplePlayers) {
         const player = this.runtime.player(null);
         if (
           player &&

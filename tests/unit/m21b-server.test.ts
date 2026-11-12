@@ -245,7 +245,7 @@ describe('M21b authoritative Node clients', () => {
       b = await connect('Bea');
     expect((await a.wait(T.TimeSync)).time).toBeGreaterThanOrEqual(6000);
     expect((await b.wait(T.WeatherSync)).weather).toBe('clear');
-    a.send({ type: T.ChatSend, text: 'Hello 🌱' });
+    a.send({ type: T.ChatSend, text: 'Hello\n\r\u0000\u007f\u0085 🌱' });
     expect((await b.wait(T.ChatBroadcast)).text).toBe('Hello 🌱');
     weatherManager.setWeather('rain');
     expect((await b.wait(T.WeatherSync, (m) => m.weather === 'rain')).weather).toBe('rain');

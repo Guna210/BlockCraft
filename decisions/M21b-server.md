@@ -55,7 +55,8 @@
 ## Input, sequencing and validation
 
 - `PlayerInput` supplies intent, never an authoritative position or velocity.
-  The shared player physics clamps analog movement and applies its normal speed,
+  A server-only player adapter feeds clamped analog intent through the existing
+  directional input path; shared player physics applies its normal speed,
   acceleration, collision, fluid and flight rules. Invalid movement magnitudes
   and input floods are logged. At most four input frames are accepted per tick;
   a bounded queue consumes them in sequence order, one simulation step per tick.

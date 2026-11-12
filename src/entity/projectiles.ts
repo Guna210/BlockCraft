@@ -234,6 +234,7 @@ export type ProjectilePlayer = Pick<
 
 /** Installs the shared 20 Hz swept-segment projectile system on an ECS world. */
 export class ProjectileRuntime {
+  private readonly singlePlayer: ProjectilePlayer[] = [];
   private raycaster!: VoxelRaycaster;
   private blockHit!: ReturnType<typeof createRayHit>;
   private active = false;
@@ -354,8 +355,7 @@ export class ProjectileRuntime {
         }
       }
     }
-    const single = this.getPlayer();
-    for (const player of this.getPlayers ? this.getPlayers() : single ? [single] : []) {
+    for (const player of this.players()) {
       if (
         projectile.pickup &&
         player &&
@@ -367,9 +367,19 @@ export class ProjectileRuntime {
           transform.pos[2] - player.pos[2],
         ) <= 1 &&
         this.drop(projectile.kind, transform.pos, [0, 0, 0])
-      )
+      ) {
         this.ecs.destroy(id);
+        return;
+      }
     }
+  }
+
+  private players(): readonly ProjectilePlayer[] {
+    if (this.getPlayers) return this.getPlayers();
+    const player = this.getPlayer();
+    this.singlePlayer.length = player ? 1 : 0;
+    if (player) this.singlePlayer[0] = player;
+    return this.singlePlayer;
   }
 
   private drop(kind: string, pos: Readonly<Vec3>, velocity: Vec3): boolean {
@@ -418,8 +428,7 @@ export class ProjectileRuntime {
       if (distance !== null && (!nearest || distance < nearest.distance))
         nearest = { id, distance };
     }
-    const single = this.getPlayer();
-    for (const player of this.getPlayers ? this.getPlayers() : single ? [single] : []) {
+    for (const player of this.players()) {
       if (
         player &&
         !player.dead &&
