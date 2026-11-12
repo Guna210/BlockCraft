@@ -188,8 +188,9 @@ export class RemoteSession {
       this.nextTickAt = performance.now() + 50;
       this.scheduleTick();
     }
+    this.entities?.sample();
     c.render(1);
-    this.entities?.frame();
+    this.entities?.projectLabels();
   }
   private scheduleTick(): void {
     window.clearTimeout(this.tickTimer);

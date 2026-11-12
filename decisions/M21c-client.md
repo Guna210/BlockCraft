@@ -12,7 +12,7 @@ A remote spawn creates only a Player. Its world never advances local AI, spawnin
 
 ChunkData uses `deserializeColumn`; decoded biome indices are rebound to the dimension's biome table, including the Hollowdeep fix. Columns are adopted immediately, so later edits cannot be overwritten by delayed generation-style jobs. The existing lighting and meshing workers run locally. ChunkUnload releases data and GPU meshes. Replicated portal cells build rendering records without local activation, collapse or travel.
 
-Remote entities keep independent delta baselines and preallocated 32-pose timestamp rings. Rendering samples 100 ms in the past, with linear position/pitch and shortest-arc yaw. Remote players use the existing player model. Other registered entities/items use their existing presentation components without advancing AI or physics. Name tags use textContent, the shared UI palette, projected head positions and transform-only frame updates; behind-camera tags move offscreen.
+Remote entities keep independent delta baselines and preallocated 32-pose timestamp rings. Rendering samples 100 ms in the past, with linear position/pitch and shortest-arc yaw. Remote players use the existing player model. Other registered entities/items use their existing presentation components without advancing AI or physics. Poses are sampled before rendering; labels project that same pose after the camera update. Name tags use textContent, the shared UI palette, projected head positions and transform-only frame updates; behind-camera tags move offscreen.
 
 ## Prediction and block actions
 

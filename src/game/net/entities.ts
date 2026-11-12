@@ -134,9 +134,7 @@ export class RemoteEntities {
     applyEntityMove(entity.pose, message);
     entity.history.push(performance.now(), entity.pose);
   }
-  frame(): void {
-    const camera = this.manager.camera!;
-    mat4.multiply(this.vp, camera.projectionMatrix, camera.viewMatrix);
+  sample(): void {
     const time = performance.now() - 100;
     for (const entity of this.entities.values()) {
       entity.history.sample(time, entity.sampled);
@@ -170,6 +168,13 @@ export class RemoteEntities {
           }
         }
       }
+    }
+  }
+  projectLabels(): void {
+    const camera = this.manager.camera!;
+    mat4.multiply(this.vp, camera.projectionMatrix, camera.viewMatrix);
+    for (const entity of this.entities.values()) {
+      const p = entity.sampled;
       if (entity.label) {
         this.head[0] = p.x;
         this.head[1] = p.y + 2.1;
