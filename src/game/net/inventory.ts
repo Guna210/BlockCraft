@@ -27,6 +27,9 @@ export class RemoteInventory {
       this.enqueue(whole ? A.DropStack : A.DropOne, slot === 'cursor' ? CURSOR_SLOT : slot);
       return null;
     };
+    // Predicted placement changes terrain, but only authoritative snapshots consume owned items.
+    // A rejected placement need not send an inventory snapshot because the server changed no counts.
+    inventory.consumeSelected = () => {};
     // Cursor remains server-owned when the panel closes.
     inventory.returnCursor = () => {};
     const selection = Object.getOwnPropertyDescriptor(Inventory.prototype, 'selectedSlot')!;

@@ -29,6 +29,8 @@ it('serializes window-zero intent by revision and updates only from authoritativ
     reason: '',
   });
   messages.length = 0;
+  inventory.consumeSelected();
+  expect(inventory.slots[0]?.count).toBe(4);
   inventory.leftClick(0);
   inventory.rightClick(1);
   expect(messages).toHaveLength(1);
