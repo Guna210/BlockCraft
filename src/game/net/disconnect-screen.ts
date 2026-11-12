@@ -30,6 +30,16 @@ export class DisconnectScreen {
     text.id = 'disconnect-reason';
     const back = document.createElement('button');
     back.textContent = 'Back to main menu';
+    Object.assign(back.style, {
+      background: UI.shade,
+      color: UI.text,
+      borderTop: `2px solid ${UI.light}`,
+      borderLeft: `2px solid ${UI.light}`,
+      borderRight: `2px solid ${UI.outline}`,
+      borderBottom: `2px solid ${UI.outline}`,
+      padding: '10px',
+      font: 'inherit',
+    });
     back.onclick = () => {
       back.disabled = true;
       void leave()

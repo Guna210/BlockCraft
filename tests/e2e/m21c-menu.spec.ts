@@ -21,4 +21,8 @@ test('multiplayer form validates addresses and remembers connection details', as
   await page.getByRole('button', { name: 'Multiplayer', exact: true }).click();
   await expect(form.getByLabel('Server address')).toHaveValue('ws://localhost:3001');
   await expect(form.getByLabel('Player name')).toHaveValue(/^menu-/);
+  await form.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.evaluate(() => window.__blockcraft!.createWorld!({ type: 'flat', mode: 'creative' }));
+  expect(await page.evaluate(() => window.__blockcraft!.getNetStats!().connected)).toBe(false);
+  expect(await page.evaluate(() => window.__blockcraft!.getPlayer!().mode)).toBe('creative');
 });

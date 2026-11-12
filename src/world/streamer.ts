@@ -417,6 +417,21 @@ export class Streamer<G, M> {
     this.schedulePump();
   }
 
+  /** An external owner (the remote server) explicitly unloads a column. */
+  public evictColumn(cx: number, cz: number): void {
+    const key = columnKey(cx, cz),
+      col = this.cols.get(key);
+    if (col) {
+      col.serial++;
+      this.removeFrom(this.genQueue, col);
+      this.removeFrom(this.lightQueue, col);
+      this.removeFrom(this.meshQueue, col);
+      this.cols.delete(key);
+    }
+    this.host.freeMesh(cx, cz);
+    this.host.freeData(cx, cz);
+  }
+
   /** Marks a meshed column stale: it is meshed again as soon as it is wanted and its turn comes. */
   public invalidate(cx: number, cz: number): void {
     const col = this.cols.get(columnKey(cx, cz));

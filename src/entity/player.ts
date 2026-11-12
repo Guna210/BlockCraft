@@ -224,6 +224,18 @@ export class Player {
       bit <<= 1;
     }
   }
+  /** Keep look and input edges received since the latest predicted tick when replaying. */
+  restorePredictionInput(state: Float64Array): void {
+    this.yaw = state[9]!;
+    this.pitch = state[10]!;
+    this.forwardPressed = !!state[30];
+    this.jumpPressed = !!state[31];
+    let bit = 1;
+    for (const action of PREDICTION_ACTIONS) {
+      this.actions.set(action, !!(state[32]! & bit));
+      bit <<= 1;
+    }
+  }
   input(action: Action, down: boolean): void {
     if (action === 'use' && !down) {
       this.survival.useConsumed = false;

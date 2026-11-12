@@ -12,7 +12,9 @@ import { Player } from '../../entity/player';
 import { BlockCollision } from '../../entity/physics';
 import type { PlayerController } from '../../engine/player-controller';
 import { EntityWorld } from '../../entity/ecs/world';
-import { TransformC } from '../../entity/ecs/components';
+import { getProjectileKind } from '../../entity/projectiles';
+import { hasEntityModel } from '../../entity/ecs/model';
+import { TransformC, RenderableC } from '../../entity/ecs/components';
 import { spawnEntity, hasEntityType } from '../../entity/ecs/entity-types';
 import { ItemEntityManager } from '../../entity/item-entity';
 import { UI } from '../../ui/ui-kit';
@@ -97,6 +99,23 @@ export class RemoteEntities {
         message.kind,
         ...message.position,
       );
+    }
+    if (localId === null && !source) {
+      let model = message.kind;
+      if (message.kind === 'arrow' || message.kind === 'thorn')
+        model = getProjectileKind(message.kind).model;
+      if (hasEntityModel(model)) {
+        localId = this.ecs.create();
+        this.ecs.add(localId, RenderableC, { model });
+        this.ecs.add(localId, TransformC, {
+          pos: [pose.x, pose.y, pose.z],
+          previous: [pose.x, pose.y, pose.z],
+          yaw: pose.yaw,
+          previousYaw: pose.yaw,
+          pitch: pose.pitch,
+          previousPitch: pose.pitch,
+        });
+      }
     }
     this.entities.set(message.id, {
       pose,

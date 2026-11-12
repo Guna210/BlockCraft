@@ -63,3 +63,45 @@ it('restores sprint/jump phase from caller-owned checkpoints', () => {
   p.tick();
   expect(p.snapshot()).toEqual(expected);
 });
+
+it('keeps sequence numbers across world resets and supports u32 wrap', () => {
+  const p = player(),
+    sequences: number[] = [];
+  const prediction = new Prediction(p, (input) => sequences.push(input.sequence), 0xffffffff);
+  prediction.tick();
+  prediction.tick();
+  expect(sequences).toEqual([0, 1]);
+});
+it('preserves input and look changes made after the latest predicted tick', () => {
+  const p = player(),
+    prediction = new Prediction(p, () => {});
+  p.input('forward', true);
+  prediction.tick();
+  const position = [p.pos[0] + 0.2, p.pos[1], p.pos[2]] as [number, number, number];
+  p.input('forward', false);
+  p.yaw = 1.2;
+  prediction.correct({ type: T.PlayerCorrection, acknowledged: 1, position, velocity: [...p.vel] });
+  expect(p.down('forward')).toBe(false);
+  expect(p.yaw).toBe(1.2);
+});
+it('samples raw input transitions exactly as the server sees them', () => {
+  const p = player(),
+    authority = player();
+  let forward = true;
+  const prediction = new Prediction(
+    p,
+    () => {},
+    0,
+    (action) => action === 'forward' && forward,
+  );
+  prediction.tick();
+  authority.input('forward', true);
+  authority.tick();
+  // A release and press between tick samples must not invent a local double tap.
+  forward = false;
+  forward = true;
+  prediction.tick();
+  authority.input('forward', true);
+  authority.tick();
+  expect(p.snapshot()).toEqual(authority.snapshot());
+});

@@ -952,6 +952,11 @@ export class WorldManager {
     source: (cx: number, cz: number) => Promise<GenResult>,
   ): void {
     this.resetWorldToEmpty();
+    if (this.portalGuard && this.world) this.world.listeners.delete(this.portalGuard);
+    this.portalGuard = null;
+    this.genWorkerPool.cancelAll();
+    this.lightWorkerPool.cancelAll();
+    this.workerPool.cancelAll();
     this.remoteColumnSource = source;
     this.saves.detach();
     this.worldSeed = seed;
@@ -1031,6 +1036,7 @@ export class WorldManager {
   }
 
   public generateColumnMainThread(cx: number, cz: number): void {
+    if (this.remoteColumnSource) throw new Error('Remote columns must come from the server');
     if (!this.world) return;
     this.mainThreadGenCount++;
     const col = this.world.getColumn(cx, cz, true)!;
@@ -1244,6 +1250,8 @@ export class WorldManager {
 
   /** Saves the open world, if it is a named one, and lets go of it. A failed save is logged, not fatal. */
   private async exitWorld(): Promise<void> {
+    this.remoteExit?.();
+    this.remoteColumnSource = null;
     try {
       await this.saves.exit();
     } catch (error) {

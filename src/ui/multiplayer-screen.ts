@@ -1,3 +1,4 @@
+import { UI } from './ui-kit';
 /** A DOM form for choosing a multiplayer identity and endpoint. */
 export class MultiplayerScreen {
   private readonly root = document.createElement('div');
@@ -20,8 +21,8 @@ export class MultiplayerScreen {
       inset: '0',
       zIndex: '20',
       display: 'none',
-      background: 'rgba(10, 14, 22, .88)',
-      color: '#f4e9ce',
+      background: UI.outline,
+      color: UI.text,
       font: '16px monospace',
     });
     const form = document.createElement('form');
@@ -32,8 +33,11 @@ export class MultiplayerScreen {
       width: 'min(360px, 80vw)',
       margin: '15vh auto',
       padding: '24px',
-      background: '#343238',
-      border: '4px solid #a99472',
+      background: UI.panel,
+      borderTop: `4px solid ${UI.light}`,
+      borderLeft: `4px solid ${UI.light}`,
+      borderRight: `4px solid ${UI.shade}`,
+      borderBottom: `4px solid ${UI.shade}`,
     });
     const heading = document.createElement('h1');
     heading.textContent = 'Multiplayer';
@@ -45,7 +49,13 @@ export class MultiplayerScreen {
       const label = document.createElement('label');
       label.textContent = labelText;
       label.append(document.createElement('br'), field);
-      field.style.width = '100%';
+      Object.assign(field.style, {
+        width: '100%',
+        background: UI.slot,
+        color: UI.text,
+        border: `2px solid ${UI.shade}`,
+        font: 'inherit',
+      });
       form.append(label);
     }
     this.address.value = 'ws://localhost:3001';
@@ -68,6 +78,17 @@ export class MultiplayerScreen {
       this.hide();
       this.onBack();
     };
+    for (const button of [this.connect, back])
+      Object.assign(button.style, {
+        background: UI.shade,
+        color: UI.text,
+        borderTop: `2px solid ${UI.light}`,
+        borderLeft: `2px solid ${UI.light}`,
+        borderRight: `2px solid ${UI.outline}`,
+        borderBottom: `2px solid ${UI.outline}`,
+        padding: '8px',
+        font: 'inherit',
+      });
     this.error.setAttribute('role', 'status');
     form.append(this.error, this.connect, back);
     form.onsubmit = (event) => {
@@ -128,6 +149,7 @@ export class MultiplayerScreen {
         this.connect.disabled = false;
       };
       await this.onConnect(connection);
+      this.connection = null;
       this.hide();
     } catch (error) {
       if (attempt !== this.attempt) return;

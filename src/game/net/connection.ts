@@ -54,11 +54,11 @@ export class Connection {
         const message = decoded.message;
         if (message.type === MessageType.Ping)
           connection.send({ type: MessageType.Pong, id: message.id });
-        else if (message.type === MessageType.LoginReject) fail(message.reason);
-        else if (message.type === MessageType.Disconnect && settled) {
-          disconnectReason = message.reason || disconnectReason;
-          socket.close();
-        } else if (message.type === MessageType.ServerHello && !settled) {
+        if (message.type === MessageType.LoginReject && !settled) {
+          fail(message.reason);
+          return;
+        }
+        if (message.type === MessageType.ServerHello && !settled) {
           settled = true;
           window.clearTimeout(timeout);
           connection.pending.push(message);
@@ -67,13 +67,17 @@ export class Connection {
           if (connection.receiver) connection.receiver(message);
           else connection.pending.push(message);
         }
+        if (message.type === MessageType.Disconnect && settled) {
+          disconnectReason = message.reason || disconnectReason;
+          socket.close();
+        }
       };
     });
   }
 
   send(message: Message): void {
     if (this.socket.readyState === WebSocket.OPEN)
-      this.socket.send(new Uint8Array(encodeMessage(message, this.writer)));
+      this.socket.send(encodeMessage(message, this.writer) as Uint8Array<ArrayBuffer>);
   }
 
   close(): void {

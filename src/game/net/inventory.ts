@@ -14,7 +14,7 @@ export class RemoteInventory {
   private readonly queue: Array<{ action: A; slot: number; slots: readonly number[] }> = [];
   constructor(
     private readonly inventory: Inventory,
-    private readonly connection: Connection,
+    private readonly connection: Pick<Connection, 'send'>,
   ) {
     inventory.leftClick = (slot) => this.enqueue(A.LeftClick, slot);
     inventory.rightClick = (slot) => this.enqueue(A.RightClick, slot);
@@ -42,10 +42,13 @@ export class RemoteInventory {
     this.revision = message.revision;
     if (message.type === T.InventorySync) {
       for (let i = 0; i < 41; i++)
-        this.inventory.slots[i] = message.slots[i] ? { ...message.slots[i]! } : null;
+        this.inventory.slots[i] = message.slots[i] ? { ...message.slots[i]!, slot: i } : null;
       this.inventory.cursor = message.cursor ? { ...message.cursor } : null;
     } else if (message.slot === CURSOR_SLOT) this.inventory.cursor = message.stack;
-    else this.inventory.slots[message.slot] = message.stack;
+    else
+      this.inventory.slots[message.slot] = message.stack
+        ? { ...message.stack, slot: message.slot }
+        : null;
   }
   result(message: Messages[T.InventoryResult]): void {
     if (message.requestId !== this.requestId) return;

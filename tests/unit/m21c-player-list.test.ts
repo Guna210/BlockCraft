@@ -19,7 +19,11 @@ it('broadcasts names and measured ping on join, periodically, and on leave', asy
   const b = await new HeadlessClient(server.port).open();
   try {
     await a.login('list-A');
-    expect((await a.wait(T.PlayerList)).players).toEqual([{ name: 'list-A', pingMs: 0 }]);
+    const joined = (await a.wait(T.PlayerList)).players;
+    expect(joined.map((player) => player.name)).toEqual(['list-A']);
+    expect(joined.every((player) => Number.isInteger(player.pingMs) && player.pingMs >= 0)).toBe(
+      true,
+    );
     await b.login('list-B');
     const both = await a.wait(T.PlayerList, (m) => m.players.length === 2);
     expect(both.players.map((p) => p.name)).toEqual(['list-A', 'list-B']);
@@ -27,6 +31,20 @@ it('broadcasts names and measured ping on join, periodically, and on leave', asy
     a.messages.length = 0;
     const periodic = await a.wait(T.PlayerList, (m) => m.players.length === 2, 5000);
     expect(periodic.players.every((p) => Number.isInteger(p.pingMs) && p.pingMs >= 0)).toBe(true);
+    const actor = server.dimensions.get('overworld')!.actors[0]!;
+    actor.player.setGameMode('creative');
+    actor.player.flying = true;
+    actor.player.teleport(0.5, 250, 0.5, 0, 0);
+    a.send({ type: T.PlayerInput, sequence: 1, movement: [1, 0], look: [0, 0], actions: 0 });
+    const first = await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1);
+    for (let i = 0; i < 4; i++)
+      expect((await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 1)).position).toEqual(
+        first.position,
+      );
+    a.send({ type: T.PlayerInput, sequence: 2, movement: [1, 0], look: [0, 0], actions: 0 });
+    expect(
+      (await a.wait(T.PlayerCorrection, (m) => m.acknowledged === 2)).position[0],
+    ).toBeGreaterThan(first.position[0]);
     b.close();
     expect((await a.wait(T.PlayerList, (m) => m.players.length === 1)).players[0]!.name).toBe(
       'list-A',
