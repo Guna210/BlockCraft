@@ -337,6 +337,9 @@ export class RemoteSession {
           if (this.updates.length > 64) this.updates.shift();
         }
         break;
+      case MessageType.Disconnect:
+        this.connection.onClose(message.reason || 'Connection lost');
+        break;
       case MessageType.PlayerCorrection:
         this.prediction?.correct(message);
         break;
