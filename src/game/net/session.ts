@@ -184,7 +184,7 @@ export class RemoteSession {
       input.mouseMovement.x = input.mouseMovement.y = 0;
     }
     if (this.immediateTick) {
-      this.simulate();
+      this.simulate(true);
       this.nextTickAt = performance.now() + 50;
       this.scheduleTick();
     }
@@ -199,19 +199,19 @@ export class RemoteSession {
       () => {
         this.simulate();
         this.nextTickAt += 50;
-        if (this.nextTickAt < performance.now() - 150) this.nextTickAt = performance.now() + 50;
+        if (this.nextTickAt < performance.now()) this.nextTickAt = performance.now() + 50;
         this.scheduleTick();
       },
       Math.max(1, this.nextTickAt - performance.now()),
     );
   }
   /** Fixed networking clock continues when a browser puts the other player's tab in the background. */
-  private simulate(): void {
+  private simulate(immediate = false): void {
     const c = this.manager.playerController!,
       p = c.player;
     if (!this.connected || !p || !this.prediction) return;
     this.immediateTick = false;
-    this.prediction!.tick();
+    if (!this.prediction.tick(immediate)) return;
     const interaction = c.interaction!;
     interaction.updateTarget();
     const t = interaction.target;

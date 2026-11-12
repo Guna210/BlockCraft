@@ -19,18 +19,19 @@ it('acknowledges an exact delayed pose without counting a correction', () => {
   p.input('forward', true);
   prediction.tick();
   const first = [...p.pos] as [number, number, number];
+  const velocity = [...p.vel] as [number, number, number];
   for (let i = 0; i < 4; i++) prediction.tick();
   const end = [...p.pos];
   prediction.correct({
     type: T.PlayerCorrection,
     acknowledged: 1,
     position: first,
-    velocity: [0, 0, 0],
+    velocity,
   });
   expect(prediction.corrections).toBe(0);
   expect(p.pos).toEqual(end);
 });
-it('replays unacknowledged inputs from the authoritative pose and ignores repeated acknowledgements', () => {
+it('replays unacknowledged inputs and advances held movement for repeated acknowledgements', () => {
   const p = player(),
     prediction = new Prediction(p, () => {});
   p.input('forward', true);
@@ -46,7 +47,13 @@ it('replays unacknowledged inputs from the authoritative pose and ignores repeat
   for (let i = 0; i < 3; i++) server.tick();
   const correction = { type: T.PlayerCorrection as const, acknowledged: 1, position, velocity };
   prediction.correct(correction);
-  prediction.correct(correction);
+  expect(p.pos).toEqual(server.pos);
+  const held = player();
+  held.readPredictionState(state);
+  held.pos[0] += 0.25;
+  held.tick();
+  server.tick();
+  prediction.correct({ ...correction, position: [...held.pos], velocity: [...held.vel] });
   expect(p.pos).toEqual(server.pos);
   expect(prediction.corrections).toBe(1);
 });
@@ -125,4 +132,64 @@ it('aligns simulation phase from every ordered correction without counting an ex
   p.writePredictionState(state);
   expect(prediction.corrections).toBe(0);
   expect(state[23]).toBe(8);
+});
+it('ages movement edges on server ticks while packets pause, preventing a client-only double-tap sprint', () => {
+  const p = player(),
+    authority = player();
+  let forward = true;
+  const prediction = new Prediction(
+    p,
+    () => {},
+    0,
+    (action) => action === 'forward' && forward,
+  );
+  prediction.tick();
+  forward = false;
+  prediction.tick();
+  forward = true;
+  prediction.tick();
+  const correct = (acknowledged: number) =>
+    prediction.correct({
+      type: T.PlayerCorrection,
+      acknowledged,
+      position: [...authority.pos],
+      velocity: [...authority.vel],
+    });
+  authority.input('forward', true);
+  authority.tick();
+  correct(1);
+  for (let i = 0; i < 8; i++) {
+    authority.tick();
+    correct(1);
+  }
+  authority.input('forward', false);
+  authority.tick();
+  correct(2);
+  authority.input('forward', true);
+  authority.tick();
+  correct(3);
+  expect(p.pos).toEqual(authority.pos);
+  expect(p.vel).toEqual(authority.vel);
+  const state = new Float64Array(48);
+  p.writePredictionState(state);
+  expect(state[26]).toBe(0);
+  expect(prediction.corrections).toBe(0);
+});
+it('bounds outstanding packets to the server queue while reserving immediate input capacity', () => {
+  const p = player();
+  const sequences: number[] = [];
+  const prediction = new Prediction(p, (frame) => sequences.push(frame.sequence));
+  for (let i = 0; i < 6; i++) expect(prediction.tick()).toBe(true);
+  expect(prediction.tick()).toBe(false);
+  expect(prediction.tick(true)).toBe(true);
+  expect(prediction.tick(true)).toBe(false);
+  expect(sequences).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  prediction.correct({
+    type: T.PlayerCorrection,
+    acknowledged: 7,
+    position: [...p.pos],
+    velocity: [...p.vel],
+  });
+  expect(prediction.tick()).toBe(true);
+  expect(sequences.at(-1)).toBe(8);
 });

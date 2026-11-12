@@ -17,8 +17,7 @@ export class Prediction {
     authoritativeVelocity: number[];
     flags: number[];
   }> = [];
-  private hasInput = false;
-  private serverTicks = 0;
+  private readonly authoritative = new Float64Array(48);
   private readonly liveInput = new Float64Array(48);
   private head = 0;
   private count = 0;
@@ -41,9 +40,12 @@ export class Prediction {
     private readonly intent: ((action: string) => boolean) | null = null,
   ) {
     this.sequence = sequence;
+    player.writePredictionState(this.authoritative);
   }
-  tick(): void {
-    this.hasInput = true;
+  tick(immediate = false): boolean {
+    // The server's wire queue holds seven inputs. Reserve one slot for immediate input.
+    // Backpressure also prevents timer catch-up from flooding a stalled server.
+    if (this.count >= (immediate ? 7 : 6)) return false;
     if (this.count === CAPACITY) {
       this.head = (this.head + 1) % CAPACITY;
       this.count--;
@@ -60,9 +62,9 @@ export class Prediction {
     this.apply(frame);
     this.player.tick();
     this.player.writePredictionState(frame.state);
+    return true;
   }
   correct(message: Messages[T.PlayerCorrection]): void {
-    this.serverTicks++;
     let found = -1;
     for (let i = 0; i < this.count; i++) {
       if (this.frames[(this.head + i) % CAPACITY]!.sequence === message.acknowledged) {
@@ -70,26 +72,25 @@ export class Prediction {
         break;
       }
     }
-    if (found < 0) {
-      if (!this.hasInput) {
-        this.player.teleport(...message.position);
-        this.player.alignPredictionClock(this.serverTicks);
-        for (let a = 0; a < 3; a++) this.player.vel[a] = message.velocity[a]!;
-      }
-      return;
-    }
-    const frame = this.frames[(this.head + found) % CAPACITY]!;
+    const frame = found < 0 ? null : this.frames[(this.head + found) % CAPACITY]!;
     const mismatch =
+      frame !== null &&
       Math.hypot(
         frame.state[0]! - message.position[0],
         frame.state[1]! - message.position[1],
         frame.state[2]! - message.position[2],
       ) > 0.01;
-    this.head = (this.head + found + 1) % CAPACITY;
-    this.count -= found + 1;
-    const phaseChanged = frame.state[23] !== this.serverTicks;
-    if (!mismatch && !phaseChanged) return;
-    if (mismatch) {
+    this.player.writePredictionState(this.liveInput);
+    // The server advances once per correction, including repeated acknowledgements.
+    // Keep its movement edges/timers independently of the speculative input timeline.
+    this.player.readPredictionState(this.authoritative);
+    if (frame) {
+      this.apply(frame);
+      this.head = (this.head + found + 1) % CAPACITY;
+      this.count -= found + 1;
+    }
+    this.player.tick();
+    if (mismatch && frame) {
       this.corrections++;
       this.trace.push({
         sequence: message.acknowledged,
@@ -110,17 +111,13 @@ export class Prediction {
       });
       if (this.trace.length > 32) this.trace.shift();
     }
-    // Restore the acknowledged simulation phase before replacing the authoritative pose.
-    this.player.writePredictionState(this.liveInput);
-    this.player.readPredictionState(frame.state);
-    this.player.alignPredictionClock(this.serverTicks);
-    if (mismatch)
-      for (let a = 0; a < 3; a++) {
-        this.player.pos[a] = message.position[a]!;
-        this.player.previous[a] = message.position[a]!;
-        this.player.vel[a] = message.velocity[a]!;
-      }
+    for (let a = 0; a < 3; a++) {
+      this.player.pos[a] = message.position[a]!;
+      this.player.previous[a] = message.position[a]!;
+      this.player.vel[a] = message.velocity[a]!;
+    }
     this.player.onGround = this.player.collision.supported(...message.position, 1e-5);
+    this.player.writePredictionState(this.authoritative);
     for (let i = 0; i < this.count; i++) {
       const pending = this.frames[(this.head + i) % CAPACITY]!;
       this.apply(pending);
