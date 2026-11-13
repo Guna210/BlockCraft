@@ -7,6 +7,8 @@ import { UI } from './ui-kit';
 
 /** Local console. CSS fades visible messages; no timers or frame hook. */
 export class Chat {
+  /** Installed only for a remote session; local console behavior stays unchanged. */
+  multiplayerSubmit: ((line: string) => void) | null = null;
   private readonly root = document.createElement('section');
   private readonly lines = document.createElement('div');
   private readonly form = document.createElement('form');
@@ -168,6 +170,11 @@ export class Chat {
     }
     this.history.push(line);
     if (this.history.length > 100) this.history.shift();
+    if (this.multiplayerSubmit) {
+      this.close();
+      this.multiplayerSubmit(line);
+      return;
+    }
     this.message(line.startsWith('/') ? `> ${line}` : `You: ${line}`);
     this.close();
     if (line.startsWith('/'))

@@ -200,6 +200,8 @@ export class UiManager {
   private messageElement: HTMLDivElement | null = null;
   public onRespawn: () => void = () => {};
   /** Pause menu "Save & Quit": saves and leaves the world (main.ts returns to the main menu). */
+  /** A remote server currently owns only window zero (the player inventory). */
+  public inventoryOnly = false;
   public onSaveAndQuit: () => Promise<void> = async () => {};
   /** Opens the independent settings overlay over the menu or pause screen. */
   public onOpenSettings: () => void = () => {};
@@ -289,6 +291,10 @@ export class UiManager {
   }
 
   open(name: ScreenName): void {
+    if (this.inventoryOnly && ['crafting', 'chest', 'kiln'].includes(name)) {
+      this.showMessage('Container windows are unavailable on this server');
+      return;
+    }
     if (name === 'inventory' && this.player?.mode === 'creative' && this.onCreativeInventory())
       return;
     if (name === 'death' || name === 'sleeping')
@@ -653,6 +659,10 @@ export class UiManager {
   /** The same operation a mouse click performs; shift-click quick-moves. */
   clickSlot(slot: number, button: ClickButton, shift = false): void {
     if (!Number.isInteger(slot) || slot < 0 || !this.screen) throw new Error('Invalid screen slot');
+    if (this.inventoryOnly && this.screen === 'inventory' && slot >= 41) {
+      this.showMessage('Crafting windows are unavailable on this server');
+      return;
+    }
     const player = this.requirePlayer();
     const inventory = player.inventory;
 
@@ -1841,6 +1851,7 @@ export class UiManager {
   };
 
   private dragExternal(slots: readonly number[], button: ClickButton): void {
+    if (this.inventoryOnly) return;
     const inventory = this.requirePlayer().inventory;
     const cursor = inventory.cursor;
     if (!cursor) return;

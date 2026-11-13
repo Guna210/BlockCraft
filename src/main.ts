@@ -22,6 +22,7 @@ import { commandContext, completionCatalog } from './game/commands/runtime';
 import { WorldListScreen, activeWorldList } from './ui/world-list-screen';
 import { Hud, type DebugOverlaySnapshot } from './ui/hud';
 import { MainMenu, activeMenu } from './ui/main-menu';
+import { MultiplayerScreen } from './ui/multiplayer-screen';
 import { createSentinelTile } from './render/texture-resolve';
 import { registerKilnBlockEntity, type KilnState } from './gameplay/kiln';
 import type { BlockEntityInstance } from './world/block-entities';
@@ -143,6 +144,50 @@ async function main() {
   );
   activeWorldList.screen = new WorldListScreen(input, worldManager);
   const settingsScreen = new SettingsScreen(input);
+  const multiplayerScreen = new MultiplayerScreen(
+    () => menu.refresh(),
+    async (connection) => {
+      const [{ RemoteSession }, { MultiplayerErrorDrain, installSessionErrorDrain }] =
+        await Promise.all([import('./game/net/session'), import('./game/net/error-drain')]);
+      if (!connection.open) throw new Error('Connection lost');
+      const normalDrain = frameDrain;
+      const multiplayerDrain = normalDrain
+        ? new MultiplayerErrorDrain(
+            gl,
+            () => glWrapper.drainErrors(),
+            (fence) => {
+              const status = gl.clientWaitSync(fence, 0, 0);
+              return status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED;
+            },
+          )
+        : null;
+      const restoreErrorDrain = installSessionErrorDrain(
+        normalDrain,
+        multiplayerDrain,
+        (collector) => {
+          frameDrain = collector;
+        },
+      );
+      try {
+        new RemoteSession(
+          connection,
+          worldManager,
+          chat,
+          async () => {
+            chat.close();
+            creativeInventory.close();
+            ui.close();
+            await worldManager.quitToMenu();
+            menu.show();
+          },
+          restoreErrorDrain,
+        );
+      } catch (error) {
+        restoreErrorDrain();
+        throw error;
+      }
+    },
+  );
   const menu = new MainMenu(
     glWrapper,
     camera,
@@ -157,6 +202,7 @@ async function main() {
         menu.refresh();
       });
     },
+    () => multiplayerScreen.show(),
   );
   activeMenu.menu = menu;
   // A world created with an empty seed field got a random seed; the player is told which.

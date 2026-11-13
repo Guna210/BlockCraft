@@ -118,6 +118,14 @@ export function encodeMessage(message: Message, writer: BinaryWriter): Uint8Arra
   w.reset();
   w.u8(message.type);
   switch (message.type) {
+    case MessageType.PlayerList:
+      w.integer(message.players.length, 0, 128);
+      w.u16(message.players.length);
+      for (const player of message.players) {
+        w.string(player.name);
+        w.u32(player.pingMs);
+      }
+      break;
     case MessageType.BlockAction:
       w.integer(message.action, 0, BlockActionKind.Place);
       w.u8(message.action);
@@ -263,6 +271,15 @@ export function decodeMessage(bytes: Uint8Array): DecodeResult {
   const type = r.u8();
   let message: Message;
   switch (type) {
+    case MessageType.PlayerList: {
+      const length = r.bounded(r.u16(), 128);
+      const players: { name: string; pingMs: number }[] = [];
+      if (r.has(length * 6))
+        for (let i = 0; i < length && !r.error; i++)
+          players.push({ name: r.string(), pingMs: r.u32() });
+      message = { type, players };
+      break;
+    }
     case MessageType.BlockAction:
       message = {
         type,

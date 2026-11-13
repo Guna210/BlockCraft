@@ -1,5 +1,31 @@
 export interface BlockCraftDebugAPI {
   ready(): Promise<void>;
+  getNetStats?: () => {
+    connected: boolean;
+    rttMs: number;
+    playerCount: number;
+    predictionCorrections: number;
+  };
+  getNetPredictionTrace?: () => Array<{
+    sequence: number;
+    predicted: number[];
+    authoritative: number[];
+    movement: number[];
+    actions: number;
+  }>;
+  getRemoteEntities?: () => Array<{
+    id: number;
+    kind: string;
+    pos: [number, number, number];
+    draws: number;
+  }>;
+  getNetBlockUpdates?: () => Array<{
+    x: number;
+    y: number;
+    z: number;
+    stateId: number;
+  }>;
+  netFinishBreak?: (x: number, y: number, z: number) => void;
   getSettings?: () => import('../../engine/settings').Settings;
   setSetting?: (
     key: keyof import('../../engine/settings').Settings,

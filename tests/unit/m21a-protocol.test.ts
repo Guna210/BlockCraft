@@ -22,6 +22,13 @@ import { deflate, inflate } from '../../src/persist/compress';
 
 // Exhaustive at compile time and runtime. Enum additions must supply a real round-trip fixture.
 const cases: { [K in T]: Messages[K] } = {
+  [T.PlayerList]: {
+    type: T.PlayerList,
+    players: [
+      { name: 'Ada 🌱', pingMs: 150 },
+      { name: 'Bo', pingMs: 0xffffffff },
+    ],
+  },
   [T.BlockAction]: {
     type: T.BlockAction,
     action: 0,

@@ -11,6 +11,19 @@ export const SILKMESH_SPEED_FACTOR = 0.25;
 export const SILKMESH_MAX_FALL = 1.2;
 export const SILKMESH_MAX_RISE = 0.6;
 
+const PREDICTION_ACTIONS = [
+  'forward',
+  'back',
+  'left',
+  'right',
+  'jump',
+  'sneak',
+  'sprint',
+  'attack',
+  'use',
+  'pick',
+] as const;
+
 export type GameMode = 'survival' | 'creative';
 export interface PlayerSnapshot {
   pos: Position;
@@ -131,6 +144,109 @@ export class Player {
     return this.sneaking ? 1.27 : 1.62;
   }
 
+  /** Caller-owned multiplayer checkpoint storage; single-player never captures it. */
+  writePredictionState(out: Float64Array): void {
+    out[0] = Number(this.pos[0]);
+    out[1] = Number(this.pos[1]);
+    out[2] = Number(this.pos[2]);
+    out[3] = Number(this.vel[0]);
+    out[4] = Number(this.vel[1]);
+    out[5] = Number(this.vel[2]);
+    out[6] = Number(this.previous[0]);
+    out[7] = Number(this.previous[1]);
+    out[8] = Number(this.previous[2]);
+    out[9] = Number(this.yaw);
+    out[10] = Number(this.pitch);
+    out[11] = Number(this.onGround);
+    out[12] = Number(this.flying);
+    out[13] = Number(this.sneaking);
+    out[14] = Number(this.climbing);
+    out[15] = Number(this.sprintFov);
+    out[16] = Number(this.previousSprintFov);
+    out[17] = Number(this.walkDistance);
+    out[18] = Number(this.previousWalkDistance);
+    out[19] = Number(this.walkAmount);
+    out[20] = Number(this.previousWalkAmount);
+    out[21] = Number(this.waterExitTicks);
+    out[22] = Number(this.highest);
+    out[23] = Number(this.ticks);
+    out[24] = Number(this.lastForward);
+    out[25] = Number(this.lastJump);
+    out[26] = Number(this.sprinting);
+    out[27] = Number(this.sprintingNow);
+    out[28] = Number(this.forwardDown);
+    out[29] = Number(this.jumpDown);
+    out[30] = Number(this.forwardPressed);
+    out[31] = Number(this.jumpPressed);
+    out[32] = 0;
+    let bit = 1;
+    for (const action of PREDICTION_ACTIONS) {
+      if (this.down(action)) out[32] = out[32]! | bit;
+      bit <<= 1;
+    }
+    // Shared physics can damage/exhaust the player. Replay must restore these effects too.
+    out[33] = this.health;
+    out[34] = this.hunger;
+    out[35] = this.saturation;
+    out[36] = this.survival.exhaustion;
+    out[37] = Number(this.dead);
+  }
+  readPredictionState(state: Float64Array): void {
+    this.pos[0] = state[0]!;
+    this.pos[1] = state[1]!;
+    this.pos[2] = state[2]!;
+    this.vel[0] = state[3]!;
+    this.vel[1] = state[4]!;
+    this.vel[2] = state[5]!;
+    this.previous[0] = state[6]!;
+    this.previous[1] = state[7]!;
+    this.previous[2] = state[8]!;
+    this.yaw = state[9]!;
+    this.pitch = state[10]!;
+    this.onGround = !!state[11];
+    this.flying = !!state[12];
+    this.sneaking = !!state[13];
+    this.climbing = !!state[14];
+    this.sprintFov = state[15]!;
+    this.previousSprintFov = state[16]!;
+    this.walkDistance = state[17]!;
+    this.previousWalkDistance = state[18]!;
+    this.walkAmount = state[19]!;
+    this.previousWalkAmount = state[20]!;
+    this.waterExitTicks = state[21]!;
+    this.highest = state[22]!;
+    this.ticks = state[23]!;
+    this.lastForward = state[24]!;
+    this.lastJump = state[25]!;
+    this.sprinting = !!state[26];
+    this.sprintingNow = !!state[27];
+    this.forwardDown = !!state[28];
+    this.jumpDown = !!state[29];
+    this.forwardPressed = !!state[30];
+    this.jumpPressed = !!state[31];
+    this.health = state[33]!;
+    this.hunger = state[34]!;
+    this.saturation = state[35]!;
+    this.survival.exhaustion = state[36]!;
+    this.dead = !!state[37];
+    let bit = 1;
+    for (const action of PREDICTION_ACTIONS) {
+      this.actions.set(action, !!(state[32]! & bit));
+      bit <<= 1;
+    }
+  }
+  /** Keep look and input edges received since the latest predicted tick when replaying. */
+  restorePredictionInput(state: Float64Array): void {
+    this.yaw = state[9]!;
+    this.pitch = state[10]!;
+    this.forwardPressed = !!state[30];
+    this.jumpPressed = !!state[31];
+    let bit = 1;
+    for (const action of PREDICTION_ACTIONS) {
+      this.actions.set(action, !!(state[32]! & bit));
+      bit <<= 1;
+    }
+  }
   input(action: Action, down: boolean): void {
     if (action === 'use' && !down) {
       this.survival.useConsumed = false;

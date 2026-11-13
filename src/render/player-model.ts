@@ -173,7 +173,7 @@ export class PlayerModelRenderer {
     gl.bindVertexArray(null);
   }
   render(
-    controller: PlayerController | null,
+    controller: Pick<PlayerController, 'player' | 'camera' | 'perspective' | 'renderAlpha'> | null,
     viewProj: mat4,
     atlasTexture: WebGLTexture,
     atlas: TextureAtlas,

@@ -52,6 +52,7 @@ import { DiskStorage, atomicWrite, readOptional } from './storage';
 import { SimulationDimension, Actor } from './simulation';
 import { Transport } from './transport';
 import { InventoryState } from './inventory-state';
+import { MovementClock, MAX_INPUT_STEPS } from '../src/net/movement-clock';
 import { transactInventory } from './inventory';
 import { parseOptions, type ServerOptions } from './options';
 
@@ -86,6 +87,7 @@ interface Peer {
   inputHead: number;
   inputTail: number;
   receivedInputs: number;
+  movementClock: MovementClock;
   revision: number;
   inventoryState: InventoryState;
   inventory: Messages[T.InventorySync];
@@ -120,6 +122,7 @@ interface Peer {
   baselines: Map<number, Baseline>;
   chatAt: number;
   pingAt: number;
+  rttMs: number;
   ping: Messages[T.Ping];
   timeSync: Messages[T.TimeSync];
   weatherSync: Messages[T.WeatherSync];
@@ -199,6 +202,7 @@ export class AuthoritativeServer {
         inputHead: 0,
         inputTail: 0,
         receivedInputs: 0,
+        movementClock: new MovementClock(true),
         revision: 0,
         inventoryState: new InventoryState(),
         inventory: { type: T.InventorySync, windowId: 0, revision: 0, slots: [], cursor: null },
@@ -228,6 +232,7 @@ export class AuthoritativeServer {
         centerZ: Infinity,
         baselines: new Map(),
         chatAt: -Infinity,
+        rttMs: 0,
         pingAt: performance.now(),
         ping: { type: T.Ping, id: 0 },
         timeSync: { type: T.TimeSync, dimension: 'overworld', time: 0 },
@@ -334,7 +339,11 @@ export class AuthoritativeServer {
       peer.transport.send({ type: T.Pong, id: message.id });
       return;
     }
-    if (message.type === T.Pong) return;
+    if (message.type === T.Pong) {
+      if (message.id === peer.ping.id)
+        peer.rttMs = Math.max(0, Math.round(performance.now() - peer.pingAt));
+      return;
+    }
     if (message.type === T.Disconnect) {
       peer.transport.close();
       return;
@@ -497,12 +506,16 @@ export class AuthoritativeServer {
       });
       this.syncInventory(peer, false);
       this.syncTimeWeather(peer);
+      this.broadcastPlayerList();
     } finally {
       dimension.pendingArrivals--;
     }
   }
   private configureActor(peer: Peer): void {
     const actor = peer.actor!;
+    peer.movementClock.reset();
+    // Held combat input must not also mine/place locally: BlockAction owns validated edits.
+    actor.interaction.input = () => actor.interaction.clear();
     actor.onInteraction = () => this.processBlockActions(peer);
     peer.correction.position = actor.player.pos;
     peer.correction.velocity = actor.player.vel;
@@ -532,7 +545,15 @@ export class AuthoritativeServer {
       void save.catch(console.error);
       peer.actor.dimension.detach(peer.actor);
       peer.actor = null;
+      this.broadcastPlayerList();
     }
+  }
+  private broadcastPlayerList(): void {
+    const players: { name: string; pingMs: number }[] = [];
+    for (const peer of this.peers)
+      if (peer.actor) players.push({ name: peer.name, pingMs: peer.rttMs });
+    const message: Messages[T.PlayerList] = { type: T.PlayerList, players };
+    for (const peer of this.peers) if (peer.actor) peer.transport.send(message);
   }
   private syncInventory(peer: Peer, detect = true): void {
     const player = peer.actor?.player;
@@ -700,9 +721,15 @@ export class AuthoritativeServer {
         peer.transport.send(peer.ping);
       }
       peer.receivedInputs = 0;
+      peer.movementClock.beginTick(start);
       if (!peer.actor || peer.travel.travelling) continue;
-      const input = peer.inputHead !== peer.inputTail ? peer.inputs[peer.inputHead] : null;
-      if (input) {
+      let appliedInputs = 0;
+      while (
+        peer.inputHead !== peer.inputTail &&
+        appliedInputs < MAX_INPUT_STEPS &&
+        peer.movementClock.canStep
+      ) {
+        const input = peer.inputs[peer.inputHead]!;
         const player = peer.actor.player;
         player.yaw = input.look[0] % (2 * Math.PI);
         player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, input.look[1]));
@@ -714,11 +741,18 @@ export class AuthoritativeServer {
         peer.actor.combat.input('attack', !!(input.actions & F.Attack));
         peer.actor.combat.input('use', !!(input.actions & F.Use));
         peer.actor.bow.input('use', !!(input.actions & F.Use));
+        peer.movementClock.input(player);
+        appliedInputs++;
         peer.sequence = input.sequence;
         peer.hasSequence = true;
         peer.inputs[peer.inputHead] = null;
         peer.inputHead = (peer.inputHead + 1) % 8;
       }
+      peer.movementClock.finishTick(
+        peer.actor.player,
+        appliedInputs,
+        peer.inputHead === peer.inputTail,
+      );
     }
     for (const dimension of this.dimensions.values()) dimension.tick();
     advance();
@@ -742,6 +776,7 @@ export class AuthoritativeServer {
       if (this.ticks % 100 === 0 || weatherChanged) this.syncTimeWeather(peer);
       this.syncInventory(peer);
     }
+    if (this.ticks % 40 === 0) this.broadcastPlayerList();
     this.unloadDistantColumns();
     if (this.ticks % 1200 === 0) this.saveRequested = true;
     if (this.saveRequested && !this.saving) {
@@ -1076,6 +1111,7 @@ export class AuthoritativeServer {
           cz: cell.cz,
         });
       peer.loaded.clear();
+      peer.baselines.clear();
       peer.centerX = Infinity;
       peer.centerZ = Infinity;
       peer.actor = replacement;
