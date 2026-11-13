@@ -75,7 +75,6 @@ export class RemoteSession {
     readonly manager: WorldManager,
     readonly chat: Chat,
     readonly leave: () => Promise<void>,
-    private readonly restoreFrameLoop: () => void = () => {},
   ) {
     const controller = manager.playerController!;
     if (activeUi.manager) activeUi.manager.inventoryOnly = true;
@@ -165,7 +164,6 @@ export class RemoteSession {
       connection.close();
       controller.frame = originalFrame;
       manager.remoteExit = null;
-      this.restoreFrameLoop();
     };
     connection.listen((message, immediateReceipt = false) => {
       this.serial = this.serial

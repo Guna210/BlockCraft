@@ -122,6 +122,15 @@ test('two players render one another and replicate a block edit within 500 ms', 
         client.evaluate(() => window.__blockcraft!.resetFrameStats!()),
       ),
     );
+    // A watches the chosen edit, rather than continuing to render the sky/water behind B.
+    await page.evaluate(([x, y, z]) => {
+      const api = window.__blockcraft!,
+        p = api.getPlayer!().pos;
+      api.look!(
+        Math.atan2(z + 0.5 - p[2], x + 0.5 - p[0]),
+        Math.atan2(y + 0.5 - p[1] - 1.62, Math.hypot(x + 0.5 - p[0], z + 0.5 - p[2])),
+      );
+    }, block);
     await b.page.evaluate(() => window.__blockcraft!.input!('attack', true));
     await expect
       .poll(

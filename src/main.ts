@@ -6,7 +6,7 @@ import { markReady, renderStats, setGlErrorDrain } from './debug/api/core';
 import { setTestSceneInitializer } from './debug/api/test-scene';
 import { setActiveCamera } from './debug/api/camera';
 import { GLWrapper } from './render/gl';
-import { FencedErrorDrain, MAX_FRAMES_IN_FLIGHT } from './render/fenced-error-drain';
+import { FencedErrorDrain } from './render/fenced-error-drain';
 import { TestScene } from './render/test-scene';
 import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
@@ -144,65 +144,18 @@ async function main() {
   );
   activeWorldList.screen = new WorldListScreen(input, worldManager);
   const settingsScreen = new SettingsScreen(input);
-  let remoteHandover: Promise<void> | null = null;
   const multiplayerScreen = new MultiplayerScreen(
     () => menu.refresh(),
     async (connection) => {
-      const [{ RemoteSession }, { RemoteRenderLoop }] = await Promise.all([
-        import('./game/net/session'),
-        import('./game/net/render-loop'),
-      ]);
-      if (remoteHandover) await remoteHandover;
+      const { RemoteSession } = await import('./game/net/session');
       if (!connection.open) throw new Error('Connection lost');
-      const originalRender = render;
-      // Finish the queued menu callback before constructing the world or its latest GPU fence.
-      remoteHandover = new Promise<void>((resolve) => {
-        render = () => resolve();
+      new RemoteSession(connection, worldManager, chat, async () => {
+        chat.close();
+        creativeInventory.close();
+        ui.close();
+        await worldManager.quitToMenu();
+        menu.show();
       });
-      await remoteHandover;
-      remoteHandover = null;
-      if (!connection.open) {
-        render = originalRender;
-        requestAnimationFrame(render);
-        throw new Error('Connection lost');
-      }
-      const remoteLoop = new RemoteRenderLoop(
-        gl,
-        originalRender,
-        () => {
-          playerController.frame(0);
-          ui.frame();
-          hud.frame(performance.now());
-        },
-        () => requestAnimationFrame(render),
-        () => !frameDrain || frameDrain.pendingFrames < MAX_FRAMES_IN_FLIGHT,
-      );
-      const restore = () => {
-        remoteLoop.dispose();
-        render = originalRender;
-        lastTime = performance.now();
-      };
-      render = remoteLoop.render;
-      try {
-        new RemoteSession(
-          connection,
-          worldManager,
-          chat,
-          async () => {
-            chat.close();
-            creativeInventory.close();
-            ui.close();
-            await worldManager.quitToMenu();
-            menu.show();
-          },
-          restore,
-        );
-      } catch (error) {
-        restore();
-        requestAnimationFrame(render);
-        throw error;
-      }
-      requestAnimationFrame(render);
     },
   );
   const menu = new MainMenu(
@@ -410,7 +363,7 @@ async function main() {
   const cpuTimes: number[] = [];
   const uploadTimes: number[] = [];
 
-  let render = (time: number) => {
+  function render(time: number) {
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
     let glCheckMs = 0;
@@ -495,7 +448,7 @@ async function main() {
     }
 
     requestAnimationFrame(render);
-  };
+  }
 
   // The page boots to the main menu; ready() resolves once it is shown and interactive.
   await loadSavedSettings();
