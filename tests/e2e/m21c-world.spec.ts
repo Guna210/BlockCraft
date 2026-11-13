@@ -36,10 +36,54 @@ test('two players render one another and replicate a block edit within 500 ms', 
     await expect(page.locator('#player-list')).toContainText(`world-B-${unique}`);
     await expect(page.locator('#player-list')).toContainText(/\d+ ms/);
     await page.keyboard.up('Tab');
+    // Keep the target and all neighbouring columns inside received terrain.
+    await page.evaluate(() => window.__blockcraft!.waitForTerrain!(2));
+    await b.page.evaluate(() => window.__blockcraft!.waitForTerrain!(2));
     const target = await b.page.evaluate(() => {
       const api = window.__blockcraft!;
-      api.look!(0, -Math.PI / 2 + 0.011);
-      return api.raycast!();
+      const neighbours = [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
+      ];
+      const fluid = (id: string) => id === 'water' || id === 'lava';
+      // Check cheap block data first: debug look() renders, so avoid a sweep
+      // of redundant frames on SwiftShader. Aim at nearby stone centres in order.
+      const pos = api.getPlayer!().pos;
+      const candidates: Array<{ block: [number, number, number]; distance: number }> = [];
+      for (let x = Math.floor(pos[0]) - 3; x <= Math.floor(pos[0]) + 3; x++)
+        for (let y = Math.floor(pos[1]) - 1; y <= Math.floor(pos[1]) + 4; y++)
+          for (let z = Math.floor(pos[2]) - 3; z <= Math.floor(pos[2]) + 3; z++) {
+            const distance = Math.hypot(
+              x + 0.5 - pos[0],
+              y + 0.5 - pos[1] - 1.62,
+              z + 0.5 - pos[2],
+            );
+            if (distance > 3.5 || api.getBlock!(x, y, z).id !== 'stone') continue;
+            if (
+              neighbours.some(([dx, dy, dz]) => fluid(api.getBlock!(x + dx!, y + dy!, z + dz!).id))
+            )
+              continue;
+            candidates.push({ block: [x, y, z], distance });
+          }
+      candidates.sort((a, b) => a.distance - b.distance);
+      for (const {
+        block: [x, y, z],
+      } of candidates) {
+        api.look!(
+          Math.atan2(z + 0.5 - pos[2], x + 0.5 - pos[0]),
+          Math.atan2(y + 0.5 - pos[1] - 1.62, Math.hypot(x + 0.5 - pos[0], z + 0.5 - pos[2])),
+        );
+        const hit = api.raycast!();
+        if (hit.hit && hit.block![0] === x && hit.block![1] === y && hit.block![2] === z)
+          return hit;
+      }
+      throw new Error(
+        'No reachable solid stone target without fluid neighbours in received terrain',
+      );
     });
     expect(target.hit).toBe(true);
     const block = target.block!;
@@ -48,6 +92,22 @@ test('two players render one another and replicate a block edit within 500 ms', 
       block,
     );
     expect(before).not.toBe('air');
+    expect(before).toBe('stone');
+    expect(
+      await b.page.evaluate(([x, y, z]) => {
+        const api = window.__blockcraft!;
+        return [
+          [1, 0, 0],
+          [-1, 0, 0],
+          [0, 1, 0],
+          [0, -1, 0],
+          [0, 0, 1],
+          [0, 0, -1],
+        ]
+          .map(([dx, dy, dz]) => api.getBlock!(x + dx!, y + dy!, z + dz!).id)
+          .filter((id) => id === 'water' || id === 'lava');
+      }, block),
+    ).toEqual([]);
     expect(
       await page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block),
     ).toBe(before);

@@ -8,25 +8,32 @@ const SILENCE_TICKS = 5;
 export class MovementClock {
   private silence = 0;
   private credit = MOVEMENT_BURST;
+  private lastTick: number;
 
-  constructor(private readonly budgeted = false) {}
+  constructor(
+    private readonly budgeted = false,
+    private readonly now: () => number = () => performance.now(),
+  ) {
+    this.lastTick = now();
+  }
 
   reset(): void {
     this.silence = 0;
     // Portal/world replacement must not refill a peer's movement budget.
   }
 
-  beginTick(): void {
-    this.credit = Math.min(MOVEMENT_BURST, this.credit + 1);
+  beginTick(now = this.now()): void {
+    this.credit = Math.min(MOVEMENT_BURST, this.credit + Math.max(0, now - this.lastTick) / 50);
+    this.lastTick = now;
   }
 
   get canStep(): boolean {
-    return !this.budgeted || this.credit > 0;
+    return !this.budgeted || this.credit >= 1;
   }
 
   private spend(): boolean {
     if (!this.budgeted) return true;
-    if (this.credit === 0) return false;
+    if (this.credit < 1) return false;
     this.credit--;
     return true;
   }

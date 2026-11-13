@@ -721,7 +721,7 @@ export class AuthoritativeServer {
         peer.transport.send(peer.ping);
       }
       peer.receivedInputs = 0;
-      peer.movementClock.beginTick();
+      peer.movementClock.beginTick(start);
       if (!peer.actor || peer.travel.travelling) continue;
       let appliedInputs = 0;
       while (

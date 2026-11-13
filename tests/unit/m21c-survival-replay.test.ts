@@ -19,10 +19,12 @@ it('replays a delayed landing without repeatedly applying fall damage or killing
     server = fallingPlayer();
   const queue: Messages[T.PlayerInput][] = [];
   const prediction = new Prediction(p, (input) => queue.push(input));
-  const clock = new MovementClock(true);
+  let now = 0;
+  const clock = new MovementClock(true, () => now);
   let acknowledged = 0;
   for (let tick = 0; tick < 80; tick++) {
     if (tick < 60) prediction.tick();
+    now += 50;
     clock.beginTick();
     let applied = 0;
     if ((tick >= 3 && tick < 60) || (tick >= 60 && queue.length)) {
