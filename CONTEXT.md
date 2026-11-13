@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-12
+Last updated: 2026-11-13
 
 ## Setup
 
@@ -52,7 +52,8 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M21b (latest: M20c #
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21c PR #85 (head 1a7f8b1, CI green). Round 1 (Sonnet, session_0155bUSB9aPA99FKYrb2QCyC) VERDICT PASS, no blocking. I asked for a counter fix (repeated acks uncounted). Codex: honest counter shows 298 corrections in the 150 ms walk (criterion < 5) -> M21c criterion NOT really met. Root cause (server.ts ~721-738 + simulation.ts:411-415): server consumes max 1 input per tick and ticks every player every tick, so client/server tick phase slips (0 or 2 inputs per tick) put the server a tick ahead/behind. Decided 2026-11-12: input-driven player movement on the server (one Player.tick per received input, drain up to 3 queued per server tick, neutral-input tick after 5 input-less ticks so gravity/fluids still apply; ack = last applied input; combat/bow/interaction/world stay per server tick). Codex asked to edit 2 of its own m21c-prediction.test.ts assertions (1->2, 0->8): told to hold until after the root fix and ask again with numbers. Status: input-driven server implemented locally; still 116 corrections (unpushed); own-test adaptations approved; Codex classifying the remainder. Then round 2 in the same reviewer session.
+In flight: M21c PR #85 (head 13ea407, CI green run 43311716165). Round 1 (Sonnet, session_0155bUSB9aPA99FKYrb2QCyC) PASS. Follow-up pushed: honest visible-snap counter; input-driven server movement (src/net/movement-clock.ts: one Player.tick per input, max 3 per server tick, neutral tick after 5 silent ticks; player.tick removed from simulation.ts); socket + 50 ms input clock moved into a multiplayer-only module worker (src/game/net/socket-worker.ts) because main-thread timer starvation caused 168 corrections (all repeated acks, 113 near water); provisional next-frame step. Walk now 0 corrections local and CI. 4 own-test adaptations approved and done.
+My check 2026-11-13: SPEED HOLE. server.ts:391 accepts up to 4 inputs per tick, loop drains 3 per tick, each = 1 movement step -> a modified client moves ~3x speed sustained (SPEC: movement speed validation). Sent Codex fix: per-peer step credit (+1 per server tick, cap 3-5), input steps and neutral ticks spend it, excess inputs stay queued; silence = empty queue only; unit test for 3-inputs-per-tick client. After green: round 2 in same reviewer session (cover worker, ordering change player before world.tick, rate fix, CI log walk line).
 Found in review: server has NO respawn path (player.dead only blocks actions; dead player stuck until reconnect) and client gets no health/hunger/mode/death (HUD always full). M21b gap, not M21c. Proposed follow-up M21b-fix2 (vitals/mode/death/respawn protocol + death screen + server respawn); owner to choose order vs M21b-fix (containers). Both bump the protocol and touch server.ts -> run serially.
 After M21c: review (new Sonnet session), then M21b-fix + M22a/M22c/M22d.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
@@ -104,6 +105,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-13: #85 follow-up green (0 corrections, socket worker, input-driven server). Found speed hole (3 steps/tick sustained); sent Codex credit-limit fix before round 2.
 - 2026-11-12: #85 input-driven server done locally (M21b tests unedited) but delayed walk still 116 corrections. Approved adapting 4 of M21c's OWN new unit tests to the approved timing (exact values, fixture mirrors real server, packet pause < 5 ticks stays 0). Told Codex to classify the 116 via the trace before further changes; QUESTION after 3 approaches.
 - 2026-11-12: #85 counter fix exposed 298 corrections (real criterion failure, masked by undercount). Diagnosed server tick-phase mismatch; sent Codex input-driven server movement fix; held its request to change 2 own unit assertions.
 - 2026-11-12: #85 M21c round 1 PASS (Sonnet). Non-blocking but I asked for a fix: repeated-ack corrections uncounted (prediction.ts:76-94). Also found: server never respawns dead players; client has no vitals -> proposed follow-up M21b-fix2.
@@ -123,4 +125,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-10: #83 M21a CI green (4 shards, harness guard, Pages build). Gave Sonnet reviewer prompt.
 - 2026-11-10: M21a gate (511b414): 40 lint violations fixed, 22 message types, unit 1428/137 files, touched e2e 153 passed 3 failed (m04 pump, m17b:579 known; m17b:232 ordinary autosave NEW - likely container, CI decides). 4 renames R098-R100 (world-manager -> src/game, noise -> src/gen/texture-noise, frustum + light-curve -> src/world); 18 tests import-path only; M11a/M14/M20c untouched. Recommended owner approve.
 - 2026-11-10: M21a prompt given (Codex). Codex QUESTION: edit M11a/M14/M20c tests for the event sink? Answered: no, keep existing particles injection (already type-only), sink only for playExplosion; no test edits.
-- 2026-11-10: Owner simplified: M21 per SPEC, address entry on Pages too, no hosted server, no popup; README last; I chose MIT licence.
