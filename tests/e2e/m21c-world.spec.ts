@@ -8,6 +8,13 @@ test('two players render one another and replicate a block edit within 500 ms', 
 }) => {
   const b = await second(browser);
   try {
+    // Select the existing networking-test distance before login; setting it afterward allows
+    // default-distance startup work to queue ahead of the first remote frames.
+    await Promise.all(
+      [page, b.page].map((client) =>
+        client.evaluate(() => window.__blockcraft!.setRenderDistance!(2)),
+      ),
+    );
     const unique = Date.now().toString(36);
     await connect(page, `world-A-${unique}`);
     await connect(b.page, `world-B-${unique}`);
@@ -50,8 +57,7 @@ test('two players render one another and replicate a block edit within 500 ms', 
         [0, 0, -1],
       ];
       const fluid = (id: string) => id === 'water' || id === 'lava';
-      // Check cheap block data first: debug look() renders, so avoid a sweep
-      // of redundant frames on SwiftShader. Aim at nearby stone centres in order.
+      // Check block data first, then confirm nearby stone centres in distance order.
       const pos = api.getPlayer!().pos;
       const candidates: Array<{ block: [number, number, number]; distance: number }> = [];
       for (let x = Math.floor(pos[0]) - 3; x <= Math.floor(pos[0]) + 3; x++)
@@ -111,6 +117,11 @@ test('two players render one another and replicate a block edit within 500 ms', 
     expect(
       await page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block),
     ).toBe(before);
+    await Promise.all(
+      [page, b.page].map((client) =>
+        client.evaluate(() => window.__blockcraft!.resetFrameStats!()),
+      ),
+    );
     await b.page.evaluate(() => window.__blockcraft!.input!('attack', true));
     await expect
       .poll(
@@ -118,18 +129,57 @@ test('two players render one another and replicate a block edit within 500 ms', 
         { timeout: 60000, intervals: [20] },
       )
       .toBe('air');
+    const reportTransfers = async () => {
+      const traces = await Promise.all(
+        [page, b.page].map((client) =>
+          client.evaluate(
+            ([x, y, z]) => ({
+              transfers: window.__blockcraft!.getNetTransferTrace!().filter(
+                (event) => event.type === 7 || (event.x === x && event.y === y && event.z === z),
+              ),
+              frames: window.__blockcraft!.getFrameStats!(),
+              visibility: document.visibilityState,
+            }),
+            block,
+          ),
+        ),
+      );
+      console.log('M21c block transfer trace', JSON.stringify(traces));
+    };
     const start = Date.now();
-    await expect
-      .poll(() => page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block), {
-        timeout: 500,
-        intervals: [20],
-      })
-      .toBe('air');
+    try {
+      await expect
+        .poll(
+          () => page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block),
+          {
+            timeout: 500,
+            intervals: [20],
+          },
+        )
+        .toBe('air');
+    } catch (error) {
+      await reportTransfers().catch(() => {});
+      throw error;
+    }
     const elapsed = Date.now() - start;
     console.log('M21c block replication ms', elapsed);
     expect(elapsed).toBeLessThanOrEqual(500);
     await b.page.evaluate(() => window.__blockcraft!.input!('attack', false));
+    await reportTransfers();
     await assertHealthy(b.page, b.errors);
+  } catch (error) {
+    const state = await Promise.all(
+      [page, b.page].map((client) =>
+        client.evaluate(() => ({
+          entities: window.__blockcraft!.getRemoteEntities!(),
+          frames: window.__blockcraft!.getFrameStats!(),
+          net: window.__blockcraft!.getNetStats!(),
+          visibility: document.visibilityState,
+        })),
+      ),
+    ).catch(() => []);
+    console.log('M21c world failure state', JSON.stringify(state));
+    throw error;
   } finally {
     await b.context.close();
   }

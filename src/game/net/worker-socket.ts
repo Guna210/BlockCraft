@@ -6,6 +6,8 @@ export class WorkerSocket {
   readyState = 0;
   binaryType = 'arraybuffer';
   inputImmediate = false;
+  outgoing = false;
+  workerAt = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
@@ -32,6 +34,8 @@ export class WorkerSocket {
           this.worker.terminate();
           break;
         case 'packet':
+          this.outgoing = data.outgoing ?? false;
+          this.workerAt = data.workerAt ?? 0;
           this.inputImmediate = data.immediate;
           this.packetEvent.data = data.packet;
           this.onmessage?.(this.packetEvent as MessageEvent<ArrayBuffer>);

@@ -24,7 +24,13 @@ const input = {
   look: [0, 0] as [number, number],
   actions: 0,
 };
-const packetEvent = { kind: 'packet', packet: null as ArrayBuffer | null, immediate: false };
+const packetEvent = {
+  kind: 'packet',
+  packet: null as ArrayBuffer | null,
+  immediate: false,
+  outgoing: false,
+  workerAt: 0,
+};
 const transfers: Transferable[] = [new ArrayBuffer(0)];
 let socket: WebSocket | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -33,7 +39,9 @@ let closed = false;
 let acknowledged = 0;
 let nextAt = 0;
 const sentLook = new Float64Array(2);
-function emit(packet: ArrayBuffer, immediate = false): void {
+function emit(packet: ArrayBuffer, immediate = false, outgoing = false): void {
+  packetEvent.outgoing = outgoing;
+  packetEvent.workerAt = Date.now();
   packetEvent.immediate = immediate;
   packetEvent.packet = packet;
   transfers[0] = packet;
@@ -112,7 +120,11 @@ channel.onmessage = ({ data }) => {
         (input.look[0] !== sentLook[0] || input.look[1] !== sentLook[1])
       )
         step(true, false);
-      if (socket?.readyState === WebSocket.OPEN) socket.send(data.packet);
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(data.packet);
+        if (decoded.ok && decoded.message.type === T.BlockAction)
+          emit(data.packet.slice(0), false, true);
+      }
       break;
     }
     case 'intent':

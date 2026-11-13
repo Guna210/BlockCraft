@@ -149,6 +149,10 @@ export class MultiplayerScreen {
         this.connect.disabled = false;
       };
       await this.onConnect(connection);
+      if (attempt !== this.attempt) {
+        connection.close();
+        return;
+      }
       this.connection = null;
       this.hide();
     } catch (error) {

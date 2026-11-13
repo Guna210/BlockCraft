@@ -7,10 +7,12 @@ import {
   type Message,
 } from '../../net/protocol';
 import { WorkerSocket } from './worker-socket';
+import { TransferTrace } from './transfer-trace';
 import type { Messages } from '../../net/protocol';
 
 /** Owns a browser WebSocket and its handshake; subsequent messages retain wire order. */
 export class Connection {
+  readonly transferTrace = new TransferTrace();
   private readonly writer = new BinaryWriter();
   private pending: Message[] = [];
   private receiver: ((message: Message, immediateReceipt?: boolean) => void) | null = null;
@@ -21,6 +23,9 @@ export class Connection {
   }
   onClose: (reason: string) => void = () => {};
   private constructor(private readonly socket: WebSocket | WorkerSocket) {}
+  get open(): boolean {
+    return this.socket.readyState === WebSocket.OPEN;
+  }
   get threaded(): boolean {
     return this.socket instanceof WorkerSocket;
   }
@@ -68,6 +73,15 @@ export class Connection {
         const decoded = decodeMessage(new Uint8Array(event.data));
         if (!decoded.ok) return;
         const message = decoded.message;
+        if (socket instanceof WorkerSocket && socket.outgoing) {
+          connection.transferTrace.record(1, message, socket.workerAt);
+          return;
+        }
+        connection.transferTrace.record(
+          2,
+          message,
+          socket instanceof WorkerSocket ? socket.workerAt : 0,
+        );
         if (message.type === MessageType.Ping)
           connection.send({ type: MessageType.Pong, id: message.id });
         if (message.type === MessageType.LoginReject && !settled) {
@@ -93,6 +107,7 @@ export class Connection {
   }
 
   send(message: Message): void {
+    this.transferTrace.record(0, message);
     if (this.socket.readyState === WebSocket.OPEN)
       this.socket.send(encodeMessage(message, this.writer) as Uint8Array<ArrayBuffer>);
   }
