@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-13: #85 wall-clock credit done locally (replication ~110 ms, 0 corrections, no queue warnings). CI retry trace showed `water` not `air`: mined block next to water floods -> test target choice. Approved: deterministic 50 ms clock in Codex's own m21c-survival-replay.test.ts; m21c-world target must have no fluid neighbours (assertions unchanged).
 - 2026-11-13: #85 speed fix pushed (credit per tick + survival replay fix) but head CI red: m21c-world 3/3 fail. Owner had said green. Sent Codex wall-clock credit fix.
 - 2026-11-13: #85 follow-up green (0 corrections, socket worker, input-driven server). Found speed hole (3 steps/tick sustained); sent Codex credit-limit fix before round 2.
 - 2026-11-12: #85 input-driven server done locally (M21b tests unedited) but delayed walk still 116 corrections. Approved adapting 4 of M21c's OWN new unit tests to the approved timing (exact values, fixture mirrors real server, packet pause < 5 ticks stays 0). Told Codex to classify the 116 via the trace before further changes; QUESTION after 3 approaches.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-10: #83 fix 8a29281 green (owner). Sent round 2 to reviewer.
 - 2026-11-10: #83 M21a round 1 CHANGES NEEDED: (1) lint misses WebGL* other than WebGL2RenderingContext -> generate from lib.dom like HTML*Element + test; (2) EntityMove delta path never used for real floats (only exact 1/4096 multiples) -> quantise deltas to i16 at 1/4096, sender baseline = reconstructed pose (mutated in place, no alloc), large jumps absolute, multi-tick non-dyadic test (err <= 1/8192, no drift). Non-blocking: status/title verified, unused InputState, add self.*. Everything else verified OK.
 - 2026-11-10: #83 M21a CI green (4 shards, harness guard, Pages build). Gave Sonnet reviewer prompt.
-- 2026-11-10: M21a gate (511b414): 40 lint violations fixed, 22 message types, unit 1428/137 files, touched e2e 153 passed 3 failed (m04 pump, m17b:579 known; m17b:232 ordinary autosave NEW - likely container, CI decides). 4 renames R098-R100 (world-manager -> src/game, noise -> src/gen/texture-noise, frustum + light-curve -> src/world); 18 tests import-path only; M11a/M14/M20c untouched. Recommended owner approve.
