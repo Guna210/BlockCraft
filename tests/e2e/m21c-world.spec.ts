@@ -138,43 +138,17 @@ test('two players render one another and replicate a block edit within 500 ms', 
         { timeout: 60000, intervals: [20] },
       )
       .toBe('air');
-    const reportTransfers = async () => {
-      const traces = await Promise.all(
-        [page, b.page].map((client) =>
-          client.evaluate(
-            ([x, y, z]) => ({
-              transfers: window.__blockcraft!.getNetTransferTrace!().filter(
-                (event) => event.type === 7 || (event.x === x && event.y === y && event.z === z),
-              ),
-              frames: window.__blockcraft!.getFrameStats!(),
-              visibility: document.visibilityState,
-            }),
-            block,
-          ),
-        ),
-      );
-      console.log('M21c block transfer trace', JSON.stringify(traces));
-    };
     const start = Date.now();
-    try {
-      await expect
-        .poll(
-          () => page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block),
-          {
-            timeout: 500,
-            intervals: [20],
-          },
-        )
-        .toBe('air');
-    } catch (error) {
-      await reportTransfers().catch(() => {});
-      throw error;
-    }
+    await expect
+      .poll(() => page.evaluate(([x, y, z]) => window.__blockcraft!.getBlock!(x, y, z).id, block), {
+        timeout: 500,
+        intervals: [20],
+      })
+      .toBe('air');
     const elapsed = Date.now() - start;
     console.log('M21c block replication ms', elapsed);
     expect(elapsed).toBeLessThanOrEqual(500);
     await b.page.evaluate(() => window.__blockcraft!.input!('attack', false));
-    await reportTransfers();
     await assertHealthy(b.page, b.errors);
   } catch (error) {
     const state = await Promise.all(

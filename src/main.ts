@@ -147,15 +147,45 @@ async function main() {
   const multiplayerScreen = new MultiplayerScreen(
     () => menu.refresh(),
     async (connection) => {
-      const { RemoteSession } = await import('./game/net/session');
+      const [{ RemoteSession }, { MultiplayerErrorDrain, installSessionErrorDrain }] =
+        await Promise.all([import('./game/net/session'), import('./game/net/error-drain')]);
       if (!connection.open) throw new Error('Connection lost');
-      new RemoteSession(connection, worldManager, chat, async () => {
-        chat.close();
-        creativeInventory.close();
-        ui.close();
-        await worldManager.quitToMenu();
-        menu.show();
-      });
+      const normalDrain = frameDrain;
+      const multiplayerDrain = normalDrain
+        ? new MultiplayerErrorDrain(
+            gl,
+            () => glWrapper.drainErrors(),
+            (fence) => {
+              const status = gl.clientWaitSync(fence, 0, 0);
+              return status === gl.ALREADY_SIGNALED || status === gl.CONDITION_SATISFIED;
+            },
+          )
+        : null;
+      const restoreErrorDrain = installSessionErrorDrain(
+        normalDrain,
+        multiplayerDrain,
+        (collector) => {
+          frameDrain = collector;
+        },
+      );
+      try {
+        new RemoteSession(
+          connection,
+          worldManager,
+          chat,
+          async () => {
+            chat.close();
+            creativeInventory.close();
+            ui.close();
+            await worldManager.quitToMenu();
+            menu.show();
+          },
+          restoreErrorDrain,
+        );
+      } catch (error) {
+        restoreErrorDrain();
+        throw error;
+      }
     },
   );
   const menu = new MainMenu(

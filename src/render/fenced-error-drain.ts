@@ -31,7 +31,7 @@ export interface FenceGL {
 
 export class FencedErrorDrain {
   /** Fences of frames whose errors have not been read yet, oldest first. */
-  private readonly pending: WebGLSync[] = [];
+  protected readonly pending: WebGLSync[] = [];
   /** Drains performed (blocking or not), for tests and stats. */
   public drains = 0;
 
@@ -40,7 +40,7 @@ export class FencedErrorDrain {
     /** Reads gl.getError() until NO_ERROR and counts the errors. */
     private readonly drain: () => void,
     /** Optional zero-timeout native poll. An idle latest fence makes the error read nonblocking. */
-    private readonly pollLatest?: (fence: WebGLSync) => boolean,
+    protected readonly pollLatest?: (fence: WebGLSync) => boolean,
   ) {}
 
   /** Fences of frames still waiting for their drain. */
@@ -85,7 +85,7 @@ export class FencedErrorDrain {
     for (const fence of this.pending.splice(0)) this.gl.deleteSync(fence);
   }
 
-  private isSignalled(fence: WebGLSync): boolean {
+  protected isSignalled(fence: WebGLSync): boolean {
     return this.gl.getSyncParameter(fence, this.gl.SYNC_STATUS) === this.gl.SIGNALED;
   }
 }

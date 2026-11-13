@@ -75,6 +75,7 @@ export class RemoteSession {
     readonly manager: WorldManager,
     readonly chat: Chat,
     readonly leave: () => Promise<void>,
+    private readonly restoreErrorDrain: () => void = () => {},
   ) {
     const controller = manager.playerController!;
     if (activeUi.manager) activeUi.manager.inventoryOnly = true;
@@ -87,7 +88,6 @@ export class RemoteSession {
       }));
     api.getNetPredictionTrace = () => this.prediction?.trace.map((entry) => ({ ...entry })) ?? [];
     api.getNetBlockUpdates = () => this.updates.map((update) => ({ ...update }));
-    api.getNetTransferTrace = () => connection.transferTrace.snapshot();
     chat.multiplayerSubmit = (line) => {
       if (line.startsWith('/')) {
         chat.message('Commands are unavailable in multiplayer');
@@ -101,6 +101,7 @@ export class RemoteSession {
     };
     connection.onClose = (reason) => {
       if (!this.connected) return;
+      this.restoreErrorDrain();
       this.connected = false;
       window.clearInterval(this.pingTimer);
       window.clearTimeout(this.tickTimer);
@@ -142,12 +143,12 @@ export class RemoteSession {
     );
 
     manager.remoteExit = () => {
+      this.restoreErrorDrain();
       this.disposed = true;
       if (activeUi.manager) activeUi.manager.inventoryOnly = false;
       api.getRemoteEntities = () => [];
       api.getNetPredictionTrace = () => [];
       api.getNetBlockUpdates = () => [];
-      api.getNetTransferTrace = () => [];
       this.disconnectScreen?.dispose();
       chat.multiplayerSubmit = null;
       chat.close();
@@ -393,7 +394,6 @@ export class RemoteSession {
         this.portals?.column(message.cx, message.cz);
         this.waiting.get(key)?.resolve(result);
         this.waiting.delete(key);
-        this.connection.transferTrace.record(3, message);
         break;
       }
       case MessageType.ChunkUnload:
@@ -407,7 +407,6 @@ export class RemoteSession {
         if (message.dimension === m.dimension) {
           m.world?.setBlockStateId(message.x, message.y, message.z, message.stateId);
           this.portals?.edit(message.x, message.y, message.z);
-          this.connection.transferTrace.record(3, message);
           this.updates.push({
             x: message.x,
             y: message.y,

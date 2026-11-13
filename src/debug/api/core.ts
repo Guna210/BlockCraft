@@ -1,5 +1,4 @@
 export interface BlockCraftDebugAPI {
-  getNetTransferTrace?: () => import('../../game/net/transfer-trace').TransferEvent[];
   ready(): Promise<void>;
   getNetStats?: () => {
     connected: boolean;
