@@ -184,6 +184,12 @@ export class Player {
       if (this.down(action)) out[32] = out[32]! | bit;
       bit <<= 1;
     }
+    // Shared physics can damage/exhaust the player. Replay must restore these effects too.
+    out[33] = this.health;
+    out[34] = this.hunger;
+    out[35] = this.saturation;
+    out[36] = this.survival.exhaustion;
+    out[37] = Number(this.dead);
   }
   readPredictionState(state: Float64Array): void {
     this.pos[0] = state[0]!;
@@ -218,6 +224,11 @@ export class Player {
     this.jumpDown = !!state[29];
     this.forwardPressed = !!state[30];
     this.jumpPressed = !!state[31];
+    this.health = state[33]!;
+    this.hunger = state[34]!;
+    this.saturation = state[35]!;
+    this.survival.exhaustion = state[36]!;
+    this.dead = !!state[37];
     let bit = 1;
     for (const action of PREDICTION_ACTIONS) {
       this.actions.set(action, !!(state[32]! & bit));

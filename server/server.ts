@@ -202,7 +202,7 @@ export class AuthoritativeServer {
         inputHead: 0,
         inputTail: 0,
         receivedInputs: 0,
-        movementClock: new MovementClock(),
+        movementClock: new MovementClock(true),
         revision: 0,
         inventoryState: new InventoryState(),
         inventory: { type: T.InventorySync, windowId: 0, revision: 0, slots: [], cursor: null },
@@ -721,9 +721,14 @@ export class AuthoritativeServer {
         peer.transport.send(peer.ping);
       }
       peer.receivedInputs = 0;
+      peer.movementClock.beginTick();
       if (!peer.actor || peer.travel.travelling) continue;
       let appliedInputs = 0;
-      while (peer.inputHead !== peer.inputTail && appliedInputs < MAX_INPUT_STEPS) {
+      while (
+        peer.inputHead !== peer.inputTail &&
+        appliedInputs < MAX_INPUT_STEPS &&
+        peer.movementClock.canStep
+      ) {
         const input = peer.inputs[peer.inputHead]!;
         const player = peer.actor.player;
         player.yaw = input.look[0] % (2 * Math.PI);
@@ -743,7 +748,11 @@ export class AuthoritativeServer {
         peer.inputs[peer.inputHead] = null;
         peer.inputHead = (peer.inputHead + 1) % 8;
       }
-      peer.movementClock.finishTick(peer.actor.player, appliedInputs);
+      peer.movementClock.finishTick(
+        peer.actor.player,
+        appliedInputs,
+        peer.inputHead === peer.inputTail,
+      );
     }
     for (const dimension of this.dimensions.values()) dimension.tick();
     advance();
