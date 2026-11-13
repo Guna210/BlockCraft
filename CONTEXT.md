@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-13: #85 CI #373 red: m21c-world 500 ms replication fails 3/3; walk 0 corrections. Codex: A's main thread stalls 1.35-2 s in FencedErrorDrain blocking getError (cap 4 frames, src/render/fenced-error-drain.ts:64, game code not harness) under 2 SwiftShader contexts. Approved multiplayer-only nonblocking drain with conditions: SP unchanged, no error lost (blocking drainNow on getRenderStats/quit/disconnect + unit test), larger hard cap instead of unbounded, decisions note; remove diagnostic TransferTrace from production.
 - 2026-11-13: #85 wall-clock credit done locally (replication ~110 ms, 0 corrections, no queue warnings). CI retry trace showed `water` not `air`: mined block next to water floods -> test target choice. Approved: deterministic 50 ms clock in Codex's own m21c-survival-replay.test.ts; m21c-world target must have no fluid neighbours (assertions unchanged).
 - 2026-11-13: #85 speed fix pushed (credit per tick + survival replay fix) but head CI red: m21c-world 3/3 fail. Owner had said green. Sent Codex wall-clock credit fix.
 - 2026-11-13: #85 follow-up green (0 corrections, socket worker, input-driven server). Found speed hole (3 steps/tick sustained); sent Codex credit-limit fix before round 2.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-10: #83 M21a round 2 PASS (WebGL lint + self fixed; 3528/3528 deltas, 14.1 B avg, err <= 1/8192 no drift). Non-blocking: status/title/PR body stale; entityMove `delete` dictionary mode (M21b note). Told owner: Codex docs push, then merge.
 - 2026-11-10: #83 fix 8a29281 green (owner). Sent round 2 to reviewer.
 - 2026-11-10: #83 M21a round 1 CHANGES NEEDED: (1) lint misses WebGL* other than WebGL2RenderingContext -> generate from lib.dom like HTML*Element + test; (2) EntityMove delta path never used for real floats (only exact 1/4096 multiples) -> quantise deltas to i16 at 1/4096, sender baseline = reconstructed pose (mutated in place, no alloc), large jumps absolute, multi-tick non-dyadic test (err <= 1/8192, no drift). Non-blocking: status/title verified, unused InputState, add self.*. Everything else verified OK.
-- 2026-11-10: #83 M21a CI green (4 shards, harness guard, Pages build). Gave Sonnet reviewer prompt.
