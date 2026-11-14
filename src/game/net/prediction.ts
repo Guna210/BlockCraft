@@ -7,6 +7,8 @@ const ACTIONS = ['jump', 'sneak', 'sprint', 'attack', 'use', 'pick'] as const;
 /** Fixed storage for intent, post-tick pose and replay state. No tick allocates a record. */
 export class Prediction {
   corrections = 0;
+  private dead = false;
+  private vitals: Messages[T.PlayerVitals] | null = null;
   readonly trace: Array<{
     sequence: number;
     predicted: number[];
@@ -54,9 +56,61 @@ export class Prediction {
     this.sequence = sequence;
     player.writePredictionState(this.authoritative);
   }
+  applyVitals(v: Messages[T.PlayerVitals]): void {
+    this.vitals = v;
+    this.restoreVitals();
+    this.dead = v.dead;
+    this.vitalsState(this.authoritative, v);
+    if (this.provisional) this.vitalsState(this.provisionalBase, v);
+    if (v.dead) {
+      this.provisional = false;
+      this.player.clearInput();
+    }
+  }
+  private restoreVitals(): void {
+    const v = this.vitals;
+    if (!v) return;
+    const p = this.player;
+    p.health = v.health;
+    p.hunger = v.hunger;
+    p.saturation = v.saturation;
+    p.air = v.air;
+    p.burning = v.burning;
+    if (p.mode !== v.mode) p.setGameMode(v.mode);
+    p.dead = this.dead = v.dead;
+    p.xpLevel = v.xpLevel;
+    p.xpProgress = v.xpProgress;
+  }
+
+  private vitalsState(state: Float64Array, v: Messages[T.PlayerVitals]): void {
+    state[33] = v.health;
+    state[34] = v.hunger;
+    state[35] = v.saturation;
+    state[37] = Number(v.dead);
+    state[38] = v.air;
+    state[39] = Number(v.burning);
+    state[40] = Number(v.mode === 'creative');
+    state[41] = v.xpLevel;
+    state[42] = v.xpProgress;
+    if (v.mode === 'survival') state[12] = 0;
+  }
+  respawn(position: readonly [number, number, number]): void {
+    const p = this.player;
+    this.head = this.count = 0;
+    this.provisional = false;
+    this.dead = false;
+    this.vitals = null;
+    this.movementClock.reset();
+    p.survival.reset();
+    p.clearInput();
+    p.teleport(...position);
+    p.onGround = p.collision.supported(...position, 1e-5);
+    p.writePredictionState(this.authoritative);
+  }
   tick(immediate = false): boolean {
     // The server's wire queue holds seven inputs. Reserve one slot for immediate input.
     // Backpressure also prevents timer catch-up from flooding a stalled server.
+    if (this.dead) return false;
     if (this.count >= (immediate ? 7 : 6)) return false;
     const frame = this.nextFrame();
     frame.sequence = this.sequence = (this.sequence + 1) >>> 0;
@@ -69,12 +123,13 @@ export class Prediction {
     this.send(frame);
     this.apply(frame);
     this.player.tick();
+    this.restoreVitals();
     this.player.writePredictionState(frame.state);
     return true;
   }
   /** Immediate local response while the transport assigns the actual sequence. */
   speculate(input: Messages[T.PlayerInput]): boolean {
-    if (this.provisional) return false;
+    if (this.dead || this.provisional) return false;
     this.player.writePredictionState(this.provisionalBase);
     this.provisionalInput.movement[0] = input.movement[0];
     this.provisionalInput.movement[1] = input.movement[1];
@@ -84,10 +139,12 @@ export class Prediction {
     this.provisional = true;
     this.apply(this.provisionalInput);
     this.player.tick();
+    this.restoreVitals();
     return true;
   }
   /** Predict the exact sequenced input emitted by the independent transport clock. */
   receiveInput(input: Messages[T.PlayerInput], immediateReceipt = false): void {
+    if (this.dead) return;
     const yaw = this.player.yaw,
       pitch = this.player.pitch;
     if (this.provisional) this.player.readPredictionState(this.provisionalBase);
@@ -100,6 +157,7 @@ export class Prediction {
     frame.actions = input.actions;
     this.apply(frame);
     this.player.tick();
+    this.restoreVitals();
     this.player.writePredictionState(frame.state);
     if (immediateReceipt) this.provisional = false;
     if (this.provisional) this.replayProvisional();
@@ -111,6 +169,7 @@ export class Prediction {
     this.player.writePredictionState(this.provisionalBase);
     this.apply(this.provisionalInput);
     this.player.tick();
+    this.restoreVitals();
   }
   private nextFrame() {
     if (this.count === CAPACITY) {
@@ -120,6 +179,13 @@ export class Prediction {
     return this.frames[(this.head + this.count++) % CAPACITY]!;
   }
   correct(message: Messages[T.PlayerCorrection]): void {
+    if (this.dead) {
+      this.head = this.count = 0;
+      this.player.teleport(...message.position);
+      this.player.clearInput();
+      this.player.writePredictionState(this.authoritative);
+      return;
+    }
     let found = -1;
     for (let i = 0; i < this.count; i++) {
       if (this.frames[(this.head + i) % CAPACITY]!.sequence === message.acknowledged) {
@@ -137,8 +203,10 @@ export class Prediction {
     for (let i = 0; i < appliedInputs; i++) {
       this.apply(this.frames[(this.head + i) % CAPACITY]!);
       this.movementClock.input(this.player);
+      this.restoreVitals();
     }
     this.movementClock.finishTick(this.player, appliedInputs);
+    this.restoreVitals();
     if (frame) {
       this.head = (this.head + appliedInputs) % CAPACITY;
       this.count -= appliedInputs;
@@ -154,6 +222,7 @@ export class Prediction {
       const pending = this.frames[(this.head + i) % CAPACITY]!;
       this.apply(pending);
       this.player.tick();
+      this.restoreVitals();
       this.player.writePredictionState(pending.state);
     }
     if (this.provisional) this.replayProvisional();

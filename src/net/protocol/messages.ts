@@ -2,7 +2,7 @@ import type { DimensionId } from '../../world/dimension';
 import type { ItemAffix } from '../../gameplay/items';
 
 /** Change this when any wire layout or enum meaning changes. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const MAX_STRING_BYTES = 256;
 export const MAX_CHUNK_BYTES = 1024 * 1024;
 export const MAX_INVENTORY_SLOTS = 128;
@@ -34,6 +34,9 @@ export enum MessageType {
   WeatherSync,
   BlockAction,
   PlayerList,
+  PlayerVitals,
+  RespawnRequest,
+  PlayerRespawn,
 }
 
 export enum BlockActionKind {
@@ -86,6 +89,25 @@ export interface EntityPose {
 }
 
 export interface Messages {
+  [MessageType.PlayerVitals]: {
+    type: MessageType.PlayerVitals;
+    health: number;
+    hunger: number;
+    saturation: number;
+    air: number;
+    burning: boolean;
+    mode: 'survival' | 'creative';
+    dead: boolean;
+    deathCause: string;
+    xpLevel: number;
+    xpProgress: number;
+  };
+  [MessageType.RespawnRequest]: { type: MessageType.RespawnRequest };
+  [MessageType.PlayerRespawn]: {
+    type: MessageType.PlayerRespawn;
+    dimension: DimensionId;
+    position: Vector3;
+  };
   [MessageType.PlayerList]: {
     type: MessageType.PlayerList;
     players: readonly { name: string; pingMs: number }[];
