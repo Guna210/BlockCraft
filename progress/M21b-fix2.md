@@ -1,10 +1,30 @@
 # M21b-fix2 — Multiplayer player vitals, death and respawn
 
-Status: incomplete — implementation and local verification complete; PR CI pending
+Status: verified
 Depends on: M21b, M21c (master `ff53966`, including PR #85)
 Full verify: PR CI
 
-## Verification
+## Verified source CI
+
+- Approved source commit `8e57b8474c840bf0481dfe308124a9496ace50bd` passed
+  [Verify #377](https://github.com/Guna210/BlockCraft/actions/runs/43592267670).
+  Typecheck, lint, placeholders, all four shards, aggregate verify and the harness
+  guard are green. Unit: **157 files / 1520 tests passed**. Browser: **195 passed /
+  0 flaky / 0 failed**. Every M21 browser test passed on its first attempt; no
+  manual or automatic retries were used.
+- Browser shards: **49 passed (20.1m)**, **49 passed (5.0m)**,
+  **49 passed (8.0m)** and **48 passed (27.8m)**. All shard logs were reviewed for
+  browser totals and M21 retry markers; none contain a test retry or flaky result.
+- CI delayed walk: **0 counted corrections**, **41.405828089690374 blocks**,
+  **166.70000000018626 ms RTT**; next-frame x **0.5 → 0.6**. CI block replication:
+  **76 ms**, below the unchanged 500 ms limit. The existing fixture console,
+  network, uncaught-error and WebGL checks passed.
+- [PR #86](https://github.com/Guna210/BlockCraft/pull/86) contains the implementation
+  and reviewed screenshot. This is a documentation-only follow-up to that green
+  source commit; its head CI is checked again before final handoff.
+  Full verify: PR CI.
+
+## Local verification
 
 - Focused gameplay browser test: **1 passed (1.7m)**, including actual nonzero
   reduced-health HUD pixels, server-snapshot agreement, drowning death, respawn,
@@ -22,8 +42,8 @@ Full verify: PR CI
   WebGL checks passed. Physics/camera, inventory/HUD, hazards/death/bed respawn,
   audio, menus/settings/chat and dimension travel/persistence remain intact.
 - Full verify: PR CI. No local full verify was run under the owner's override.
-  The owner approved the explicit publish gate; head CI must be green with
-  every M21 test passing on its first attempt before final verified handoff.
+  The owner approved the explicit publish gate; source CI passed with every M21
+  test succeeding on its first attempt, as recorded above.
 
 ## Acceptance criteria owned
 
@@ -79,8 +99,7 @@ fields, single-player tick/frame branches or server tick bookkeeping allocations
 
 ## Known limitations
 
-- Implementation and local verification are complete. PR CI is the remaining
-  verification gate. Full verify: PR CI.
+- No unfinished scope items or open blockers. Full verify: PR CI.
 - Existing tests are unchanged except the three pre-approved M21a round-trip
   fixtures. No harness changes, test-only server behavior or relaxed thresholds.
 
