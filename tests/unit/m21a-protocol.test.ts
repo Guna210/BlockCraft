@@ -22,6 +22,21 @@ import { deflate, inflate } from '../../src/persist/compress';
 
 // Exhaustive at compile time and runtime. Enum additions must supply a real round-trip fixture.
 const cases: { [K in T]: Messages[K] } = {
+  [T.PlayerVitals]: {
+    type: T.PlayerVitals,
+    health: 0,
+    hunger: 7,
+    saturation: 1.5,
+    air: 0,
+    burning: true,
+    mode: 'survival',
+    dead: true,
+    deathCause: 'Drowned',
+    xpLevel: 3,
+    xpProgress: 0.25,
+  },
+  [T.RespawnRequest]: { type: T.RespawnRequest },
+  [T.PlayerRespawn]: { type: T.PlayerRespawn, dimension: 'hollowdeep', position: [-1.5, 65, 4] },
   [T.PlayerList]: {
     type: T.PlayerList,
     players: [

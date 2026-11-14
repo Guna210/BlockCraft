@@ -71,7 +71,7 @@ export class Connection {
         const decoded = decodeMessage(new Uint8Array(event.data));
         if (!decoded.ok) return;
         const message = decoded.message;
-        if (message.type === MessageType.Ping)
+        if (message.type === MessageType.Ping && !connection.threaded)
           connection.send({ type: MessageType.Pong, id: message.id });
         if (message.type === MessageType.LoginReject && !settled) {
           fail(message.reason);

@@ -491,6 +491,11 @@ export class UiManager {
     window.requestAnimationFrame(animate);
   }
 
+  /** Server-authorized multiplayer respawn/travel closes the existing death overlay. */
+  closeDeath(): void {
+    if (this.screen === 'death') this.finishOverlay();
+  }
+
   private finishOverlay(): void {
     if (!this.screen) return;
     this.screen = null;

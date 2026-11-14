@@ -190,6 +190,11 @@ export class Player {
     out[35] = this.saturation;
     out[36] = this.survival.exhaustion;
     out[37] = Number(this.dead);
+    out[38] = this.air;
+    out[39] = Number(this.burning);
+    out[40] = Number(this.mode === 'creative');
+    out[41] = this.xpLevel;
+    out[42] = this.xpProgress;
   }
   readPredictionState(state: Float64Array): void {
     this.pos[0] = state[0]!;
@@ -229,6 +234,11 @@ export class Player {
     this.saturation = state[35]!;
     this.survival.exhaustion = state[36]!;
     this.dead = !!state[37];
+    this.air = state[38]!;
+    this.burning = !!state[39];
+    this.mode = state[40] ? 'creative' : 'survival';
+    this.xpLevel = state[41]!;
+    this.xpProgress = state[42]!;
     let bit = 1;
     for (const action of PREDICTION_ACTIONS) {
       this.actions.set(action, !!(state[32]! & bit));
