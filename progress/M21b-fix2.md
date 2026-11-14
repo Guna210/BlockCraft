@@ -1,8 +1,31 @@
 # M21b-fix2 — Multiplayer player vitals, death and respawn
 
-Status: verified
+Status: incomplete — latest head CI required an M21 retry
 Depends on: M21b, M21c (master `ff53966`, including PR #85)
 Full verify: PR CI
+
+## Latest head CI — first-attempt gate not satisfied
+
+- Documentation head `dd79eade5ddca6b813ffc1e6da9afb36ab5d10f6` completed
+  [Verify #378](https://github.com/Guna210/BlockCraft/actions/runs/43594726476)
+  with green GitHub checks, but it does **not** satisfy the owner's no-M21-retry
+  requirement. Unit: **157 files / 1520 tests passed**. Browser: **193 passed /
+  2 flaky / 0 failed**.
+- The existing `tests/e2e/m21c-world.spec.ts:147` replication assertion missed its
+  unchanged **500 ms** deadline on the first attempt and passed on automatic
+  retry (**71 ms**). Receiver diagnostics reported a maximum GL check of
+  **2220.1999999999534 ms**. These diagnostics suggest presentation delay; they do
+  not establish that the new vitals code caused it. The delayed walk still
+  recorded **0 corrections**.
+- The other flaky case was the existing M04 render-distance-12 horizon test.
+  It was not investigated or manually retried under the owner's exception.
+- No manual CI rerun was requested. No existing test was edited beyond the
+  pre-approved M21a fixtures, and no assertion or deadline was relaxed.
+- Final verification remains incomplete. The execution environment became
+  unavailable after publication. An owner QUESTION is pending before any
+  proposed edit to the existing M21c test; the earlier green source run below
+  remains valid evidence for the implementation but does not clear this latest
+  head result.
 
 ## Verified source CI
 
@@ -20,8 +43,8 @@ Full verify: PR CI
   **76 ms**, below the unchanged 500 ms limit. The existing fixture console,
   network, uncaught-error and WebGL checks passed.
 - [PR #86](https://github.com/Guna210/BlockCraft/pull/86) contains the implementation
-  and reviewed screenshot. This is a documentation-only follow-up to that green
-  source commit; its head CI is checked again before final handoff.
+  and reviewed screenshot. Its documentation-only follow-up was checked in
+  Verify #378; the latest result above supersedes the verified status.
   Full verify: PR CI.
 
 ## Local verification
@@ -99,7 +122,8 @@ fields, single-player tick/frame branches or server tick bookkeeping allocations
 
 ## Known limitations
 
-- No unfinished scope items or open blockers. Full verify: PR CI.
+- Implementation is complete. Final verification awaits resolution of the M21c
+  replication retry reported above. Full verify: PR CI.
 - Existing tests are unchanged except the three pre-approved M21a round-trip
   fixtures. No harness changes, test-only server behavior or relaxed thresholds.
 
