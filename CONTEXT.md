@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 
 ## Setup
 
@@ -47,15 +47,14 @@ Last updated: 2026-11-13
 
 ## Task status
 
-Done (merged; notes in `progress/`): every SPEC task M00a–M21b (latest: M20c #82, M21a #83 a60a64a, M21b #84 = master b95348a), plus M13h (owner-added Cinderwraith), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Last block id on master: 834 (blast_charge 820, M19c 821-824, M20b 825-832, portal 833-834).
+Done (merged; notes in `progress/`): every SPEC task M00a–M21c (latest: M21a #83, M21b #84, M21c #85 = master ff53966), plus M13h (owner-added Cinderwraith), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Last block id on master: 834 (blast_charge 820, M19c 821-824, M20b 825-832, portal 833-834).
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
-Remaining SPEC tasks: M21c (serial); after M21c: M22a, M22c, M22d in parallel; M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21c PR #85 head eb2ba84, CI green (run 43466052812; all shards pass, shard 1 and 4 no flaky, walk 0 corrections, replication 46 ms). Round 2 (same Sonnet session) VERDICT PASS 2026-11-13. Told owner to merge. Design now: input-driven server movement (src/net/movement-clock.ts, wall-clock credit burst 3, neutral tick after 5 empty ticks), socket+input clock in a module worker, visible-snap counter, survival slots 33-37 in prediction checkpoint, MP-only GL error drain (cap 16, src/game/net/error-drain.ts).
-Round 2 non-blocking (for M21b-fix2/M22): client runs Player.tick so local fall damage/exhaustion show on HUD while server damage never arrives; credit-starved server queue vs client neutral-tick mirror can diverge after >=5 starved ticks (dishonest/extreme only, counted); players with no input <5 ticks pause gravity up to 250 ms; progress cites run on de1afe7 (docs-only after).
-Found in review: server has NO respawn path (player.dead only blocks actions; dead player stuck until reconnect) and client gets no health/hunger/mode/death (HUD always full). M21b gap, not M21c. Proposed follow-up M21b-fix2 (vitals/mode/death/respawn protocol + death screen + server respawn); owner to choose order vs M21b-fix (containers). Both bump the protocol and touch server.ts -> run serially.
-After M21c: review (new Sonnet session), then M21b-fix + M22a/M22c/M22d.
+Remaining SPEC tasks: M22a, M22c, M22d (all ready, parallel); M22b after M22a; M23 last (+ M23-fix-N).
+In flight: M21b-fix2 (owner-added: MP vitals/mode/death/respawn), Codex, branch claude/m21b-fix2, prompt given 2026-11-14. Decisions: protocol v4; PlayerVitals S->C (health, hunger, saturation, air, burning, mode, dead, death cause) per-peer preallocated, sent on change + every 20 ticks; client applies to live player + authoritative prediction checkpoint, HUD from it, hurt feedback on health drop; RespawnRequest C->S (only if dead) -> server mirrors SP PlayerController.respawn (bed/world spawn, survival.reset, clearInput; other dimension -> existing travel/ServerHello path); PlayerRespawn S->C {dimension, position} resets prediction without counting a correction; death screen via ui.showDeath, ui.onRespawn swapped in session; dead player removed for others (EntityRemove) and respawned (EntitySpawn); reconnect while dead -> death screen; m21a-protocol fixtures for new types pre-approved; e2e via real gameplay on a test-owned server, else QUESTION (no test-only server hooks).
+Done: M21c #85 merged (master ff53966), 2 review rounds; notes in decisions/M21c-client.md.
+Order (owner 2026-11-14): M21b-fix2 now, then M21b-fix (containers); both bump protocol + touch server.ts -> serial. M22a/M22c/M22d can run alongside.
 Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
 Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
@@ -105,6 +104,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-14: #85 M21c merged (ff53966). Owner chose M21b-fix2 (vitals/death/respawn) first; gave Codex prompt.
 - 2026-11-13: #85 M21c round 2 PASS. Told owner to merge; next: owner picks order of M21b-fix2 (vitals/death/respawn, recommended first) and M21b-fix (containers); M22a/M22c/M22d can start after merge.
 - 2026-11-13: #85 head eb2ba84 CI green (run 43466052812; shard 4: walk 0 corrections, replication 46 ms, no flaky). MP-only drain (cap 16, blocking drainNow on stats/quit/disconnect), TransferTrace removed, blocker resolved. Sent round 2 to reviewer session_0155bUSB9aPA99FKYrb2QCyC myself.
 - 2026-11-13: #85 CI #373 red: m21c-world 500 ms replication fails 3/3; walk 0 corrections. Codex: A's main thread stalls 1.35-2 s in FencedErrorDrain blocking getError (cap 4 frames, src/render/fenced-error-drain.ts:64, game code not harness) under 2 SwiftShader contexts. Approved multiplayer-only nonblocking drain with conditions: SP unchanged, no error lost (blocking drainNow on getRenderStats/quit/disconnect + unit test), larger hard cap instead of unbounded, decisions note; remove diagnostic TransferTrace from production.
@@ -124,4 +124,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-11: #84 M21b green (45 files, +4130). Server: RSS 109 MiB idle / 330 MiB with 2 clients, CPU 0.7% / 20.5% of one core, tick p95 0.2 / 2.5 ms, saves 117 KiB. Protocol v2. Limitations: inventory window 0 only (chests/kilns not usable via client windows?), async server light staleness. Shared changes in M06/M07/M11/M13/M14/M19/M20 code. Gave reviewer prompt.
 - 2026-11-11: M21b Codex QUESTION (zero alloc scope). Answered option 1: no steady-state allocations in server/ own bookkeeping; shared sim allocations as in single-player and ws internals OK; one copy per sent frame OK; no shared ECS refactor.
 - 2026-11-11: #83 M21a merged (a60a64a). Gave M21b prompt (Codex). Decisions: Vite SSR build (vite.server.config.ts -> dist-server/, build:server + server scripts, ws runtime dep, @types/ws dev), tsconfig include server, lint forbids ws/node:/server imports in src; server tick mirrors PlayerController order with shared modules, one World per dimension lazily; gen (and light if needed) on worker_threads, deterministic vs client; server-authoritative movement from PlayerInput, PlayerCorrection ack every tick; new BlockAction messages (start/finish/abort break, place; x,y,z,face,slot) PROTOCOL_VERSION 2; validation reach (combat.ts SURVIVAL/CREATIVE_REACH + 1 tolerance), break speed (shared hardness/tool, latency tolerance), speed/teleport -> correction, inventory revisions; disk: <world>/level.json, <dim>/r.<rx>.<rz>.bin 32x32 columns M17a format, players/<name>.bin, entities, atomic writes, autosave 60 s + SIGINT/SIGTERM; CLI --world --seed --port --view-distance --delay-ms (N/2 each way) --max-players --reset-world; GET /health; Playwright webServer 3001 plain + 3002 delay 150, worlds under artifacts/; integration tests vitest node env + tiny m21b e2e via Node ws; handoff RAM/CPU/tick p95/save size + lean install.
-- 2026-11-10: #83 M21a round 2 PASS (WebGL lint + self fixed; 3528/3528 deltas, 14.1 B avg, err <= 1/8192 no drift). Non-blocking: status/title/PR body stale; entityMove `delete` dictionary mode (M21b note). Told owner: Codex docs push, then merge.
