@@ -14,6 +14,8 @@ import {
   type Messages,
   type EntityPose,
 } from '../src/net/protocol';
+import { clearPlayerInvulnerability } from '../src/gameplay/combat';
+import { deathCauseForDamageSource, resolveBedRespawn } from '../src/gameplay/death-beds';
 import { PISTON_LAND_TICK } from '../src/gameplay/mechanics';
 import { CREATIVE_REACH, SURVIVAL_REACH } from '../src/gameplay/combat';
 import { serializeColumn } from '../src/persist/column-format';
@@ -92,6 +94,8 @@ interface Peer {
   inventoryState: InventoryState;
   inventory: Messages[T.InventorySync];
   correction: Messages[T.PlayerCorrection];
+  vitals: Messages[T.PlayerVitals];
+  respawning: boolean;
   travel: PortalTravel;
   blockSequence: number;
   hasBlockSequence: boolean;
@@ -212,6 +216,20 @@ export class AuthoritativeServer {
           position: [0, 0, 0],
           velocity: [0, 0, 0],
         },
+        vitals: {
+          type: T.PlayerVitals,
+          health: 20,
+          hunger: 20,
+          saturation: 0,
+          air: 300,
+          burning: false,
+          mode: 'survival',
+          dead: false,
+          deathCause: '',
+          xpLevel: 0,
+          xpProgress: 0,
+        },
+        respawning: false,
         travel: new PortalTravel(),
         blockSequence: 0,
         hasBlockSequence: false,
@@ -387,6 +405,19 @@ export class AuthoritativeServer {
       return;
     }
     switch (message.type) {
+      case T.RespawnRequest:
+        if (peer.actor.player.dead && !peer.respawning) {
+          peer.respawning = true;
+          void this.respawn(peer)
+            .catch((error) => {
+              console.error(error);
+              this.disconnect(peer, 'Respawn failed');
+            })
+            .finally(() => {
+              peer.respawning = false;
+            });
+        }
+        break;
       case T.PlayerInput: {
         if (++peer.receivedInputs > 4) {
           if (peer.receivedInputs === 5) console.warn(`Input rate exceeded: ${peer.name}`);
@@ -471,7 +502,11 @@ export class AuthoritativeServer {
       join(this.options.world, 'players', `${encodeURIComponent(peer.name)}.bin`),
     );
     const saved = bytes
-      ? (JSON.parse(new TextDecoder().decode(bytes)) as { player: number[]; inventory: number[] })
+      ? (JSON.parse(new TextDecoder().decode(bytes)) as {
+          player: number[];
+          inventory: number[];
+          deathCause?: string;
+        })
       : null;
     const data = saved ? deserializePlayerData(Uint8Array.from(saved.player)) : null;
     const dimension = this.dimension(
@@ -493,6 +528,7 @@ export class AuthoritativeServer {
           dimension.world.getHeight(Math.floor(px), Math.floor(pz)) + 1,
           pz,
         );
+      peer.vitals.deathCause = saved?.deathCause ?? (actor.player.dead ? 'Killed' : '');
       peer.actor = actor;
       dimension.attach(actor);
       this.configureActor(peer);
@@ -504,6 +540,7 @@ export class AuthoritativeServer {
         dimension: dimension.id,
         time: getWorldTime(),
       });
+      this.syncVitals(peer, true);
       this.syncInventory(peer, false);
       this.syncTimeWeather(peer);
       this.broadcastPlayerList();
@@ -514,6 +551,13 @@ export class AuthoritativeServer {
   private configureActor(peer: Peer): void {
     const actor = peer.actor!;
     peer.movementClock.reset();
+    const onDeath = actor.player.survival.onDeath;
+    actor.player.survival.onDeath = (source) => {
+      onDeath(source);
+      peer.breaking.active = false;
+      peer.vitals.deathCause = deathCauseForDamageSource(source);
+      this.syncVitals(peer, true);
+    };
     // Held combat input must not also mine/place locally: BlockAction owns validated edits.
     actor.interaction.input = () => actor.interaction.clear();
     actor.onInteraction = () => this.processBlockActions(peer);
@@ -554,6 +598,88 @@ export class AuthoritativeServer {
       if (peer.actor) players.push({ name: peer.name, pingMs: peer.rttMs });
     const message: Messages[T.PlayerList] = { type: T.PlayerList, players };
     for (const peer of this.peers) if (peer.actor) peer.transport.send(message);
+  }
+  private syncVitals(peer: Peer, force = false): void {
+    const p = peer.actor!.player,
+      v = peer.vitals;
+    const changed =
+      v.health !== p.health ||
+      v.hunger !== p.hunger ||
+      v.saturation !== p.saturation ||
+      v.air !== p.air ||
+      v.burning !== p.burning ||
+      v.mode !== p.mode ||
+      v.dead !== p.dead ||
+      v.xpLevel !== p.xpLevel ||
+      v.xpProgress !== p.xpProgress;
+    v.health = p.health;
+    v.hunger = p.hunger;
+    v.saturation = p.saturation;
+    v.air = p.air;
+    v.burning = p.burning;
+    v.mode = p.mode;
+    v.dead = p.dead;
+    v.xpLevel = p.xpLevel;
+    v.xpProgress = p.xpProgress;
+    if (!p.dead) v.deathCause = '';
+    if (force || changed) peer.transport.send(v);
+  }
+  private async respawn(peer: Peer): Promise<void> {
+    const actor = peer.actor!,
+      p = actor.player;
+    const overworld = this.dimension('overworld');
+    overworld.pendingArrivals++;
+    actor.dimension.pendingArrivals++;
+    try {
+      await overworld.ensureColumn(0, 0);
+      if (p.spawnPoint) {
+        const cx = Math.floor(p.spawnPoint[0] / 16),
+          cz = Math.floor(p.spawnPoint[2] / 16);
+        for (let z = -1; z <= 1; z++)
+          for (let x = -1; x <= 1; x++) await actor.dimension.ensureColumn(cx + x, cz + z);
+      }
+      if (this.stopped || !this.peers.has(peer)) return;
+      const fallback: [number, number, number] = [0.5, overworld.world.getHeight(0, 0) + 1, 0.5];
+      const position = resolveBedRespawn(
+        actor.dimension.world,
+        p.spawnPoint,
+        fallback,
+        (x, y, z, height) => p.collision.free(x, y, z, height),
+      );
+      const to =
+        position[0] === fallback[0] && position[1] === fallback[1] && position[2] === fallback[2]
+          ? overworld
+          : actor.dimension;
+      clearPlayerInvulnerability(p);
+      p.survival.reset();
+      p.clearInput();
+      p.detached = false;
+      actor.bow.clear();
+      actor.combat.clear();
+      actor.interaction.clear();
+      peer.breaking.active = false;
+      peer.blockHead = peer.blockTail = 0;
+      peer.blockQueue.fill(null);
+      // Acknowledge queued pre-death inputs without applying them after respawn.
+      if (peer.inputHead !== peer.inputTail) {
+        peer.sequence = peer.inputs[(peer.inputTail + 7) % 8]!.sequence;
+        peer.hasSequence = true;
+      }
+      peer.inputs.fill(null);
+      peer.inputHead = peer.inputTail = 0;
+      peer.movementClock.reset();
+      if (to !== actor.dimension) {
+        this.replaceActor(peer, to, position);
+      } else {
+        p.teleport(...position);
+        p.onGround = p.collision.supported(...position, 1e-5);
+        peer.transport.send({ type: T.PlayerRespawn, dimension: to.id, position: p.pos });
+        this.syncVitals(peer, true);
+      }
+    } finally {
+      actor.dimension.pendingArrivals--;
+      overworld.pendingArrivals--;
+    }
   }
   private syncInventory(peer: Peer, detect = true): void {
     const player = peer.actor?.player;
@@ -731,16 +857,18 @@ export class AuthoritativeServer {
       ) {
         const input = peer.inputs[peer.inputHead]!;
         const player = peer.actor.player;
-        player.yaw = input.look[0] % (2 * Math.PI);
-        player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, input.look[1]));
-        player.setMovement(input.movement[0], input.movement[1]);
-        player.input('jump', !!(input.actions & F.Jump));
-        player.input('sneak', !!(input.actions & F.Sneak));
-        player.input('sprint', !!(input.actions & F.Sprint));
-        player.input('use', !!(input.actions & F.Use));
-        peer.actor.combat.input('attack', !!(input.actions & F.Attack));
-        peer.actor.combat.input('use', !!(input.actions & F.Use));
-        peer.actor.bow.input('use', !!(input.actions & F.Use));
+        if (!player.dead) {
+          player.yaw = input.look[0] % (2 * Math.PI);
+          player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, input.look[1]));
+          player.setMovement(input.movement[0], input.movement[1]);
+          player.input('jump', !!(input.actions & F.Jump));
+          player.input('sneak', !!(input.actions & F.Sneak));
+          player.input('sprint', !!(input.actions & F.Sprint));
+          player.input('use', !!(input.actions & F.Use));
+          peer.actor.combat.input('attack', !!(input.actions & F.Attack));
+          peer.actor.combat.input('use', !!(input.actions & F.Use));
+          peer.actor.bow.input('use', !!(input.actions & F.Use));
+        }
         peer.movementClock.input(player);
         appliedInputs++;
         peer.sequence = input.sequence;
@@ -764,13 +892,15 @@ export class AuthoritativeServer {
     this.refreshEntities();
     for (const peer of this.peers) {
       if (!peer.actor) continue;
+      this.syncVitals(peer, this.ticks % 20 === 0);
       peer.correction.acknowledged = peer.sequence;
       peer.transport.send(peer.correction);
-      peer.travel.tick(
-        peer.actor.dimension.world,
-        peer.actor.dimension.portals,
-        ...peer.actor.player.pos,
-      );
+      if (!peer.actor.player.dead && !peer.respawning)
+        peer.travel.tick(
+          peer.actor.dimension.world,
+          peer.actor.dimension.portals,
+          ...peer.actor.player.pos,
+        );
       this.stream(peer);
       this.sendEntities(peer);
       if (this.ticks % 100 === 0 || weatherChanged) this.syncTimeWeather(peer);
@@ -865,7 +995,7 @@ export class AuthoritativeServer {
   private refreshEntities(): void {
     for (const peer of this.peers) {
       const actor = peer.actor;
-      if (!actor) continue;
+      if (!actor || actor.player.dead) continue;
       this.updateEntity(
         peer.id,
         'player',
@@ -1093,52 +1223,60 @@ export class AuthoritativeServer {
           yieldTick,
         ));
       if (this.stopped || !this.peers.has(peer)) return;
-      const replacement = new Actor(dimension, peer.id);
-      applyPlayerData(replacement.player, deserializePlayerData(serializePlayerData(actor.player)));
-      deserializeInventory(
-        serializeInventory(actor.player.inventory),
-        replacement.player.inventory,
-      );
-      replacement.player.dimension = to;
-      replacement.player.teleport(...portalArrivalPoint(destination));
-      actor.dimension.detach(actor);
-      dimension.attach(replacement);
-      for (const cell of peer.loaded.values())
-        peer.transport.send({
-          type: T.ChunkUnload,
-          dimension: actor.dimension.id,
-          cx: cell.cx,
-          cz: cell.cz,
-        });
-      peer.loaded.clear();
-      peer.baselines.clear();
-      peer.centerX = Infinity;
-      peer.centerZ = Infinity;
-      peer.actor = replacement;
-      peer.blockHead = peer.blockTail = 0;
-      peer.blockQueue.fill(null);
-      peer.breaking.active = false;
-      this.configureActor(peer);
-      peer.travel.arrived();
-      peer.transport.send({
-        type: T.ServerHello,
-        entityId: peer.id,
-        seed: this.seed,
-        spawn: replacement.player.pos,
-        dimension: to,
-        time: getWorldTime(),
-      });
-      this.syncTimeWeather(peer);
-      this.syncInventory(peer, false);
+      this.replaceActor(peer, dimension, portalArrivalPoint(destination));
     } finally {
       dimension.pendingArrivals--;
     }
+  }
+  private replaceActor(
+    peer: Peer,
+    dimension: SimulationDimension,
+    position: [number, number, number],
+  ): void {
+    const actor = peer.actor!;
+    const replacement = new Actor(dimension, peer.id);
+    applyPlayerData(replacement.player, deserializePlayerData(serializePlayerData(actor.player)));
+    deserializeInventory(serializeInventory(actor.player.inventory), replacement.player.inventory);
+    replacement.player.dimension = dimension.id;
+    replacement.player.teleport(...position);
+    replacement.player.onGround = replacement.player.collision.supported(...position, 1e-5);
+    actor.dimension.detach(actor);
+    dimension.attach(replacement);
+    for (const cell of peer.loaded.values())
+      peer.transport.send({
+        type: T.ChunkUnload,
+        dimension: actor.dimension.id,
+        cx: cell.cx,
+        cz: cell.cz,
+      });
+    peer.loaded.clear();
+    peer.baselines.clear();
+    peer.centerX = Infinity;
+    peer.centerZ = Infinity;
+    peer.actor = replacement;
+    peer.blockHead = peer.blockTail = 0;
+    peer.blockQueue.fill(null);
+    peer.breaking.active = false;
+    this.configureActor(peer);
+    peer.travel.arrived();
+    peer.transport.send({
+      type: T.ServerHello,
+      entityId: peer.id,
+      seed: this.seed,
+      spawn: replacement.player.pos,
+      dimension: dimension.id,
+      time: getWorldTime(),
+    });
+    this.syncVitals(peer, true);
+    this.syncTimeWeather(peer);
+    this.syncInventory(peer, false);
   }
   private async savePlayer(peer: Peer): Promise<void> {
     if (!peer.actor) return;
     await atomicWrite(
       join(this.options.world, 'players', `${encodeURIComponent(peer.name)}.bin`),
       JSON.stringify({
+        deathCause: peer.vitals.deathCause,
         player: [...serializePlayerData(peer.actor.player)],
         inventory: [...serializeInventory(peer.actor.player.inventory)],
       }),

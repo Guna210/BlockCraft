@@ -146,17 +146,7 @@ export class PlayerController {
     this.hitRoll = 0;
     this.hitRollUntil = 0;
     this.player.survival.onDeath = (source) => this.handleDeath(source);
-    this.player.survival.onDamage = (event) => {
-      this.hitRoll = this.damageRoll(event.source);
-      this.hitRollUntil = performance.now() + 260;
-      sound.play('player.hurt', {
-        x: this.player!.pos[0],
-        y: this.player!.pos[1] + this.player!.eye,
-        z: this.player!.pos[2],
-        priority: 1.3,
-      });
-      this.onDamage(event);
-    };
+    this.player.survival.onDamage = (event) => this.damageFeedback(event);
     const itemEntities = new ItemEntityManager(world);
     itemEntities.onPickup = (item) => {
       sound.play('item.pickup', {
@@ -540,6 +530,19 @@ export class PlayerController {
     }
     // Directionless sources such as falling and starvation still get a brief event-driven kick.
     return source.length % 2 === 0 ? -0.12 : 0.12;
+  }
+
+  /** Event-only feedback, also used for authoritative multiplayer health loss. */
+  damageFeedback(event: DamageEvent): void {
+    this.hitRoll = this.damageRoll(event.source);
+    this.hitRollUntil = performance.now() + 260;
+    sound.play('player.hurt', {
+      x: this.player!.pos[0],
+      y: this.player!.pos[1] + this.player!.eye,
+      z: this.player!.pos[2],
+      priority: 1.3,
+    });
+    this.onDamage(event);
   }
 
   respawn(): void {

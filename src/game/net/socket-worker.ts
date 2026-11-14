@@ -17,6 +17,7 @@ const channel = self as unknown as {
   postMessage(message: unknown, transfer?: Transferable[]): void;
 };
 const writer = new BinaryWriter();
+const pong = { type: T.Pong as const, id: 0 };
 const input = {
   type: T.PlayerInput as const,
   sequence: 0,
@@ -34,6 +35,7 @@ let socket: WebSocket | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let closed = false;
+let dead = false;
 let acknowledged = 0;
 let nextAt = 0;
 const sentLook = new Float64Array(2);
@@ -76,6 +78,7 @@ channel.onmessage = ({ data }) => {
   switch (data.kind) {
     case 'open': {
       closed = false;
+      dead = false;
       socket = new WebSocket(data.address);
       socket.binaryType = 'arraybuffer';
       socket.onopen = () => channel.postMessage({ kind: 'open' });
@@ -91,14 +94,28 @@ channel.onmessage = ({ data }) => {
         // on the receiving game path instead of copying its payload in both threads.
         const type = bytes[0];
         const decoded =
-          type === T.PlayerCorrection || type === T.ServerHello || type === T.Disconnect
+          type === T.Ping ||
+          type === T.PlayerCorrection ||
+          type === T.ServerHello ||
+          type === T.Disconnect ||
+          type === T.PlayerVitals ||
+          type === T.PlayerRespawn
             ? decodeMessage(bytes)
             : null;
         if (decoded?.ok) {
           const message = decoded.message;
-          if (message.type === T.PlayerCorrection) acknowledged = message.acknowledged;
-          else if (message.type === T.ServerHello) stop();
-          else if (message.type === T.Disconnect) {
+          if (message.type === T.Ping) {
+            pong.id = message.id;
+            if (socket?.readyState === WebSocket.OPEN)
+              socket.send(encodeMessage(pong, writer) as Uint8Array<ArrayBuffer>);
+          } else if (message.type === T.PlayerCorrection) acknowledged = message.acknowledged;
+          else if (message.type === T.PlayerVitals) {
+            dead = message.dead;
+            if (dead) stop();
+          } else if (message.type === T.ServerHello || message.type === T.PlayerRespawn) {
+            dead = false;
+            stop();
+          } else if (message.type === T.Disconnect) {
             closed = true;
             stop();
           }
@@ -133,6 +150,7 @@ channel.onmessage = ({ data }) => {
       break;
     case 'start':
       input.sequence = acknowledged = data.sequence;
+      if (dead) break;
       running = true;
       nextAt = performance.now() + 50;
       schedule();

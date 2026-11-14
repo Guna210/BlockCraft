@@ -34,6 +34,20 @@ export class RemoteSession {
   private disconnectScreen: DisconnectScreen | null = null;
   private inventory: RemoteInventory | null = null;
   private disposed = false;
+  private dead = false;
+  private readonly originalRespawn = activeUi.manager?.onRespawn;
+  private hurt: import('../../gameplay/survival').Survival['onDamage'] = () => {};
+  private serverHealth: number | null = null;
+  private installRespawn(): void {
+    if (activeUi.manager)
+      activeUi.manager.onRespawn = () => {
+        if (this.connected && this.dead) this.connection.send({ type: MessageType.RespawnRequest });
+      };
+  }
+  private restoreRespawn(): void {
+    activeUi.manager?.closeDeath();
+    if (activeUi.manager && this.originalRespawn) activeUi.manager.onRespawn = this.originalRespawn;
+  }
   private previousCorrections = 0;
   private playerCount = 0;
   private readonly playerList: PlayerList;
@@ -101,6 +115,7 @@ export class RemoteSession {
     };
     connection.onClose = (reason) => {
       if (!this.connected) return;
+      this.restoreRespawn();
       this.restoreErrorDrain();
       this.connected = false;
       window.clearInterval(this.pingTimer);
@@ -143,6 +158,7 @@ export class RemoteSession {
     );
 
     manager.remoteExit = () => {
+      this.restoreRespawn();
       this.restoreErrorDrain();
       this.disposed = true;
       if (activeUi.manager) activeUi.manager.inventoryOnly = false;
@@ -179,7 +195,7 @@ export class RemoteSession {
     z: number,
     face: (typeof BLOCK_FACES)[number],
   ): void {
-    if (!this.connected) return;
+    if (!this.connected || this.dead) return;
     if (this.connection.threaded) this.refreshIntent();
     this.connection.send({
       type: MessageType.BlockAction,
@@ -208,8 +224,8 @@ export class RemoteSession {
       );
       input.mouseMovement.x = input.mouseMovement.y = 0;
     }
-    if (this.connection.threaded) this.refreshIntent(this.immediateTick);
-    else if (this.immediateTick) {
+    if (!this.dead && this.connection.threaded) this.refreshIntent(this.immediateTick);
+    else if (!this.dead && this.immediateTick) {
       this.simulate(true);
       this.nextTickAt = performance.now() + 50;
       this.scheduleTick();
@@ -219,6 +235,7 @@ export class RemoteSession {
     this.entities?.projectLabels();
   }
   private refreshIntent(immediate = false): void {
+    if (this.dead) return;
     const c = this.manager.playerController!,
       p = c.player!,
       intent = this.networkIntent;
@@ -254,7 +271,7 @@ export class RemoteSession {
   private simulate(immediate = false): void {
     const c = this.manager.playerController!,
       p = c.player;
-    if (!this.connected || !p || !this.prediction) return;
+    if (!this.connected || this.dead || !p || !this.prediction) return;
     this.immediateTick = false;
     if (!this.prediction.tick(immediate)) return;
     this.interact();
@@ -301,6 +318,9 @@ export class RemoteSession {
     const m = this.manager;
     switch (message.type) {
       case MessageType.ServerHello: {
+        this.restoreRespawn();
+        this.dead = false;
+        this.serverHealth = null;
         const selectedSlot = this.prediction ? (m.playerController?.player?.selectedSlot ?? 0) : 0;
         this.entities?.dispose();
         this.columns.clear();
@@ -320,6 +340,12 @@ export class RemoteSession {
           }
           return pending.promise;
         });
+        const survival = m.playerController!.player!.survival;
+        this.hurt = (event) => m.playerController!.damageFeedback(event);
+        // Input replay may land more than once. Only authoritative vitals trigger feedback/UI.
+        survival.onDamage = () => {};
+        survival.onDeath = () => {};
+        this.installRespawn();
         this.entities = new RemoteEntities(m);
         this.portals = new RemotePortals(m.world!, m.portalIndices[m.dimension]);
         m.playerController!.player!.selectedSlot = selectedSlot;
@@ -369,6 +395,47 @@ export class RemoteSession {
         };
         break;
       }
+      case MessageType.PlayerVitals: {
+        const before = this.serverHealth;
+        const wasDead = this.dead;
+        this.serverHealth = message.health;
+        this.prediction?.applyVitals(message);
+        this.dead = message.dead;
+        if (before !== null && message.health < before)
+          this.hurt({
+            amount: before - message.health,
+            source: 'killed',
+            healthBefore: before,
+            healthAfter: message.health,
+            lethal: message.dead,
+          });
+        if (message.dead && !wasDead) {
+          this.immediateTick = false;
+          this.breaking = false;
+          m.playerController?.interaction?.clear();
+          activeUi.manager?.showDeath(message.deathCause);
+        }
+        break;
+      }
+      case MessageType.PlayerRespawn:
+        if (message.dimension !== m.dimension) break;
+        activeUi.manager?.closeDeath();
+        this.prediction?.respawn(message.position);
+        this.dead = false;
+        this.immediateTick = false;
+        this.breaking = false;
+        m.playerController!.input.actionStates.forEach((_, action, states) =>
+          states.set(action, false),
+        );
+        m.playerController!.camera.roll = 0;
+        if (this.connection.threaded) {
+          this.refreshIntent();
+          this.connection.startInputs(this.prediction?.lastSequence ?? 0);
+        } else {
+          this.nextTickAt = performance.now() + 50;
+          this.scheduleTick();
+        }
+        break;
       case MessageType.ChunkData: {
         if (message.dimension !== m.dimension) break;
         const column = await deserializeColumn(message.payload);
@@ -420,7 +487,7 @@ export class RemoteSession {
         this.connection.onClose(message.reason || 'Connection lost');
         break;
       case MessageType.PlayerInput:
-        if (this.connected && this.connection.threaded) {
+        if (this.connected && !this.dead && this.connection.threaded) {
           this.prediction?.receiveInput(message, immediateReceipt);
           this.interact();
         }

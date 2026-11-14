@@ -118,6 +118,26 @@ export function encodeMessage(message: Message, writer: BinaryWriter): Uint8Arra
   w.reset();
   w.u8(message.type);
   switch (message.type) {
+    case MessageType.PlayerVitals:
+      w.f64(message.health);
+      w.f64(message.hunger);
+      w.f64(message.saturation);
+      w.f64(message.air);
+      w.bool(message.burning);
+      if (message.mode !== 'survival' && message.mode !== 'creative')
+        throw new RangeError('Unknown mode');
+      w.bool(message.mode === 'creative');
+      w.bool(message.dead);
+      w.string(message.deathCause);
+      w.f64(message.xpLevel);
+      w.f64(message.xpProgress);
+      break;
+    case MessageType.RespawnRequest:
+      break;
+    case MessageType.PlayerRespawn:
+      dimension(w, message.dimension);
+      vector(w, message.position);
+      break;
     case MessageType.PlayerList:
       w.integer(message.players.length, 0, 128);
       w.u16(message.players.length);
@@ -271,6 +291,27 @@ export function decodeMessage(bytes: Uint8Array): DecodeResult {
   const type = r.u8();
   let message: Message;
   switch (type) {
+    case MessageType.PlayerVitals:
+      message = {
+        type,
+        health: r.f64(),
+        hunger: r.f64(),
+        saturation: r.f64(),
+        air: r.f64(),
+        burning: r.bool(),
+        mode: r.bool() ? 'creative' : 'survival',
+        dead: r.bool(),
+        deathCause: r.string(),
+        xpLevel: r.f64(),
+        xpProgress: r.f64(),
+      };
+      break;
+    case MessageType.RespawnRequest:
+      message = { type };
+      break;
+    case MessageType.PlayerRespawn:
+      message = { type, dimension: readDimension(r), position: readVector(r) };
+      break;
     case MessageType.PlayerList: {
       const length = r.bounded(r.u16(), 128);
       const players: { name: string; pingMs: number }[] = [];
