@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-15: #87 fixes 5d5680b + docs c48e28d (owner: CI green). setCapture(false) now only on close paths (checked). Sent round 2 to reviewer session_0155bUSAxWNf9YzFRTncPKiv myself.
 - 2026-11-15: #87 round 1 CHANGES NEEDED: input capture, SP shift-click item loss (copy vs live access), stale handoff. Gave Codex fix message; round 2 same reviewer.
 - 2026-11-15: #87 M21b-fix opened, CI green. Flagged uncaptured movement input in MP windows + SP refactor parity + recurring m21c-world flake. Gave reviewer prompt.
 - 2026-11-14: #86 M21b-fix2 merged (9bf4de9). Gave M21b-fix (containers) Codex prompt.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-12: #85 M21c completed by Codex retry (1a7f8b1, CI green, retitled verified). Checked diff, tests and screenshot; gave Sonnet reviewer prompt. Flagged to owner: no health/hunger/death/mode sync in multiplayer (protocol gap, not in SPEC) - candidate to add to M21b-fix or a separate follow-up.
 - 2026-11-12: #85 M21c opened [INCOMPLETE] by Codex: menu + handshake only. Recommended not merging (would ship a dead-end Multiplayer button to Pages) and continuing on the same branch with a Claude builder; gave continuation prompt.
 - 2026-11-12: #84 M21b merged (b95348a). Gave M21c prompt (Codex). Decisions: client net in src/game/net (not shared src/net); MP mode in world-manager: chunks from ChunkData (deserializeColumn + Hollowdeep biome fix), local light/mesh, no local gen/saves/IndexedDB, no local mob AI/block ticks; prediction ring buffer, compare to predicted pose at acked seq, eps 0.01 -> correction+replay; 100 ms interpolation, shortest-arc yaw; name tags DOM overlay; PlayerList message (names+ping) protocol v3 + server broadcast; RTT via client Ping (server echoes); menu name+address (default ws://localhost:3001), localStorage last values, errors incl. https+ws:// non-localhost needs wss; commands disabled in MP chat; chat via textContent; debug net module for raw far BlockAction; e2e on 3001/3002, kill test spawns own server; SP zero cost (dynamic import).
-- 2026-11-12: #84 M21b round 2 PASS (pickup returns after first, Player identical to master via ServerPlayer subclass, roster-gated focus, chat stripping). Non-blocking: ServerPlayer.down number-as-boolean, chat unicode for M21c UI, iterators, jitter. Told owner to merge.
