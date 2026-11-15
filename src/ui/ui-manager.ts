@@ -534,14 +534,18 @@ export class UiManager {
     this.startOpen('chest');
   }
 
-  private startOpen(name: Exclude<ScreenName, 'chest'> | 'chest', remoteWindow = false): void {
+  private startOpen(
+    name: Exclude<ScreenName, 'chest'> | 'chest',
+    remoteWindow?: { windowId: number; kind: WindowKind },
+  ): void {
     this.requirePlayer();
     if (this.screen) this.close();
     if (this.screen) return;
     this.ensureCanvases();
     this.screen = name;
-    this.remoteWindowId = name === 'inventory' && this.onRemoteAction ? 0 : null;
-    this.remoteWindowKind = null;
+    this.remoteWindowId =
+      remoteWindow?.windowId ?? (name === 'inventory' && this.onRemoteAction ? 0 : null);
+    this.remoteWindowKind = remoteWindow?.kind ?? null;
     this.dimension = name === 'crafting' ? 3 : 2;
     this.grid =
       name === 'chest' || name === 'kiln'
@@ -555,9 +559,7 @@ export class UiManager {
     this.craftableOnly = false;
     this.bookPage = 0;
     this.wasLocked = this.input.pointerLocked;
-    // Multiplayer container windows stay interactive while the player walks away.
-    // Local screens retain the existing full input capture path.
-    this.input.setCapture(!(remoteWindow || (name === 'inventory' && this.onRemoteAction)));
+    this.input.setCapture(true);
     if (this.wasLocked) document.exitPointerLock();
     this.canvas.style.display = 'block';
     this.resizeCanvas();
@@ -613,8 +615,6 @@ export class UiManager {
   }
 
   openRemoteWindow(windowId: number, kind: WindowKind, x: number, y: number, z: number): void {
-    this.remoteWindowId = windowId;
-    this.remoteWindowKind = kind;
     this.screen = null;
     this.grid = [];
     this.chestStorage = null;
@@ -647,11 +647,8 @@ export class UiManager {
     }
     this.startOpen(
       kind === 'chest' || kind === 'large_chest' ? 'chest' : kind === 'kiln' ? 'kiln' : 'crafting',
-      true,
+      { windowId, kind },
     );
-    this.remoteWindowId = windowId;
-    this.remoteWindowKind = kind;
-    this.input.setCapture(false);
   }
 
   closeRemoteWindow(windowId: number): void {

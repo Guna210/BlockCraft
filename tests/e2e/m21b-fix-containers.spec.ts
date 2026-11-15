@@ -36,7 +36,7 @@ async function openContainer(
   await page.evaluate(() => window.__blockcraft!.input!('use', false));
 }
 
-test('multiplayer chest windows share items and crafting closes when a player walks away', async ({
+test('multiplayer windows share items, capture search input, and close on a server break', async ({
   page,
   browser,
 }) => {
@@ -133,7 +133,16 @@ test('multiplayer chest windows share items and crafting closes when a player wa
     await page.mouse.click(recipeBook.x + recipeBook.w / 2, recipeBook.y + recipeBook.h / 2);
     const search = await page.evaluate(() => window.__blockcraft!.getScreen!().searchField!);
     await page.mouse.click(search.x + search.w / 2, search.y + search.h / 2);
-    await page.keyboard.type('chest');
+    const beforeSearch = await page.evaluate(() => [...window.__blockcraft!.getPlayer!().pos]);
+    await page.keyboard.type('chest', { delay: 120 });
+    await expect
+      .poll(() => page.evaluate(() => window.__blockcraft!.getScreen!().searchText))
+      .toBe('chest');
+    await page.waitForTimeout(400);
+    const afterSearch = await page.evaluate(() => window.__blockcraft!.getPlayer!().pos);
+    expect(
+      Math.hypot(afterSearch[0] - beforeSearch[0]!, afterSearch[2] - beforeSearch[2]!),
+    ).toBeLessThan(0.05);
     const row = await page.evaluate(() =>
       window.__blockcraft!.getScreen!().recipeIds.indexOf('chest'),
     );
@@ -194,56 +203,59 @@ test('multiplayer chest windows share items and crafting closes when a player wa
       throw error;
     }
 
-    const start = await page.evaluate(() => {
-      const api = window.__blockcraft!;
-      api.look!(Math.PI / 2, 0);
-      api.input!('forward', true);
-      api.input!('jump', true);
-      const manager = (
-        window as unknown as {
-          WorldManager: {
-            getInstance(): {
-              playerController: {
-                input: { captured: boolean; getAction(action: string): boolean };
-              };
-            };
-          };
-        }
-      ).WorldManager.getInstance();
-      return {
-        pos: api.getPlayer!().pos,
-        captured: manager.playerController.input.captured,
-        forward: manager.playerController.input.getAction('forward'),
-      };
-    });
-    expect(start).toMatchObject({ captured: false, forward: true });
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => window.__blockcraft!.getScreen!().name)).toBeNull();
+    await openContainer(page, chest, 'chest');
+    await page.evaluate(() => window.__blockcraft!.uiClickSlot!(0, 'right'));
+    await expect
+      .poll(() => page.evaluate(() => window.__blockcraft!.getInventoryCursor!()?.count))
+      .toBe(1);
+
+    await lookAtBlock(b.page, chest);
+    await b.page.evaluate(() => window.__blockcraft!.input!('attack', true));
     try {
       await expect
         .poll(
-          () =>
-            page.evaluate((pos) => {
-              const player = window.__blockcraft!.getPlayer!().pos;
-              return Math.hypot(player[0] - pos[0], player[2] - pos[2]);
-            }, start.pos),
-          { timeout: 10000 },
+          () => b.page.evaluate(({ x, y, z }) => window.__blockcraft!.getBlock!(x, y, z).id, chest),
+          { timeout: 30000, intervals: [25] },
         )
-        .toBeGreaterThan(4);
-      await expect
-        .poll(() => page.evaluate(() => window.__blockcraft!.getScreen!().name), { timeout: 15000 })
-        .toBeNull();
-      await expect
-        .poll(() =>
-          page.evaluate(() =>
-            window.__blockcraft!.getInventory!().some((stack) => stack?.id === 'chest'),
-          ),
-        )
-        .toBe(true);
+        .toBe('air');
     } finally {
-      await page.evaluate(() => {
-        window.__blockcraft!.input!('forward', false);
-        window.__blockcraft!.input!('jump', false);
-      });
+      await b.page.evaluate(() => window.__blockcraft!.input!('attack', false));
     }
+    await expect.poll(() => page.evaluate(() => window.__blockcraft!.getScreen!().name)).toBeNull();
+    await expect
+      .poll(() => page.evaluate(() => window.__blockcraft!.getInventoryCursor!()))
+      .toBeNull();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__blockcraft!.getInventory!().reduce(
+            (count, stack) => count + (stack?.id === 'oak_planks' ? stack.count : 0),
+            0,
+          ),
+        ),
+      )
+      .toBeGreaterThanOrEqual(7);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const api = window.__blockcraft!;
+            const planks = api.getInventory!().reduce(
+              (count, stack) => count + (stack?.id === 'oak_planks' ? stack.count : 0),
+              0,
+            );
+            return (
+              planks >= 8 ||
+              api.getEntities!({ type: 'item', radius: 12 }).some(
+                (entity) => entity.item === 'oak_planks',
+              )
+            );
+          }),
+        { timeout: 10000 },
+      )
+      .toBe(true);
     await assertHealthy(b.page, b.errors);
   } finally {
     if (processServer.exitCode === null) processServer.kill('SIGTERM');

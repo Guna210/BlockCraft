@@ -55,6 +55,10 @@ Opening is server-driven, Esc/E requests the server close, and the existing
 kiln canvas reads the three synchronized properties. The single-player UI
 continues using its local screen state and frame path.
 
+Every local or remote inventory/container screen captures gameplay input while
+open, matching the single-player behavior. Server-initiated close releases the
+capture after the authoritative cursor/grid return has been applied.
+
 ## Verification fixture setup
 
 The new Node integration tests use the existing `startServer`, headless client,

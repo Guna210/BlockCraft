@@ -1,6 +1,6 @@
 # M21b-fix — Multiplayer container windows
 
-Status: verified
+Status: incomplete
 Depends on: M21b, M21c, M21b-fix2
 Full verify: PR CI
 
@@ -9,6 +9,10 @@ Full verify: PR CI
 - [x] Protocol v5 appends container/window messages and recipe-book fill; the
   M21a fixture map covers each addition and the existing fuzz loop is unchanged
   → `tests/unit/m21a-protocol.test.ts`.
+- [x] Inventory window helpers write slot changes through `set()` even when
+  `get()` returns a copy; copied chest, drag, crafting-grid, kiln and quick-move
+  paths are covered → `src/gameplay/inventory-window.ts`,
+  `tests/unit/m21b-fix-copy-slots.test.ts`.
 - [x] The server owns one reusable window per peer and validates life, block,
   reach and revision on open and transaction; nonzero IDs wrap; shared inventory,
   chest, kiln, crafting and recipe-book operations apply → `server/server.ts`,
@@ -22,29 +26,27 @@ Full verify: PR CI
   server actions → `src/game/net/inventory.ts`, `src/game/net/session.ts`,
   `src/ui/ui-manager.ts`.
 - [x] Two-browser E2E covers shared chest contents, recipe-book crafting,
-  walking out of reach, zero console/WebGL errors and the reviewed screenshot
+  captured search input, server-initiated close on chest break with cursor return
+  and spills, zero console/WebGL errors and the reviewed screenshot
   → `tests/e2e/m21b-fix-containers.spec.ts`.
 
 ## Verification
 
 - `MILESTONE=M21 npm run verify:quick`: typecheck ✓ · lint ✓ · placeholders ✓ ·
-  unit **158 files / 1,532 tests passed** · Playwright **10 passed**.
+  unit **159 files / 1,537 tests passed** · Playwright **10 passed**.
 - Affected E2E specs `m09a`, `m09b`, `m09c`, `m10b`, `m10c` and `m14`:
   **29 passed**.
-- M21c delayed walk: **0 corrections** (37.3 blocks, RTT 162.6 ms). Block
-  replication: **96 ms**.
-- PR CI Verify [run 43678185195](https://github.com/Guna210/BlockCraft/actions/runs/43678185195):
-  **passed**, all four shards. Typecheck, lint and placeholders passed; unit
-  **158 files / 1,532 tests passed**. Playwright: **195 passed, 1 flaky**;
-  `m21c-world` missed its 500 ms replication limit on the first attempt and
-  passed on retry.
+- M21c delayed walk: **0 corrections** (38.38 blocks, RTT 154.7 ms). Block
+  replication: **57 ms**.
+- PR CI for the review fixes is pending; the handoff will be updated from its
+  logs after the new head passes.
 - The owner designated PR CI as the full verify; no local full verify was run.
 
 ## Screenshots (docs/screenshots/M21b-fix/)
 
-- `m21b-fix-chest.png`: VIEWED. Bea's chest window is open over the block
-  world; an oak-plank stack icon occupies the first chest slot, and Bea's
-  inventory grid is visible below it.
+- `m21b-fix-chest.png`: VIEWED. Bea's view shows the shared chest after A put
+  oak planks into its first slot; the stack count **2** is visible, with Bea's
+  inventory grid below.
 
 ## What was built
 
@@ -54,8 +56,8 @@ Full verify: PR CI
   authoritative revisions, multi-viewer slot updates, close/return behavior,
   and block-entity persistence through existing saves.
 - Remote UI wiring for chest, large chest, kiln, workbench and 2×2 inventory
-  crafting. Multiplayer windows leave movement input available while open;
-  the single-player render/tick path gains no per-frame bookkeeping.
+  crafting. Multiplayer windows capture gameplay input while open, matching
+  single-player; the single-player render/tick path gains no per-frame bookkeeping.
 - Integration coverage and a port-zero owned-server browser test seeded through
   the shared world persistence serializers.
 

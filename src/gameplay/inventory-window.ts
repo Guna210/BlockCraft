@@ -8,7 +8,10 @@ import type { KilnState } from './kiln';
 
 export type WindowClickButton = 'left' | 'right';
 
-/** Mutable external slots (chests, kiln or crafting grid) used by UI and server alike. */
+/**
+ * External slots (chests, kiln or crafting grid) used by UI and server alike.
+ * `get` may return a detached copy; helpers must publish every slot change with `set`.
+ */
 export interface WindowSlotAccess {
   readonly length: number;
   get(slot: number): CursorStack | null;
@@ -69,6 +72,7 @@ export function clickWindowSlot(
   ) {
     if (current) current.count++;
     else access.set(slot, { ...cursor, count: 1 });
+    if (current) access.set(slot, current);
     cursor.count--;
     if (!cursor.count) inventory.cursor = null;
   }
@@ -101,8 +105,11 @@ export function quickMoveInventoryToWindow(
   for (let target = 0; target < access.length && count > 0; target++) {
     const stored = access.get(target);
     if (!stored || !sameWindowStackKind(stored, source)) continue;
-    const moved = Math.min(count, max - stored.count);
-    stored.count += moved;
+    const current = copyStack(stored);
+    const moved = Math.min(count, max - current.count);
+    if (!moved) continue;
+    current.count += moved;
+    access.set(target, current);
     count -= moved;
   }
   for (let target = 0; target < access.length && count > 0; target++) {
@@ -144,8 +151,10 @@ export function dragWindowSlots(
     const stack = access.get(slot);
     const moved = Math.min(each, cursor.count, items.get(cursor.id).maxStack - (stack?.count ?? 0));
     if (!moved) continue;
-    if (stack) stack.count += moved;
-    else access.set(slot, { ...cursor, count: moved });
+    if (stack) {
+      stack.count += moved;
+      access.set(slot, stack);
+    } else access.set(slot, { ...cursor, count: moved });
     cursor.count -= moved;
   }
   if (!cursor.count) inventory.cursor = null;
@@ -162,14 +171,11 @@ export function clickKilnSlot(
 ): void {
   const inventory = player.inventory;
   if (slot === 0 || slot === 1) {
-    const slotKey = slot === 0 ? 'input' : 'fuel';
-    const current = kiln[slotKey];
+    const current = readKilnSlot(kiln, slot);
     if (shift) {
       if (current) {
-        const source = copyStack(current);
-        inventory.route(source);
-        current.count = source.count;
-        if (current.count <= 0) kiln[slotKey] = null;
+        inventory.route(current);
+        writeKilnSlot(kiln, slot, current.count > 0 ? current : null);
       }
       return;
     }
@@ -177,20 +183,21 @@ export function clickKilnSlot(
       if (!inventory.cursor) {
         if (current) {
           inventory.cursor = copyStack(current);
-          kiln[slotKey] = null;
+          writeKilnSlot(kiln, slot, null);
         }
       } else {
         const cursor = inventory.cursor;
         if (!current) {
-          kiln[slotKey] = { ...copyStack(cursor), damage: cursor.damage ?? null };
+          writeKilnSlot(kiln, slot, cursor);
           inventory.cursor = null;
         } else if (sameWindowStackKind(current, cursor)) {
           const moved = Math.min(cursor.count, items.get(current.id).maxStack - current.count);
           current.count += moved;
           cursor.count -= moved;
+          if (moved) writeKilnSlot(kiln, slot, current);
           if (cursor.count <= 0) inventory.cursor = null;
         } else {
-          kiln[slotKey] = { ...copyStack(cursor), damage: cursor.damage ?? null };
+          writeKilnSlot(kiln, slot, cursor);
           inventory.cursor = copyStack(current);
         }
       }
@@ -199,12 +206,12 @@ export function clickKilnSlot(
         const take = Math.ceil(current.count / 2);
         inventory.cursor = { ...copyStack(current), count: take };
         current.count -= take;
-        if (current.count <= 0) kiln[slotKey] = null;
+        writeKilnSlot(kiln, slot, current.count > 0 ? current : null);
       }
     } else {
       const cursor = inventory.cursor;
       if (!current) {
-        kiln[slotKey] = { ...copyStack(cursor), count: 1, damage: cursor.damage ?? null };
+        writeKilnSlot(kiln, slot, { ...cursor, count: 1 });
         cursor.count--;
         if (cursor.count <= 0) inventory.cursor = null;
       } else if (
@@ -212,6 +219,7 @@ export function clickKilnSlot(
         current.count < items.get(current.id).maxStack
       ) {
         current.count++;
+        writeKilnSlot(kiln, slot, current);
         cursor.count--;
         if (cursor.count <= 0) inventory.cursor = null;
       }
@@ -219,18 +227,16 @@ export function clickKilnSlot(
     return;
   }
   if (slot === 2) {
-    const output = kiln.output;
+    const output = readKilnSlot(kiln, 2);
     if (!output) return;
     if (shift) {
       const before = output.count;
-      const routed = copyStack(output);
-      inventory.route(routed);
-      output.count = routed.count;
-      if (before > routed.count) {
+      inventory.route(output);
+      if (before > output.count) {
         addXp(player, kiln.storedXp);
         kiln.storedXp = 0;
       }
-      if (output.count <= 0) kiln.output = null;
+      writeKilnSlot(kiln, 2, output.count > 0 ? output : null);
       return;
     }
     if (button === 'left') {
@@ -238,7 +244,7 @@ export function clickKilnSlot(
         inventory.cursor = copyStack(output);
         addXp(player, kiln.storedXp);
         kiln.storedXp = 0;
-        kiln.output = null;
+        writeKilnSlot(kiln, 2, null);
       } else if (sameWindowStackKind(inventory.cursor, output)) {
         const moved = Math.min(
           output.count,
@@ -249,7 +255,7 @@ export function clickKilnSlot(
           output.count -= moved;
           addXp(player, kiln.storedXp);
           kiln.storedXp = 0;
-          if (output.count <= 0) kiln.output = null;
+          writeKilnSlot(kiln, 2, output.count > 0 ? output : null);
         }
       }
     } else if (!inventory.cursor) {
@@ -258,7 +264,7 @@ export function clickKilnSlot(
       output.count -= take;
       addXp(player, kiln.storedXp);
       kiln.storedXp = 0;
-      if (output.count <= 0) kiln.output = null;
+      writeKilnSlot(kiln, 2, output.count > 0 ? output : null);
     } else if (
       sameWindowStackKind(inventory.cursor, output) &&
       inventory.cursor.count < items.get(output.id).maxStack
@@ -267,7 +273,7 @@ export function clickKilnSlot(
       output.count--;
       addXp(player, kiln.storedXp);
       kiln.storedXp = 0;
-      if (output.count <= 0) kiln.output = null;
+      writeKilnSlot(kiln, 2, output.count > 0 ? output : null);
     }
     return;
   }
@@ -281,32 +287,34 @@ export function clickKilnSlot(
   if (!stack) return;
   const isFuel = smelting.isFuel(stack.id);
   const isSmeltable = smelting.getByInput(stack.id) !== undefined;
+  const fuel = readKilnSlot(kiln, 1);
+  const input = readKilnSlot(kiln, 0);
   if (
     isFuel &&
-    (!kiln.fuel ||
-      (sameWindowStackKind(kiln.fuel, stack) && kiln.fuel.count < items.get(stack.id).maxStack))
+    (!fuel || (sameWindowStackKind(fuel, stack) && fuel.count < items.get(stack.id).maxStack))
   ) {
-    if (!kiln.fuel) {
-      kiln.fuel = { ...copyStack(stack), damage: stack.damage ?? null };
+    if (!fuel) {
+      writeKilnSlot(kiln, 1, stack);
       inventory.slots[inventorySlot] = null;
     } else {
-      const add = Math.min(stack.count, items.get(stack.id).maxStack - kiln.fuel.count);
-      kiln.fuel.count += add;
+      const add = Math.min(stack.count, items.get(stack.id).maxStack - fuel.count);
+      fuel.count += add;
       stack.count -= add;
+      if (add) writeKilnSlot(kiln, 1, fuel);
       if (stack.count <= 0) inventory.slots[inventorySlot] = null;
     }
   } else if (
     isSmeltable &&
-    (!kiln.input ||
-      (sameWindowStackKind(kiln.input, stack) && kiln.input.count < items.get(stack.id).maxStack))
+    (!input || (sameWindowStackKind(input, stack) && input.count < items.get(stack.id).maxStack))
   ) {
-    if (!kiln.input) {
-      kiln.input = { ...copyStack(stack), damage: stack.damage ?? null };
+    if (!input) {
+      writeKilnSlot(kiln, 0, stack);
       inventory.slots[inventorySlot] = null;
     } else {
-      const add = Math.min(stack.count, items.get(stack.id).maxStack - kiln.input.count);
-      kiln.input.count += add;
+      const add = Math.min(stack.count, items.get(stack.id).maxStack - input.count);
+      input.count += add;
       stack.count -= add;
+      if (add) writeKilnSlot(kiln, 0, input);
       if (stack.count <= 0) inventory.slots[inventorySlot] = null;
     }
   } else inventory.shiftClick(inventorySlot);
@@ -322,19 +330,34 @@ export function clickCraftGrid(
   if (slot < 0 || slot >= grid.length) return;
   const access: WindowSlotAccess = {
     length: grid.length,
-    get: (index) => grid[index] ?? null,
+    get: (index) => {
+      const stack = grid[index];
+      return stack ? copyStack(stack) : null;
+    },
     set: (index, stack) => {
-      grid[index] = stack;
+      grid[index] = stack ? copyStack(stack) : null;
     },
   };
   if (shift) {
-    const stack = grid[slot];
+    const stack = access.get(slot);
     if (!stack) return;
     const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
     if (moved) inventory.insert(stack.id, moved, stack);
     stack.count -= moved;
-    if (!stack.count) grid[slot] = null;
+    access.set(slot, stack.count > 0 ? stack : null);
   } else clickWindowSlot(inventory, access, slot, button);
+}
+
+function readKilnSlot(kiln: KilnState, slot: number): CursorStack | null {
+  const stack = slot === 0 ? kiln.input : slot === 1 ? kiln.fuel : slot === 2 ? kiln.output : null;
+  return stack ? copyStack(stack) : null;
+}
+
+function writeKilnSlot(kiln: KilnState, slot: number, stack: CursorStack | null): void {
+  const value = stack ? { ...copyStack(stack), damage: stack.damage ?? null } : null;
+  if (slot === 0) kiln.input = value;
+  else if (slot === 1) kiln.fuel = value;
+  else if (slot === 2) kiln.output = value;
 }
 
 export function inventoryStack(stack: CursorStack | null, slot: number): ItemStack | null {
