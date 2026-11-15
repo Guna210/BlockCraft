@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 ## Setup
 
@@ -52,7 +52,8 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M21c (latest: M21a #
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M22a, M22c, M22d (all ready, parallel); M22b after M22a; M23 last (+ M23-fix-N).
-In flight: M21b-fix (owner-added: MP container windows), Codex, branch claude/m21b-fix, prompt given 2026-11-14. Decisions: protocol v5; ContainerOpenRequest C->S (x,y,z), WindowOpen S->C (windowId 1..255 never 0, kind chest/large chest/kiln/crafting, pos), WindowClose both ways, WindowProperty S->C (kiln progress/fuel, on change only); reuse InventorySync/Slot/Transaction/Result with windowId>=1; window slot indices = the SP UiManager screen indices; recipe-book fill as new InventoryAction; server owns one open window per peer; open/transaction check reach (+1), block id, alive, revision; close on Esc, out of reach, block broken/replaced, death, travel, disconnect, returning cursor/grid items like SP close; multiple viewers of one chest/kiln get slot/property updates; 2x2 inventory crafting (window 0 slots >= 41) enabled; client replaces UiManager.inventoryOnly guards, same predict/reconcile approach as window 0; no SP cost; e2e may pre-seed the owned server's world dir via the shared persistence code (no server flags/hooks); m21a-protocol fixtures pre-approved.
+In flight: M21b-fix PR #87 (Codex; head 1fc9e72, CI green run 43679874090; source run 43678185195 had m21c-world first-attempt 500 ms miss -> retry pass). 16 files +2653/-378: protocol v5, server/server.ts +853, new src/gameplay/inventory-window.ts (shared window logic extracted from UiManager), ui-manager.ts 555-line change. Only existing-test edit: m21a fixtures (approved). Gave Sonnet reviewer prompt 2026-11-15 with my concerns: (1) MP windows leave movement input uncaptured (ui-manager startOpen setCapture) unlike SP, undocumented in decisions - looks done to let the e2e walk out of reach -> should match SP; out-of-reach close is covered by integration tests, e2e can use B breaking the viewed chest instead; (2) SP parity of the UiManager refactor; (3) m21c-world flake now ~2 of last 5 CI runs.
+Recurring flake: m21c-world 500 ms replication misses first attempt on CI ~1 in 3 runs (receiver GL stall); not this PR's code. Owner to decide if it keeps recurring (investigate in M22a vs accept).
 Done: M21b-fix2 #86 merged (master 9bf4de9): protocol v4 vitals/death/respawn.
 Done: M21c #85 merged (master ff53966), 2 review rounds; notes in decisions/M21c-client.md.
 Order (owner 2026-11-14): M21b-fix2 now, then M21b-fix (containers); both bump protocol + touch server.ts -> serial. M22a/M22c/M22d can run alongside.
@@ -105,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-15: #87 M21b-fix opened, CI green. Flagged uncaptured movement input in MP windows + SP refactor parity + recurring m21c-world flake. Gave reviewer prompt.
 - 2026-11-14: #86 M21b-fix2 merged (9bf4de9). Gave M21b-fix (containers) Codex prompt.
 - 2026-11-14: #86 docs fix af75dc7 checked OK, CI green, title verified. Told owner to merge. Next: M21b-fix (containers) + M22a/M22c/M22d.
 - 2026-11-14: #86 round 1 (Sonnet session_0155bUSBHPvwRWj23TEzSY62) CHANGES NEEDED, docs only: status/title/PR body say incomplete; head run 43596988135 clean (49/49/49/48, no retries). Code checks all OK. Non-blocking: hurt feedback source always 'killed'; originalRespawn read at construction. Gave Codex docs-fix message; I'll check the docs push myself instead of a round 2.
@@ -124,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-12: #84 M21b merged (b95348a). Gave M21c prompt (Codex). Decisions: client net in src/game/net (not shared src/net); MP mode in world-manager: chunks from ChunkData (deserializeColumn + Hollowdeep biome fix), local light/mesh, no local gen/saves/IndexedDB, no local mob AI/block ticks; prediction ring buffer, compare to predicted pose at acked seq, eps 0.01 -> correction+replay; 100 ms interpolation, shortest-arc yaw; name tags DOM overlay; PlayerList message (names+ping) protocol v3 + server broadcast; RTT via client Ping (server echoes); menu name+address (default ws://localhost:3001), localStorage last values, errors incl. https+ws:// non-localhost needs wss; commands disabled in MP chat; chat via textContent; debug net module for raw far BlockAction; e2e on 3001/3002, kill test spawns own server; SP zero cost (dynamic import).
 - 2026-11-12: #84 M21b round 2 PASS (pickup returns after first, Player identical to master via ServerPlayer subclass, roster-gated focus, chat stripping). Non-blocking: ServerPlayer.down number-as-boolean, chat unicode for M21c UI, iterators, jitter. Told owner to merge.
 - 2026-11-12: #84 fix 0ca0fcf green (Player fields removed, arrow pickup test). Sent round 2.
-- 2026-11-12: Owner chose M21b-fix (MP container windows) as follow-up after M21c.
