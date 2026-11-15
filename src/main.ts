@@ -127,7 +127,10 @@ async function main() {
   };
   const chat = new Chat(
     input,
-    () => !!worldManager.playerController?.player && !worldManager.playerController.player.dead,
+    () => {
+      const player = worldManager.playerController?.player;
+      return !!player && !player.dead && !ui.screen;
+    },
     async (line) => {
       try {
         return await executeCommand(line, commandContext(worldManager));

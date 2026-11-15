@@ -2,7 +2,7 @@ import type { DimensionId } from '../../world/dimension';
 import type { ItemAffix } from '../../gameplay/items';
 
 /** Change this when any wire layout or enum meaning changes. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_STRING_BYTES = 256;
 export const MAX_CHUNK_BYTES = 1024 * 1024;
 export const MAX_INVENTORY_SLOTS = 128;
@@ -37,6 +37,10 @@ export enum MessageType {
   PlayerVitals,
   RespawnRequest,
   PlayerRespawn,
+  ContainerOpenRequest,
+  WindowOpen,
+  WindowClose,
+  WindowProperty,
 }
 
 export enum BlockActionKind {
@@ -65,7 +69,10 @@ export enum InventoryAction {
   DragOne,
   CollectAll,
   SelectSlot,
+  FillRecipe,
 }
+export type WindowKind = 'chest' | 'large_chest' | 'kiln' | 'crafting';
+export type WindowPropertyName = 'burnRemaining' | 'burnTotal' | 'cookProgress';
 export type Vector3 = readonly [number, number, number];
 export type Rotation = readonly [number, number];
 export type Weather = 'clear' | 'rain' | 'thunder';
@@ -107,6 +114,27 @@ export interface Messages {
     type: MessageType.PlayerRespawn;
     dimension: DimensionId;
     position: Vector3;
+  };
+  [MessageType.ContainerOpenRequest]: {
+    type: MessageType.ContainerOpenRequest;
+    x: number;
+    y: number;
+    z: number;
+  };
+  [MessageType.WindowOpen]: {
+    type: MessageType.WindowOpen;
+    windowId: number;
+    kind: WindowKind;
+    x: number;
+    y: number;
+    z: number;
+  };
+  [MessageType.WindowClose]: { type: MessageType.WindowClose; windowId: number };
+  [MessageType.WindowProperty]: {
+    type: MessageType.WindowProperty;
+    windowId: number;
+    property: WindowPropertyName;
+    value: number;
   };
   [MessageType.PlayerList]: {
     type: MessageType.PlayerList;

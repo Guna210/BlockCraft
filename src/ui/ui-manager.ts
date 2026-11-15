@@ -44,16 +44,24 @@ import {
   takeCraftingOutput,
   type CraftingSlot,
 } from '../gameplay/crafting-session';
-import { isItemAffix, items, type ItemAffix } from '../gameplay/items';
+import { isItemAffix, type ItemAffix } from '../gameplay/items';
 import { computeKilnLayout, type KilnLayout } from './kiln-layout';
 import { drawKilnScreen, kilnTooltipFor } from './kiln-screen';
 import type { BlockEntityInstance } from '../world/block-entities';
 import type { KilnState } from '../gameplay/kiln';
-import { smelting } from '../gameplay/smelting';
-import { addXp } from '../gameplay/xp';
+import {
+  clickCraftGrid,
+  clickKilnSlot as applyKilnScreenClick,
+  clickWindowSlot,
+  dragWindowSlots,
+  quickMoveInventoryToWindow,
+  quickMoveWindowToInventory,
+  type WindowSlotAccess,
+} from '../gameplay/inventory-window';
 import { chestStorageAt, type ChestStorage, type ChestSlot } from '../gameplay/chests';
 import { isActionCode } from '../engine/keybinds';
 import { settings } from '../engine/settings';
+import { InventoryAction, type WindowKind, type WindowPropertyName } from '../net/protocol';
 
 export type ScreenName =
   'inventory' | 'crafting' | 'chest' | 'kiln' | 'death' | 'sleeping' | 'pause';
@@ -64,10 +72,6 @@ interface ExternalItemStack {
   count: number;
   damage?: number | null;
   affix?: ItemAffix;
-}
-
-function sameItemStackKind(a: ExternalItemStack, b: ExternalItemStack): boolean {
-  return a.id === b.id && (a.damage ?? null) === (b.damage ?? null) && a.affix === b.affix;
 }
 
 function toExternalItemStack(stack: {
@@ -168,6 +172,8 @@ export class UiManager {
   private lastPick = { slot: -1, time: 0 };
   private wasLocked = false;
   private grid: CraftingSlot[] = [];
+  private remoteWindowId: number | null = null;
+  private remoteWindowKind: WindowKind | null = null;
   private dimension: 2 | 3 = 2;
   private chestStorage: ChestStorage | null = null;
   activeKiln: BlockEntityInstance<KilnState> | null = null;
@@ -200,8 +206,10 @@ export class UiManager {
   private messageElement: HTMLDivElement | null = null;
   public onRespawn: () => void = () => {};
   /** Pause menu "Save & Quit": saves and leaves the world (main.ts returns to the main menu). */
-  /** A remote server currently owns only window zero (the player inventory). */
-  public inventoryOnly = false;
+  /** These callbacks are installed only while the dynamic multiplayer session is active. */
+  public onRemoteAction:
+    ((action: InventoryAction, slot: number, slots: readonly number[]) => void) | null = null;
+  public onRemoteCloseRequest: ((windowId: number) => void) | null = null;
   public onSaveAndQuit: () => Promise<void> = async () => {};
   /** Opens the independent settings overlay over the menu or pause screen. */
   public onOpenSettings: () => void = () => {};
@@ -291,10 +299,6 @@ export class UiManager {
   }
 
   open(name: ScreenName): void {
-    if (this.inventoryOnly && ['crafting', 'chest', 'kiln'].includes(name)) {
-      this.showMessage('Container windows are unavailable on this server');
-      return;
-    }
     if (name === 'inventory' && this.player?.mode === 'creative' && this.onCreativeInventory())
       return;
     if (name === 'death' || name === 'sleeping')
@@ -530,12 +534,18 @@ export class UiManager {
     this.startOpen('chest');
   }
 
-  private startOpen(name: Exclude<ScreenName, 'chest'> | 'chest'): void {
+  private startOpen(
+    name: Exclude<ScreenName, 'chest'> | 'chest',
+    remoteWindow?: { windowId: number; kind: WindowKind },
+  ): void {
     this.requirePlayer();
     if (this.screen) this.close();
     if (this.screen) return;
     this.ensureCanvases();
     this.screen = name;
+    this.remoteWindowId =
+      remoteWindow?.windowId ?? (name === 'inventory' && this.onRemoteAction ? 0 : null);
+    this.remoteWindowKind = remoteWindow?.kind ?? null;
     this.dimension = name === 'crafting' ? 3 : 2;
     this.grid =
       name === 'chest' || name === 'kiln'
@@ -562,6 +572,10 @@ export class UiManager {
   /** Returns cursor and crafting-grid items before closing; a full drop pool leaves the screen open. */
   close(): void {
     if (!this.screen || this.screen === 'death' || this.screen === 'sleeping') return;
+    if (this.remoteWindowId !== null && this.onRemoteCloseRequest) {
+      this.onRemoteCloseRequest(this.remoteWindowId);
+      return;
+    }
     if (this.screen === 'pause') {
       if (this.quitting) return;
       this.controller()?.loop.resume();
@@ -578,6 +592,8 @@ export class UiManager {
       if (player.inventory.cursor) this.throwStack('cursor', true);
     }
     this.screen = null;
+    this.remoteWindowId = null;
+    this.remoteWindowKind = null;
     this.grid = [];
     this.chestStorage = null;
     this.activeKiln = null;
@@ -596,6 +612,136 @@ export class UiManager {
         /* the browser declined; clicking the game locks the pointer again */
       }
     }
+  }
+
+  openRemoteWindow(windowId: number, kind: WindowKind, x: number, y: number, z: number): void {
+    this.screen = null;
+    this.grid = [];
+    this.chestStorage = null;
+    this.activeKiln = null;
+    this.kilnLayout = null;
+    if (kind === 'chest' || kind === 'large_chest') {
+      const halves = Array.from({ length: kind === 'large_chest' ? 2 : 1 }, () => ({
+        slots: Array(27).fill(null),
+      }));
+      this.chestStorage = {
+        halves,
+        double: kind === 'large_chest',
+      } as unknown as ChestStorage;
+    } else if (kind === 'kiln') {
+      this.activeKiln = {
+        x,
+        y,
+        z,
+        blockId: 'kiln',
+        state: {
+          input: null,
+          fuel: null,
+          output: null,
+          burnRemaining: 0,
+          burnTotal: 0,
+          cookProgress: 0,
+          storedXp: 0,
+        },
+      } as BlockEntityInstance<KilnState>;
+    }
+    this.startOpen(
+      kind === 'chest' || kind === 'large_chest' ? 'chest' : kind === 'kiln' ? 'kiln' : 'crafting',
+      { windowId, kind },
+    );
+  }
+
+  closeRemoteWindow(windowId: number): void {
+    if (this.remoteWindowId !== windowId) return;
+    this.remoteWindowId = null;
+    this.remoteWindowKind = null;
+    this.grid = [];
+    this.chestStorage = null;
+    this.activeKiln = null;
+    this.kilnLayout = null;
+    this.bookOpen = false;
+    this.drag = null;
+    this.finishOverlay();
+  }
+
+  applyRemoteWindowSnapshot(
+    windowId: number,
+    slots: readonly ({
+      id: string;
+      count: number;
+      damage?: number | null;
+      affix?: ItemAffix;
+    } | null)[],
+  ): void {
+    if (windowId === 0) {
+      if (this.screen !== 'inventory' || this.remoteWindowId !== 0) return;
+      for (let slot = 0; slot < 4; slot++) this.grid[slot] = this.remoteCraftSlot(slots[41 + slot]);
+      this.render();
+      return;
+    }
+    if (this.remoteWindowId !== windowId) return;
+    for (let slot = 0; slot < slots.length; slot++)
+      this.applyRemoteWindowSlot(windowId, slot, slots[slot] ?? null);
+    this.render();
+  }
+
+  applyRemoteWindowSlot(
+    windowId: number,
+    slot: number,
+    stack: { id: string; count: number; damage?: number | null; affix?: ItemAffix } | null,
+  ): void {
+    const player = this.player;
+    if (!player) return;
+    if (windowId === 0) {
+      if (this.screen === 'inventory' && this.remoteWindowId === 0 && slot >= 41 && slot < 45)
+        this.grid[slot - 41] = this.remoteCraftSlot(stack);
+      return;
+    }
+    if (this.remoteWindowId !== windowId || !this.remoteWindowKind) return;
+    const value = stack ? { ...stack } : null;
+    if (this.remoteWindowKind === 'chest' || this.remoteWindowKind === 'large_chest') {
+      const chestCount = this.chestSlotCount;
+      if (slot < chestCount) {
+        const half = this.chestStorage?.halves[Math.floor(slot / 27)];
+        if (half) half.slots[slot % 27] = value as ChestSlot | null;
+      } else this.setRemoteInventorySlot(slot - chestCount, value);
+    } else if (this.remoteWindowKind === 'kiln') {
+      if (this.activeKiln) {
+        if (slot === 0) this.activeKiln.state.input = value as KilnState['input'];
+        else if (slot === 1) this.activeKiln.state.fuel = value as KilnState['fuel'];
+        else if (slot === 2) this.activeKiln.state.output = value as KilnState['output'];
+        else this.setRemoteInventorySlot(slot <= 11 ? slot - 3 : slot - 12 + 9, value);
+      }
+    } else if (slot < 9) this.grid[slot] = this.remoteCraftSlot(value);
+    else if (slot > 9) this.setRemoteInventorySlot(slot - 10, value);
+  }
+
+  applyRemoteWindowProperty(windowId: number, property: WindowPropertyName, value: number): void {
+    if (this.remoteWindowId !== windowId || !this.activeKiln) return;
+    this.activeKiln.state[property] = value;
+    this.render();
+  }
+
+  disableRemoteWindows(): void {
+    if (this.remoteWindowId !== null) this.closeRemoteWindow(this.remoteWindowId);
+    this.onRemoteAction = null;
+    this.onRemoteCloseRequest = null;
+  }
+
+  private remoteCraftSlot(
+    stack:
+      { id: string; count: number; damage?: number | null; affix?: ItemAffix } | null | undefined,
+  ): CraftingSlot | null {
+    return stack ? { ...stack } : null;
+  }
+
+  private setRemoteInventorySlot(
+    slot: number,
+    stack: { id: string; count: number; damage?: number | null; affix?: ItemAffix } | null,
+  ): void {
+    const inventory = this.player?.inventory;
+    if (!inventory || slot < 0 || slot >= inventory.slots.length) return;
+    inventory.slots[slot] = stack ? { ...stack, slot } : null;
   }
 
   private returnCraftGrid(): boolean {
@@ -664,8 +810,19 @@ export class UiManager {
   /** The same operation a mouse click performs; shift-click quick-moves. */
   clickSlot(slot: number, button: ClickButton, shift = false): void {
     if (!Number.isInteger(slot) || slot < 0 || !this.screen) throw new Error('Invalid screen slot');
-    if (this.inventoryOnly && this.screen === 'inventory' && slot >= 41) {
-      this.showMessage('Crafting windows are unavailable on this server');
+    if (this.remoteWindowId !== null && this.onRemoteAction) {
+      const recipeBase = this.screen === 'inventory' ? RECIPE_BASE_INVENTORY : RECIPE_BASE_CRAFTING;
+      if ((this.screen === 'inventory' || this.screen === 'crafting') && slot >= recipeBase) {
+        this.selectRecipe(slot - recipeBase);
+      } else {
+        const action = shift
+          ? InventoryAction.QuickMove
+          : button === 'left'
+            ? InventoryAction.LeftClick
+            : InventoryAction.RightClick;
+        this.onRemoteAction(action, slot, []);
+      }
+      this.render();
       return;
     }
     const player = this.requirePlayer();
@@ -711,22 +868,7 @@ export class UiManager {
   }
 
   private clickGridSlot(slot: number, button: ClickButton, shift: boolean): void {
-    if (slot < 0 || slot >= this.grid.length) return;
-    if (shift) {
-      const stack = this.grid[slot];
-      if (!stack) return;
-      const inventory = this.requirePlayer().inventory;
-      const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
-      if (moved) inventory.insert(stack.id, moved, stack);
-      stack.count -= moved;
-      if (!stack.count) this.grid[slot] = null;
-      return;
-    }
-    this.clickExternalSlot(
-      () => this.grid[slot] ?? null,
-      (stack) => (this.grid[slot] = stack),
-      button,
-    );
+    clickCraftGrid(this.requirePlayer().inventory, this.grid, slot, button, shift);
   }
 
   private clickChestSlot(slot: number, button: ClickButton, shift: boolean): void {
@@ -749,43 +891,12 @@ export class UiManager {
     write: (stack: ExternalItemStack | null) => void,
     button: ClickButton,
   ): void {
-    const inventory = this.requirePlayer().inventory;
-    const slotStack = read();
-    const cursor = inventory.cursor;
-    if (button === 'left') {
-      if (!cursor) {
-        inventory.cursor = slotStack ? { ...slotStack } : null;
-        write(null);
-      } else if (
-        slotStack &&
-        sameItemStackKind(slotStack, cursor) &&
-        items.get(cursor.id).maxStack > 1 &&
-        slotStack.count < items.get(cursor.id).maxStack
-      ) {
-        const moved = Math.min(cursor.count, items.get(cursor.id).maxStack - slotStack.count);
-        slotStack.count += moved;
-        cursor.count -= moved;
-        if (!cursor.count) inventory.cursor = null;
-      } else {
-        write(cursor);
-        inventory.cursor = slotStack ? { ...slotStack } : null;
-      }
-    } else if (!cursor && slotStack) {
-      const half = Math.ceil(slotStack.count / 2);
-      inventory.cursor = { ...slotStack, count: half };
-      slotStack.count -= half;
-      write(slotStack.count ? slotStack : null);
-    } else if (
-      cursor &&
-      (!slotStack ||
-        (sameItemStackKind(slotStack, cursor) && slotStack.count < items.get(cursor.id).maxStack))
-    ) {
-      if (slotStack) slotStack.count++;
-      else write({ ...cursor, count: 1 });
-      cursor.count--;
-      if (!cursor.count) inventory.cursor = null;
-    }
-    inventory.assertInvariant();
+    const access: WindowSlotAccess = {
+      length: 1,
+      get: () => read(),
+      set: (_slot, stack) => write(stack),
+    };
+    clickWindowSlot(this.requirePlayer().inventory, access, 0, button);
   }
 
   private get chestSlotCount(): number {
@@ -796,6 +907,17 @@ export class UiManager {
     const halves = this.chestStorage?.halves;
     if (!halves || slot < 0 || slot >= halves.length * 27) return null;
     return halves[Math.floor(slot / 27)]!.slots[slot % 27] ?? null;
+  }
+
+  private chestSlotsAccess(): WindowSlotAccess {
+    return {
+      length: this.chestSlotCount,
+      get: (slot) => {
+        const stack = this.getChestSlot(slot);
+        return stack ? toExternalItemStack(stack) : null;
+      },
+      set: (slot, stack) => this.setChestSlot(slot, stack),
+    };
   }
 
   private setChestSlot(slot: number, stack: ExternalItemStack | null): void {
@@ -812,242 +934,15 @@ export class UiManager {
   }
 
   private quickMoveChestToInventory(slot: number): void {
-    const stored = this.getChestSlot(slot);
-    if (!stored) return;
-    const stack = toExternalItemStack(stored);
-    const inventory = this.requirePlayer().inventory;
-    const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
-    if (!moved || !inventory.insert(stack.id, moved, stack)) return;
-    stack.count -= moved;
-    this.setChestSlot(slot, stack.count ? stack : null);
+    quickMoveWindowToInventory(this.requirePlayer().inventory, this.chestSlotsAccess(), slot);
   }
 
   private quickMoveInventoryToChest(slot: number): void {
-    const inventory = this.requirePlayer().inventory;
-    const stack = inventory.slots[slot];
-    if (!stack || slot < 0 || slot >= 41) return;
-    let count = stack.count;
-    const max = items.get(stack.id).maxStack;
-    for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
-      const stored = this.getChestSlot(target);
-      const dest = stored ? toExternalItemStack(stored) : null;
-      if (!dest || !sameItemStackKind(dest, stack)) continue;
-      const moved = Math.min(count, max - dest.count);
-      dest.count += moved;
-      stored!.count = dest.count;
-      count -= moved;
-    }
-    for (let target = 0; target < this.chestSlotCount && count > 0; target++) {
-      if (this.getChestSlot(target)) continue;
-      const moved = Math.min(count, max);
-      this.setChestSlot(target, {
-        id: stack.id,
-        count: moved,
-        ...(stack.damage !== undefined ? { damage: stack.damage } : {}),
-        ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
-      });
-      count -= moved;
-    }
-    stack.count = count;
-    if (count === 0) inventory.slots[slot] = null;
-    inventory.assertInvariant();
+    quickMoveInventoryToWindow(this.requirePlayer().inventory, this.chestSlotsAccess(), slot);
   }
 
   private handleKilnSlot(slot: number, button: ClickButton, shift: boolean, player: Player): void {
-    if (!this.activeKiln) return;
-    const kiln = this.activeKiln.state;
-    const inv = player.inventory;
-
-    if (slot === 0 || slot === 1) {
-      const slotKey = slot === 0 ? 'input' : 'fuel';
-      const current = kiln[slotKey];
-      if (shift) {
-        if (current) {
-          const source = toExternalItemStack(current);
-          inv.route(source);
-          current.count = source.count;
-          if (current.count <= 0) kiln[slotKey] = null;
-        }
-        return;
-      }
-
-      if (button === 'left') {
-        if (!inv.cursor) {
-          if (current) {
-            inv.cursor = toExternalItemStack(current);
-            kiln[slotKey] = null;
-          }
-        } else {
-          const cursor = inv.cursor;
-          if (!current) {
-            kiln[slotKey] = {
-              id: cursor.id,
-              count: cursor.count,
-              damage: cursor.damage ?? null,
-              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
-            };
-            inv.cursor = null;
-          } else if (sameItemStackKind(toExternalItemStack(current), cursor)) {
-            const max = items.get(current.id).maxStack;
-            const canAdd = Math.min(cursor.count, max - current.count);
-            current.count += canAdd;
-            cursor.count -= canAdd;
-            if (cursor.count <= 0) inv.cursor = null;
-          } else {
-            const temp = toExternalItemStack(current);
-            kiln[slotKey] = {
-              id: cursor.id,
-              count: cursor.count,
-              damage: cursor.damage ?? null,
-              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
-            };
-            inv.cursor = temp;
-          }
-        }
-      } else if (button === 'right') {
-        if (!inv.cursor) {
-          if (current) {
-            const take = Math.ceil(current.count / 2);
-            inv.cursor = {
-              ...toExternalItemStack(current),
-              count: take,
-            };
-            current.count -= take;
-            if (current.count <= 0) kiln[slotKey] = null;
-          }
-        } else {
-          const cursor = inv.cursor;
-          if (!current) {
-            kiln[slotKey] = {
-              id: cursor.id,
-              count: 1,
-              damage: cursor.damage ?? null,
-              ...(cursor.affix !== undefined ? { affix: cursor.affix } : {}),
-            };
-            cursor.count--;
-            if (cursor.count <= 0) inv.cursor = null;
-          } else if (sameItemStackKind(toExternalItemStack(current), cursor)) {
-            const max = items.get(current.id).maxStack;
-            if (current.count < max) {
-              current.count++;
-              cursor.count--;
-              if (cursor.count <= 0) inv.cursor = null;
-            }
-          }
-        }
-      }
-    } else if (slot === 2) {
-      if (!kiln.output) return;
-      if (shift) {
-        const before = kiln.output.count;
-        const output = toExternalItemStack(kiln.output);
-        inv.route(output);
-        kiln.output.count = output.count;
-        const moved = before - output.count;
-        if (moved > 0) {
-          addXp(player, kiln.storedXp);
-          kiln.storedXp = 0;
-        }
-        if (kiln.output.count <= 0) kiln.output = null;
-        return;
-      }
-
-      if (button === 'left') {
-        if (!inv.cursor) {
-          inv.cursor = toExternalItemStack(kiln.output);
-          addXp(player, kiln.storedXp);
-          kiln.storedXp = 0;
-          kiln.output = null;
-        } else if (sameItemStackKind(inv.cursor, toExternalItemStack(kiln.output))) {
-          const max = items.get(kiln.output.id).maxStack;
-          const canAdd = Math.min(kiln.output.count, max - inv.cursor.count);
-          if (canAdd > 0) {
-            inv.cursor.count += canAdd;
-            kiln.output.count -= canAdd;
-            addXp(player, kiln.storedXp);
-            kiln.storedXp = 0;
-            if (kiln.output.count <= 0) kiln.output = null;
-          }
-        }
-      } else if (button === 'right') {
-        if (!inv.cursor) {
-          const take = Math.ceil(kiln.output.count / 2);
-          inv.cursor = {
-            ...toExternalItemStack(kiln.output),
-            count: take,
-          };
-          kiln.output.count -= take;
-          addXp(player, kiln.storedXp);
-          kiln.storedXp = 0;
-          if (kiln.output.count <= 0) kiln.output = null;
-        } else if (sameItemStackKind(inv.cursor, toExternalItemStack(kiln.output))) {
-          const max = items.get(kiln.output.id).maxStack;
-          if (inv.cursor.count < max) {
-            inv.cursor.count++;
-            kiln.output.count--;
-            addXp(player, kiln.storedXp);
-            kiln.storedXp = 0;
-            if (kiln.output.count <= 0) kiln.output = null;
-          }
-        }
-      }
-    } else {
-      const pSlot = slot <= 11 ? slot - 3 : slot - 12 + 9;
-      if (!shift) {
-        if (button === 'left') inv.leftClick(pSlot);
-        else inv.rightClick(pSlot);
-      } else {
-        const stack = inv.slots[pSlot];
-        if (!stack) return;
-        const isFuel = smelting.isFuel(stack.id);
-        const isSmeltable = smelting.getByInput(stack.id) !== undefined;
-        if (
-          isFuel &&
-          (!kiln.fuel ||
-            (sameItemStackKind(toExternalItemStack(kiln.fuel), stack) &&
-              kiln.fuel.count < items.get(stack.id).maxStack))
-        ) {
-          if (!kiln.fuel) {
-            kiln.fuel = {
-              id: stack.id,
-              count: stack.count,
-              damage: stack.damage ?? null,
-              ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
-            };
-            inv.slots[pSlot] = null;
-          } else {
-            const max = items.get(stack.id).maxStack;
-            const add = Math.min(stack.count, max - kiln.fuel.count);
-            kiln.fuel.count += add;
-            stack.count -= add;
-            if (stack.count <= 0) inv.slots[pSlot] = null;
-          }
-        } else if (
-          isSmeltable &&
-          (!kiln.input ||
-            (sameItemStackKind(toExternalItemStack(kiln.input), stack) &&
-              kiln.input.count < items.get(stack.id).maxStack))
-        ) {
-          if (!kiln.input) {
-            kiln.input = {
-              id: stack.id,
-              count: stack.count,
-              damage: stack.damage ?? null,
-              ...(stack.affix !== undefined ? { affix: stack.affix } : {}),
-            };
-            inv.slots[pSlot] = null;
-          } else {
-            const max = items.get(stack.id).maxStack;
-            const add = Math.min(stack.count, max - kiln.input.count);
-            kiln.input.count += add;
-            stack.count -= add;
-            if (stack.count <= 0) inv.slots[pSlot] = null;
-          }
-        } else {
-          inv.shiftClick(pSlot);
-        }
-      }
-    }
+    if (this.activeKiln) applyKilnScreenClick(player, this.activeKiln.state, slot, button, shift);
   }
 
   private throwStack(target: InventoryTarget, whole: boolean): void {
@@ -1079,6 +974,17 @@ export class UiManager {
     if (!recipe) return;
     const definition = crafting.recipes.get(recipe.recipeId);
     if (!definition) return;
+    if (this.remoteWindowId !== null && this.onRemoteAction) {
+      let recipeIndex = 0;
+      for (const candidate of crafting.recipes.values()) {
+        if (candidate.id === definition.id) {
+          this.onRemoteAction(InventoryAction.FillRecipe, recipeIndex, []);
+          return;
+        }
+        recipeIndex++;
+      }
+      return;
+    }
     const filled = fillRecipe(
       definition,
       this.dimension,
@@ -1845,6 +1751,21 @@ export class UiManager {
     this.drag = null;
     const player = this.player;
     if (!drag || !player) return;
+    if (this.remoteWindowId !== null && this.onRemoteAction) {
+      if (drag.slots.length === 1)
+        this.onRemoteAction(
+          drag.button === 'left' ? InventoryAction.LeftClick : InventoryAction.RightClick,
+          drag.slots[0]!,
+          [],
+        );
+      else
+        this.onRemoteAction(
+          drag.button === 'left' ? InventoryAction.DragEven : InventoryAction.DragOne,
+          0,
+          drag.slots,
+        );
+      return this.render();
+    }
     if (drag.slots.length === 1) return this.clickSlot(drag.slots[0]!, drag.button);
     const inventorySlots = drag.slots.map((slot) => this.inventorySlot(slot));
     if (inventorySlots.every((slot): slot is number => slot !== null)) {
@@ -1856,7 +1777,6 @@ export class UiManager {
   };
 
   private dragExternal(slots: readonly number[], button: ClickButton): void {
-    if (this.inventoryOnly) return;
     const inventory = this.requirePlayer().inventory;
     const cursor = inventory.cursor;
     if (!cursor) return;
@@ -1890,29 +1810,13 @@ export class UiManager {
         });
       }
     }
-    const eligible = external.filter(({ read }) => {
-      const stack = read();
-      return (
-        !stack || (sameItemStackKind(stack, cursor) && stack.count < items.get(stack.id).maxStack)
-      );
-    });
-    if (!eligible.length) return;
-    const each = button === 'left' ? Math.floor(cursor.count / eligible.length) : 1;
-    for (const target of eligible) {
-      if (!cursor.count) break;
-      const stack = target.read();
-      const moved = Math.min(
-        each,
-        cursor.count,
-        items.get(cursor.id).maxStack - (stack?.count ?? 0),
-      );
-      if (!moved) continue;
-      if (stack) stack.count += moved;
-      else target.write({ ...cursor, count: moved });
-      cursor.count -= moved;
-    }
-    if (!cursor.count) inventory.cursor = null;
-    inventory.assertInvariant();
+    const access: WindowSlotAccess = {
+      length: external.length,
+      get: (slot) => external[slot]?.read() ?? null,
+      set: (slot, stack) => external[slot]?.write(stack),
+    };
+    const selectedIndices = external.map((_, index) => index);
+    dragWindowSlots(inventory, selectedIndices, button, access);
   }
 
   private readonly onWheel = (event: WheelEvent): void => {

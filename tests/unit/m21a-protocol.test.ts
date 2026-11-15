@@ -37,6 +37,22 @@ const cases: { [K in T]: Messages[K] } = {
   },
   [T.RespawnRequest]: { type: T.RespawnRequest },
   [T.PlayerRespawn]: { type: T.PlayerRespawn, dimension: 'hollowdeep', position: [-1.5, 65, 4] },
+  [T.ContainerOpenRequest]: { type: T.ContainerOpenRequest, x: -12, y: 63, z: 42 },
+  [T.WindowOpen]: {
+    type: T.WindowOpen,
+    windowId: 255,
+    kind: 'large_chest',
+    x: -12,
+    y: 63,
+    z: 42,
+  },
+  [T.WindowClose]: { type: T.WindowClose, windowId: 1 },
+  [T.WindowProperty]: {
+    type: T.WindowProperty,
+    windowId: 7,
+    property: 'cookProgress',
+    value: 199,
+  },
   [T.PlayerList]: {
     type: T.PlayerList,
     players: [
@@ -250,8 +266,9 @@ describe('M21a protocol', () => {
       cursor: null,
     });
     roundTrip({ ...cases[T.InventorySync], slots: [], cursor: null });
-    for (let action = InventoryAction.LeftClick; action <= InventoryAction.SelectSlot; action++)
+    for (let action = InventoryAction.LeftClick; action <= InventoryAction.FillRecipe; action++)
       roundTrip({ ...cases[T.InventoryTransaction], action });
+    roundTrip({ ...cases[T.WindowClose], windowId: 0 });
     for (const accepted of [true, false]) roundTrip({ ...cases[T.InventoryResult], accepted });
     expect(() =>
       bytes({ ...cases[T.InventorySync], slots: Array(MAX_INVENTORY_SLOTS + 1).fill(null) }),

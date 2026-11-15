@@ -13,6 +13,10 @@ import {
   type Message,
   type Messages,
   type EntityPose,
+  type WindowKind,
+  type WireStack,
+  InventoryAction as A,
+  CURSOR_SLOT,
 } from '../src/net/protocol';
 import { clearPlayerInvulnerability } from '../src/gameplay/combat';
 import { deathCauseForDamageSource, resolveBedRespawn } from '../src/gameplay/death-beds';
@@ -56,6 +60,25 @@ import { Transport } from './transport';
 import { InventoryState } from './inventory-state';
 import { MovementClock, MAX_INPUT_STEPS } from '../src/net/movement-clock';
 import { transactInventory } from './inventory';
+import { chestStorageAt, type ChestEntityState, type ChestStorage } from '../src/gameplay/chests';
+import type { KilnState } from '../src/gameplay/kiln';
+import { crafting } from '../src/gameplay/crafting';
+import {
+  fillRecipe,
+  takeCraftingOutput,
+  type CraftingSlot,
+} from '../src/gameplay/crafting-session';
+import {
+  clickCraftGrid,
+  clickKilnSlot,
+  clickWindowSlot,
+  dragWindowSlots,
+  quickMoveInventoryToWindow,
+  quickMoveWindowToInventory,
+  type WindowSlotAccess,
+} from '../src/gameplay/inventory-window';
+import { dropInventoryStack } from '../src/gameplay/inventory-drop';
+import { BlockRegistry } from '../src/world/blocks/registry';
 import { parseOptions, type ServerOptions } from './options';
 
 interface Baseline {
@@ -77,6 +100,35 @@ interface NetEntity {
   pose: EntityPose;
   seen: number;
 }
+interface PeerWindow {
+  id: number;
+  nextId: number;
+  kind: WindowKind | null;
+  x: number;
+  y: number;
+  z: number;
+  revision: number;
+  grid: CraftingSlot[];
+  chest: ChestStorage | null;
+  kiln: KilnState | null;
+  slotCount: number;
+  slots: Array<WireStack | null>;
+  sync: Messages[T.InventorySync];
+  slotMessage: Messages[T.InventorySlot];
+  slotStack: WireStack;
+  lastIds: Array<string | undefined>;
+  lastCounts: Uint16Array;
+  lastDamage: Float64Array;
+  lastAffixes: Array<string | undefined>;
+  changed: Uint8Array;
+  lastCursorId: string | undefined;
+  lastCursorCount: number;
+  lastCursorDamage: number;
+  lastCursorAffix: string | undefined;
+  properties: Array<Messages[T.WindowProperty]>;
+  lastPropertyValues: Float64Array;
+  closePending: boolean;
+}
 interface Peer {
   transport: Transport;
   name: string;
@@ -93,6 +145,10 @@ interface Peer {
   revision: number;
   inventoryState: InventoryState;
   inventory: Messages[T.InventorySync];
+  inventorySlots: Array<WireStack | null>;
+  inventoryGrid: CraftingSlot[];
+  inventoryClosePending: boolean;
+  window: PeerWindow;
   correction: Messages[T.PlayerCorrection];
   vitals: Messages[T.PlayerVitals];
   respawning: boolean;
@@ -141,6 +197,49 @@ const faces = {
 } as const;
 function newer(sequence: number, previous: number): boolean {
   return (sequence - previous) >>> 0 > 0 && (sequence - previous) >>> 0 < 0x80000000;
+}
+
+function createPeerWindow(): PeerWindow {
+  const slots = new Array<WireStack | null>(95).fill(null);
+  return {
+    id: 0,
+    nextId: 0,
+    kind: null,
+    x: 0,
+    y: 0,
+    z: 0,
+    revision: 0,
+    grid: new Array<CraftingSlot>(9).fill(null),
+    chest: null,
+    kiln: null,
+    slotCount: 0,
+    slots,
+    sync: { type: T.InventorySync, windowId: 0, revision: 0, slots, cursor: null },
+    slotMessage: {
+      type: T.InventorySlot,
+      windowId: 0,
+      revision: 0,
+      slot: 0,
+      stack: null,
+    },
+    slotStack: { id: '', count: 1 },
+    lastIds: new Array<string | undefined>(95).fill(undefined),
+    lastCounts: new Uint16Array(95),
+    lastDamage: new Float64Array(95).fill(-2),
+    lastAffixes: new Array<string | undefined>(95).fill(undefined),
+    changed: new Uint8Array(95),
+    lastCursorId: undefined,
+    lastCursorCount: 0,
+    lastCursorDamage: -2,
+    lastCursorAffix: undefined,
+    properties: [
+      { type: T.WindowProperty, windowId: 0, property: 'burnRemaining', value: 0 },
+      { type: T.WindowProperty, windowId: 0, property: 'burnTotal', value: 0 },
+      { type: T.WindowProperty, windowId: 0, property: 'cookProgress', value: 0 },
+    ],
+    lastPropertyValues: new Float64Array(3).fill(Number.NaN),
+    closePending: false,
+  };
 }
 
 /** One authoritative world process; startServer accepts port 0 for isolated headless clients. */
@@ -194,6 +293,7 @@ export class AuthoritativeServer {
         socket.close();
         return;
       }
+      const inventorySlots = new Array<WireStack | null>(46).fill(null);
       const peer: Peer = {
         transport: null!,
         name: '',
@@ -209,7 +309,17 @@ export class AuthoritativeServer {
         movementClock: new MovementClock(true),
         revision: 0,
         inventoryState: new InventoryState(),
-        inventory: { type: T.InventorySync, windowId: 0, revision: 0, slots: [], cursor: null },
+        inventory: {
+          type: T.InventorySync,
+          windowId: 0,
+          revision: 0,
+          slots: inventorySlots,
+          cursor: null,
+        },
+        inventorySlots,
+        inventoryGrid: new Array<CraftingSlot>(4).fill(null),
+        inventoryClosePending: false,
+        window: createPeerWindow(),
         correction: {
           type: T.PlayerCorrection,
           acknowledged: 0,
@@ -331,6 +441,7 @@ export class AuthoritativeServer {
       const attached = dimension;
       dimension.world.listeners.add({
         blockEdited: (x, y, z, stateId) => {
+          this.closeWindowsAt(attached, x, y, z);
           const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
           attached.versions.set(key, (attached.versions.get(key) ?? 0) + 1);
           if (id === 'overworld') weatherManager.heightmap.updateBlock(attached.world, x, y, z);
@@ -455,22 +566,14 @@ export class AuthoritativeServer {
         peer.blockTail = next;
         break;
       }
+      case T.ContainerOpenRequest:
+        this.openWindow(peer, message.x, message.y, message.z);
+        break;
+      case T.WindowClose:
+        this.requestWindowClose(peer, message.windowId);
+        break;
       case T.InventoryTransaction: {
-        const reason = transactInventory(
-          peer.actor.player,
-          peer.actor.dimension.items,
-          peer.revision,
-          message,
-        );
-        if (!reason) peer.revision = (peer.revision + 1) >>> 0;
-        peer.transport.send({
-          type: T.InventoryResult,
-          requestId: message.requestId,
-          revision: peer.revision,
-          accepted: reason === null,
-          reason: reason ?? '',
-        });
-        this.syncInventory(peer, false);
+        this.inventoryTransaction(peer, message);
         break;
       }
       case T.ChatSend: {
@@ -495,6 +598,697 @@ export class AuthoritativeServer {
       default:
         this.disconnect(peer, 'Message is not valid from a client');
     }
+  }
+  private inWindowReach(peer: Peer, x: number, y: number, z: number): boolean {
+    const player = peer.actor!.player;
+    const reach = (player.mode === 'creative' ? CREATIVE_REACH : SURVIVAL_REACH) + 1;
+    return (
+      Math.hypot(
+        x + 0.5 - player.pos[0],
+        y + 0.5 - player.pos[1] - player.eye,
+        z + 0.5 - player.pos[2],
+      ) <= reach
+    );
+  }
+  private openWindow(peer: Peer, x: number, y: number, z: number): void {
+    const actor = peer.actor;
+    if (!actor || actor.player.dead || peer.travel.travelling || y < 0 || y >= 320) return;
+    if (!this.inWindowReach(peer, x, y, z)) return;
+    if (peer.window.id && !this.closeWindow(peer, peer.window.id, true)) return;
+    const world = actor.dimension.world;
+    const block = world.getBlock(x, y, z);
+    const window = peer.window;
+    window.chest = null;
+    window.kiln = null;
+    window.grid.fill(null);
+    if (block.id === 'chest') {
+      const chest = chestStorageAt(world, x, y, z);
+      if (!chest) return;
+      window.kind = chest.double ? 'large_chest' : 'chest';
+      window.chest = chest;
+      window.slotCount = chest.halves.length * 27 + 41;
+    } else if (block.id === 'kiln') {
+      const kiln = world.getBlockEntity<KilnState>(x, y, z);
+      if (!kiln) return;
+      window.kind = 'kiln';
+      window.kiln = kiln;
+      window.slotCount = 39;
+    } else if (block.id === 'workbench') {
+      window.kind = 'crafting';
+      window.slotCount = 51;
+    } else return;
+    window.nextId = (window.nextId % 255) + 1;
+    window.id = window.nextId;
+    window.x = x;
+    window.y = y;
+    window.z = z;
+    window.revision = (window.revision + 1) >>> 0;
+    window.closePending = false;
+    this.fillWindowSlots(peer);
+    this.captureWindowSlots(peer);
+    window.sync.type = T.InventorySync;
+    window.sync.windowId = window.id;
+    window.sync.revision = window.revision;
+    window.sync.slots = window.slots;
+    window.sync.cursor = actor.player.inventory.cursor;
+    window.lastCursorId = window.sync.cursor?.id;
+    window.lastCursorCount = window.sync.cursor?.count ?? 0;
+    window.lastCursorDamage = this.damageValue(window.sync.cursor);
+    window.lastCursorAffix = window.sync.cursor?.affix;
+    peer.transport.send({ type: T.WindowOpen, windowId: window.id, kind: window.kind, x, y, z });
+    peer.transport.send(window.sync);
+    this.syncWindowProperties(peer, true);
+  }
+  private requestWindowClose(peer: Peer, windowId: number): void {
+    if (windowId === 0) {
+      if (peer.window.id) return;
+      this.closeInventoryWindow(peer, true);
+    } else if (peer.window.id === windowId) this.closeWindow(peer, windowId, true);
+  }
+  private returnCraftGrid(peer: Peer, grid: CraftingSlot[]): boolean {
+    const inventory = peer.actor!.player.inventory;
+    for (let slot = 0; slot < grid.length; slot++) {
+      const stack = grid[slot];
+      if (!stack) continue;
+      const moved = Math.min(stack.count, inventory.capacity(stack.id, stack));
+      if (moved > 0) {
+        inventory.insert(stack.id, moved, stack);
+        stack.count -= moved;
+      }
+      if (stack.count > 0) {
+        const p = peer.actor!.player.pos;
+        if (!peer.actor!.dimension.items.spawn(stack.id, stack.count, p[0], p[1] + 0.5, p[2]))
+          return false;
+      }
+      grid[slot] = null;
+    }
+    return true;
+  }
+  private returnCursor(peer: Peer): boolean {
+    const player = peer.actor!.player;
+    const inventory = player.inventory;
+    inventory.returnCursor();
+    if (!inventory.cursor) return true;
+    const cos = Math.cos(player.pitch);
+    const dir = [
+      Math.cos(player.yaw) * cos,
+      Math.sin(player.pitch),
+      Math.sin(player.yaw) * cos,
+    ] as const;
+    const eye = player.pos[1] + player.eye - 0.3;
+    return (
+      dropInventoryStack(
+        inventory,
+        peer.actor!.dimension.items,
+        [player.pos[0] + dir[0] * 0.3, eye + dir[1] * 0.3, player.pos[2] + dir[2] * 0.3],
+        'cursor',
+        true,
+        {
+          velocity: [dir[0] * 4, dir[1] * 4 + 1, dir[2] * 4],
+          pickupDelay: 40,
+        },
+      ) !== null
+    );
+  }
+  private closeInventoryWindow(peer: Peer, notify: boolean): boolean {
+    if (!this.returnCraftGrid(peer, peer.inventoryGrid) || !this.returnCursor(peer)) {
+      peer.inventoryClosePending = true;
+      return false;
+    }
+    peer.inventoryClosePending = false;
+    if (notify) peer.transport.send({ type: T.WindowClose, windowId: 0 });
+    this.syncInventory(peer, false);
+    return true;
+  }
+  private closeWindow(peer: Peer, windowId: number, notify: boolean): boolean {
+    const window = peer.window;
+    if (!window.id || window.id !== windowId) return false;
+    if (window.kind === 'crafting' && !this.returnCraftGrid(peer, window.grid)) {
+      window.closePending = true;
+      return false;
+    }
+    if (!this.returnCursor(peer)) {
+      window.closePending = true;
+      return false;
+    }
+    window.id = 0;
+    window.kind = null;
+    window.chest = null;
+    window.kiln = null;
+    window.slotCount = 0;
+    window.closePending = false;
+    if (notify) peer.transport.send({ type: T.WindowClose, windowId });
+    this.syncInventory(peer, false);
+    return true;
+  }
+  private damageValue(stack: WireStack | null | undefined): number {
+    return !stack
+      ? -2
+      : stack.damage === undefined
+        ? -2
+        : stack.damage === null
+          ? -1
+          : stack.damage;
+  }
+  private windowStack(peer: Peer, slot: number): WireStack | null {
+    const window = peer.window;
+    const player = peer.actor!.player;
+    if (!window.kind || slot < 0 || slot >= window.slotCount) return null;
+    if (window.kind === 'chest' || window.kind === 'large_chest') {
+      const chestCount = window.chest!.halves.length * 27;
+      if (slot < chestCount)
+        return (
+          (window.chest!.halves[Math.floor(slot / 27)]!.slots[slot % 27] as WireStack | null) ??
+          null
+        );
+      return (player.inventory.slots[slot - chestCount] as WireStack | null) ?? null;
+    }
+    if (window.kind === 'kiln') {
+      const kiln = window.kiln!;
+      if (slot === 0) return kiln.input as WireStack | null;
+      if (slot === 1) return kiln.fuel as WireStack | null;
+      if (slot === 2) return kiln.output as WireStack | null;
+      const inventorySlot = slot <= 11 ? slot - 3 : slot - 12 + 9;
+      return (player.inventory.slots[inventorySlot] as WireStack | null) ?? null;
+    }
+    if (slot < 9) return window.grid[slot] as WireStack | null;
+    if (slot === 9) return null;
+    return (player.inventory.slots[slot - 10] as WireStack | null) ?? null;
+  }
+  private fillWindowSlots(peer: Peer): void {
+    const window = peer.window;
+    for (let slot = 0; slot < window.slotCount; slot++)
+      window.slots[slot] = this.windowStack(peer, slot);
+    window.slots.length = window.slotCount;
+  }
+  private captureWindowSlots(peer: Peer): void {
+    const window = peer.window;
+    for (let slot = 0; slot < window.slotCount; slot++) {
+      const stack = this.windowStack(peer, slot);
+      window.lastIds[slot] = stack?.id;
+      window.lastCounts[slot] = stack?.count ?? 0;
+      window.lastDamage[slot] = this.damageValue(stack);
+      window.lastAffixes[slot] = stack?.affix;
+    }
+  }
+  private syncWindow(peer: Peer, forceRevision = false): void {
+    const window = peer.window;
+    if (!window.id || !window.kind) return;
+    window.changed.fill(0);
+    let changed = false;
+    for (let slot = 0; slot < window.slotCount; slot++) {
+      const stack = this.windowStack(peer, slot);
+      if (
+        window.lastIds[slot] !== stack?.id ||
+        window.lastCounts[slot] !== (stack?.count ?? 0) ||
+        window.lastDamage[slot] !== this.damageValue(stack) ||
+        window.lastAffixes[slot] !== stack?.affix
+      ) {
+        changed = true;
+        window.changed[slot] = 1;
+        window.lastIds[slot] = stack?.id;
+        window.lastCounts[slot] = stack?.count ?? 0;
+        window.lastDamage[slot] = this.damageValue(stack);
+        window.lastAffixes[slot] = stack?.affix;
+      }
+    }
+    const cursor = peer.actor!.player.inventory.cursor;
+    const cursorChanged =
+      window.lastCursorId !== cursor?.id ||
+      window.lastCursorCount !== (cursor?.count ?? 0) ||
+      window.lastCursorDamage !== this.damageValue(cursor) ||
+      window.lastCursorAffix !== cursor?.affix;
+    if (!changed && !cursorChanged && !forceRevision) return;
+    window.revision = (window.revision + 1) >>> 0;
+    window.slotMessage.windowId = window.id;
+    window.slotMessage.revision = window.revision;
+    for (let slot = 0; slot < window.slotCount; slot++) {
+      if (!window.changed[slot]) continue;
+      const stack = this.windowStack(peer, slot);
+      window.slotMessage.slot = slot;
+      window.slotMessage.stack = stack ? this.copyWindowStack(window.slotStack, stack) : null;
+      peer.transport.send(window.slotMessage);
+    }
+    if (cursorChanged) {
+      window.lastCursorId = cursor?.id;
+      window.lastCursorCount = cursor?.count ?? 0;
+      window.lastCursorDamage = this.damageValue(cursor);
+      window.lastCursorAffix = cursor?.affix;
+      window.slotMessage.slot = CURSOR_SLOT;
+      window.slotMessage.stack = cursor ? this.copyWindowStack(window.slotStack, cursor) : null;
+      peer.transport.send(window.slotMessage);
+    }
+  }
+  private copyWindowStack(target: WireStack, stack: WireStack): WireStack {
+    target.id = stack.id;
+    target.count = stack.count;
+    if (stack.damage === undefined) delete target.damage;
+    else target.damage = stack.damage;
+    if (stack.affix === undefined) delete target.affix;
+    else target.affix = stack.affix;
+    return target;
+  }
+  private syncWindowProperties(peer: Peer, force = false): void {
+    const window = peer.window;
+    const kiln = window.kiln;
+    if (!window.id || window.kind !== 'kiln' || !kiln) return;
+    for (let i = 0; i < 3; i++) {
+      const value = i === 0 ? kiln.burnRemaining : i === 1 ? kiln.burnTotal : kiln.cookProgress;
+      if (!force && window.lastPropertyValues[i] === value) continue;
+      window.lastPropertyValues[i] = value;
+      const message = window.properties[i]!;
+      message.windowId = window.id;
+      message.value = value;
+      peer.transport.send(message);
+    }
+  }
+  private windowBlockUnchanged(peer: Peer): boolean {
+    const window = peer.window;
+    const actor = peer.actor;
+    if (!actor || !window.id || !window.kind || actor.player.dead || peer.travel.travelling)
+      return false;
+    if (!this.inWindowReach(peer, window.x, window.y, window.z)) return false;
+    const world = actor.dimension.world;
+    const state = BlockRegistry.getInstance().getResolvedState(
+      world.getBlockStateId(window.x, window.y, window.z),
+    );
+    if (!state) return false;
+    if (window.kind === 'chest' || window.kind === 'large_chest') {
+      if (state.blockId !== 'chest' || !world.getBlockEntity(window.x, window.y, window.z))
+        return false;
+      return window.kind === 'large_chest'
+        ? String(state.properties.pair) !== 'single'
+        : String(state.properties.pair ?? 'single') === 'single';
+    }
+    if (window.kind === 'kiln')
+      return state.blockId === 'kiln' && !!world.getBlockEntity(window.x, window.y, window.z);
+    return state.blockId === 'workbench';
+  }
+  private sameSharedWindow(a: PeerWindow, b: PeerWindow): boolean {
+    if (!a.id || !b.id || !a.kind || a.kind !== b.kind) return false;
+    if (a.kind === 'kiln') return a.x === b.x && a.y === b.y && a.z === b.z;
+    if (a.kind !== 'chest' && a.kind !== 'large_chest') return false;
+    const as = a.chest?.halves;
+    const bs = b.chest?.halves;
+    if (!as || !bs) return false;
+    for (const left of as) for (const right of bs) if (left.slots === right.slots) return true;
+    return false;
+  }
+  private closeWindowsAt(
+    dimension: SimulationDimension,
+    x: number,
+    y: number,
+    z: number,
+    force = false,
+  ): void {
+    const brokenState = dimension.world.getBlockEntity<ChestEntityState>(x, y, z);
+    for (const peer of this.peers) {
+      const window = peer.window;
+      if (peer.actor?.dimension !== dimension || !window.id || !window.kind) continue;
+      let affected = window.x === x && window.y === y && window.z === z;
+      if (
+        !affected &&
+        (window.kind === 'chest' || window.kind === 'large_chest') &&
+        brokenState?.slots
+      )
+        affected = window.chest?.halves.some((half) => half === brokenState) ?? false;
+      if (
+        !affected &&
+        window.kind === 'large_chest' &&
+        window.y === y &&
+        Math.abs(window.x - x) + Math.abs(window.z - z) === 1
+      )
+        affected = true;
+      if (!affected) continue;
+      if (!force) {
+        const world = dimension.world;
+        let stillBound: boolean;
+        if (window.kind === 'chest' || window.kind === 'large_chest') {
+          const current = chestStorageAt(world, window.x, window.y, window.z);
+          stillBound = Boolean(
+            current &&
+            current.double === (window.kind === 'large_chest') &&
+            current.halves.length === window.chest?.halves.length &&
+            current.halves.every((half, index) => half === window.chest?.halves[index]),
+          );
+        } else if (window.kind === 'kiln') {
+          stillBound =
+            world.getBlock(window.x, window.y, window.z).id === 'kiln' &&
+            world.getBlockEntity(window.x, window.y, window.z) === window.kiln;
+        } else stillBound = world.getBlock(window.x, window.y, window.z).id === 'workbench';
+        if (stillBound) continue;
+      }
+      this.closeWindow(peer, window.id, true);
+    }
+  }
+  private syncContainerWindows(forcePeer?: Peer): void {
+    for (const peer of this.peers) {
+      if (!peer.window.id) continue;
+      if (peer.window.closePending) {
+        this.closeWindow(peer, peer.window.id, true);
+        if (!peer.window.id) continue;
+      }
+      if (!this.windowBlockUnchanged(peer)) {
+        this.closeWindow(peer, peer.window.id, true);
+        continue;
+      }
+      this.syncWindow(peer, peer === forcePeer);
+      this.syncWindowProperties(peer);
+    }
+  }
+  private windowAccess(peer: Peer): WindowSlotAccess {
+    const window = peer.window;
+    return {
+      length: window.slotCount,
+      get: (slot) => this.windowStack(peer, slot),
+      set: (slot, stack) => this.setWindowStack(peer, slot, stack),
+    };
+  }
+  private inventoryGridAccess(peer: Peer): WindowSlotAccess {
+    return {
+      length: 45,
+      get: (slot) =>
+        slot < 41
+          ? ((peer.actor!.player.inventory.slots[slot] as WireStack | null) ?? null)
+          : ((peer.inventoryGrid[slot - 41] as WireStack | null) ?? null),
+      set: (slot, stack) => {
+        if (slot < 41) peer.actor!.player.inventory.slots[slot] = stack ? { ...stack, slot } : null;
+        else peer.inventoryGrid[slot - 41] = stack;
+      },
+    };
+  }
+  private setWindowStack(peer: Peer, slot: number, stack: WireStack | null): void {
+    const window = peer.window;
+    const player = peer.actor!.player;
+    if (!window.kind || slot < 0 || slot >= window.slotCount) return;
+    if (window.kind === 'chest' || window.kind === 'large_chest') {
+      const chestCount = window.chest!.halves.length * 27;
+      if (slot < chestCount) {
+        const half = window.chest!.halves[Math.floor(slot / 27)]!;
+        half.slots[slot % 27] = stack ? ({ ...stack } as (typeof half.slots)[number]) : null;
+      } else
+        player.inventory.slots[slot - chestCount] = stack
+          ? { ...stack, slot: slot - chestCount }
+          : null;
+    } else if (window.kind === 'kiln') {
+      const kiln = window.kiln!;
+      if (slot < 2) {
+        const value = stack
+          ? ({ ...stack, damage: stack.damage ?? null } as KilnState['input'])
+          : null;
+        if (slot === 0) kiln.input = value;
+        else kiln.fuel = value;
+      } else if (slot > 2) {
+        const inventorySlot = slot <= 11 ? slot - 3 : slot - 12 + 9;
+        player.inventory.slots[inventorySlot] = stack ? { ...stack, slot: inventorySlot } : null;
+      }
+    } else if (slot < 9) window.grid[slot] = stack;
+    else if (slot > 9)
+      player.inventory.slots[slot - 10] = stack ? { ...stack, slot: slot - 10 } : null;
+  }
+  private proxyInventoryRequest(
+    request: Messages[T.InventoryTransaction],
+    revision: number,
+    slot: number,
+    slots: readonly number[] = [],
+  ): Messages[T.InventoryTransaction] {
+    return { ...request, windowId: 0, revision, slot, slots };
+  }
+  private recipeAt(index: number) {
+    if (!Number.isInteger(index) || index < 0) return null;
+    let current = 0;
+    for (const recipe of crafting.recipes.values()) if (current++ === index) return recipe;
+    return null;
+  }
+  private fillServerRecipe(
+    peer: Peer,
+    grid: CraftingSlot[],
+    dimension: 2 | 3,
+    recipeIndex: number,
+  ): boolean {
+    const recipe = this.recipeAt(recipeIndex);
+    if (!recipe) return false;
+    const filled = fillRecipe(recipe, dimension, grid, peer.actor!.player.inventory.slots);
+    if (!filled) return false;
+    grid.fill(null);
+    for (let i = 0; i < filled.grid.length; i++) grid[i] = filled.grid[i] ?? null;
+    for (let i = 0; i < peer.actor!.player.inventory.slots.length; i++)
+      peer.actor!.player.inventory.slots[i] = filled.inventory[i] ?? null;
+    return true;
+  }
+  private inventoryTransaction(peer: Peer, request: Messages[T.InventoryTransaction]): void {
+    const actor = peer.actor!;
+    let reason: string | null;
+    let revision: number;
+    if (request.windowId === 0) {
+      if (peer.window.id) reason = 'Window is not open';
+      else if (request.revision !== peer.revision) reason = 'Inventory revision mismatch';
+      else if (actor.player.dead) reason = 'Player is dead';
+      else reason = this.transactInventoryGrid(peer, request);
+      if (!reason) {
+        peer.revision = (peer.revision + 1) >>> 0;
+        this.syncInventory(peer, false);
+      } else this.syncInventory(peer, false);
+      revision = peer.revision;
+    } else {
+      const window = peer.window;
+      if (request.windowId !== window.id || !window.id || !window.kind)
+        reason = 'Window is not open';
+      else if (request.revision !== window.revision) reason = 'Window revision mismatch';
+      else if (actor.player.dead) reason = 'Player is dead';
+      else if (!this.windowBlockUnchanged(peer)) {
+        this.closeWindow(peer, window.id, true);
+        reason = 'Window block is unavailable';
+      } else reason = this.transactContainer(peer, request);
+      if (!reason) {
+        this.syncInventory(peer);
+        this.syncContainerWindows(peer);
+      } else if (window.id) this.sendWindowSync(peer);
+      revision = peer.window.revision;
+    }
+    peer.transport.send({
+      type: T.InventoryResult,
+      requestId: request.requestId,
+      revision,
+      accepted: reason === null,
+      reason: reason ?? '',
+    });
+  }
+  private transactInventoryGrid(
+    peer: Peer,
+    request: Messages[T.InventoryTransaction],
+  ): string | null {
+    const player = peer.actor!.player;
+    if (request.action === A.FillRecipe) {
+      if (request.slots.length) return 'Unexpected recipe slots';
+      if (!this.recipeAt(request.slot)) return 'Unknown recipe';
+      this.fillServerRecipe(peer, peer.inventoryGrid, 2, request.slot);
+      return null;
+    }
+    if (request.slot === 45) {
+      if (request.slots.length) return 'Unexpected output slots';
+      if (
+        request.action !== A.LeftClick &&
+        request.action !== A.RightClick &&
+        request.action !== A.QuickMove
+      )
+        return 'Invalid crafting output action';
+      takeCraftingOutput(peer.inventoryGrid, player.inventory, request.action === A.QuickMove);
+      return null;
+    }
+    if (request.action === A.DragEven || request.action === A.DragOne) {
+      if (!request.slots.length || request.slots.length > 45) return 'Invalid drag';
+      for (let i = 0; i < request.slots.length; i++) {
+        const slot = request.slots[i]!;
+        if (slot >= 45) return 'Slot is not owned';
+        for (let j = 0; j < i; j++) if (request.slots[j] === slot) return 'Duplicate drag slot';
+      }
+      dragWindowSlots(
+        player.inventory,
+        request.slots,
+        request.action === A.DragEven ? 'left' : 'right',
+        this.inventoryGridAccess(peer),
+      );
+      return null;
+    }
+    if (request.slot >= 41 && request.slot < 45) {
+      if (request.slots.length) return 'Unexpected grid slots';
+      if (
+        request.action === A.LeftClick ||
+        request.action === A.RightClick ||
+        request.action === A.QuickMove
+      ) {
+        clickCraftGrid(
+          player.inventory,
+          peer.inventoryGrid,
+          request.slot - 41,
+          request.action === A.RightClick ? 'right' : 'left',
+          request.action === A.QuickMove,
+        );
+        return null;
+      }
+      return 'Invalid crafting grid action';
+    }
+    return transactInventory(player, peer.actor!.dimension.items, peer.revision, request);
+  }
+  private transactContainer(peer: Peer, request: Messages[T.InventoryTransaction]): string | null {
+    const window = peer.window;
+    const inventory = peer.actor!.player.inventory;
+    if (request.action === A.SelectSlot)
+      return request.slots.length
+        ? 'Unexpected selection slots'
+        : this.transactMappedInventory(peer, request, request.slot);
+    if (request.action === A.FillRecipe) {
+      if (window.kind !== 'crafting' || request.slots.length) return 'Invalid recipe fill';
+      if (!this.recipeAt(request.slot)) return 'Unknown recipe';
+      this.fillServerRecipe(peer, window.grid, 3, request.slot);
+      return null;
+    }
+    if (request.action === A.DragEven || request.action === A.DragOne) {
+      if (!request.slots.length || request.slots.length > window.slotCount) return 'Invalid drag';
+      for (let i = 0; i < request.slots.length; i++) {
+        const slot = request.slots[i]!;
+        if (
+          slot >= window.slotCount ||
+          (window.kind === 'crafting' && slot === 9) ||
+          (window.kind === 'kiln' && slot === 2)
+        )
+          return 'Slot is not owned';
+        for (let j = 0; j < i; j++) if (request.slots[j] === slot) return 'Duplicate drag slot';
+      }
+      dragWindowSlots(
+        inventory,
+        request.slots,
+        request.action === A.DragEven ? 'left' : 'right',
+        this.windowAccess(peer),
+      );
+      return null;
+    }
+    if (window.kind === 'kiln') {
+      if (request.slots.length) return 'Unexpected kiln slots';
+      if (request.slot >= 39) return 'Slot is not owned';
+      if (
+        request.action === A.LeftClick ||
+        request.action === A.RightClick ||
+        request.action === A.QuickMove
+      ) {
+        clickKilnSlot(
+          peer.actor!.player,
+          window.kiln!,
+          request.slot,
+          request.action === A.RightClick ? 'right' : 'left',
+          request.action === A.QuickMove,
+        );
+        return null;
+      }
+      return this.transactMappedInventory(peer, request, this.kilnInventorySlot(request.slot));
+    }
+    if (window.kind === 'crafting') {
+      if (request.slots.length) return 'Unexpected crafting slots';
+      if (request.slot < 9) {
+        if (
+          request.action !== A.LeftClick &&
+          request.action !== A.RightClick &&
+          request.action !== A.QuickMove
+        )
+          return 'Invalid crafting grid action';
+        clickCraftGrid(
+          inventory,
+          window.grid,
+          request.slot,
+          request.action === A.RightClick ? 'right' : 'left',
+          request.action === A.QuickMove,
+        );
+        return null;
+      }
+      if (request.slot === 9) {
+        if (
+          request.action !== A.LeftClick &&
+          request.action !== A.RightClick &&
+          request.action !== A.QuickMove
+        )
+          return 'Invalid crafting output action';
+        takeCraftingOutput(window.grid, inventory, request.action === A.QuickMove);
+        return null;
+      }
+      return this.transactMappedInventory(peer, request, request.slot - 10);
+    }
+    const chestCount = window.chest!.halves.length * 27;
+    if (
+      request.action === A.CollectAll ||
+      request.action === A.DropOne ||
+      request.action === A.DropStack
+    ) {
+      if (request.slots.length) return 'Unexpected slots';
+      const mapped =
+        request.slot === CURSOR_SLOT
+          ? CURSOR_SLOT
+          : request.slot < chestCount
+            ? -1
+            : request.slot - chestCount;
+      if (mapped < 0) return 'Slot is not owned';
+      return this.transactMappedInventory(peer, request, mapped);
+    }
+    if (request.slots.length) return 'Unexpected slots';
+    if (request.slot < chestCount) {
+      const access = this.chestAccess(peer);
+      if (request.action === A.QuickMove)
+        quickMoveWindowToInventory(inventory, access, request.slot);
+      else if (request.action === A.LeftClick || request.action === A.RightClick)
+        clickWindowSlot(
+          inventory,
+          access,
+          request.slot,
+          request.action === A.RightClick ? 'right' : 'left',
+        );
+      else return 'Invalid chest action';
+      return null;
+    }
+    const inventorySlot = request.slot - chestCount;
+    if (request.action === A.QuickMove)
+      quickMoveInventoryToWindow(inventory, this.chestAccess(peer), inventorySlot);
+    else return this.transactMappedInventory(peer, request, inventorySlot);
+    return null;
+  }
+  private transactMappedInventory(
+    peer: Peer,
+    request: Messages[T.InventoryTransaction],
+    mappedSlot: number,
+  ): string | null {
+    if (mappedSlot < 0) return 'Slot is not owned';
+    return transactInventory(
+      peer.actor!.player,
+      peer.actor!.dimension.items,
+      peer.window.revision,
+      this.proxyInventoryRequest(request, peer.window.revision, mappedSlot),
+    );
+  }
+  private kilnInventorySlot(slot: number): number {
+    return slot >= 3 && slot < 39 ? (slot <= 11 ? slot - 3 : slot - 12 + 9) : -1;
+  }
+  private chestAccess(peer: Peer): WindowSlotAccess {
+    const chest = peer.window.chest!;
+    const length = chest.halves.length * 27;
+    return {
+      length,
+      get: (slot) =>
+        (chest.halves[Math.floor(slot / 27)]!.slots[slot % 27] as WireStack | null) ?? null,
+      set: (slot, stack) => {
+        chest.halves[Math.floor(slot / 27)]!.slots[slot % 27] = stack
+          ? ({ ...stack } as (typeof chest.halves)[number]['slots'][number])
+          : null;
+      },
+    };
+  }
+  private sendWindowSync(peer: Peer): void {
+    if (!peer.window.id || !peer.window.kind) return;
+    this.fillWindowSlots(peer);
+    this.captureWindowSlots(peer);
+    peer.window.sync.windowId = peer.window.id;
+    peer.window.sync.revision = peer.window.revision;
+    peer.window.sync.slots = peer.window.slots;
+    peer.window.sync.cursor = peer.actor!.player.inventory.cursor;
+    peer.transport.send(peer.window.sync);
   }
   private async join(peer: Peer): Promise<void> {
     await Promise.all(this.playerSaves);
@@ -553,6 +1347,8 @@ export class AuthoritativeServer {
     peer.movementClock.reset();
     const onDeath = actor.player.survival.onDeath;
     actor.player.survival.onDeath = (source) => {
+      if (peer.window.id) this.closeWindow(peer, peer.window.id, true);
+      this.closeInventoryWindow(peer, true);
       onDeath(source);
       peer.breaking.active = false;
       peer.vitals.deathCause = deathCauseForDamageSource(source);
@@ -563,7 +1359,11 @@ export class AuthoritativeServer {
     actor.onInteraction = () => this.processBlockActions(peer);
     peer.correction.position = actor.player.pos;
     peer.correction.velocity = actor.player.vel;
-    peer.inventory.slots = actor.player.inventory.slots;
+    const beforeBreak = actor.interaction.onBreakBeforeRemove;
+    actor.interaction.onBreakBeforeRemove = (state, x, y, z) => {
+      this.closeWindowsAt(actor.dimension, x, y, z, true);
+      return beforeBreak ? beforeBreak(state, x, y, z) : true;
+    };
     actor.interaction.onUse = (_id, target) => {
       const world = actor.dimension.world;
       if (world.current.useBlock(target.x, target.y, target.z)) return true;
@@ -584,6 +1384,8 @@ export class AuthoritativeServer {
     if (!this.peers.delete(peer)) return;
     this.names.delete(peer.name.toLowerCase());
     if (peer.actor) {
+      if (peer.window.id) this.closeWindow(peer, peer.window.id, false);
+      this.closeInventoryWindow(peer, false);
       const save = this.savePlayer(peer).finally(() => this.playerSaves.delete(save));
       this.playerSaves.add(save);
       void save.catch(console.error);
@@ -627,6 +1429,8 @@ export class AuthoritativeServer {
   private async respawn(peer: Peer): Promise<void> {
     const actor = peer.actor!,
       p = actor.player;
+    if (peer.window.id) this.closeWindow(peer, peer.window.id, true);
+    this.closeInventoryWindow(peer, true);
     const overworld = this.dimension('overworld');
     overworld.pendingArrivals++;
     actor.dimension.pendingArrivals++;
@@ -684,9 +1488,16 @@ export class AuthoritativeServer {
   private syncInventory(peer: Peer, detect = true): void {
     const player = peer.actor?.player;
     if (!player) return;
-    const changed = peer.inventoryState.capture(player.inventory);
+    const inventoryChanged = peer.inventoryState.capture(player.inventory);
+    const gridChanged = peer.inventoryState.captureCrafting(peer.inventoryGrid);
+    const changed = inventoryChanged || gridChanged;
     if (detect && !changed) return;
     if (detect) peer.revision = (peer.revision + 1) >>> 0;
+    for (let slot = 0; slot < 41; slot++)
+      peer.inventorySlots[slot] = player.inventory.slots[slot] ?? null;
+    for (let slot = 0; slot < 4; slot++)
+      peer.inventorySlots[41 + slot] = peer.inventoryGrid[slot] ?? null;
+    peer.inventorySlots[45] = null;
     peer.inventory.revision = peer.revision;
     peer.inventory.cursor = player.inventory.cursor;
     peer.transport.send(peer.inventory);
@@ -904,8 +1715,10 @@ export class AuthoritativeServer {
       this.stream(peer);
       this.sendEntities(peer);
       if (this.ticks % 100 === 0 || weatherChanged) this.syncTimeWeather(peer);
+      if (peer.inventoryClosePending) this.closeInventoryWindow(peer, true);
       this.syncInventory(peer);
     }
+    this.syncContainerWindows();
     if (this.ticks % 40 === 0) this.broadcastPlayerList();
     this.unloadDistantColumns();
     if (this.ticks % 1200 === 0) this.saveRequested = true;
@@ -1190,6 +2003,8 @@ export class AuthoritativeServer {
   }
   private async travel(peer: Peer, portal: PortalRecord): Promise<void> {
     const actor = peer.actor!;
+    if (peer.window.id) this.closeWindow(peer, peer.window.id, true);
+    this.closeInventoryWindow(peer, true);
     actor.player.detached = true;
     const to = otherDimension(actor.dimension.id),
       dimension = this.dimension(to);
@@ -1233,6 +2048,8 @@ export class AuthoritativeServer {
     dimension: SimulationDimension,
     position: [number, number, number],
   ): void {
+    if (peer.window.id) this.closeWindow(peer, peer.window.id, true);
+    this.closeInventoryWindow(peer, true);
     const actor = peer.actor!;
     const replacement = new Actor(dimension, peer.id);
     applyPlayerData(replacement.player, deserializePlayerData(serializePlayerData(actor.player)));

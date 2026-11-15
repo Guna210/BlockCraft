@@ -92,7 +92,6 @@ export class RemoteSession {
     private readonly restoreErrorDrain: () => void = () => {},
   ) {
     const controller = manager.playerController!;
-    if (activeUi.manager) activeUi.manager.inventoryOnly = true;
     api.getRemoteEntities = () =>
       Array.from(this.entities?.entities ?? [], ([id, entity]) => ({
         id,
@@ -161,7 +160,7 @@ export class RemoteSession {
       this.restoreRespawn();
       this.restoreErrorDrain();
       this.disposed = true;
-      if (activeUi.manager) activeUi.manager.inventoryOnly = false;
+      activeUi.manager?.disableRemoteWindows();
       api.getRemoteEntities = () => [];
       api.getNetPredictionTrace = () => [];
       api.getNetBlockUpdates = () => [];
@@ -353,6 +352,21 @@ export class RemoteSession {
           m.playerController!.player!.inventory,
           this.connection,
         );
+        this.inventory.onWindowOpen = ({ windowId, kind, x, y, z }) =>
+          activeUi.manager?.openRemoteWindow(windowId, kind, x, y, z);
+        this.inventory.onWindowClose = (windowId) => activeUi.manager?.closeRemoteWindow(windowId);
+        this.inventory.onWindowSnapshot = (windowId, slots) =>
+          activeUi.manager?.applyRemoteWindowSnapshot(windowId, slots);
+        this.inventory.onWindowSlot = (windowId, slot, stack) =>
+          activeUi.manager?.applyRemoteWindowSlot(windowId, slot, stack);
+        this.inventory.onWindowProperty = ({ windowId, property, value }) =>
+          activeUi.manager?.applyRemoteWindowProperty(windowId, property, value);
+        if (activeUi.manager) {
+          activeUi.manager.onRemoteAction = (action, slot, slots) =>
+            this.inventory?.enqueueWindowAction(action, slot, slots);
+          activeUi.manager.onRemoteCloseRequest = (windowId) =>
+            this.connection.send({ type: MessageType.WindowClose, windowId });
+        }
         const sequence = this.prediction?.lastSequence ?? 0;
         this.previousCorrections += this.prediction?.corrections ?? 0;
         this.prediction = new Prediction(
@@ -377,9 +391,18 @@ export class RemoteSession {
           this.blockAction(BlockActionKind.FinishBreak, x, y, z, c.interaction!.target.face);
           this.breaking = false;
         };
-        c.interaction.onUse = (_id, target) => {
+        c.interaction.onUse = (id, target) => {
+          if (id === 'chest' || id === 'kiln' || id === 'workbench') {
+            this.connection.send({
+              type: MessageType.ContainerOpenRequest,
+              x: target.x,
+              y: target.y,
+              z: target.z,
+            });
+            return true;
+          }
           this.blockAction(BlockActionKind.Place, target.x, target.y, target.z, target.face);
-          return ['chest', 'kiln', 'workbench'].includes(_id);
+          return false;
         };
         // Replace the entry points only for the lifetime of this session: no single-player hook.
         c.frame = () => this.frame();
@@ -509,6 +532,15 @@ export class RemoteSession {
         break;
       case MessageType.InventoryResult:
         this.inventory?.result(message);
+        break;
+      case MessageType.WindowOpen:
+        this.inventory?.openWindow(message);
+        break;
+      case MessageType.WindowClose:
+        this.inventory?.closeWindow(message.windowId);
+        break;
+      case MessageType.WindowProperty:
+        this.inventory?.property(message);
         break;
       case MessageType.EntitySpawn:
         this.entities?.spawn(message);

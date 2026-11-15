@@ -4,15 +4,33 @@ import {
   MessageType as T,
   CURSOR_SLOT,
   type Messages,
+  type WindowKind,
+  type WireStack,
 } from '../../net/protocol';
 import type { Connection } from './connection';
-/** Window zero operations are serialized by authoritative revision, including rapid clicks. */
+
+/** One ordered transaction queue carries the authoritative revision for each open window. */
 export class RemoteInventory {
-  private revision = 0;
   private requestId = 0;
+  private inFlightId = 0;
+  private inFlightWindowId = 0;
   private pending = false;
   private initialized = false;
-  private readonly queue: Array<{ action: A; slot: number; slots: readonly number[] }> = [];
+  private activeWindowId = 0;
+  private activeWindowKind: WindowKind | null = null;
+  private readonly revisions = new Uint32Array(256);
+  private readonly queue: Array<{
+    action: A;
+    slot: number;
+    slots: readonly number[];
+    windowId: number;
+  }> = [];
+  onWindowOpen: (message: Messages[T.WindowOpen]) => void = () => {};
+  onWindowClose: (windowId: number) => void = () => {};
+  onWindowSnapshot: (windowId: number, slots: readonly (WireStack | null)[]) => void = () => {};
+  onWindowSlot: (windowId: number, slot: number, stack: WireStack | null) => void = () => {};
+  onWindowProperty: (message: Messages[T.WindowProperty]) => void = () => {};
+
   constructor(
     private readonly inventory: Inventory,
     private readonly connection: Pick<Connection, 'send'>,
@@ -27,10 +45,8 @@ export class RemoteInventory {
       this.enqueue(whole ? A.DropStack : A.DropOne, slot === 'cursor' ? CURSOR_SLOT : slot);
       return null;
     };
-    // Predicted placement changes terrain, but only authoritative snapshots consume owned items.
-    // A rejected placement need not send an inventory snapshot because the server changed no counts.
+    // Terrain prediction does not own inventory counts, and the server returns the cursor on close.
     inventory.consumeSelected = () => {};
-    // Cursor remains server-owned when the panel closes.
     inventory.returnCursor = () => {};
     const selection = Object.getOwnPropertyDescriptor(Inventory.prototype, 'selectedSlot')!;
     Object.defineProperty(inventory, 'selectedSlot', {
@@ -41,47 +57,112 @@ export class RemoteInventory {
       },
     });
   }
+
+  openWindow(message: Messages[T.WindowOpen]): void {
+    this.activeWindowId = message.windowId;
+    this.activeWindowKind = message.kind;
+    this.revisions[message.windowId] = 0;
+    this.onWindowOpen(message);
+  }
+
+  closeWindow(windowId: number): void {
+    this.onWindowClose(windowId);
+    this.revisions[windowId] = 0;
+    if (windowId === this.activeWindowId) {
+      this.activeWindowId = 0;
+      this.activeWindowKind = null;
+    }
+  }
+
+  property(message: Messages[T.WindowProperty]): void {
+    if (message.windowId === this.activeWindowId) this.onWindowProperty(message);
+  }
+
+  enqueueWindowAction(action: A, slot: number, slots: readonly number[] = []): void {
+    this.enqueue(action, slot, slots, this.activeWindowId);
+  }
+
   sync(message: Messages[T.InventorySync] | Messages[T.InventorySlot]): void {
-    if (message.windowId !== 0) return;
-    this.revision = message.revision;
+    const windowId = message.windowId;
+    this.revisions[windowId] = message.revision;
+    if (windowId !== 0 && windowId !== this.activeWindowId) return;
     if (message.type === T.InventorySync) {
-      for (let i = 0; i < 41; i++)
-        this.inventory.slots[i] = message.slots[i] ? { ...message.slots[i]!, slot: i } : null;
+      if (windowId === 0) {
+        for (let i = 0; i < 41; i++) this.setInventorySlot(i, message.slots[i] ?? null);
+      } else this.applyContainerSnapshot(message.slots);
       this.inventory.cursor = message.cursor ? { ...message.cursor } : null;
-      if (!this.initialized) {
+      this.onWindowSnapshot(windowId, message.slots);
+      if (windowId === 0 && !this.initialized) {
         this.initialized = true;
-        this.enqueue(A.SelectSlot, this.inventory.selectedSlot);
+        this.enqueue(A.SelectSlot, this.inventory.selectedSlot, [], 0);
       }
-    } else if (message.slot === CURSOR_SLOT) this.inventory.cursor = message.stack;
-    else
-      this.inventory.slots[message.slot] = message.stack
-        ? { ...message.stack, slot: message.slot }
-        : null;
+    } else if (message.slot === CURSOR_SLOT) {
+      this.inventory.cursor = message.stack ? { ...message.stack } : null;
+    } else if (windowId === 0) {
+      if (message.slot < 41) this.setInventorySlot(message.slot, message.stack);
+      this.onWindowSlot(windowId, message.slot, message.stack);
+    } else {
+      this.applyContainerSlot(message.slot, message.stack);
+      this.onWindowSlot(windowId, message.slot, message.stack);
+    }
   }
+
   result(message: Messages[T.InventoryResult]): void {
-    if (message.requestId !== this.requestId) return;
-    this.revision = message.revision;
+    if (!this.pending || message.requestId !== this.inFlightId) return;
+    this.revisions[this.inFlightWindowId] = message.revision;
     this.pending = false;
-    // A rejected operation is followed by InventorySync. Defer the next operation to that frame.
-    if (message.accepted) this.flush();
+    // A rejection's authoritative snapshot precedes its result on the socket.
+    this.flush();
   }
+
   resume(): void {
     if (!this.pending) this.flush();
   }
-  private enqueue(action: A, slot: number, slots: readonly number[] = []): void {
-    this.queue.push({ action, slot, slots });
+
+  private enqueue(
+    action: A,
+    slot: number,
+    slots: readonly number[] = [],
+    windowId = this.activeWindowId,
+  ): void {
+    this.queue.push({ action, slot, slots, windowId });
     this.flush();
   }
+
   private flush(): void {
     if (this.pending || !this.queue.length) return;
     const next = this.queue.shift()!;
     this.pending = true;
+    this.inFlightWindowId = next.windowId;
+    this.inFlightId = ++this.requestId;
     this.connection.send({
       type: T.InventoryTransaction,
-      requestId: ++this.requestId,
-      windowId: 0,
-      revision: this.revision,
-      ...next,
+      requestId: this.inFlightId,
+      windowId: next.windowId,
+      revision: this.revisions[next.windowId]!,
+      action: next.action,
+      slot: next.slot,
+      slots: next.slots,
     });
+  }
+
+  private setInventorySlot(slot: number, stack: WireStack | null): void {
+    this.inventory.slots[slot] = stack ? { ...stack, slot } : null;
+  }
+
+  private applyContainerSnapshot(slots: readonly (WireStack | null)[]): void {
+    for (let slot = 0; slot < slots.length; slot++)
+      this.applyContainerSlot(slot, slots[slot] ?? null);
+  }
+
+  private applyContainerSlot(slot: number, stack: WireStack | null): void {
+    if (this.activeWindowKind === 'chest' || this.activeWindowKind === 'large_chest') {
+      const chestSlots = this.activeWindowKind === 'large_chest' ? 54 : 27;
+      if (slot >= chestSlots) this.setInventorySlot(slot - chestSlots, stack);
+    } else if (this.activeWindowKind === 'kiln') {
+      if (slot >= 3) this.setInventorySlot(slot <= 11 ? slot - 3 : slot - 12 + 9, stack);
+    } else if (this.activeWindowKind === 'crafting' && slot >= 10) {
+      this.setInventorySlot(slot - 10, stack);
+    }
   }
 }

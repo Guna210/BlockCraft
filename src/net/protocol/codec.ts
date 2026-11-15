@@ -13,6 +13,8 @@ import {
   type Vector3,
   type Rotation,
   type Weather,
+  type WindowKind,
+  type WindowPropertyName,
   type EntityChanges,
 } from './messages';
 import type { DimensionId } from '../../world/dimension';
@@ -23,6 +25,41 @@ function dimension(w: BinaryWriter, value: DimensionId): void {
 }
 function readDimension(r: BinaryReader): DimensionId {
   return r.bounded(r.u8(), 1) === 0 ? 'overworld' : 'hollowdeep';
+}
+const WINDOW_KINDS: readonly WindowKind[] = ['chest', 'large_chest', 'kiln', 'crafting'];
+const WINDOW_PROPERTIES: readonly WindowPropertyName[] = [
+  'burnRemaining',
+  'burnTotal',
+  'cookProgress',
+];
+function windowId(w: BinaryWriter, value: number): void {
+  w.integer(value, 1, 255);
+  w.u8(value);
+}
+function readWindowId(r: BinaryReader): number {
+  const value = r.bounded(r.u8(), 255);
+  if (!value) r.fail('value', 'Window id cannot be zero');
+  return value;
+}
+function closeWindowId(w: BinaryWriter, value: number): void {
+  w.integer(value, 0, 255);
+  w.u8(value);
+}
+function windowKind(w: BinaryWriter, value: WindowKind): void {
+  const index = WINDOW_KINDS.indexOf(value);
+  w.integer(index, 0, WINDOW_KINDS.length - 1);
+  w.u8(index);
+}
+function readWindowKind(r: BinaryReader): WindowKind {
+  return WINDOW_KINDS[r.bounded(r.u8(), WINDOW_KINDS.length - 1)]!;
+}
+function windowProperty(w: BinaryWriter, value: WindowPropertyName): void {
+  const index = WINDOW_PROPERTIES.indexOf(value);
+  w.integer(index, 0, WINDOW_PROPERTIES.length - 1);
+  w.u8(index);
+}
+function readWindowProperty(r: BinaryReader): WindowPropertyName {
+  return WINDOW_PROPERTIES[r.bounded(r.u8(), WINDOW_PROPERTIES.length - 1)]!;
 }
 function vector(w: BinaryWriter, v: Vector3): void {
   w.f64(v[0]);
@@ -138,6 +175,28 @@ export function encodeMessage(message: Message, writer: BinaryWriter): Uint8Arra
       dimension(w, message.dimension);
       vector(w, message.position);
       break;
+    case MessageType.ContainerOpenRequest:
+      w.i32(message.x);
+      w.integer(message.y, 0, 319);
+      w.u16(message.y);
+      w.i32(message.z);
+      break;
+    case MessageType.WindowOpen:
+      windowId(w, message.windowId);
+      windowKind(w, message.kind);
+      w.i32(message.x);
+      w.integer(message.y, 0, 319);
+      w.u16(message.y);
+      w.i32(message.z);
+      break;
+    case MessageType.WindowClose:
+      closeWindowId(w, message.windowId);
+      break;
+    case MessageType.WindowProperty:
+      windowId(w, message.windowId);
+      windowProperty(w, message.property);
+      w.f64(message.value);
+      break;
     case MessageType.PlayerList:
       w.integer(message.players.length, 0, 128);
       w.u16(message.players.length);
@@ -236,7 +295,7 @@ export function encodeMessage(message: Message, writer: BinaryWriter): Uint8Arra
       w.u32(message.requestId);
       w.u32(message.windowId);
       w.u32(message.revision);
-      w.integer(message.action, 0, InventoryAction.SelectSlot);
+      w.integer(message.action, 0, InventoryAction.FillRecipe);
       w.u8(message.action);
       slot(w, message.slot);
       w.integer(message.slots.length, 0, MAX_INVENTORY_SLOTS);
@@ -311,6 +370,30 @@ export function decodeMessage(bytes: Uint8Array): DecodeResult {
       break;
     case MessageType.PlayerRespawn:
       message = { type, dimension: readDimension(r), position: readVector(r) };
+      break;
+    case MessageType.ContainerOpenRequest:
+      message = { type, x: r.i32(), y: r.bounded(r.u16(), 319), z: r.i32() };
+      break;
+    case MessageType.WindowOpen:
+      message = {
+        type,
+        windowId: readWindowId(r),
+        kind: readWindowKind(r),
+        x: r.i32(),
+        y: r.bounded(r.u16(), 319),
+        z: r.i32(),
+      };
+      break;
+    case MessageType.WindowClose:
+      message = { type, windowId: r.u8() };
+      break;
+    case MessageType.WindowProperty:
+      message = {
+        type,
+        windowId: readWindowId(r),
+        property: readWindowProperty(r),
+        value: r.f64(),
+      };
       break;
     case MessageType.PlayerList: {
       const length = r.bounded(r.u16(), 128);
@@ -426,7 +509,7 @@ export function decodeMessage(bytes: Uint8Array): DecodeResult {
       const requestId = r.u32(),
         windowId = r.u32(),
         revision = r.u32(),
-        action = r.bounded(r.u8(), InventoryAction.SelectSlot),
+        action = r.bounded(r.u8(), InventoryAction.FillRecipe),
         slot = readSlot(r),
         length = r.bounded(r.u16(), MAX_INVENTORY_SLOTS);
       const slots: number[] = [];
