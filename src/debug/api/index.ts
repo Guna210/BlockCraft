@@ -12,6 +12,7 @@ import './structure-locate';
 import './time';
 import './fluids';
 import './clouds';
+import './culling';
 import './leaves';
 import './settings';
 import './weather';
@@ -82,6 +83,7 @@ export function initDebugApi() {
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);
     api.waitForTerrain = (r) => WorldManager.getInstance().waitForTerrain(r);
     api.getWorkerStats = () => WorldManager.getInstance().getWorkerStats();
+    api.resetSectionWorkSamples = () => WorldManager.getInstance().resetSectionWorkSamples();
     (window as unknown as Record<string, unknown>).WorldManager = WorldManager;
     window.__blockcraft = api;
   }

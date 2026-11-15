@@ -11,6 +11,7 @@ export interface MeshResult {
   sz: number;
   meshData: SectionMeshData;
   duration: number;
+  trivialMasks?: Int32Array;
 }
 
 interface MeshJob {
@@ -21,6 +22,7 @@ interface MeshJob {
   sz: number;
   paddedSection: Uint16Array | BlockPaddingInput;
   light?: LightPaddingInput;
+  trivialSections?: Int8Array;
   tables: MeshLookupTables;
   /** Streaming job: never takes the last idle worker (see `processQueue`). */
   background: boolean;
@@ -69,11 +71,12 @@ export class WorkerPool {
         });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { id, meshData, duration, finishedAt } = e.data as {
+        const { id, meshData, duration, finishedAt, trivialMasks } = e.data as {
           id: number;
           meshData: SectionMeshData;
           duration: number;
           finishedAt?: number;
+          trivialMasks?: Int32Array;
         };
 
         this.completedWorkMs += duration;
@@ -82,11 +85,6 @@ export class WorkerPool {
           this.deliveryMs.push(performance.timeOrigin + performance.now() - finishedAt);
           if (this.deliveryMs.length > 100) this.deliveryMs.shift();
         }
-        this.meshMsTimes.push(duration);
-        if (this.meshMsTimes.length > 100) {
-          this.meshMsTimes.shift();
-        }
-
         const posted = this.activeJobs.get(worker) ?? [];
         const index = id === undefined ? 0 : posted.findIndex((job) => job.id === id);
         const job = index < 0 ? undefined : posted.splice(index, 1)[0];
@@ -96,6 +94,10 @@ export class WorkerPool {
         }
 
         if (job) {
+          if (job.sy >= 0) {
+            this.meshMsTimes.push(duration);
+            if (this.meshMsTimes.length > 100) this.meshMsTimes.shift();
+          }
           job.resolve({
             key: job.key,
             sx: job.sx,
@@ -103,6 +105,7 @@ export class WorkerPool {
             sz: job.sz,
             meshData,
             duration,
+            trivialMasks,
           });
         }
 
@@ -167,6 +170,7 @@ export class WorkerPool {
     tables: MeshLookupTables,
     background = false,
     light?: LightPaddingInput,
+    trivialSections?: Int8Array,
   ): Promise<MeshResult> {
     const key = `${sx},${sy},${sz}`;
     const id = this.nextJobId++;
@@ -182,6 +186,7 @@ export class WorkerPool {
         tables,
         background,
         light,
+        trivialSections,
         resolve,
         reject,
       };
@@ -247,6 +252,7 @@ export class WorkerPool {
           paddedSection: job.paddedSection,
           tables: job.tables,
           light: job.light,
+          trivialSections: job.trivialSections,
         },
         transfers,
       );

@@ -395,6 +395,7 @@ export class WorldManager {
     if ((y & 15) === 15 && sy < 19) sections.push([cx, sy + 1, cz]);
     for (const [sx, sectionY, sz] of sections) {
       if (!world.hasColumn(sx!, sz!)) continue;
+      this.chunkRenderer?.invalidateSectionVisibility(sx!, sectionY!, sz!);
       const key = `${sx},${sectionY},${sz}`;
       this.editVersions.set(key, serial);
       void this.workerPool
@@ -426,6 +427,7 @@ export class WorldManager {
     const serial = ++this.editSerial,
       epoch = this.worldEpoch;
     for (const [cx, sy, cz] of sections) {
+      this.chunkRenderer?.invalidateSectionVisibility(cx, sy, cz);
       const key = `${cx},${sy},${cz}`;
       this.editVersions.set(key, serial);
       this.editMeshStarters.push(() => {
@@ -513,6 +515,40 @@ export class WorldManager {
   /** A saved column if the world has one at (cx, cz), otherwise generation from the seed. */
   public remoteExit: (() => void) | null = null;
   public remoteColumnSource: ((cx: number, cz: number) => Promise<GenResult>) | null = null;
+  private readonly sectionGenerationTimes = new Map<
+    number,
+    { duration: number; activeMask: number }
+  >();
+  private readonly sectionWorkSamples = new Float64Array(4096);
+  private sectionWorkCount = 0;
+  private resetSectionWorkStats(): void {
+    this.sectionGenerationTimes.clear();
+    this.sectionWorkCount = 0;
+  }
+
+  public resetSectionWorkSamples(): void {
+    this.sectionWorkCount = 0;
+  }
+
+  private recordSectionWork(duration: number): void {
+    this.sectionWorkSamples[this.sectionWorkCount % this.sectionWorkSamples.length] = duration;
+    this.sectionWorkCount++;
+  }
+
+  private recordCompletedSectionWork(
+    generation: { duration: number; activeMask: number } | undefined,
+    result: MeshResult,
+  ): MeshResult {
+    if (!generation) return result;
+    if (result.trivialMasks) {
+      for (let sy = 0; sy < result.trivialMasks.length; sy++) {
+        if (result.trivialMasks[sy]! >= 0 && generation.activeMask & (1 << sy))
+          this.recordSectionWork(generation.duration);
+      }
+    }
+    if (result.sy >= 0) this.recordSectionWork(generation.duration + result.duration);
+    return result;
+  }
 
   private requestColumn(cx: number, cz: number): Promise<GenResult> {
     if (this.remoteColumnSource) return this.remoteColumnSource(cx, cz);
@@ -581,6 +617,14 @@ export class WorldManager {
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
+        if (res.perSectionMs > 0) {
+          let activeMask = 0;
+          for (const section of res.sections) activeMask |= 1 << section.sy;
+          this.sectionGenerationTimes.set(columnKey(res.cx, res.cz), {
+            duration: res.perSectionMs,
+            activeMask,
+          });
+        }
         if (this.remoteColumnSource) {
           const column = (res as StreamedGenResult).restored!.column;
           return [
@@ -596,6 +640,15 @@ export class WorldManager {
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
       uploadSection: (cx, cz, res) => {
         if (!this.chunkRenderer) return;
+        if (res.trivialMasks) {
+          for (let sy = 0; sy < res.trivialMasks.length; sy++) {
+            const mask = res.trivialMasks[sy]!;
+            if (mask < 0) continue;
+            this.chunkRenderer.setSkippedSectionVisibility(cx, sy, cz, mask);
+            this.meshAttempts.uploaded(`${cx},${cz}`, `${cx},${sy},${cz}`);
+          }
+        }
+        if (res.sy < 0) return;
         // Nothing is shown until a createWorld or waitForTerrain request is done, so the sections it
         // uploads appear at full opacity; any other column fades in (decisions/M04b-fade-and-memory.md).
         const fadeFromMs = fadeStartFor(this.loadPending, performance.now());
@@ -606,6 +659,7 @@ export class WorldManager {
       },
       beginMeshAttempt: (cx, cz) => {
         this.meshAttempts.begin(`${cx},${cz}`);
+        this.chunkRenderer?.invalidateColumnVisibility(cx, cz);
       },
       endMeshAttempt: (cx, cz) => {
         const uploaded = this.meshAttempts.end(`${cx},${cz}`);
@@ -613,6 +667,7 @@ export class WorldManager {
       },
       abandonMeshAttempt: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
+        this.chunkRenderer?.invalidateColumnVisibility(cx, cz);
       },
       freeMesh: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
@@ -623,6 +678,8 @@ export class WorldManager {
         return this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
       },
       freeData: (cx, cz) => {
+        this.sectionGenerationTimes.delete(columnKey(cx, cz));
+        this.chunkRenderer?.forgetColumnVisibility(cx, cz);
         this.meshAttempts.abandon(`${cx},${cz}`);
         // A column that changed is stored before it goes, so walking away never loses an edit.
         if (this.world) this.saves.onColumnUnload(this.world, cx, cz);
@@ -853,6 +910,7 @@ export class WorldManager {
     this.worldSeed = hashString(PANORAMA_SEED);
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
     this.panoramaGlBuffersAtStart = this.glWrapper?.getCounts().buffers ?? 0;
@@ -880,6 +938,7 @@ export class WorldManager {
     this.panorama = false;
     const meshesBefore = this.chunkRenderer?.sectionMeshCount ?? 0;
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -923,6 +982,7 @@ export class WorldManager {
     await this.exitWorld();
     this.remoteColumnSource = null;
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -1019,6 +1079,7 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.setWorldKind(type, { ...DEFAULT_WORLD_OPTIONS });
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
@@ -1326,6 +1387,7 @@ export class WorldManager {
     this.editVersions.clear();
     this.playerController?.reset();
     const epoch = ++this.worldEpoch;
+    this.resetSectionWorkStats();
     // A saved world reopens in the dimension its player was in, with that dimension's portals.
     const dimension = restore && isDimensionId(restore.store.dim) ? restore.store.dim : 'overworld';
     this.resetDimensions(dimension);
@@ -1612,6 +1674,7 @@ export class WorldManager {
       const pitch = player.pitch;
 
       epoch = ++this.worldEpoch;
+      this.resetSectionWorkStats();
       this.streamer.reset();
       this.genWorkerPool.cancelAll();
       this.lightWorkerPool.cancelAll();
@@ -1825,6 +1888,10 @@ export class WorldManager {
     const col = world.getColumn(cx, cz, false);
     if (!col) return [];
     const starters: Array<() => Promise<MeshResult>> = [];
+    const epoch = this.worldEpoch;
+    const trivialSections = new Int8Array(20).fill(-1);
+    let hasTrivial = false;
+    let attachTrivial = true;
     const sectionOrder = Array.from({ length: 20 }, (_, sy) => sy);
     const cameraY = this.camera?.position[1] ?? 0;
     sectionOrder.sort((a, b) => Math.abs(a * 16 + 8 - cameraY) - Math.abs(b * 16 + 8 - cameraY));
@@ -1834,11 +1901,15 @@ export class WorldManager {
 
       // 1. Skip all-air / empty sections
       if (!sec || (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0)) {
+        trivialSections[sy] = 0;
+        hasTrivial = true;
         continue;
       }
 
       // 2. Skip section if it contains only opaque blocks and all 6 neighbor sections are loaded and contain only opaque blocks
       if (this.isSectionAllOpaque(sec) && this.canSkipOpaqueSection(cx, sy, cz)) {
+        trivialSections[sy] = 1;
+        hasTrivial = true;
         continue;
       }
 
@@ -1847,24 +1918,67 @@ export class WorldManager {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
         const paddedSection = collectBlockPadding(world, cx, sy, cz);
-        return this.workerPool.enqueueMeshJob(
-          cx,
-          sy,
-          cz,
-          paddedSection,
-          tables,
-          true,
-          collectLightPadding(world, cx, sy, cz),
-        );
+        const trivial = attachTrivial && hasTrivial ? trivialSections : undefined;
+        const generation = this.sectionGenerationTimes.get(columnKey(cx, cz));
+        attachTrivial = false;
+        return this.workerPool
+          .enqueueMeshJob(
+            cx,
+            sy,
+            cz,
+            paddedSection,
+            tables,
+            true,
+            collectLightPadding(world, cx, sy, cz),
+            trivial,
+          )
+          .then((result) =>
+            epoch === this.worldEpoch
+              ? this.recordCompletedSectionWork(generation, result)
+              : result,
+          );
+      });
+    }
+    if (!starters.length && hasTrivial) {
+      starters.push(() => {
+        const tables = this.tables;
+        if (!tables) return Promise.reject(new Error('mesh tables are gone'));
+        const generation = this.sectionGenerationTimes.get(columnKey(cx, cz));
+        return this.workerPool
+          .enqueueMeshJob(
+            cx,
+            -1,
+            cz,
+            new Uint16Array(18 ** 3),
+            tables,
+            true,
+            undefined,
+            trivialSections,
+          )
+          .then((result) =>
+            epoch === this.worldEpoch
+              ? this.recordCompletedSectionWork(generation, result)
+              : result,
+          );
       });
     }
     return starters;
   }
 
-  public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {
+  public getWorkerStats(): {
+    genMsP95: number;
+    meshMsP95: number;
+    sectionWorkMsP95: number;
+    sectionWorkSamples: number;
+    queueLength: number;
+  } {
+    const count = Math.min(this.sectionWorkCount, this.sectionWorkSamples.length);
+    const sorted = Array.from(this.sectionWorkSamples.subarray(0, count)).sort((a, b) => a - b);
     return {
       genMsP95: this.genWorkerPool.genMsP95,
       meshMsP95: this.workerPool.meshMsP95,
+      sectionWorkMsP95: sorted[Math.floor(count * 0.95)] ?? 0,
+      sectionWorkSamples: count,
       queueLength:
         this.workerPool.queueLength +
         this.genWorkerPool.queueLength +
@@ -1972,6 +2086,7 @@ export class WorldManager {
       this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
+        renderDistance: this.renderDistance,
         fogStart,
         fogEnd,
         underwater,

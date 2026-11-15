@@ -4,21 +4,25 @@ import { buildPaddedLight, type LightPaddingInput } from '../world/light-padding
 import { greedyMesh } from '../mesh/greedy';
 import type { MeshLookupTables } from '../mesh/greedy';
 import { vertexHasBlockLight } from '../mesh/vertex';
+import { sectionVisibility, trivialVisibilityMasks } from '../mesh/visibility';
 
 const ctx: Worker = self as unknown as Worker;
 
 export function processMeshMessage(event: MessageEvent): void {
-  const { id, paddedSection, tables, light } = event.data as {
+  const { id, paddedSection, tables, light, trivialSections } = event.data as {
     id: number;
     paddedSection: Uint16Array | BlockPaddingInput;
     tables: MeshLookupTables;
     light?: LightPaddingInput;
+    trivialSections?: Int8Array;
   };
 
   const start = performance.now();
   const blocks =
     paddedSection instanceof Uint16Array ? paddedSection : buildSnapshotPadding(paddedSection);
   const meshData = greedyMesh(blocks, tables, light ? () => buildPaddedLight(light) : undefined);
+  meshData.visibilityMask = sectionVisibility(blocks, tables.isOpaqueCube);
+  const trivialMasks = trivialSections ? trivialVisibilityMasks(trivialSections) : undefined;
   for (const bucket of [meshData.opaque, meshData.cutout, meshData.translucent, meshData.models])
     normalizeSharedQuads(bucket);
   meshData.hasBlockLight = false;
@@ -43,9 +47,16 @@ export function processMeshMessage(event: MessageEvent): void {
     meshData.models.vertices.buffer,
     meshData.models.indices.buffer,
   ];
+  if (trivialMasks) transferables.push(trivialMasks.buffer);
 
   ctx.postMessage(
-    { id, meshData, duration, finishedAt: performance.timeOrigin + performance.now() },
+    {
+      id,
+      meshData,
+      duration,
+      trivialMasks,
+      finishedAt: performance.timeOrigin + performance.now(),
+    },
     transferables,
   );
 }

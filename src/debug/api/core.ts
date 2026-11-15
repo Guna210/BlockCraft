@@ -1,4 +1,5 @@
 export interface BlockCraftDebugAPI {
+  setCulling?: (options: { cave?: boolean; frustum?: boolean }) => void;
   ready(): Promise<void>;
   getNetStats?: () => {
     connected: boolean;
@@ -240,7 +241,14 @@ export interface BlockCraftDebugAPI {
   getMusicContext?: () => string | null;
   /** Updraft glow zones drawn in the last frame (M20c). */
   getUpdraftGlowZones?: () => number;
-  getWorkerStats?: () => { genMsP95: number; meshMsP95: number; queueLength: number };
+  getWorkerStats?: () => {
+    genMsP95: number;
+    meshMsP95: number;
+    sectionWorkMsP95: number;
+    sectionWorkSamples: number;
+    queueLength: number;
+  };
+  resetSectionWorkSamples?: () => void;
   wireframe?: (enabled?: boolean) => boolean;
   setWireframe?: (enabled: boolean) => void;
   getBlock?: (

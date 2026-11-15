@@ -43,6 +43,8 @@ export interface MeshBucketData {
 }
 
 export interface SectionMeshData {
+  /** Face connectivity of non-opaque cells, computed in the mesh worker. */
+  visibilityMask?: number;
   /** Worker-computed metadata; zero block light permits a smaller sky-only shader. */
   hasBlockLight?: boolean;
   opaque: MeshBucketData;

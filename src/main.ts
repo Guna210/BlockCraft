@@ -459,7 +459,7 @@ async function main() {
       glCheckMs += performance.now() - t;
     }
     if (rendered && measured) {
-      frameStats.record(frameCpuMs, uploadMs, glCheckMs);
+      frameStats.record(frameCpuMs, uploadMs, glCheckMs, renderStats.drawCalls);
       frameCount++;
     }
     fpsTimer += dt;
