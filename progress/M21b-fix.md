@@ -33,11 +33,16 @@ Full verify: PR CI
   **29 passed**.
 - M21c delayed walk: **0 corrections** (37.3 blocks, RTT 162.6 ms). Block
   replication: **96 ms**.
+- PR CI Verify [run 43678185195](https://github.com/Guna210/BlockCraft/actions/runs/43678185195):
+  **passed**, all four shards. Typecheck, lint and placeholders passed; unit
+  **158 files / 1,532 tests passed**. Playwright: **195 passed, 1 flaky**;
+  `m21c-world` missed its 500 ms replication limit on the first attempt and
+  passed on retry.
 - The owner designated PR CI as the full verify; no local full verify was run.
 
 ## Screenshots (docs/screenshots/M21b-fix/)
 
-- `m21b-fix-chest.png`: VIEWED. Bea's CHest window is open over the block
+- `m21b-fix-chest.png`: VIEWED. Bea's chest window is open over the block
   world; an oak-plank stack icon occupies the first chest slot, and Bea's
   inventory grid is visible below it.
 
