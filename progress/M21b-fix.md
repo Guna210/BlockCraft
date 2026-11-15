@@ -1,6 +1,6 @@
 # M21b-fix — Multiplayer container windows
 
-Status: incomplete
+Status: verified
 Depends on: M21b, M21c, M21b-fix2
 Full verify: PR CI
 
@@ -38,8 +38,15 @@ Full verify: PR CI
   **29 passed**.
 - M21c delayed walk: **0 corrections** (38.38 blocks, RTT 154.7 ms). Block
   replication: **57 ms**.
-- PR CI for the review fixes is pending; the handoff will be updated from its
-  logs after the new head passes.
+- PR CI Verify [run 43688521527](https://github.com/Guna210/BlockCraft/actions/runs/43688521527):
+  **passed** all four shards. Playwright per shard: shard 1 **48 passed, 1
+  flaky** (M02:54 mesh p95); shard 2 **49 passed**; shard 3 **49 passed**;
+  shard 4 **48 passed, 1 flaky** (`m21c-world`). Total: **194 passed, 2
+  flaky**. Both flaky tests passed on retry. Typecheck, lint and placeholders
+  passed; unit **159 files / 1,537 tests passed**.
+- On CI shard 4, M21c delayed walk had **0 corrections** (37.5 blocks, RTT
+  159.3 ms). Block replication passed on retry at **137 ms** after the first
+  attempt missed its 500 ms limit.
 - The owner designated PR CI as the full verify; no local full verify was run.
 
 ## Screenshots (docs/screenshots/M21b-fix/)
