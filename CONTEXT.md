@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-16: #88 Codex QUESTION (M01a multi-draw semantics). Answered option 1: getRenderStats.drawCalls counts represented section draws (keeps m01a-fix:38 >100 and the §2.3 1500 budget conservative); new separate stat for actual GL submissions; with ?glcheck=draw use the per-section fallback path (no multi-draw) so each real draw gets its own getError (m01a-fix:54 unchanged). Record in decisions/M22a-culling.md.
 - 2026-11-16: #88 M22a CI red: m01a-fix x2, m03g x2 (arena broke debug readback), budget frame CPU > 8. Told owner yes, sent Codex fix message.
 - 2026-11-15: #87 M21b-fix merged (2f87382). Owner: M22a next (Codex), with m21c-world no-retry as extra goal; if still flaky after culling, investigate separately. Gave M22a prompt.
 - 2026-11-15: #87 round 2: both code findings fixed; reviewer's only blocking = handoff cites run 43688521527 (source commit 5d5680b) not head docs commit c48e28d run 43691062113. I overruled: a docs commit can't cite its own run; numbers match the source run; head run green. Told owner to merge. m21c-world first-attempt flake again on 5d5680b (now ~3 of last 7 runs) -> raised to owner.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-13: #85 follow-up green (0 corrections, socket worker, input-driven server). Found speed hole (3 steps/tick sustained); sent Codex credit-limit fix before round 2.
 - 2026-11-12: #85 input-driven server done locally (M21b tests unedited) but delayed walk still 116 corrections. Approved adapting 4 of M21c's OWN new unit tests to the approved timing (exact values, fixture mirrors real server, packet pause < 5 ticks stays 0). Told Codex to classify the 116 via the trace before further changes; QUESTION after 3 approaches.
 - 2026-11-12: #85 counter fix exposed 298 corrections (real criterion failure, masked by undercount). Diagnosed server tick-phase mismatch; sent Codex input-driven server movement fix; held its request to change 2 own unit assertions.
-- 2026-11-12: #85 M21c round 1 PASS (Sonnet). Non-blocking but I asked for a fix: repeated-ack corrections uncounted (prediction.ts:76-94). Also found: server never respawns dead players; client has no vitals -> proposed follow-up M21b-fix2.
