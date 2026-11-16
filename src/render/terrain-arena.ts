@@ -125,12 +125,36 @@ export class TerrainArena {
         ? canonicalQuadVertices(additionalBucket)
         : null;
     const quadCount = bucket.quadCount + (secondVertices ? additionalBucket!.quadCount : 0);
-    const vertexWords = (firstVertices?.length ?? 0) + (secondVertices?.length ?? 0);
+    const sources: Uint32Array[] = [];
+    if (firstVertices) sources.push(firstVertices);
+    if (secondVertices) sources.push(secondVertices);
+    return this.allocate(quadCount, sources, dedicatedPage, phaseStart);
+  }
+
+  /** Reserves a range for a worker-packed pass buffer without combining vertex data on the main thread. */
+  uploadPacked(vertices: Uint32Array, quadCount: number, dedicatedPage = false): TerrainAllocation {
+    if (vertices.length !== quadCount * 8)
+      throw new Error('Packed terrain vertex count does not match quad count');
+    return this.allocate(
+      quadCount,
+      vertices.length > 0 ? [vertices] : [],
+      dedicatedPage,
+      renderPhaseStats.start(),
+    );
+  }
+
+  private allocate(
+    quadCount: number,
+    sources: Uint32Array[],
+    dedicatedPage: boolean,
+    phaseStart: number,
+  ): TerrainAllocation {
+    const vertexWords = sources.reduce((total, source) => total + source.length, 0);
     const indexCount = quadCount * 6;
     let page: ArenaPage | undefined;
     let quadRange: ArenaRange | null = null;
     if (dedicatedPage) {
-      const initialVertices = this.combineVertices(firstVertices, secondVertices, vertexWords);
+      const initialVertices = this.combineVertices(sources, vertexWords);
       page = this.createPage(quadCount, initialVertices);
       quadRange = page.quadSpace.allocate(quadCount, 1)!;
     } else {
@@ -151,20 +175,16 @@ export class TerrainArena {
     const indexRange = { offset: allocatedQuads.offset * 24, length: quadCount * 24 };
     const base = vertexRange.offset / 8;
     const uploadSegments: VertexUploadSegment[] = [];
-    if (firstVertices)
+    let destinationByteOffset = vertexRange.offset;
+    for (const vertices of sources) {
       uploadSegments.push({
-        vertices: firstVertices,
-        destinationByteOffset: vertexRange.offset,
+        vertices,
+        destinationByteOffset,
         sourceWordOffset: 0,
-        wordCount: firstVertices.length,
+        wordCount: vertices.length,
       });
-    if (secondVertices)
-      uploadSegments.push({
-        vertices: secondVertices,
-        destinationByteOffset: vertexRange.offset + (firstVertices?.byteLength ?? 0),
-        sourceWordOffset: 0,
-        wordCount: secondVertices.length,
-      });
+      destinationByteOffset += vertices.byteLength;
+    }
     page.allocations++;
     const allocation: TerrainAllocation = {
       page,
@@ -186,19 +206,14 @@ export class TerrainArena {
     return allocation;
   }
 
-  private combineVertices(
-    first: Uint32Array | null,
-    second: Uint32Array | null,
-    wordCount: number,
-  ): Uint32Array {
-    if (!second) return first ?? new Uint32Array(0);
+  private combineVertices(sources: Uint32Array[], wordCount: number): Uint32Array {
+    if (sources.length <= 1) return sources[0] ?? new Uint32Array(0);
     const vertices = new Uint32Array(wordCount);
     let offset = 0;
-    if (first) {
-      vertices.set(first);
-      offset = first.length;
+    for (const source of sources) {
+      vertices.set(source, offset);
+      offset += source.length;
     }
-    vertices.set(second, offset);
     return vertices;
   }
 

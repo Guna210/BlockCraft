@@ -417,12 +417,23 @@ export class WorldManager {
           collectLightPadding(world, sx!, sectionY!, sz!),
         )
         .then((result) => {
-          if (epoch === this.worldEpoch && this.editVersions.get(key) === serial)
+          if (
+            epoch === this.worldEpoch &&
+            this.editVersions.get(key) === serial &&
+            world.hasColumn(sx!, sz!)
+          ) {
+            this.chunkRenderer?.prepareSectionUpload(
+              result.sx,
+              result.sy,
+              result.sz,
+              result.meshData,
+            );
             this.editMeshes.push({
               result,
               serial,
               primary: sx === cx && sectionY === sy && sz === cz,
             });
+          }
         });
     }
   }
@@ -460,6 +471,12 @@ export class WorldManager {
               this.editVersions.delete(key);
               return;
             }
+            this.chunkRenderer?.prepareSectionUpload(
+              result.sx,
+              result.sy,
+              result.sz,
+              result.meshData,
+            );
             this.editMeshes.push({ result, serial, primary: false });
           });
       });
@@ -648,6 +665,10 @@ export class WorldManager {
       },
       requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
+      prepareUpload: (_cx, _cz, res) => {
+        if (this.chunkRenderer && res.sy >= 0)
+          this.chunkRenderer.prepareSectionUpload(res.sx, res.sy, res.sz, res.meshData);
+      },
       uploadSection: (cx, cz, res, budgetMs) => {
         if (!this.chunkRenderer) return true;
         const uploadStart = renderPhaseStats.start();

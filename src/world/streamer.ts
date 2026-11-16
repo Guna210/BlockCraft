@@ -52,6 +52,8 @@ export interface StreamerHost<G, M> {
    * milliseconds, so the streamer calls the starters a few at a time.
    */
   requestMesh(cx: number, cz: number): Array<() => Promise<M>>;
+  /** Reserves GPU arena space before the result enters the per-frame upload queue. */
+  prepareUpload?(cx: number, cz: number, mesh: M): void;
   /** Optional bulk lighting stage, with independent commits for each column in a ready row. */
   requestLight?(
     columns: Array<{ cx: number; cz: number }>,
@@ -1330,6 +1332,7 @@ export class Streamer<G, M> {
     col.jobsLeft--;
     if (col.jobsLeft === 0) this.completed.meshed++;
     if (this.wantMesh(col.cx, col.cz)) {
+      this.host.prepareUpload?.(col.cx, col.cz, mesh);
       this.deferred.push({ col, serial, mesh });
       this.uploadSorted = false;
       col.uploadsPending++;

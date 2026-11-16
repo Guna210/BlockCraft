@@ -370,11 +370,9 @@ export interface GPUSectionMesh {
 interface PendingSectionUpload {
   meshData: SectionMeshData;
   gpuMesh: GPUSectionMesh;
-  fadeFromMs: number | null;
+  fadeFromMs: number | null | undefined;
   hadSections: boolean;
   nextBucket: number;
-  createdBuckets: number;
-  dedicatedUpload: boolean;
 }
 
 export class ChunkRenderer {
@@ -714,6 +712,7 @@ export class ChunkRenderer {
   }
 
   public invalidateSectionVisibility(sx: number, sy: number, sz: number): void {
+    this.cancelPendingSectionUpload(`${sx},${sy},${sz}`);
     this.visibilityMasks.set(sx, sy, sz, undefined);
   }
 
@@ -766,51 +765,12 @@ export class ChunkRenderer {
     const key = `${sx},${sy},${sz}`;
     const colKey = `${sx},${sz}`;
     let pending = this.pendingSectionUploads.get(key);
-    if (pending && pending.meshData !== meshData) {
-      this.cancelPendingSectionUpload(key);
-      pending = undefined;
+    if (!pending || pending.meshData !== meshData) {
+      // Production results reserve ranges before entering the frame-budgeted upload path.
+      this.prepareSectionUpload(sx, sy, sz, meshData, !Number.isFinite(budgetMs));
+      pending = this.pendingSectionUploads.get(key)!;
     }
-    if (!pending) {
-      const hadSections = (this.columnMeshes.get(colKey)?.length ?? 0) > 0;
-      // Bucket creation is staged with the upload budget.
-      // Plants (cross models) share the cutout pass and its arena range with leaves.
-      const bookkeepingStart = renderPhaseStats.start();
-      let hasWallTorch = false;
-      for (let i = 0; i < meshData.models.vertices.length; i += 2) {
-        if (
-          ((meshData.models.vertices[i]! >>> 15) & 7) >= 6 ||
-          isShapeVertex(meshData.models.vertices[i]!, meshData.models.vertices[i + 1]!)
-        ) {
-          hasWallTorch = true;
-          break;
-        }
-      }
-      const gpuMesh: GPUSectionMesh = {
-        hasWallTorch,
-        hasBlockLight: meshData.hasBlockLight ?? true,
-        key,
-        sx,
-        sy,
-        sz,
-        opaque: null,
-        cutout: null,
-        translucent: null,
-        visibleColumn: 0,
-        translucentVisibleGeneration: 0,
-        sortRank: 0,
-      };
-      pending = {
-        meshData,
-        gpuMesh,
-        fadeFromMs,
-        hadSections,
-        nextBucket: 0,
-        createdBuckets: 0,
-        dedicatedUpload: !Number.isFinite(budgetMs),
-      };
-      this.pendingSectionUploads.set(key, pending);
-      renderPhaseStats.end('meshBookkeepingMs', bookkeepingStart);
-    }
+    if (pending.fadeFromMs === undefined) pending.fadeFromMs = fadeFromMs;
 
     while (pending.nextBucket < 3) {
       const remaining = Math.max(0, budgetMs - (performance.now() - uploadClockStart));
@@ -819,36 +779,6 @@ export class ChunkRenderer {
         return false;
       }
       const bucketIndex = pending.nextBucket;
-      const bit = 1 << bucketIndex;
-      if (!(pending.createdBuckets & bit)) {
-        if (bucketIndex === 0) {
-          pending.gpuMesh.opaque = this.createGPUBucketMesh(
-            meshData.opaque,
-            this.opaqueArena,
-            false,
-            undefined,
-            pending.dedicatedUpload,
-          );
-        } else if (bucketIndex === 1) {
-          // Plants (cross models) share the cutout pass and arena range with leaves.
-          pending.gpuMesh.cutout = this.createGPUBucketMesh(
-            meshData.cutout,
-            this.cutoutArena,
-            false,
-            meshData.models,
-            pending.dedicatedUpload,
-          );
-        } else {
-          pending.gpuMesh.translucent = this.createGPUBucketMesh(
-            meshData.translucent,
-            this.translucentArena,
-            true,
-            undefined,
-            pending.dedicatedUpload,
-          );
-        }
-        pending.createdBuckets |= bit;
-      }
       const bucket =
         bucketIndex === 0
           ? pending.gpuMesh.opaque
@@ -891,6 +821,80 @@ export class ChunkRenderer {
     return gpuMesh;
   }
 
+  /** Reserve arena ranges and create GPU pages before the frame-budgeted transfer begins. */
+  public prepareSectionUpload(
+    sx: number,
+    sy: number,
+    sz: number,
+    meshData: SectionMeshData,
+    dedicatedPage = false,
+  ): void {
+    const key = `${sx},${sy},${sz}`;
+    const existing = this.pendingSectionUploads.get(key);
+    if (existing?.meshData === meshData) return;
+    if (existing) this.cancelPendingSectionUpload(key);
+
+    const bookkeepingStart = renderPhaseStats.start();
+    const arenaBuffers = meshData.arenaBuffers;
+    let hasWallTorch = meshData.hasWallTorch;
+    if (hasWallTorch === undefined) {
+      hasWallTorch = false;
+      for (let i = 0; i < meshData.models.vertices.length; i += 2) {
+        if (
+          ((meshData.models.vertices[i]! >>> 15) & 7) >= 6 ||
+          isShapeVertex(meshData.models.vertices[i]!, meshData.models.vertices[i + 1]!)
+        ) {
+          hasWallTorch = true;
+          break;
+        }
+      }
+    }
+    const gpuMesh: GPUSectionMesh = {
+      hasWallTorch,
+      hasBlockLight: meshData.hasBlockLight ?? true,
+      key,
+      sx,
+      sy,
+      sz,
+      opaque: this.createGPUBucketMesh(
+        meshData.opaque,
+        this.opaqueArena,
+        false,
+        undefined,
+        dedicatedPage,
+        arenaBuffers?.opaque,
+      ),
+      // Plants (cross models) share the cutout pass and its arena range with leaves.
+      cutout: this.createGPUBucketMesh(
+        meshData.cutout,
+        this.cutoutArena,
+        false,
+        meshData.models,
+        dedicatedPage,
+        arenaBuffers?.cutout,
+      ),
+      translucent: this.createGPUBucketMesh(
+        meshData.translucent,
+        this.translucentArena,
+        true,
+        undefined,
+        dedicatedPage,
+        arenaBuffers?.translucent,
+      ),
+      visibleColumn: 0,
+      translucentVisibleGeneration: 0,
+      sortRank: 0,
+    };
+    this.pendingSectionUploads.set(key, {
+      meshData,
+      gpuMesh,
+      fadeFromMs: undefined,
+      hadSections: (this.columnMeshes.get(`${sx},${sz}`)?.length ?? 0) > 0,
+      nextBucket: 0,
+    });
+    renderPhaseStats.end('meshBookkeepingMs', bookkeepingStart);
+  }
+
   public removeSectionMesh(key: string): void {
     this.cancelPendingSectionUpload(key);
     const existing = this.sectionMeshes.get(key);
@@ -925,6 +929,7 @@ export class ChunkRenderer {
   /** One GPU section per streaming free step; retain the column until the final step. */
   public removeColumnMeshStep(cx: number, cz: number): boolean {
     const key = `${cx},${cz}`;
+    this.cancelPendingColumnUploads(cx, cz);
     const first = this.columnMeshes.get(key)?.[0];
     if (first) this.removeSectionMesh(first.key);
     const done = !this.columnMeshes.has(key);
@@ -1057,6 +1062,7 @@ export class ChunkRenderer {
     sortable = false,
     additionalBucket?: MeshBucketData,
     dedicatedPage = false,
+    packedVertices?: Uint32Array,
   ): GPUBucketMesh | null {
     const hasBucket = bucket.quadCount > 0 && bucket.vertices.length > 0;
     const hasAdditional =
@@ -1067,11 +1073,12 @@ export class ChunkRenderer {
       return null;
     }
 
-    const allocation =
-      hasBucket && hasAdditional
+    const quadCount = bucket.quadCount + (hasAdditional ? additionalBucket!.quadCount : 0);
+    const allocation = packedVertices
+      ? arena.uploadPacked(packedVertices, quadCount, dedicatedPage)
+      : hasBucket && hasAdditional
         ? arena.upload(bucket, additionalBucket, dedicatedPage)
         : arena.upload(hasBucket ? bucket : additionalBucket!, undefined, dedicatedPage);
-    const quadCount = bucket.quadCount + (hasAdditional ? additionalBucket!.quadCount : 0);
 
     let centers: Float32Array | undefined;
     let sorter: TranslucentSorter | undefined;
