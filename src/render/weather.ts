@@ -738,6 +738,7 @@ export class WeatherRenderer {
 
       gl.bindVertexArray(this.particleVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, PARTICLE_COUNT);
+      this.glWrapper.recordDrawSubmission();
       drawCalls++;
       triangles += PARTICLE_COUNT * 2;
 
@@ -761,6 +762,7 @@ export class WeatherRenderer {
 
       gl.bindVertexArray(this.splashVao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, SPLASH_COUNT);
+      this.glWrapper.recordDrawSubmission();
       drawCalls++;
       triangles += SPLASH_COUNT * 2;
 

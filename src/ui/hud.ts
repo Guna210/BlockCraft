@@ -3,7 +3,7 @@ import type { PlayerController } from '../engine/player-controller';
 import { MAX_RECENT_FRAME_SAMPLES } from '../engine/frame-stats';
 import type { ItemAffix } from '../gameplay/items';
 import type { Player } from '../entity/player';
-import { getToolDurability, getTotalArmorDefense } from '../gameplay/tools';
+import { ARMOR_DEFENSE, getToolDurability } from '../gameplay/tools';
 import { displayName, drawText, textWidth } from './pixel-font';
 import type { IconSheet } from './icons';
 import {
@@ -117,11 +117,124 @@ export interface DebugOverlaySnapshot {
 }
 
 export function equippedArmorPoints(player: Pick<Player, 'inventory'>): number {
-  return getTotalArmorDefense(player.inventory.slots.slice(36, 40).map((stack) => stack?.id));
+  let total = 0;
+  const slots = player.inventory.slots;
+  for (let slot = 36; slot < 40; slot++) {
+    const id = slots[slot]?.id;
+    if (id) total += ARMOR_DEFENSE[id] ?? 0;
+  }
+  return total;
 }
 
 /** Inner width of the attack meter in UI pixels. */
 const COOLDOWN_METER_WIDTH = 14;
+
+/** Updates a reusable HUD record and reports whether its visible content changed. */
+function updateHudSnapshot(
+  snapshot: HudSnapshot,
+  player: Player,
+  submerged: boolean,
+  attackCooldown: number,
+  bowCharge: number | null,
+): boolean {
+  let changed = false;
+  const armorPoints = equippedArmorPoints(player);
+  if (snapshot.mode !== player.mode) {
+    snapshot.mode = player.mode;
+    changed = true;
+  }
+  if (snapshot.health !== player.health) {
+    snapshot.health = player.health;
+    changed = true;
+  }
+  if (snapshot.hunger !== player.hunger) {
+    snapshot.hunger = player.hunger;
+    changed = true;
+  }
+  if (snapshot.air !== player.air) {
+    snapshot.air = player.air;
+    changed = true;
+  }
+  if (snapshot.submerged !== submerged) {
+    snapshot.submerged = submerged;
+    changed = true;
+  }
+  if (snapshot.armorPoints !== armorPoints) {
+    snapshot.armorPoints = armorPoints;
+    changed = true;
+  }
+  if (snapshot.xpLevel !== player.xpLevel) {
+    snapshot.xpLevel = player.xpLevel;
+    changed = true;
+  }
+  if (snapshot.xpProgress !== player.xpProgress) {
+    snapshot.xpProgress = player.xpProgress;
+    changed = true;
+  }
+  if (snapshot.selectedSlot !== player.selectedSlot) {
+    snapshot.selectedSlot = player.selectedSlot;
+    changed = true;
+  }
+
+  const cooldown =
+    Math.floor(Math.max(0, Math.min(1, attackCooldown)) * COOLDOWN_METER_WIDTH) /
+    COOLDOWN_METER_WIDTH;
+  if (snapshot.attackCooldown !== cooldown) {
+    snapshot.attackCooldown = cooldown;
+    changed = true;
+  }
+
+  const slots = player.inventory.slots;
+  for (let slot = 0; slot < 9; slot++) {
+    const stack = slots[slot];
+    const current = snapshot.hotbar[slot];
+    if (!stack) {
+      if (current) {
+        snapshot.hotbar[slot] = null;
+        changed = true;
+      }
+      continue;
+    }
+    if (!current) {
+      snapshot.hotbar[slot] = {
+        id: stack.id,
+        count: stack.count,
+        damage: stack.damage ?? undefined,
+        affix: stack.affix,
+      };
+      changed = true;
+      continue;
+    }
+    const damage = stack.damage ?? undefined;
+    if (
+      current.id !== stack.id ||
+      current.count !== stack.count ||
+      current.damage !== damage ||
+      current.affix !== stack.affix
+    ) {
+      current.id = stack.id;
+      current.count = stack.count;
+      current.damage = damage;
+      current.affix = stack.affix;
+      changed = true;
+    }
+  }
+
+  if (bowCharge === null) {
+    if (snapshot.bowCharge !== undefined) {
+      delete snapshot.bowCharge;
+      changed = true;
+    }
+  } else {
+    const quantized =
+      Math.floor(Math.max(0, Math.min(1, bowCharge)) * COOLDOWN_METER_WIDTH) / COOLDOWN_METER_WIDTH;
+    if (snapshot.bowCharge !== quantized) {
+      snapshot.bowCharge = quantized;
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 export function hudSnapshot(
   player: Player,
@@ -532,7 +645,9 @@ export class Hud {
   private sheet!: HTMLCanvasElement;
   private icons!: IconSheet;
   private size = { width: 0, height: 0 };
-  private lastHudKey = '';
+  private cachedHudSnapshot: HudSnapshot | null = null;
+  private hudNeedsDraw = true;
+  private lastHeartShake = Number.NaN;
   private lastSelectedSlot: number | null = null;
   private popupTimer: number | undefined;
   private debugOpen = false;
@@ -540,7 +655,7 @@ export class Hud {
   private hurtAt = -Infinity;
 
   private readonly onGuiScaleChange = (): void => {
-    this.lastHudKey = '';
+    this.hudNeedsDraw = true;
   };
 
   constructor(
@@ -563,7 +678,7 @@ export class Hud {
 
   onDamage(): void {
     this.hurtAt = performance.now();
-    this.lastHudKey = '';
+    this.hudNeedsDraw = true;
   }
 
   private ensureCanvases(): void {
@@ -616,7 +731,7 @@ export class Hud {
       canvas.height = height;
     }
     this.size = { width, height };
-    this.lastHudKey = '';
+    this.hudNeedsDraw = true;
   }
 
   private readonly onResize = (): void => this.resizeCanvases();
@@ -684,6 +799,8 @@ export class Hud {
     if (!player) {
       if (this.hudCanvas) this.hudCanvas.style.display = 'none';
       if (this.popupCanvas) this.popupCanvas.style.display = 'none';
+      this.cachedHudSnapshot = null;
+      this.hudNeedsDraw = true;
       if (this.debugOpen && this.debugCanvas && time - this.lastDebugUpdate >= 250) {
         this.drawDebug(null);
         this.lastDebugUpdate = time;
@@ -696,12 +813,14 @@ export class Hud {
     if (this.debugOpen) this.debugCanvas.style.display = 'block';
     if (screenOpen) this.popupCanvas.style.display = 'none';
     const controller = this.controller();
-    const snapshot = hudSnapshot(
-      player,
-      this.isSubmerged(),
-      controller?.combat?.cooldown ?? 1,
-      controller?.bow?.charging ? controller.bow.charge : null,
-    );
+    const submerged = this.isSubmerged();
+    const attackCooldown = controller?.combat?.cooldown ?? 1;
+    const bowCharge = controller?.bow?.charging ? controller.bow.charge : null;
+    const snapshot =
+      this.cachedHudSnapshot ??
+      (this.cachedHudSnapshot = hudSnapshot(player, submerged, attackCooldown, bowCharge));
+    if (updateHudSnapshot(snapshot, player, submerged, attackCooldown, bowCharge))
+      this.hudNeedsDraw = true;
     if (this.lastSelectedSlot === null) {
       this.lastSelectedSlot = snapshot.selectedSlot;
     } else if (this.lastSelectedSlot !== snapshot.selectedSlot) {
@@ -717,9 +836,10 @@ export class Hud {
             ? 1
             : -1
           : 0;
-      const key = JSON.stringify([snapshot, this.size.width, this.size.height, heartShake]);
-      if (key !== this.lastHudKey) {
-        this.lastHudKey = key;
+      if (heartShake !== this.lastHeartShake) this.hudNeedsDraw = true;
+      if (this.hudNeedsDraw) {
+        this.hudNeedsDraw = false;
+        this.lastHeartShake = heartShake;
         drawHud(
           this.hudContext,
           snapshot,

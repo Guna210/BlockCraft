@@ -1,5 +1,6 @@
 import { WorldManager, type WorldStreamingStats } from '../../game/world-manager';
 import { frameStats, type FrameStatsSnapshot } from '../../engine/frame-stats';
+import { renderPhaseStats } from '../../engine/render-phase-stats';
 import type { ResourceCounts } from '../../render/gl';
 
 /** Sets the render distance in columns (rounded, clamped to 2..32), re-plans at once, returns the value used. */
@@ -14,11 +15,17 @@ export function getStreamingStats(): WorldStreamingStats {
 /** Starts a new measurement window for getFrameStats. */
 export function resetFrameStats(): void {
   frameStats.reset();
+  renderPhaseStats.reset();
 }
 
 /** Frame timings since the last resetFrameStats (or page load). */
 export function getFrameStats(): FrameStatsSnapshot {
   return frameStats.snapshot();
+}
+
+/** Main-thread render phase p95 timings since resetFrameStats. */
+export function getRenderPhaseStats() {
+  return renderPhaseStats.snapshot();
 }
 
 /** Live WebGL resource counts (buffers, VAOs, textures, shaders). */

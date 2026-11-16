@@ -32,6 +32,7 @@ import { ProjectileRuntime } from '../entity/projectiles';
 import { BowController } from '../gameplay/bow';
 import { BlastCharges } from '../entity/blast-charge';
 import { blockSoundMaterial, sound } from '../audio/service';
+import { renderPhaseStats } from './render-phase-stats';
 
 /** Connects fixed physics to input and an interpolated camera; legacy camera writes detach it. */
 export class PlayerController {
@@ -70,6 +71,7 @@ export class PlayerController {
   public onTick: (() => void) | null = null;
   public readonly loop = new TickLoop(() => {
     if (this.suspended) return;
+    const tickStart = renderPhaseStats.start();
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
     this.player?.tick();
@@ -87,6 +89,7 @@ export class PlayerController {
       sound.tick(this.world, this.player, this.ecs);
     }
     this.onTick?.();
+    renderPhaseStats.end('worldTickMs', tickStart);
   });
   private x = 0;
   private y = 0;

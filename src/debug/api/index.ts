@@ -37,6 +37,7 @@ import {
   getStreamingStats,
   resetFrameStats,
   getFrameStats,
+  getRenderPhaseStats,
   getGlResourceCounts,
 } from './streaming';
 import { WorldManager } from '../../game/world-manager';
@@ -79,6 +80,7 @@ export function initDebugApi() {
     api.getStreamingStats = getStreamingStats;
     api.resetFrameStats = resetFrameStats;
     api.getFrameStats = getFrameStats;
+    api.getRenderPhaseStats = getRenderPhaseStats;
     api.getGlResourceCounts = getGlResourceCounts;
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);
     api.waitForTerrain = (r) => WorldManager.getInstance().waitForTerrain(r);

@@ -22,73 +22,67 @@ export function faceConnectionBit(a: number, b: number): number {
 // Each worker processes mesh jobs serially, so this scratch belongs to the worker, not a job.
 const visited = new Uint32Array(128);
 const stack = new Uint16Array(4096);
+const NO_CELL = 0xffff;
+const cellFaces = new Uint8Array(4096);
+const cellNeighbors = new Uint16Array(4096 * 6).fill(NO_CELL);
+const paddedBlockIndices = new Uint16Array(4096);
+const boundaryCells = new Uint16Array(6 * 16 * 16);
+let boundaryCellCount = 0;
+for (let z = 0; z < 16; z++) {
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const cell = x + y * 16 + z * 256;
+      paddedBlockIndices[cell] = x + 1 + (y + 1) * 18 + (z + 1) * 324;
+      const neighbors = cell * 6;
+      if (x === 15) cellFaces[cell] = cellFaces[cell]! | 1;
+      else cellNeighbors[neighbors] = cell + 1;
+      if (x === 0) cellFaces[cell] = cellFaces[cell]! | 2;
+      else cellNeighbors[neighbors + 1] = cell - 1;
+      if (y === 15) cellFaces[cell] = cellFaces[cell]! | 4;
+      else cellNeighbors[neighbors + 2] = cell + 16;
+      if (y === 0) cellFaces[cell] = cellFaces[cell]! | 8;
+      else cellNeighbors[neighbors + 3] = cell - 16;
+      if (z === 15) cellFaces[cell] = cellFaces[cell]! | 16;
+      else cellNeighbors[neighbors + 4] = cell + 256;
+      if (z === 0) cellFaces[cell] = cellFaces[cell]! | 32;
+      else cellNeighbors[neighbors + 5] = cell - 256;
+      if (cellFaces[cell]) boundaryCells[boundaryCellCount++] = cell;
+    }
+  }
+}
 
 /** Connectivity of non-opaque cells in the core of an 18-cubed padded section. */
 export function sectionVisibility(blocks: Uint16Array, opaque: Uint8Array): number {
-  let solidCount = 0;
-  let cellIndex = 0;
   visited.fill(0);
-  for (let z = 1; z <= 16; z++) {
-    for (let y = 1; y <= 16; y++) {
-      for (let x = 1; x <= 16; x++) {
-        if (opaque[blocks[x + y * 18 + z * 324]!] !== 0) {
-          visited[cellIndex >>> 5] = visited[cellIndex >>> 5]! | (1 << (cellIndex & 31));
-          solidCount++;
-        }
-        cellIndex++;
-      }
-    }
-  }
-  if (solidCount === 0) return ALL_FACE_CONNECTIONS;
-  if (solidCount === 4096) return 0;
   let result = 0;
-  for (let start = 0; start < 4096; start++) {
+  for (let boundary = 0; boundary < boundaryCellCount; boundary++) {
+    const start = boundaryCells[boundary]!;
     const word = start >>> 5;
     const bit = 1 << (start & 31);
     if ((visited[word]! & bit) !== 0) continue;
-    let size = 0;
+    if (opaque[blocks[paddedBlockIndices[start]!]!] !== 0) {
+      visited[word] = visited[word]! | bit;
+      continue;
+    }
+    let size = 1;
     let faces = 0;
-    stack[size++] = start;
+    stack[0] = start;
     visited[word] = visited[word]! | bit;
     while (size) {
       const cell = stack[--size]!;
-      const cx = cell & 15;
-      const cy = (cell >>> 4) & 15;
-      const cz = cell >>> 8;
-      if (cx === 15) faces |= 1;
-      if (cx === 0) faces |= 2;
-      if (cy === 15) faces |= 4;
-      if (cy === 0) faces |= 8;
-      if (cz === 15) faces |= 16;
-      if (cz === 0) faces |= 32;
+      faces |= cellFaces[cell]!;
+      // Once one open component touches every face, all 15 connections are known. Stop here
+      // instead of visiting the rest of a large open component in a mostly hollow section.
+      if (faces === 63) return ALL_FACE_CONNECTIONS;
+      const neighborOffset = cell * 6;
       for (let direction = 0; direction < 6; direction++) {
-        if (
-          (direction === 0 && cx === 15) ||
-          (direction === 1 && cx === 0) ||
-          (direction === 2 && cy === 15) ||
-          (direction === 3 && cy === 0) ||
-          (direction === 4 && cz === 15) ||
-          (direction === 5 && cz === 0)
-        )
-          continue;
-        const next =
-          cell +
-          (direction === 0
-            ? 1
-            : direction === 1
-              ? -1
-              : direction === 2
-                ? 16
-                : direction === 3
-                  ? -16
-                  : direction === 4
-                    ? 256
-                    : -256);
+        const next = cellNeighbors[neighborOffset + direction]!;
+        if (next === NO_CELL) continue;
         const nextWord = next >>> 5;
         const nextBit = 1 << (next & 31);
         if ((visited[nextWord]! & nextBit) !== 0) continue;
         visited[nextWord] = visited[nextWord]! | nextBit;
-        stack[size++] = next;
+        if (opaque[blocks[paddedBlockIndices[next]!]!] === 0) stack[size++] = next;
       }
     }
     for (let a = 0; a < 6; a++) {

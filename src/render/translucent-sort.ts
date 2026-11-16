@@ -68,15 +68,20 @@ export function distanceSquared(a: ArrayLike<number>, b: ArrayLike<number>): num
   return (a[0]! - b[0]!) ** 2 + (a[1]! - b[1]!) ** 2 + (a[2]! - b[2]!) ** 2;
 }
 export function quadCenters(vertices: Uint32Array): Float32Array {
-  const centers = new Float32Array((vertices.length / 8) * 3);
+  const quadCount = vertices.length / 8;
+  const centers = new Float32Array(quadCount * 3);
   const position = new Float64Array(3);
-  for (let q = 0; q < vertices.length / 8; q++)
-    for (let v = 0; v < 4; v++) {
-      writeVertexPosition(vertices[q * 8 + v * 2]!, vertices[q * 8 + v * 2 + 1]!, position);
-      centers[q * 3] = centers[q * 3]! + position[0]! / 4;
-      centers[q * 3 + 1] = centers[q * 3 + 1]! + position[1]! / 4;
-      centers[q * 3 + 2] = centers[q * 3 + 2]! + position[2]! / 4;
-    }
+  for (let q = 0; q < quadCount; q++) {
+    const base = q * 8;
+    writeVertexPosition(vertices[base]!, vertices[base + 1]!, position);
+    const x = position[0]!,
+      y = position[1]!,
+      z = position[2]!;
+    writeVertexPosition(vertices[base + 4]!, vertices[base + 5]!, position);
+    centers[q * 3] = (x + position[0]!) * 0.5;
+    centers[q * 3 + 1] = (y + position[1]!) * 0.5;
+    centers[q * 3 + 2] = (z + position[2]!) * 0.5;
+  }
   return centers;
 }
 export function sortedQuadIndices(centers: Float32Array, camera: ArrayLike<number>): Uint32Array {

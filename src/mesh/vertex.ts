@@ -1,4 +1,4 @@
-import { wallTorchOffset } from './wall-torch';
+import { writeWallTorchOffset } from './wall-torch';
 /** M05b revision of decisions/M02b-vertex-format.md: two unsigned words per vertex. */
 export const VERTEX_LAYOUT = {
   tileMask: 4095,
@@ -107,25 +107,30 @@ export function writeVertexPosition(word0: number, word1: number, target: Float6
     target[2] = ((word0 >>> 10) & 31) + ((s >>> 10) & 31) / 16;
     return;
   }
+  const x = word0 & 31;
+  const y = (word0 >>> 5) & 31;
+  const z = (word0 >>> 10) & 31;
   const normal = (word0 >>> 15) & 7;
   const fluid = word0 >>> 28 === 4 || word0 >>> 28 === 5;
   const inset = fluid ? 0 : ((word1 >>> VERTEX_LAYOUT.wallInsetShift) & 1) / 32;
-  const torch =
-    normal >= 6
-      ? wallTorchOffset(
-          (word1 >>> VERTEX_LAYOUT.uShift) & 31,
-          (word1 >>> VERTEX_LAYOUT.vShift) & 31,
-          normal - 6,
-          word0 >>> 28,
-        )
-      : null;
-  target[0] = (word0 & 31) + (torch?.[0] ?? 0) + (normal === 0 ? inset : normal === 1 ? -inset : 0);
-  target[1] =
-    ((word0 >>> 5) & 31) +
-    (torch?.[1] ?? 0) +
-    (fluid ? -((word1 >>> 12) & 63) / 64 : ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5);
-  target[2] =
-    ((word0 >>> 10) & 31) + (torch?.[2] ?? 0) + (normal === 4 ? inset : normal === 5 ? -inset : 0);
+  if (normal >= 6) {
+    writeWallTorchOffset(
+      (word1 >>> VERTEX_LAYOUT.uShift) & 31,
+      (word1 >>> VERTEX_LAYOUT.vShift) & 31,
+      normal - 6,
+      word0 >>> 28,
+      target,
+      0,
+    );
+    target[0] = x + target[0]!;
+    target[1] = y + target[1]!;
+    target[2] = z + target[2]!;
+  } else {
+    target[0] = x + (normal === 0 ? inset : normal === 1 ? -inset : 0);
+    target[1] =
+      y + (fluid ? -((word1 >>> 12) & 63) / 64 : ((word1 >>> VERTEX_LAYOUT.halfYShift) & 1) * 0.5);
+    target[2] = z + (normal === 4 ? inset : normal === 5 ? -inset : 0);
+  }
 }
 
 const decodedPosition = new Float64Array(3);

@@ -4,7 +4,7 @@ import { TerrainArena } from '../../src/render/terrain-arena';
 import { quadIndices } from '../../src/render/shared-quads';
 
 it('suballocates indexed geometry, reuses holes and releases the final page', () => {
-  const uploads: number[][] = [];
+  const uploads: Array<{ target: number; head: number[] }> = [];
   const copies = vi.fn();
   const gl = {
     ARRAY_BUFFER: 1,
@@ -14,14 +14,16 @@ it('suballocates indexed geometry, reuses holes and releases the final page', ()
     COPY_READ_BUFFER: 5,
     COPY_WRITE_BUFFER: 6,
     STREAM_DRAW: 7,
+    STATIC_DRAW: 8,
     createVertexArray: () => ({}),
     createBuffer: () => ({}),
     deleteVertexArray: vi.fn(),
     deleteBuffer: vi.fn(),
     bindVertexArray: vi.fn(),
     bindBuffer: vi.fn(),
-    bufferData: (_target: number, data: number | Uint32Array) => {
-      if (data instanceof Uint32Array) uploads.push(Array.from(data));
+    bufferData: (target: number, data: number | Uint32Array) => {
+      if (data instanceof Uint32Array)
+        uploads.push({ target, head: Array.from(data.subarray(0, 12)) });
     },
     enableVertexAttribArray: vi.fn(),
     vertexAttribIPointer: vi.fn(),
@@ -37,13 +39,21 @@ it('suballocates indexed geometry, reuses holes and releases the final page', ()
     quadCount: 1,
   });
   const a = arena.upload(bucket());
+  expect(a.pendingUpload).toBe(true);
+  arena.uploadPending(a, Infinity);
   const b = arena.upload(bucket());
+  arena.uploadPending(b, Infinity);
   expect(b.vertexBase).toBe(4);
-  expect(uploads[3]).toEqual([4, 5, 6, 4, 6, 7]);
-  expect(copies).toHaveBeenNthCalledWith(4, 5, 6, 0, 24, 24);
-  expect(wrapper.getCounts()).toMatchObject({ buffers: 4, vaos: 1 });
+  expect(b.indices.offset).toBe(24);
+  expect(uploads.find((upload) => upload.target === gl.ELEMENT_ARRAY_BUFFER)?.head).toEqual([
+    0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7,
+  ]);
+  expect(copies).toHaveBeenNthCalledWith(1, 5, 6, 0, 0, 32);
+  expect(copies).toHaveBeenNthCalledWith(2, 5, 6, 0, 32, 32);
+  expect(wrapper.getCounts()).toMatchObject({ buffers: 3, vaos: 1 });
   arena.free(a);
   const c = arena.upload(bucket());
+  arena.uploadPending(c, Infinity);
   expect(c.vertexBase).toBe(0);
   arena.free(b);
   arena.free(c);

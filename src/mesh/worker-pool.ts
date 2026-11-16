@@ -1,6 +1,7 @@
 import { blockSnapshotTransfers, type BlockPaddingInput } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from '../workers/shared-worker-budget';
 import type { ColumnWorkPriority } from '../world/streamer';
+import { columnKey } from '../world/streaming-plan';
 import type { LightPaddingInput } from '../world/light-padding';
 import type { SectionMeshData, MeshLookupTables } from './greedy';
 
@@ -11,6 +12,8 @@ export interface MeshResult {
   sz: number;
   meshData: SectionMeshData;
   duration: number;
+  greedyMs: number;
+  visibilityMs: number;
   trivialMasks?: Int32Array;
 }
 
@@ -31,16 +34,22 @@ interface MeshJob {
 }
 
 export class WorkerPool {
-  private priorities = new Map<string, number>();
+  private priorities = new Map<number, number>();
 
   public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
-    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.mesh]));
+    this.priorities.clear();
+    for (let i = 0; i < priorities.length; i++) {
+      const priority = priorities[i]!;
+      this.priorities.set(columnKey(priority.cx, priority.cz), priority.mesh);
+    }
   }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
   private queue: MeshJob[] = [];
   private activeJobs: Map<Worker, MeshJob[]> = new Map();
   private meshMsTimes: number[] = [];
+  private greedyMsTimes: number[] = [];
+  private visibilityMsTimes: number[] = [];
   private nextJobId = 1;
   public completedWorkMs = 0;
   public completedJobs = 0;
@@ -71,13 +80,16 @@ export class WorkerPool {
         });
 
       worker.onmessage = (e: MessageEvent) => {
-        const { id, meshData, duration, finishedAt, trivialMasks } = e.data as {
-          id: number;
-          meshData: SectionMeshData;
-          duration: number;
-          finishedAt?: number;
-          trivialMasks?: Int32Array;
-        };
+        const { id, meshData, duration, greedyMs, visibilityMs, finishedAt, trivialMasks } =
+          e.data as {
+            id: number;
+            meshData: SectionMeshData;
+            duration: number;
+            greedyMs: number;
+            visibilityMs: number;
+            finishedAt?: number;
+            trivialMasks?: Int32Array;
+          };
 
         this.completedWorkMs += duration;
         this.completedJobs++;
@@ -97,6 +109,14 @@ export class WorkerPool {
           if (job.sy >= 0) {
             this.meshMsTimes.push(duration);
             if (this.meshMsTimes.length > 100) this.meshMsTimes.shift();
+            if (Number.isFinite(greedyMs)) {
+              this.greedyMsTimes.push(greedyMs);
+              if (this.greedyMsTimes.length > 100) this.greedyMsTimes.shift();
+            }
+            if (Number.isFinite(visibilityMs)) {
+              this.visibilityMsTimes.push(visibilityMs);
+              if (this.visibilityMsTimes.length > 100) this.visibilityMsTimes.shift();
+            }
           }
           job.resolve({
             key: job.key,
@@ -105,6 +125,8 @@ export class WorkerPool {
             sz: job.sz,
             meshData,
             duration,
+            greedyMs,
+            visibilityMs,
             trivialMasks,
           });
         }
@@ -138,6 +160,8 @@ export class WorkerPool {
   public cancelAll(): void {
     // The cancelled world's timings must not count toward the next world's meshMsP95.
     this.meshMsTimes = [];
+    this.greedyMsTimes = [];
+    this.visibilityMsTimes = [];
     if (this.activeJobs.size > 0) {
       const size = this.workers.length;
       this.terminate();
@@ -160,6 +184,20 @@ export class WorkerPool {
     const sorted = [...this.meshMsTimes].sort((a, b) => a - b);
     const p95Idx = Math.floor(sorted.length * 0.95);
     return sorted[p95Idx] ?? 0;
+  }
+
+  public get greedyMsP95(): number {
+    return this.percentile95(this.greedyMsTimes);
+  }
+
+  public get visibilityMsP95(): number {
+    return this.percentile95(this.visibilityMsTimes);
+  }
+
+  private percentile95(samples: number[]): number {
+    if (samples.length === 0) return 0;
+    const sorted = [...samples].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length * 0.95)] ?? 0;
   }
 
   public enqueueMeshJob(
@@ -204,8 +242,8 @@ export class WorkerPool {
   private processQueue(): void {
     this.queue.sort(
       (a, b) =>
-        (this.priorities.get(`${a.sx},${a.sz}`) ?? 1e9) -
-        (this.priorities.get(`${b.sx},${b.sz}`) ?? 1e9),
+        (this.priorities.get(columnKey(a.sx, a.sz)) ?? 1e9) -
+        (this.priorities.get(columnKey(b.sx, b.sz)) ?? 1e9),
     );
     const reserved = this.workers.length > 1 ? 1 : 0;
     while (this.queue.length > 0) {

@@ -20,8 +20,12 @@ export function processMeshMessage(event: MessageEvent): void {
   const start = performance.now();
   const blocks =
     paddedSection instanceof Uint16Array ? paddedSection : buildSnapshotPadding(paddedSection);
+  const greedyStart = performance.now();
   const meshData = greedyMesh(blocks, tables, light ? () => buildPaddedLight(light) : undefined);
+  const greedyMs = performance.now() - greedyStart;
+  const visibilityStart = performance.now();
   meshData.visibilityMask = sectionVisibility(blocks, tables.isOpaqueCube);
+  const visibilityMs = performance.now() - visibilityStart;
   const trivialMasks = trivialSections ? trivialVisibilityMasks(trivialSections) : undefined;
   for (const bucket of [meshData.opaque, meshData.cutout, meshData.translucent, meshData.models])
     normalizeSharedQuads(bucket);
@@ -54,6 +58,8 @@ export function processMeshMessage(event: MessageEvent): void {
       id,
       meshData,
       duration,
+      greedyMs,
+      visibilityMs,
       trivialMasks,
       finishedAt: performance.timeOrigin + performance.now(),
     },

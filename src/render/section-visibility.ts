@@ -1,26 +1,28 @@
 import { aabbIntersectsFrustum } from '../world/frustum';
 import { columnKey } from '../world/streaming-plan';
 import { CaveCuller } from './cave-culling';
+import { renderPhaseStats } from '../engine/render-phase-stats';
 
 const RADIUS = 34;
 const WIDTH = RADIUS * 2 + 1;
 const HEIGHT = 20;
 const SIZE = WIDTH * WIDTH * HEIGHT;
+const NOT_READY_MASK = 0xffff;
 
 interface ColumnMasks {
   x: number;
   z: number;
-  values: Int32Array;
+  values: Uint16Array;
 }
 
 /** Renderer-owned masks and reusable cave traversal scratch. */
 export class SectionVisibility {
   private readonly columns = new Map<number, ColumnMasks>();
   private readonly list: ColumnMasks[] = [];
-  private readonly masks = new Int32Array(SIZE);
+  private readonly masks = new Uint16Array(SIZE);
   private readonly frustum = new Uint8Array(SIZE);
+  private readonly frustumIndices = new Int32Array(SIZE);
   private readonly culler = new CaveCuller(WIDTH, HEIGHT, WIDTH);
-  private readonly bucket = new Int32Array(12).fill(0x7fffffff);
   private version = 0;
   private computedVersion = -1;
   private cx = 0;
@@ -31,6 +33,9 @@ export class SectionVisibility {
   private minY = 0;
   private maxY = HEIGHT - 1;
   private radius = 0;
+  private frustumCount = 0;
+  private yawBucket = 0x7fffffff;
+  private pitchBucket = 0x7fffffff;
   private valid = false;
 
   meshChanged(): void {
@@ -43,11 +48,12 @@ export class SectionVisibility {
     let column = this.columns.get(key);
     if (!column) {
       if (mask === undefined) return;
-      column = { x, z, values: new Int32Array(HEIGHT).fill(-1) };
+      column = { x, z, values: new Uint16Array(HEIGHT).fill(NOT_READY_MASK) };
       this.columns.set(key, column);
       this.list.push(column);
     }
-    const value = mask ?? -1;
+    const value = mask === undefined ? NOT_READY_MASK : mask & 0x7fff;
+    if (column.values[y] === value) return;
     column.values[y] = value;
     this.version++;
   }
@@ -66,7 +72,14 @@ export class SectionVisibility {
   invalidateColumn(x: number, z: number): void {
     const column = this.columns.get(columnKey(x, z));
     if (!column) return;
-    column.values.fill(-1);
+    let changed = false;
+    for (let y = 0; y < HEIGHT; y++)
+      if (column.values[y] !== NOT_READY_MASK) {
+        changed = true;
+        break;
+      }
+    if (!changed) return;
+    column.values.fill(NOT_READY_MASK);
     this.version++;
   }
 
@@ -74,8 +87,8 @@ export class SectionVisibility {
     const column = this.columns.get(columnKey(x, z));
     if (!column) return;
     for (let y = 0; y < HEIGHT; y++) {
-      if (column.values[y] !== -1 && !keep.has(`${x},${y},${z}`)) {
-        column.values[y] = -1;
+      if (column.values[y] !== NOT_READY_MASK && !keep.has(`${x},${y},${z}`)) {
+        column.values[y] = NOT_READY_MASK;
         this.version++;
       }
     }
@@ -90,19 +103,20 @@ export class SectionVisibility {
 
   prepare(
     camera: ArrayLike<number>,
-    matrix: ArrayLike<number>,
     planes: ArrayLike<number>,
     distance: number,
     useFrustum: boolean,
     minMeshY = 0,
     maxMeshY = HEIGHT - 1,
+    yawBucket = 0,
+    pitchBucket = 0,
   ): void {
     const cx = Math.floor(camera[0]! / 16);
     const cy = Math.floor(camera[1]! / 16);
     const cz = Math.floor(camera[2]! / 16);
     const minY = Math.max(0, Math.min(cy, minMeshY));
     const maxY = Math.min(HEIGHT - 1, Math.max(cy, maxMeshY));
-    let viewChanged =
+    const viewChanged =
       !this.valid ||
       this.cx !== cx ||
       this.cy !== cy ||
@@ -110,14 +124,9 @@ export class SectionVisibility {
       this.distance !== distance ||
       this.useFrustum !== useFrustum ||
       this.minY !== minY ||
-      this.maxY !== maxY;
-    for (let i = 0; i < 12; i++) {
-      const value = Math.round(matrix[i]! * 100);
-      if (this.bucket[i] !== value) {
-        this.bucket[i] = value;
-        viewChanged = true;
-      }
-    }
+      this.maxY !== maxY ||
+      this.yawBucket !== yawBucket ||
+      this.pitchBucket !== pitchBucket;
     if (!viewChanged && this.computedVersion === this.version) return;
     this.cx = cx;
     this.cy = cy;
@@ -126,14 +135,18 @@ export class SectionVisibility {
     this.useFrustum = useFrustum;
     this.minY = minY;
     this.maxY = maxY;
+    this.yawBucket = yawBucket;
+    this.pitchBucket = pitchBucket;
     this.computedVersion = this.version;
     this.valid = cy >= 0 && cy < HEIGHT;
     if (!this.valid) return;
-    this.masks.fill(-1);
+    this.masks.fill(NOT_READY_MASK);
     const radius = Math.min(RADIUS, Math.max(0, distance + 2));
     this.radius = radius;
+    const frustumStart = renderPhaseStats.start();
     if (viewChanged) {
       this.frustum.fill(0);
+      this.frustumCount = 0;
       for (let z = -radius; z <= radius; z++)
         for (let y = minY; y <= maxY; y++)
           for (let x = -radius; x <= radius; x++) {
@@ -145,19 +158,36 @@ export class SectionVisibility {
             if (
               !useFrustum ||
               aabbIntersectsFrustum(planes, wx - 64, wy - 64, wz - 64, wx + 80, wy + 80, wz + 80)
-            )
+            ) {
               this.frustum[index] = 1;
+              this.frustumIndices[this.frustumCount++] = index;
+            }
           }
     }
+    renderPhaseStats.end('frustumCullMs', frustumStart);
+    let allOpen = true;
     for (let i = 0; i < this.list.length; i++) {
       const column = this.list[i]!;
       const x = column.x - cx + RADIUS,
         z = column.z - cz + RADIUS;
       if (x < 0 || x >= WIDTH || z < 0 || z >= WIDTH) continue;
-      for (let y = 0; y < HEIGHT; y++)
-        this.masks[z * WIDTH * HEIGHT + y * WIDTH + x] = column.values[y]!;
+      for (let y = 0; y < HEIGHT; y++) {
+        const index = z * WIDTH * HEIGHT + y * WIDTH + x;
+        const mask = column.values[y]!;
+        this.masks[index] = mask;
+        if (this.frustum[index] && mask !== NOT_READY_MASK && mask !== 0x7fff) allOpen = false;
+      }
     }
-    this.culler.traverse(this.masks, this.frustum, RADIUS * WIDTH * HEIGHT + cy * WIDTH + RADIUS);
+    const bfsStart = renderPhaseStats.start();
+    this.culler.traverse(
+      this.masks,
+      this.frustum,
+      RADIUS * WIDTH * HEIGHT + cy * WIDTH + RADIUS,
+      allOpen,
+      this.frustumIndices,
+      this.frustumCount,
+    );
+    renderPhaseStats.end('caveBfsMs', bfsStart);
   }
 
   visible(x: number, y: number, z: number): boolean {
@@ -166,6 +196,6 @@ export class SectionVisibility {
     x = x - this.cx + RADIUS;
     z = z - this.cz + RADIUS;
     if (x < 0 || x >= WIDTH || z < 0 || z >= WIDTH) return true;
-    return this.culler.visible[z * WIDTH * HEIGHT + y * WIDTH + x] !== 0;
+    return this.culler.isVisible(z * WIDTH * HEIGHT + y * WIDTH + x);
   }
 }

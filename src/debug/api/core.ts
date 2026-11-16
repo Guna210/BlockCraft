@@ -244,6 +244,8 @@ export interface BlockCraftDebugAPI {
   getWorkerStats?: () => {
     genMsP95: number;
     meshMsP95: number;
+    greedyMsP95: number;
+    visibilityMsP95: number;
     sectionWorkMsP95: number;
     sectionWorkSamples: number;
     queueLength: number;
@@ -304,12 +306,14 @@ export interface BlockCraftDebugAPI {
   };
   resetFrameStats?: () => void;
   getFrameStats?: () => import('../../engine/frame-stats').FrameStatsSnapshot;
+  getRenderPhaseStats?: () => import('../../engine/render-phase-stats').RenderPhaseStatsSnapshot;
   getGlResourceCounts?: () => import('../../render/gl').ResourceCounts;
   getRenderStats(): {
     fps: number;
     frameCpuMsP95: number;
     uploadMsP95: number;
     drawCalls: number;
+    drawSubmissions: number;
     triangles: number;
     chunksLoaded: number;
     chunksMeshed: number;
@@ -348,6 +352,7 @@ export const renderStats = {
   frameCpuMsP95: 0,
   uploadMsP95: 0,
   drawCalls: 0,
+  drawSubmissions: 0,
   triangles: 0,
   chunksLoaded: 0,
   chunksMeshed: 0,

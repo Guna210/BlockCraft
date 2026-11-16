@@ -80,9 +80,16 @@ test('underground visibility preserves pixels while culling sections', async ({
       },
       { cave, frustum },
     );
-    const visible = await page.evaluate(() => window.__blockcraft!.getRenderStats().chunksVisible);
+    const render = await page.evaluate(() => {
+      const stats = window.__blockcraft!.getRenderStats();
+      return {
+        visible: stats.chunksVisible,
+        drawCalls: stats.drawCalls,
+        drawSubmissions: stats.drawSubmissions,
+      };
+    });
     const png = await assertAndSaveScreenshot({ milestone: 'm22a', name });
-    return { visible, png };
+    return { ...render, png };
   };
   const enabled = await sample(true, true, 'm22a-culling-on');
   const disabled = await sample(false, false, 'm22a-culling-off');
@@ -119,6 +126,10 @@ test('underground visibility preserves pixels while culling sections', async ({
     JSON.stringify({
       enabled: enabled.visible,
       disabled: disabled.visible,
+      enabledDrawCalls: enabled.drawCalls,
+      enabledDrawSubmissions: enabled.drawSubmissions,
+      disabledDrawCalls: disabled.drawCalls,
+      disabledDrawSubmissions: disabled.drawSubmissions,
       ratio,
       pixelDiff,
       multiDraw,
@@ -157,6 +168,7 @@ test('flight meets the frame, upload, worker and draw budgets', async ({ page })
   await fly(page, { from: start, to: { ...start, x: start.x + 1000 }, speed: 30 });
   const result = await page.evaluate(() => ({
     frame: window.__blockcraft!.getFrameStats!(),
+    phases: window.__blockcraft!.getRenderPhaseStats!(),
     worker: window.__blockcraft!.getWorkerStats!(),
     render: window.__blockcraft!.getRenderStats(),
   }));
@@ -166,6 +178,7 @@ test('flight meets the frame, upload, worker and draw budgets', async ({ page })
   expect(result.frame.uploadMsP95).toBeLessThanOrEqual(3);
   expect(result.worker.sectionWorkSamples).toBeGreaterThan(0);
   expect(result.worker.sectionWorkMsP95).toBeLessThanOrEqual(6);
+  expect(result.worker.meshMsP95).toBeLessThanOrEqual(6);
   expect(result.frame.drawCallsMax).toBeLessThanOrEqual(1500);
   expect(firstFrameMs).toBeLessThanOrEqual(20_000);
 });
