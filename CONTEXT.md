@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-15
+Last updated: 2026-11-16
 
 ## Setup
 
@@ -53,6 +53,7 @@ Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (
 
 Remaining SPEC tasks: M22a, M22c, M22d (all ready, parallel); M22b after M22a; M23 last (+ M23-fix-N).
 In flight: M22a (culling & batching), Codex, branch claude/m22a, prompt given 2026-11-15. Decisions: per-section 15-bit face-connectivity mask computed in the mesh worker (non-opaque-full-cube cells passable), stored with the mesh result; cave-culling BFS from camera section with monotonic-direction rule + section frustum test, cached until camera section/meshes change, preallocated queue/stamps; section frustum inside M04a's kept columns; merged per-pass buffer arena + WEBGL_multi_draw with per-draw data via gl_DrawID (fade, offsets), per-section fallback; translucent order preserved; debug-only culling toggle module src/debug/api/culling.ts; mesh p95 (m02:54 <= 6 ms) must not regress, report before/after; new e2e for every §2.3 "Yes" budget at RD8 on M04a flight helper (tests/e2e/helpers/flight.ts); CI showed frameCpuMsP95 8.5-12.8 ms at RD8 (m05) so it must actually drop. Owner extra goal: m21c-world passes without retry; report receiver glCheck/frame times; if still flaky after M22a, separate follow-up (owner agreed 2026-11-15).
+#88 M22a opened (Codex, 08ad46d, status incomplete). CI run 43751705695 RED: shard 1 m01a-fix:38/:54 (GL errors read per frame) + m03g-perimeter:87/:104 ('getBufferSubData: no buffer' WebGL warnings: debug readback still expects per-column buffers); shard 4 m22a-budgets:165 frameCpuMsP95 > 8 (3/3). Local: culling 9.5% visible, 0.0005% pixel diff (good); frame CPU p95 35 ms, upload 6.2, gen+mesh 17.9, mesh 10.4 (container). Codex ran only M22 quick, not the other e2e asked. Sent fix message 2026-11-16: fix m01a/m03g in game code, profile frame CPU breakdown on CI, QUESTION if the remaining cost is SwiftShader GL sync.
 Done: M21b-fix #87 merged (master 2f87382): protocol v5 container windows. Multiplayer follow-ups complete.
 Done: M21b-fix2 #86 merged (master 9bf4de9): protocol v4 vitals/death/respawn.
 Done: M21c #85 merged (master ff53966), 2 review rounds; notes in decisions/M21c-client.md.
@@ -105,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-16: #88 M22a CI red: m01a-fix x2, m03g x2 (arena broke debug readback), budget frame CPU > 8. Told owner yes, sent Codex fix message.
 - 2026-11-15: #87 M21b-fix merged (2f87382). Owner: M22a next (Codex), with m21c-world no-retry as extra goal; if still flaky after culling, investigate separately. Gave M22a prompt.
 - 2026-11-15: #87 round 2: both code findings fixed; reviewer's only blocking = handoff cites run 43688521527 (source commit 5d5680b) not head docs commit c48e28d run 43691062113. I overruled: a docs commit can't cite its own run; numbers match the source run; head run green. Told owner to merge. m21c-world first-attempt flake again on 5d5680b (now ~3 of last 7 runs) -> raised to owner.
 - 2026-11-15: #87 fixes 5d5680b + docs c48e28d (owner: CI green). setCapture(false) now only on close paths (checked). Sent round 2 to reviewer session_0155bUSAxWNf9YzFRTncPKiv myself.
@@ -124,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-12: #85 input-driven server done locally (M21b tests unedited) but delayed walk still 116 corrections. Approved adapting 4 of M21c's OWN new unit tests to the approved timing (exact values, fixture mirrors real server, packet pause < 5 ticks stays 0). Told Codex to classify the 116 via the trace before further changes; QUESTION after 3 approaches.
 - 2026-11-12: #85 counter fix exposed 298 corrections (real criterion failure, masked by undercount). Diagnosed server tick-phase mismatch; sent Codex input-driven server movement fix; held its request to change 2 own unit assertions.
 - 2026-11-12: #85 M21c round 1 PASS (Sonnet). Non-blocking but I asked for a fix: repeated-ack corrections uncounted (prediction.ts:76-94). Also found: server never respawns dead players; client has no vitals -> proposed follow-up M21b-fix2.
-- 2026-11-12: #85 M21c completed by Codex retry (1a7f8b1, CI green, retitled verified). Checked diff, tests and screenshot; gave Sonnet reviewer prompt. Flagged to owner: no health/hunger/death/mode sync in multiplayer (protocol gap, not in SPEC) - candidate to add to M21b-fix or a separate follow-up.
