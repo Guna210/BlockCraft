@@ -3,6 +3,9 @@ export class FluidAnimationClock {
   private elapsed = 0;
   private previous: number | null = null;
   private paused = false;
+  get pausedState(): boolean {
+    return this.paused;
+  }
   /** `hold` stops the clock for this sample only, like a pause that the caller owns. */
   sample(now: number, hold = false): number {
     if (this.previous !== null && !this.paused && !hold)

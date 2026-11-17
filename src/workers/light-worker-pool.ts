@@ -1,6 +1,7 @@
 import { blockSnapshotTransfers, type BlockColumnsSnapshot } from '../world/block-snapshot';
 import type { SharedWorkerBudget } from './shared-worker-budget';
 import type { ColumnWorkPriority } from '../world/streamer';
+import { columnKey } from '../world/streaming-plan';
 import type { LightRect, ColumnLight } from '../world/batch-light';
 import type { LightBatchResponse } from './light.worker';
 import type { SectionLightTransfer, LightRegionResponse } from './light.worker';
@@ -22,10 +23,14 @@ interface LightJob {
 }
 
 export class LightWorkerPool {
-  private priorities = new Map<string, number>();
+  private priorities = new Map<number, number>();
 
   public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
-    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.light]));
+    this.priorities.clear();
+    for (let i = 0; i < priorities.length; i++) {
+      const priority = priorities[i]!;
+      this.priorities.set(columnKey(priority.cx, priority.cz), priority.light);
+    }
   }
 
   private jobPriority(job: LightJob): number {
@@ -33,7 +38,7 @@ export class LightWorkerPool {
     let rank = 1e9;
     for (let z = job.interior.minCZ; z <= job.interior.maxCZ; z++)
       for (let x = job.interior.minCX; x <= job.interior.maxCX; x++)
-        rank = Math.min(rank, this.priorities.get(`${x},${z}`) ?? 1e9);
+        rank = Math.min(rank, this.priorities.get(columnKey(x, z)) ?? 1e9);
     return rank;
   }
   private workers: Worker[] = [];

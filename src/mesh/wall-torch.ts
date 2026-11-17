@@ -54,6 +54,24 @@ export function wallTorchOffset(
     facing === 0 ? 1 - away : facing === 1 ? away : 0.5 + lateral,
   ];
 }
+
+/** Writes the packed sprite offset without allocating a tuple on the mesh inspection path. */
+export function writeWallTorchOffset(
+  u: number,
+  v: number,
+  quad: number,
+  facing: number,
+  target: Float64Array,
+  offset: number,
+): void {
+  const h = 1 - v,
+    across = u - 0.5;
+  const away = 0.02 + h * 0.45 + (quad === 1 ? across * 0.3 : 0);
+  const lateral = quad === 0 ? across : 0;
+  target[offset] = facing === 2 ? away : facing === 3 ? 1 - away : 0.5 + lateral;
+  target[offset + 1] = 0.15 + h * 0.85;
+  target[offset + 2] = facing === 0 ? 1 - away : facing === 1 ? away : 0.5 + lateral;
+}
 export const WALL_TORCH_GLSL = `
 vec3 wallTorchOffset(float u, float v, uint quad, uint facing) {
  float h=1.0-v, across=u-0.5;

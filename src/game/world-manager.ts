@@ -104,6 +104,7 @@ import { GLWrapper } from '../render/gl';
 import { renderStats, setRenderStatsRefresh } from '../debug/api/core';
 import { extractFrustumPlanes } from '../world/frustum';
 import { frameStats } from '../engine/frame-stats';
+import { renderPhaseStats } from '../engine/render-phase-stats';
 import { settings, type LeavesSetting } from '../engine/settings';
 import { sound } from '../audio/service';
 import { Streamer, StreamerHost, StreamerView, StreamingStats } from '../world/streamer';
@@ -349,6 +350,13 @@ export class WorldManager {
 
   private readonly viewProj = mat4.create();
   private readonly frustumPlanes = new Float64Array(24);
+  private readonly reusableStreamerView: StreamerView = {
+    x: 0,
+    z: 0,
+    yaw: 0,
+    pitch: 0,
+    planes: this.frustumPlanes,
+  };
 
   // Bumped every time `this.world` is replaced. Asynchronous results (generation, light, mesh)
   // carry the epoch they were requested in and are dropped when it no longer matches.
@@ -395,6 +403,7 @@ export class WorldManager {
     if ((y & 15) === 15 && sy < 19) sections.push([cx, sy + 1, cz]);
     for (const [sx, sectionY, sz] of sections) {
       if (!world.hasColumn(sx!, sz!)) continue;
+      this.chunkRenderer?.invalidateSectionVisibility(sx!, sectionY!, sz!);
       const key = `${sx},${sectionY},${sz}`;
       this.editVersions.set(key, serial);
       void this.workerPool
@@ -408,12 +417,23 @@ export class WorldManager {
           collectLightPadding(world, sx!, sectionY!, sz!),
         )
         .then((result) => {
-          if (epoch === this.worldEpoch && this.editVersions.get(key) === serial)
+          if (
+            epoch === this.worldEpoch &&
+            this.editVersions.get(key) === serial &&
+            world.hasColumn(sx!, sz!)
+          ) {
+            this.chunkRenderer?.prepareSectionUpload(
+              result.sx,
+              result.sy,
+              result.sz,
+              result.meshData,
+            );
             this.editMeshes.push({
               result,
               serial,
               primary: sx === cx && sectionY === sy && sz === cz,
             });
+          }
         });
     }
   }
@@ -426,6 +446,7 @@ export class WorldManager {
     const serial = ++this.editSerial,
       epoch = this.worldEpoch;
     for (const [cx, sy, cz] of sections) {
+      this.chunkRenderer?.invalidateSectionVisibility(cx, sy, cz);
       const key = `${cx},${sy},${cz}`;
       this.editVersions.set(key, serial);
       this.editMeshStarters.push(() => {
@@ -450,6 +471,12 @@ export class WorldManager {
               this.editVersions.delete(key);
               return;
             }
+            this.chunkRenderer?.prepareSectionUpload(
+              result.sx,
+              result.sy,
+              result.sz,
+              result.meshData,
+            );
             this.editMeshes.push({ result, serial, primary: false });
           });
       });
@@ -513,6 +540,41 @@ export class WorldManager {
   /** A saved column if the world has one at (cx, cz), otherwise generation from the seed. */
   public remoteExit: (() => void) | null = null;
   public remoteColumnSource: ((cx: number, cz: number) => Promise<GenResult>) | null = null;
+  private readonly sectionGenerationTimes = new Map<
+    number,
+    { duration: number; activeMask: number }
+  >();
+  private readonly sectionWorkSamples = new Float64Array(4096);
+  private readonly uploadMasksApplied = new WeakSet<object>();
+  private sectionWorkCount = 0;
+  private resetSectionWorkStats(): void {
+    this.sectionGenerationTimes.clear();
+    this.sectionWorkCount = 0;
+  }
+
+  public resetSectionWorkSamples(): void {
+    this.sectionWorkCount = 0;
+  }
+
+  private recordSectionWork(duration: number): void {
+    this.sectionWorkSamples[this.sectionWorkCount % this.sectionWorkSamples.length] = duration;
+    this.sectionWorkCount++;
+  }
+
+  private recordCompletedSectionWork(
+    generation: { duration: number; activeMask: number } | undefined,
+    result: MeshResult,
+  ): MeshResult {
+    if (!generation) return result;
+    if (result.trivialMasks) {
+      for (let sy = 0; sy < result.trivialMasks.length; sy++) {
+        if (result.trivialMasks[sy]! >= 0 && generation.activeMask & (1 << sy))
+          this.recordSectionWork(generation.duration);
+      }
+    }
+    if (result.sy >= 0) this.recordSectionWork(generation.duration + result.duration);
+    return result;
+  }
 
   private requestColumn(cx: number, cz: number): Promise<GenResult> {
     if (this.remoteColumnSource) return this.remoteColumnSource(cx, cz);
@@ -577,10 +639,19 @@ export class WorldManager {
   /** What the streamer needs from the world, the worker pools and the GPU. */
   private makeStreamerHost(): StreamerHost<GenResult, MeshResult> {
     return {
+      deferCameraPlanning: true,
       requestGen: (cx, cz) => this.requestColumn(cx, cz),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
         if (!world) return [];
+        if (res.perSectionMs > 0) {
+          let activeMask = 0;
+          for (const section of res.sections) activeMask |= 1 << section.sy;
+          this.sectionGenerationTimes.set(columnKey(res.cx, res.cz), {
+            duration: res.perSectionMs,
+            activeMask,
+          });
+        }
         if (this.remoteColumnSource) {
           const column = (res as StreamedGenResult).restored!.column;
           return [
@@ -594,18 +665,52 @@ export class WorldManager {
       },
       requestLight: (columns) => this.requestColumnLight(columns),
       requestMesh: (cx, cz) => this.requestColumnMesh(cx, cz),
-      uploadSection: (cx, cz, res) => {
-        if (!this.chunkRenderer) return;
+      prepareUpload: (_cx, _cz, res) => {
+        if (this.chunkRenderer && res.sy >= 0)
+          this.chunkRenderer.prepareSectionUpload(res.sx, res.sy, res.sz, res.meshData);
+      },
+      uploadSection: (cx, cz, res, budgetMs) => {
+        if (!this.chunkRenderer) return true;
+        const uploadStart = renderPhaseStats.start();
+        const firstUploadStep = !this.uploadMasksApplied.has(res);
+        if (firstUploadStep && res.trivialMasks) {
+          for (let sy = 0; sy < res.trivialMasks.length; sy++) {
+            const mask = res.trivialMasks[sy]!;
+            if (mask < 0) continue;
+            this.chunkRenderer.setSkippedSectionVisibility(cx, sy, cz, mask);
+            this.meshAttempts.uploaded(`${cx},${cz}`, `${cx},${sy},${cz}`);
+          }
+        }
+        if (firstUploadStep) this.uploadMasksApplied.add(res);
+        if (res.sy < 0) {
+          this.uploadMasksApplied.delete(res);
+          renderPhaseStats.end('streamerUploadCallbackMs', uploadStart);
+          return true;
+        }
         // Nothing is shown until a createWorld or waitForTerrain request is done, so the sections it
         // uploads appear at full opacity; any other column fades in (decisions/M04b-fade-and-memory.md).
         const fadeFromMs = fadeStartFor(this.loadPending, performance.now());
-        this.chunkRenderer.uploadSectionMesh(res.sx, res.sy, res.sz, res.meshData, fadeFromMs);
+        const complete = this.chunkRenderer.uploadSectionMesh(
+          res.sx,
+          res.sy,
+          res.sz,
+          res.meshData,
+          fadeFromMs,
+          budgetMs,
+        );
+        if (!complete) {
+          renderPhaseStats.end('streamerUploadCallbackMs', uploadStart);
+          return false;
+        }
+        this.uploadMasksApplied.delete(res);
         this.meshAttempts.uploaded(`${cx},${cz}`, `${res.sx},${res.sy},${res.sz}`);
         // The column's tint textures are created with its upload, not in the first frame that draws it.
         this.chunkRenderer.prepareColumnTints(cx, cz, this.world);
+        renderPhaseStats.end('streamerUploadCallbackMs', uploadStart);
       },
       beginMeshAttempt: (cx, cz) => {
         this.meshAttempts.begin(`${cx},${cz}`);
+        this.chunkRenderer?.invalidateColumnVisibility(cx, cz);
       },
       endMeshAttempt: (cx, cz) => {
         const uploaded = this.meshAttempts.end(`${cx},${cz}`);
@@ -613,6 +718,7 @@ export class WorldManager {
       },
       abandonMeshAttempt: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
+        this.chunkRenderer?.invalidateColumnVisibility(cx, cz);
       },
       freeMesh: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
@@ -623,6 +729,8 @@ export class WorldManager {
         return this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
       },
       freeData: (cx, cz) => {
+        this.sectionGenerationTimes.delete(columnKey(cx, cz));
+        this.chunkRenderer?.forgetColumnVisibility(cx, cz);
         this.meshAttempts.abandon(`${cx},${cz}`);
         // A column that changed is stored before it goes, so walking away never loses an edit.
         if (this.world) this.saves.onColumnUnload(this.world, cx, cz);
@@ -853,6 +961,7 @@ export class WorldManager {
     this.worldSeed = hashString(PANORAMA_SEED);
     this.setWorldKind('default', { ...DEFAULT_WORLD_OPTIONS });
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
     this.panoramaGlBuffersAtStart = this.glWrapper?.getCounts().buffers ?? 0;
@@ -880,6 +989,7 @@ export class WorldManager {
     this.panorama = false;
     const meshesBefore = this.chunkRenderer?.sectionMeshCount ?? 0;
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -923,6 +1033,7 @@ export class WorldManager {
     await this.exitWorld();
     this.remoteColumnSource = null;
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -1019,6 +1130,7 @@ export class WorldManager {
     this.worldSeed = hashString(seed);
     this.setWorldKind(type, { ...DEFAULT_WORLD_OPTIONS });
     this.worldEpoch++;
+    this.resetSectionWorkStats();
     this.lightBatchTimes = [];
     this.chunkRenderer?.clearAllMeshes();
     this.meshAttempts.clear();
@@ -1326,6 +1438,7 @@ export class WorldManager {
     this.editVersions.clear();
     this.playerController?.reset();
     const epoch = ++this.worldEpoch;
+    this.resetSectionWorkStats();
     // A saved world reopens in the dimension its player was in, with that dimension's portals.
     const dimension = restore && isDimensionId(restore.store.dim) ? restore.store.dim : 'overworld';
     this.resetDimensions(dimension);
@@ -1612,6 +1725,7 @@ export class WorldManager {
       const pitch = player.pitch;
 
       epoch = ++this.worldEpoch;
+      this.resetSectionWorkStats();
       this.streamer.reset();
       this.genWorkerPool.cancelAll();
       this.lightWorkerPool.cancelAll();
@@ -1754,13 +1868,12 @@ export class WorldManager {
   private streamerView(camera: Camera): StreamerView {
     mat4.multiply(this.viewProj, camera.projectionMatrix, camera.viewMatrix);
     extractFrustumPlanes(this.viewProj, this.frustumPlanes);
-    return {
-      x: camera.position[0],
-      z: camera.position[2],
-      yaw: camera.yaw,
-      pitch: camera.pitch,
-      planes: this.frustumPlanes,
-    };
+    const view = this.reusableStreamerView;
+    view.x = camera.position[0];
+    view.z = camera.position[2];
+    view.yaw = camera.yaw;
+    view.pitch = camera.pitch;
+    return view;
   }
 
   private isSectionAllOpaque(sec: ChunkSection | null): boolean {
@@ -1825,6 +1938,10 @@ export class WorldManager {
     const col = world.getColumn(cx, cz, false);
     if (!col) return [];
     const starters: Array<() => Promise<MeshResult>> = [];
+    const epoch = this.worldEpoch;
+    const trivialSections = new Int8Array(20).fill(-1);
+    let hasTrivial = false;
+    let attachTrivial = true;
     const sectionOrder = Array.from({ length: 20 }, (_, sy) => sy);
     const cameraY = this.camera?.position[1] ?? 0;
     sectionOrder.sort((a, b) => Math.abs(a * 16 + 8 - cameraY) - Math.abs(b * 16 + 8 - cameraY));
@@ -1834,11 +1951,15 @@ export class WorldManager {
 
       // 1. Skip all-air / empty sections
       if (!sec || (sec.getBitsPerEntry() === 0 && sec.uniformStateId === 0)) {
+        trivialSections[sy] = 0;
+        hasTrivial = true;
         continue;
       }
 
       // 2. Skip section if it contains only opaque blocks and all 6 neighbor sections are loaded and contain only opaque blocks
       if (this.isSectionAllOpaque(sec) && this.canSkipOpaqueSection(cx, sy, cz)) {
+        trivialSections[sy] = 1;
+        hasTrivial = true;
         continue;
       }
 
@@ -1847,24 +1968,71 @@ export class WorldManager {
         const tables = this.tables;
         if (!tables) return Promise.reject(new Error('mesh tables are gone'));
         const paddedSection = collectBlockPadding(world, cx, sy, cz);
-        return this.workerPool.enqueueMeshJob(
-          cx,
-          sy,
-          cz,
-          paddedSection,
-          tables,
-          true,
-          collectLightPadding(world, cx, sy, cz),
-        );
+        const trivial = attachTrivial && hasTrivial ? trivialSections : undefined;
+        const generation = this.sectionGenerationTimes.get(columnKey(cx, cz));
+        attachTrivial = false;
+        return this.workerPool
+          .enqueueMeshJob(
+            cx,
+            sy,
+            cz,
+            paddedSection,
+            tables,
+            true,
+            collectLightPadding(world, cx, sy, cz),
+            trivial,
+          )
+          .then((result) =>
+            epoch === this.worldEpoch
+              ? this.recordCompletedSectionWork(generation, result)
+              : result,
+          );
+      });
+    }
+    if (!starters.length && hasTrivial) {
+      starters.push(() => {
+        const tables = this.tables;
+        if (!tables) return Promise.reject(new Error('mesh tables are gone'));
+        const generation = this.sectionGenerationTimes.get(columnKey(cx, cz));
+        return this.workerPool
+          .enqueueMeshJob(
+            cx,
+            -1,
+            cz,
+            new Uint16Array(18 ** 3),
+            tables,
+            true,
+            undefined,
+            trivialSections,
+          )
+          .then((result) =>
+            epoch === this.worldEpoch
+              ? this.recordCompletedSectionWork(generation, result)
+              : result,
+          );
       });
     }
     return starters;
   }
 
-  public getWorkerStats(): { genMsP95: number; meshMsP95: number; queueLength: number } {
+  public getWorkerStats(): {
+    genMsP95: number;
+    meshMsP95: number;
+    greedyMsP95: number;
+    visibilityMsP95: number;
+    sectionWorkMsP95: number;
+    sectionWorkSamples: number;
+    queueLength: number;
+  } {
+    const count = Math.min(this.sectionWorkCount, this.sectionWorkSamples.length);
+    const sorted = Array.from(this.sectionWorkSamples.subarray(0, count)).sort((a, b) => a - b);
     return {
       genMsP95: this.genWorkerPool.genMsP95,
       meshMsP95: this.workerPool.meshMsP95,
+      greedyMsP95: this.workerPool.greedyMsP95,
+      visibilityMsP95: this.workerPool.visibilityMsP95,
+      sectionWorkMsP95: sorted[Math.floor(count * 0.95)] ?? 0,
+      sectionWorkSamples: count,
       queueLength:
         this.workerPool.queueLength +
         this.genWorkerPool.queueLength +
@@ -1878,34 +2046,70 @@ export class WorldManager {
    */
   public render(): boolean {
     this.lastUploadMs = 0;
+    const saveFrameStart = renderPhaseStats.start();
     this.saves.frame();
+    renderPhaseStats.end('saveFrameMs', saveFrameStart);
     if (this.initialLoadCount > 0) {
       // A dimension change shows only the warp while the other world loads.
       this.drawWarp();
       return false;
     }
     if (this.world && this.camera) {
+      const streamerUpdateStart = renderPhaseStats.start();
       this.streamer.update(this.streamerView(this.camera), performance.now());
+      renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
+      const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
       const uploadStart = performance.now();
-      while (this.editMeshStarters.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS / 2)
-        this.editMeshStarters.shift()!();
-      while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
-        const { result: mesh, serial, primary } = this.editMeshes.shift()!;
-        if (this.editVersions.get(mesh.key) !== serial) continue;
-        this.editVersions.delete(mesh.key);
-        if (!this.world.hasColumn(mesh.sx, mesh.sz)) continue;
-        this.chunkRenderer?.uploadSectionMesh(mesh.sx, mesh.sy, mesh.sz, mesh.meshData, -Infinity);
-        if (primary && serial === this.editSerial) {
-          this.interactionMeshFrame = this.terrainFrames + 1;
-          this.interactionMeshRevision++;
+      this.chunkRenderer?.beginUploadBatch();
+      try {
+        const editUploadStart = renderPhaseStats.start();
+        while (
+          this.editMeshStarters.length &&
+          performance.now() - uploadStart < UPLOAD_BUDGET_MS / 2
+        )
+          this.editMeshStarters.shift()!();
+        while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
+          const edit = this.editMeshes.shift()!;
+          const { result: mesh, serial, primary } = edit;
+          if (this.editVersions.get(mesh.key) !== serial) continue;
+          if (!this.world.hasColumn(mesh.sx, mesh.sz)) {
+            this.editVersions.delete(mesh.key);
+            continue;
+          }
+          const complete = this.chunkRenderer?.uploadSectionMesh(
+            mesh.sx,
+            mesh.sy,
+            mesh.sz,
+            mesh.meshData,
+            -Infinity,
+            Math.max(0, UPLOAD_BUDGET_MS - (performance.now() - uploadStart)),
+          );
+          if (complete === false) {
+            this.editMeshes.unshift(edit);
+            break;
+          }
+          this.editVersions.delete(mesh.key);
+          if (primary && serial === this.editSerial) {
+            this.interactionMeshFrame = this.terrainFrames + 1;
+            this.interactionMeshRevision++;
+          }
         }
+        renderPhaseStats.end('editUploadMs', editUploadStart);
+        this.lastUploadMs = performance.now() - uploadStart;
+        const streamerUploadStart = renderPhaseStats.start();
+        this.streamer.drainUploads(Math.max(0, UPLOAD_BUDGET_MS - this.lastUploadMs));
+        renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
+      } finally {
+        this.chunkRenderer?.endUploadBatch();
+        this.lastUploadMs = performance.now() - uploadStart;
       }
-      this.lastUploadMs = performance.now() - uploadStart;
-      this.lastUploadMs += this.streamer.drainUploads(
-        Math.max(0, UPLOAD_BUDGET_MS - this.lastUploadMs),
-      );
+      const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
+      renderPhaseStats.add('uploadOverheadMs', Math.max(0, this.lastUploadMs - arenaUploadMs));
     }
-    return this.drawTerrain();
+    const terrainRenderStart = renderPhaseStats.start();
+    const rendered = this.drawTerrain();
+    renderPhaseStats.end('terrainRenderMs', terrainRenderStart);
+    return rendered;
   }
 
   private drawTerrainFrame(): void {
@@ -1918,6 +2122,7 @@ export class WorldManager {
 
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
+      const setupStart = renderPhaseStats.start();
       const ticks = getWorldTime();
       sound.updateListener(this.camera);
       // The Hollowdeep is an enclosed cavern: no sky, clouds or weather, and its own fog.
@@ -1934,6 +2139,7 @@ export class WorldManager {
             ? 1.0
             : 1.25;
       const lightningFlash = cavern ? 0 : weatherManager.flashIntensity;
+      renderPhaseStats.end('terrainSetupMs', setupStart);
 
       if (cavern) {
         const fog = this.cavernClear;
@@ -1942,6 +2148,7 @@ export class WorldManager {
         fog[2] = cavern.fogColor[2];
         this.glWrapper!.gl.clearBufferfv(this.glWrapper!.gl.COLOR, 0, fog);
       }
+      const skyStart = renderPhaseStats.start();
       const skyStats = cavern
         ? NO_DRAWS
         : this.skyRenderer
@@ -1954,10 +2161,13 @@ export class WorldManager {
               lightningFlash,
             )
           : { drawCalls: 0, triangles: 0 };
+      renderPhaseStats.end('skyRenderMs', skyStart);
 
       const maxFogDist = (this.renderDistance - 1) * 16;
       const skyBrightness = cavern ? cavern.skyLight : skyLightMultiplier(ticks);
+      const underwaterStart = renderPhaseStats.start();
       if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
+      renderPhaseStats.end('underwaterUpdateMs', underwaterStart);
       const underwater = this.underwaterView;
       // Night vision (Glowcap Stew) lifts the light curve's floor while it lasts.
       if ((this.playerController?.player?.survival.nightVisionTicks ?? 0) > 0)
@@ -1972,6 +2182,9 @@ export class WorldManager {
       this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
         cameraPos: this.camera.position,
+        cameraYaw: this.camera.yaw,
+        cameraPitch: this.camera.pitch,
+        renderDistance: this.renderDistance,
         fogStart,
         fogEnd,
         underwater,
@@ -1985,7 +2198,9 @@ export class WorldManager {
       });
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
+      const chunkRenderStart = renderPhaseStats.start();
       this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world, () => {
+        const entityStart = renderPhaseStats.start();
         const playerDraws =
           this.playerModelRenderer?.render(
             this.playerController,
@@ -2023,25 +2238,28 @@ export class WorldManager {
             },
             spawnerMiniatures(this.world),
           ) ?? 0;
-        return (
-          playerDraws +
-          entityDraws +
-          (this.dropRenderer?.render(
+        const dropDraws =
+          this.dropRenderer?.render(
             this.playerController,
             this.viewProj,
             this.atlasTexture!,
             skyBrightness,
-          ) ?? 0) +
-          (this.movingBlockRenderer?.render(
+          ) ?? 0;
+        const movingDraws =
+          this.movingBlockRenderer?.render(
             this.world,
             this.viewProj,
             this.atlasTexture!,
             skyBrightness,
             this.playerController?.renderAlpha ?? 1,
-          ) ?? 0)
-        );
+          ) ?? 0;
+        renderPhaseStats.end('entityRenderMs', entityStart);
+        return playerDraws + entityDraws + dropDraws + movingDraws;
       });
+      renderPhaseStats.end('chunkRendererMs', chunkRenderStart);
+      const portalStart = renderPhaseStats.start();
       this.drawPortals();
+      renderPhaseStats.end('portalRenderMs', portalStart);
       if (this.movingBlockRenderer) renderStats.triangles += this.movingBlockRenderer.triangles;
       // The terrain renderer counts 12 triangles per callback draw; replace them with the real count.
       if (this.entityRenderer)
@@ -2050,10 +2268,13 @@ export class WorldManager {
         renderStats.triangles +=
           this.dropRenderer.triangles -
           12 * (this.dropRenderer.itemDraws + this.dropRenderer.particleDraws);
+      const selectionStart = renderPhaseStats.start();
       const selectionDraws =
         this.blockSelection?.render(this.playerController?.interaction ?? null, this.viewProj) ?? 0;
+      renderPhaseStats.end('selectionRenderMs', selectionStart);
       renderStats.drawCalls += selectionDraws;
       if (selectionDraws === 2) renderStats.triangles += 12;
+      const cloudStart = renderPhaseStats.start();
       const cloudStats = cavern
         ? NO_DRAWS
         : this.cloudRenderer
@@ -2065,13 +2286,18 @@ export class WorldManager {
               lightningFlash,
             )
           : { drawCalls: 0, triangles: 0 };
+      renderPhaseStats.end('cloudRenderMs', cloudStart);
       renderStats.cloudWindOffset = this.cloudRenderer?.windOffset ?? 0;
+      const tintStart = renderPhaseStats.start();
       this.underwaterTint?.render(underwater);
+      renderPhaseStats.end('underwaterTintMs', tintStart);
 
+      const weatherStart = renderPhaseStats.start();
       const weatherStats =
         this.weatherRenderer && this.world && !cavern
           ? this.weatherRenderer.render(this.camera, this.world, ticks)
           : NO_DRAWS;
+      renderPhaseStats.end('weatherRenderMs', weatherStart);
       const sporeDraws =
         cavern && settings.particles && this.glWrapper
           ? (this.sporeRenderer ??= new SporeRenderer(this.glWrapper)).render(
@@ -2093,6 +2319,7 @@ export class WorldManager {
           : 0;
 
       renderStats.weather.state = weatherState;
+      const particleStatsStart = renderPhaseStats.start();
       if (settings.particles && this.weatherRenderer && this.world && !cavern) {
         renderStats.weather.activeParticles = this.weatherRenderer.getActiveParticleCounts(
           this.camera.position,
@@ -2102,8 +2329,11 @@ export class WorldManager {
       } else {
         renderStats.weather.activeParticles = NO_ACTIVE_PARTICLES;
       }
+      renderPhaseStats.end('particleStatsMs', particleStatsStart);
 
+      const warpStart = renderPhaseStats.start();
       this.drawWarp();
+      renderPhaseStats.end('warpRenderMs', warpStart);
 
       renderStats.drawCalls +=
         skyStats.drawCalls +

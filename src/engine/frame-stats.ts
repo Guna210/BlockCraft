@@ -7,6 +7,7 @@
 
 export interface FrameStatsSnapshot {
   frames: number;
+  drawCallsMax: number;
   frameCpuMsP95: number;
   frameCpuMsMax: number;
   uploadMsP95: number;
@@ -42,6 +43,7 @@ export class FrameStats {
   private readonly recentFrames = new Array<number>(MAX_RECENT_FRAME_SAMPLES);
   private recentFrameCount = 0;
   private nextRecentFrame = 0;
+  private drawCallsMax = 0;
 
   reset(): void {
     this.pump = [];
@@ -50,9 +52,11 @@ export class FrameStats {
     this.glCheck = [];
     this.recentFrameCount = 0;
     this.nextRecentFrame = 0;
+    this.drawCallsMax = 0;
   }
 
-  record(frameCpuMs: number, uploadMs: number, glCheckMs: number): void {
+  record(frameCpuMs: number, uploadMs: number, glCheckMs: number, drawCalls = 0): void {
+    this.drawCallsMax = Math.max(this.drawCallsMax, drawCalls);
     if (this.frameCpu.length >= MAX_SAMPLES) {
       const drop = MAX_SAMPLES / 2;
       this.frameCpu.splice(0, drop);
@@ -89,6 +93,7 @@ export class FrameStats {
   snapshot(): FrameStatsSnapshot {
     return {
       frames: this.frameCpu.length,
+      drawCallsMax: this.drawCallsMax,
       frameCpuMsP95: percentile95(this.frameCpu),
       frameCpuMsMax: max(this.frameCpu),
       uploadMsP95: percentile95(this.upload),

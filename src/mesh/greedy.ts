@@ -43,8 +43,18 @@ export interface MeshBucketData {
 }
 
 export interface SectionMeshData {
+  /** Face connectivity of non-opaque cells, computed in the mesh worker. */
+  visibilityMask?: number;
   /** Worker-computed metadata; zero block light permits a smaller sky-only shader. */
   hasBlockLight?: boolean;
+  /** Worker-packed pass buffers; the main thread can upload these without repacking geometry. */
+  arenaBuffers?: {
+    opaque: Uint32Array;
+    cutout: Uint32Array;
+    translucent: Uint32Array;
+  };
+  /** Worker-computed model metadata used to choose the terrain shader variant. */
+  hasWallTorch?: boolean;
   opaque: MeshBucketData;
   cutout: MeshBucketData;
   translucent: MeshBucketData;

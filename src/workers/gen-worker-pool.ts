@@ -1,5 +1,6 @@
 import type { SharedWorkerBudget } from './shared-worker-budget';
 import type { ColumnWorkPriority } from '../world/streamer';
+import { columnKey } from '../world/streaming-plan';
 import type { SectionDataTransfer, GenWorkerResponse } from './gen.worker';
 import { columnPercentile, sectionPercentile, type GenSample } from './gen-stats';
 import type { TerrainVariant } from '../gen/world-options';
@@ -36,10 +37,14 @@ interface GenJob {
 }
 
 export class GenWorkerPool {
-  private priorities = new Map<string, number>();
+  private priorities = new Map<number, number>();
 
   public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
-    this.priorities = new Map(priorities.map((p) => [`${p.cx},${p.cz}`, p.gen]));
+    this.priorities.clear();
+    for (let i = 0; i < priorities.length; i++) {
+      const priority = priorities[i]!;
+      this.priorities.set(columnKey(priority.cx, priority.cz), priority.gen);
+    }
   }
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
@@ -213,8 +218,8 @@ export class GenWorkerPool {
   private processQueue(): void {
     this.queue.sort(
       (a, b) =>
-        (this.priorities.get(`${a.cx},${a.cz}`) ?? 1e9) -
-        (this.priorities.get(`${b.cx},${b.cz}`) ?? 1e9),
+        (this.priorities.get(columnKey(a.cx, a.cz)) ?? 1e9) -
+        (this.priorities.get(columnKey(b.cx, b.cz)) ?? 1e9),
     );
     while (this.queue.length > 0) {
       const worker =

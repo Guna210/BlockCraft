@@ -25,15 +25,13 @@ export function extractFrustumPlanes(
   out: Float64Array = new Float64Array(24),
 ): Float64Array {
   const m = viewProj;
-  // Row r of the matrix is (m[r], m[r + 4], m[r + 8], m[r + 12]).
-  const row = (r: number, c: number) => m[r + 4 * c]!;
   for (let i = 0; i < 6; i++) {
     const axis = i >> 1; // 0: x, 1: y, 2: z
     const sign = i & 1 ? -1 : 1;
-    let a = row(3, 0) + sign * row(axis, 0);
-    let b = row(3, 1) + sign * row(axis, 1);
-    let c = row(3, 2) + sign * row(axis, 2);
-    let d = row(3, 3) + sign * row(axis, 3);
+    let a = m[3]! + sign * m[axis]!;
+    let b = m[7]! + sign * m[axis + 4]!;
+    let c = m[11]! + sign * m[axis + 8]!;
+    let d = m[15]! + sign * m[axis + 12]!;
     const len = Math.hypot(a, b, c);
     if (len > 0) {
       a /= len;

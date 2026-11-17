@@ -1,4 +1,6 @@
 import { GLWrapper } from './gl';
+import { columnKey } from '../world/streaming-plan';
+import { renderPhaseStats } from '../engine/render-phase-stats';
 
 export interface ColumnTintPair {
   grassTexture: WebGLTexture;
@@ -8,6 +10,7 @@ export interface ColumnTintPair {
 interface ColumnTintEntry {
   grassTexture: WebGLTexture;
   foliageTexture: WebGLTexture;
+  pair: ColumnTintPair;
   grassTintsRef: Uint8Array;
   foliageTintsRef: Uint8Array;
 }
@@ -16,9 +19,10 @@ export class ColumnTintCache {
   private glWrapper: GLWrapper;
   private plainsGrassTexture: WebGLTexture;
   private plainsFoliageTexture: WebGLTexture;
+  private plainsPair: ColumnTintPair;
 
-  private columnTextures: Map<string, ColumnTintEntry> = new Map();
-  private columnSections: Map<string, Set<string>> = new Map();
+  private columnTextures: Map<number, ColumnTintEntry> = new Map();
+  private columnSections: Map<number, Set<number>> = new Map();
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
@@ -37,9 +41,14 @@ export class ColumnTintCache {
 
     this.plainsGrassTexture = this.createTintTexture(plainsGrassData);
     this.plainsFoliageTexture = this.createTintTexture(plainsFoliageData);
+    this.plainsPair = {
+      grassTexture: this.plainsGrassTexture,
+      foliageTexture: this.plainsFoliageTexture,
+    };
   }
 
   private createTintTexture(data: Uint8Array): WebGLTexture {
+    const bindingStart = renderPhaseStats.start();
     const tex = this.glWrapper.createTexture();
     const gl = this.glWrapper.gl;
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -47,19 +56,26 @@ export class ColumnTintCache {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    renderPhaseStats.end('tintTextureBindingMs', bindingStart);
+    const uploadStart = renderPhaseStats.start();
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+    renderPhaseStats.end('tintTextureUploadMs', uploadStart);
     return tex;
   }
 
   private uploadTextureData(tex: WebGLTexture, data: Uint8Array): void {
     const gl = this.glWrapper.gl;
+    const bindingStart = renderPhaseStats.start();
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    renderPhaseStats.end('tintTextureBindingMs', bindingStart);
+    const uploadStart = renderPhaseStats.start();
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+    renderPhaseStats.end('tintTextureUploadMs', uploadStart);
   }
 
   public onSectionAdded(sx: number, sy: number, sz: number): void {
-    const colKey = `${sx},${sz}`;
-    const sectionKey = `${sx},${sy},${sz}`;
+    const colKey = columnKey(sx, sz);
+    const sectionKey = colKey * 32 + sy;
     let set = this.columnSections.get(colKey);
     if (!set) {
       set = new Set();
@@ -69,8 +85,8 @@ export class ColumnTintCache {
   }
 
   public onSectionRemoved(sx: number, sy: number, sz: number): void {
-    const colKey = `${sx},${sz}`;
-    const sectionKey = `${sx},${sy},${sz}`;
+    const colKey = columnKey(sx, sz);
+    const sectionKey = colKey * 32 + sy;
     const set = this.columnSections.get(colKey);
     if (set) {
       set.delete(sectionKey);
@@ -94,21 +110,15 @@ export class ColumnTintCache {
     } | null,
   ): ColumnTintPair {
     if (!world || world.worldType === 'flat') {
-      return {
-        grassTexture: this.plainsGrassTexture,
-        foliageTexture: this.plainsFoliageTexture,
-      };
+      return this.plainsPair;
     }
 
     const col = world.getColumn ? world.getColumn(sx, sz, false) : null;
     if (!col || !col.grassTints || !col.foliageTints) {
-      return {
-        grassTexture: this.plainsGrassTexture,
-        foliageTexture: this.plainsFoliageTexture,
-      };
+      return this.plainsPair;
     }
 
-    const colKey = `${sx},${sz}`;
+    const colKey = columnKey(sx, sz);
     let cached = this.columnTextures.get(colKey);
 
     if (cached) {
@@ -118,10 +128,7 @@ export class ColumnTintCache {
         cached.grassTintsRef = col.grassTints;
         cached.foliageTintsRef = col.foliageTints;
       }
-      return {
-        grassTexture: cached.grassTexture,
-        foliageTexture: cached.foliageTexture,
-      };
+      return cached.pair;
     }
 
     const grassTexture = this.createTintTexture(col.grassTints);
@@ -130,15 +137,16 @@ export class ColumnTintCache {
     cached = {
       grassTexture,
       foliageTexture,
+      pair: { grassTexture, foliageTexture },
       grassTintsRef: col.grassTints,
       foliageTintsRef: col.foliageTints,
     };
     this.columnTextures.set(colKey, cached);
 
-    return { grassTexture, foliageTexture };
+    return cached.pair;
   }
 
-  private freeColumnTextures(colKey: string): void {
+  private freeColumnTextures(colKey: number): void {
     const cached = this.columnTextures.get(colKey);
     if (cached) {
       this.glWrapper.deleteTexture(cached.grassTexture);

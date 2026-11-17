@@ -4,6 +4,20 @@ import type { MeshBucketData } from '../mesh/greedy';
 export function canonicalQuadVertices(bucket: MeshBucketData): Uint32Array {
   if (bucket.canonicalQuads) return bucket.vertices;
   const vertices = new Uint32Array(bucket.quadCount * 8);
+  writeCanonicalQuadVertices(bucket, vertices);
+  return vertices;
+}
+
+/** Write canonical quad vertices into a caller-owned pass buffer. */
+export function writeCanonicalQuadVertices(
+  bucket: MeshBucketData,
+  destination: Uint32Array,
+  destinationWordOffset = 0,
+): void {
+  if (bucket.canonicalQuads) {
+    destination.set(bucket.vertices, destinationWordOffset);
+    return;
+  }
   for (let q = 0; q < bucket.quadCount; q++) {
     const offset = q * 6;
     const a = bucket.indices[offset]!;
@@ -29,17 +43,16 @@ export function canonicalQuadVertices(bucket: MeshBucketData): Uint32Array {
       third = b;
     }
     const fourth = d !== a && d !== b && d !== c ? d : e !== a && e !== b && e !== c ? e : f;
-    const out = q * 8;
-    vertices[out] = bucket.vertices[first * 2]!;
-    vertices[out + 1] = bucket.vertices[first * 2 + 1]!;
-    vertices[out + 2] = bucket.vertices[second * 2]!;
-    vertices[out + 3] = bucket.vertices[second * 2 + 1]!;
-    vertices[out + 4] = bucket.vertices[third * 2]!;
-    vertices[out + 5] = bucket.vertices[third * 2 + 1]!;
-    vertices[out + 6] = bucket.vertices[fourth * 2]!;
-    vertices[out + 7] = bucket.vertices[fourth * 2 + 1]!;
+    const out = destinationWordOffset + q * 8;
+    destination[out] = bucket.vertices[first * 2]!;
+    destination[out + 1] = bucket.vertices[first * 2 + 1]!;
+    destination[out + 2] = bucket.vertices[second * 2]!;
+    destination[out + 3] = bucket.vertices[second * 2 + 1]!;
+    destination[out + 4] = bucket.vertices[third * 2]!;
+    destination[out + 5] = bucket.vertices[third * 2 + 1]!;
+    destination[out + 6] = bucket.vertices[fourth * 2]!;
+    destination[out + 7] = bucket.vertices[fourth * 2 + 1]!;
   }
-  return vertices;
 }
 
 export function quadIndices(quads: number): Uint32Array {

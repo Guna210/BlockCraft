@@ -1,3 +1,5 @@
+import { renderPhaseStats } from '../engine/render-phase-stats';
+
 // Helper to format shader error logs
 export function formatShaderError(log: string, source: string): string {
   // ANGLE/Chromium typically logs: ERROR: 0:12: 'foo' : undeclared identifier
@@ -23,7 +25,6 @@ export function formatShaderError(log: string, source: string): string {
 
   return outLines.join('\n');
 }
-
 export type ResourceCounts = {
   buffers: number;
   vaos: number;
@@ -33,8 +34,10 @@ export type ResourceCounts = {
 
 export class GLWrapper {
   public gl: WebGL2RenderingContext;
-  private debug: boolean;
+  public readonly perDrawChecks: boolean;
+  public readonly debugInspection: boolean;
   private onErrorCallback?: () => void;
+  private onDrawSubmission?: () => void;
 
   private counts: ResourceCounts = {
     buffers: 0,
@@ -43,10 +46,18 @@ export class GLWrapper {
     shaders: 0,
   };
 
-  constructor(gl: WebGL2RenderingContext, debug: boolean, onErrorCallback?: () => void) {
+  constructor(
+    gl: WebGL2RenderingContext,
+    perDrawChecks: boolean,
+    onErrorCallback?: () => void,
+    debugInspection = false,
+    onDrawSubmission?: () => void,
+  ) {
     this.gl = gl;
-    this.debug = debug;
+    this.perDrawChecks = perDrawChecks;
+    this.debugInspection = debugInspection;
     this.onErrorCallback = onErrorCallback;
+    this.onDrawSubmission = onDrawSubmission;
   }
 
   getCounts(): ResourceCounts {
@@ -54,8 +65,12 @@ export class GLWrapper {
   }
 
   private checkErrors() {
-    if (!this.debug) return;
+    if (!this.perDrawChecks) return;
     this.drainErrors();
+  }
+
+  recordDrawSubmission(): void {
+    this.onDrawSubmission?.();
   }
 
   /**
@@ -71,12 +86,18 @@ export class GLWrapper {
   }
 
   drawArrays(mode: number, first: number, count: number) {
+    const start = renderPhaseStats.start();
     this.gl.drawArrays(mode, first, count);
+    this.recordDrawSubmission();
+    renderPhaseStats.end('drawSubmissionMs', start);
     this.checkErrors();
   }
 
   drawElements(mode: number, count: number, type: number, offset: number) {
+    const start = renderPhaseStats.start();
     this.gl.drawElements(mode, count, type, offset);
+    this.recordDrawSubmission();
+    renderPhaseStats.end('drawSubmissionMs', start);
     this.checkErrors();
   }
 

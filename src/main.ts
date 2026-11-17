@@ -12,6 +12,7 @@ import { InputEngine } from './engine/input';
 import { Camera } from './render/camera';
 import { WorldManager } from './game/world-manager';
 import { frameStats, percentile95 } from './engine/frame-stats';
+import { renderPhaseStats } from './engine/render-phase-stats';
 import { buildIconSheet, createTileLookup, type IconSheet } from './ui/icons';
 import { UiManager, activeUi } from './ui/ui-manager';
 import { CreativeInventory } from './ui/creative-inventory';
@@ -83,13 +84,22 @@ async function main() {
 
   const params = new URLSearchParams(window.location.search);
   const debug = params.get('debug') === '1';
+  renderPhaseStats.enabled = debug;
 
   // Debug mode reads WebGL errors once per frame. `&glcheck=draw` also reads them after every draw
   // call, which pins the error to its draw but costs a GPU-process round trip per draw.
   const glCheckDraw = debug && params.get('glcheck') === 'draw';
-  const glWrapper = new GLWrapper(gl, glCheckDraw, () => {
-    renderStats.glErrors++;
-  });
+  const glWrapper = new GLWrapper(
+    gl,
+    glCheckDraw,
+    () => {
+      renderStats.glErrors++;
+    },
+    debug,
+    () => {
+      renderStats.drawSubmissions++;
+    },
+  );
 
   const input = new InputEngine(canvas);
   input.attach();
@@ -397,6 +407,8 @@ async function main() {
   const uploadTimes: number[] = [];
 
   function render(time: number) {
+    renderPhaseStats.beginFrame();
+    renderStats.drawSubmissions = 0;
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
     let glCheckMs = 0;
@@ -412,8 +424,10 @@ async function main() {
     // With no world and no test scene the only thing on the canvas is the static main menu: its
     // frame stays presented until something on it changes (decisions/M18a-menus.md).
     const idleMenu = !testScene && !worldManager.world && menu.visible && !menu.needsFrame;
+    const clearStart = renderPhaseStats.start();
     if (!idleMenu)
       glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    renderPhaseStats.end('frameClearMs', clearStart);
     let rendered = false;
     // Menu frames (the panorama) are not game frames: they stay out of the frame statistics.
     let measured = true;
@@ -430,21 +444,31 @@ async function main() {
       rendered = worldManager.render();
       measured = false;
     } else if (worldManager.world) {
+      const updateStart = renderPhaseStats.start();
       playerController.frame(dt / 1000);
+      renderPhaseStats.end('gameUpdateMs', updateStart);
       rendered = worldManager.render();
     }
+    const menuStart = renderPhaseStats.start();
     if (menu.visible) {
       if (!idleMenu) menu.render();
       measured = false;
     }
+    renderPhaseStats.end('menuRenderMs', menuStart);
 
+    const captureStart = renderPhaseStats.start();
     if (rendered && measured && !testScene && worldManager.saves.thumbnailCaptureRequested)
       worldManager.saves.captureThumbnailFrame(canvas);
 
     if (screenshots.pending && rendered) screenshots.captureAfterRender(canvas);
+    renderPhaseStats.end('captureMs', captureStart);
 
+    const uiStart = renderPhaseStats.start();
     ui.frame();
+    renderPhaseStats.end('uiFrameMs', uiStart);
+    const hudStart = renderPhaseStats.start();
     hud.frame(time);
+    renderPhaseStats.end('hudFrameMs', hudStart);
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
@@ -458,10 +482,12 @@ async function main() {
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
+    renderPhaseStats.add('glErrorDrainMs', glCheckMs);
     if (rendered && measured) {
-      frameStats.record(frameCpuMs, uploadMs, glCheckMs);
+      frameStats.record(frameCpuMs, uploadMs, glCheckMs, renderStats.drawCalls);
       frameCount++;
     }
+    if (rendered && measured) renderPhaseStats.endFrame(frameCpuMs);
     fpsTimer += dt;
     if (fpsTimer >= 1000) {
       renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);

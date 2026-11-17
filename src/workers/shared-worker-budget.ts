@@ -1,4 +1,5 @@
 import type { ColumnWorkPriority } from '../world/streamer';
+import { columnKey } from '../world/streaming-plan';
 export type WorkerKind = 'mesh' | 'light' | 'gen';
 
 interface WorkerPort {
@@ -21,7 +22,7 @@ export class SharedWorkerBudget {
   private loads = new Map<Worker, number>();
   private posted = new Map<number, Posted>();
   private nextId = 1;
-  private priorities = new Map<string, ColumnWorkPriority>();
+  private priorities = new Map<number, ColumnWorkPriority>();
   private deferredDelivery = false;
   private deliveryScheduled = false;
   private inbox: Array<{ job: Posted; payload: unknown; receivedAt: number }> = [];
@@ -77,8 +78,8 @@ export class SharedWorkerBudget {
     const priorities = { mesh: 0, light: 1, gen: 2 };
     this.inbox.sort(
       (a, b) =>
-        (this.priorities.get(`${a.job.cx},${a.job.cz}`)?.[a.job.kind] ?? 1e9) -
-          (this.priorities.get(`${b.job.cx},${b.job.cz}`)?.[b.job.kind] ?? 1e9) ||
+        (this.priorities.get(columnKey(a.job.cx, a.job.cz))?.[a.job.kind] ?? 1e9) -
+          (this.priorities.get(columnKey(b.job.cx, b.job.cz))?.[b.job.kind] ?? 1e9) ||
         priorities[a.job.kind] - priorities[b.job.kind],
     );
     let did = false;
@@ -107,9 +108,11 @@ export class SharedWorkerBudget {
   }
 
   public setWorkPriorities(priorities: ColumnWorkPriority[]): void {
-    this.priorities = new Map(
-      priorities.map((priority) => [`${priority.cx},${priority.cz}`, priority]),
-    );
+    this.priorities.clear();
+    for (let i = 0; i < priorities.length; i++) {
+      const priority = priorities[i]!;
+      this.priorities.set(columnKey(priority.cx, priority.cz), priority);
+    }
     for (const worker of this.workers) worker.postMessage({ priorities });
   }
 

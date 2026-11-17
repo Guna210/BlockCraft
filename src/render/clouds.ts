@@ -10,6 +10,7 @@ import {
 } from '../world/time';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { LCG } from '../gen/texture-noise';
+import { aabbIntersectsFrustum, extractFrustumPlanes } from '../world/frustum';
 
 export const CLOUD_CELL_SIZE = 8; // 8x8-block cells (M12b-fix: smaller cells so clouds look farther away)
 export const CLOUD_GRID_CELLS = 48; // 48x48 cells = 384x384 blocks region
@@ -337,6 +338,7 @@ export class CloudRenderer {
   private readonly fastVbo: WebGLBuffer;
   private readonly fastVertexCount: number;
   private readonly cloudTexture: WebGLTexture;
+  private readonly frustumPlanes = new Float64Array(24);
 
   // Active grid for unit test inspection and fast texture
   public readonly activeGrid: boolean[];
@@ -665,6 +667,7 @@ export class CloudRenderer {
     const cloudRange = Math.max(512, 2 * terrainFogEnd);
     const fogStart = cloudRange * 0.5;
     const fogEnd = cloudRange;
+    const fogEndSquared = fogEnd * fogEnd;
 
     const camX = camera.position[0];
     const camZ = camera.position[2];
@@ -677,6 +680,7 @@ export class CloudRenderer {
     const baseGridZ = Math.floor(gridCamZ / regSize) * regSize;
 
     mat4.multiply(this.viewProj, camera.projectionMatrix, camera.viewMatrix);
+    extractFrustumPlanes(this.viewProj, this.frustumPlanes);
 
     const sunDir = sunDirection(ticks);
     const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
@@ -734,9 +738,20 @@ export class CloudRenderer {
         // Bounding box distance test against fogEnd
         const dx = Math.max(0, Math.max(worldX - camX, camX - (worldX + regSize)));
         const dz = Math.max(0, Math.max(worldZ - camZ, camZ - (worldZ + regSize)));
-        const minDist = Math.sqrt(dx * dx + dz * dz);
-
-        if (minDist >= fogEnd) {
+        if (dx * dx + dz * dz >= fogEndSquared) {
+          continue;
+        }
+        if (
+          !aabbIntersectsFrustum(
+            this.frustumPlanes,
+            worldX,
+            CLOUD_Y_BOTTOM,
+            worldZ,
+            worldX + regSize,
+            CLOUD_Y_TOP,
+            worldZ + regSize,
+          )
+        ) {
           continue;
         }
 

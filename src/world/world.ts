@@ -201,14 +201,26 @@ export class World {
   }
 
   public getHeight(x: number, z: number): number {
-    for (let y = 319; y >= 0; y--) {
-      const stateId = this.getBlockStateId(x, y, z);
-      if (stateId === 0) continue;
-      const resolved = this.registry.getResolvedState(stateId);
-      if (!resolved) continue;
-      const blockId = resolved.blockId;
-      if (blockId !== 'air' && blockId !== 'water' && blockId !== 'lava') {
-        return y;
+    const column = this.getColumn(Math.floor(x / 16), Math.floor(z / 16), false);
+    if (!column) return 0;
+    const localX = ((x % 16) + 16) % 16;
+    const localZ = ((z % 16) + 16) % 16;
+    for (let sectionY = ChunkColumn.SECTION_COUNT - 1; sectionY >= 0; sectionY--) {
+      const section = column.getSection(sectionY);
+      if (!section) continue;
+      if (section.getBitsPerEntry() === 0) {
+        const resolved = this.registry.getResolvedState(section.uniformStateId);
+        const blockId = resolved?.blockId;
+        if (blockId && blockId !== 'air' && blockId !== 'water' && blockId !== 'lava')
+          return sectionY * 16 + 15;
+        continue;
+      }
+      for (let localY = 15; localY >= 0; localY--) {
+        const stateId = section.getBlockStateId(localX, localY, localZ);
+        if (stateId === 0) continue;
+        const blockId = this.registry.getResolvedState(stateId)?.blockId;
+        if (blockId && blockId !== 'air' && blockId !== 'water' && blockId !== 'lava')
+          return sectionY * 16 + localY;
       }
     }
     return 0;

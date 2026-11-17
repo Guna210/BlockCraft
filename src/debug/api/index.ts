@@ -12,6 +12,7 @@ import './structure-locate';
 import './time';
 import './fluids';
 import './clouds';
+import './culling';
 import './leaves';
 import './settings';
 import './weather';
@@ -36,6 +37,7 @@ import {
   getStreamingStats,
   resetFrameStats,
   getFrameStats,
+  getRenderPhaseStats,
   getGlResourceCounts,
 } from './streaming';
 import { WorldManager } from '../../game/world-manager';
@@ -78,10 +80,12 @@ export function initDebugApi() {
     api.getStreamingStats = getStreamingStats;
     api.resetFrameStats = resetFrameStats;
     api.getFrameStats = getFrameStats;
+    api.getRenderPhaseStats = getRenderPhaseStats;
     api.getGlResourceCounts = getGlResourceCounts;
     api.createWorld = (opts) => WorldManager.getInstance().createWorld(opts);
     api.waitForTerrain = (r) => WorldManager.getInstance().waitForTerrain(r);
     api.getWorkerStats = () => WorldManager.getInstance().getWorkerStats();
+    api.resetSectionWorkSamples = () => WorldManager.getInstance().resetSectionWorkSamples();
     (window as unknown as Record<string, unknown>).WorldManager = WorldManager;
     window.__blockcraft = api;
   }
