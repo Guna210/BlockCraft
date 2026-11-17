@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-17: Owner (RTX 5060): RD32 feels laggy, GPU ~50%, low VRAM -> likely main-thread CPU bound; M22b LOD (RD > 12) not built yet. Owner wants to try Antigravity /swarm for a read-only perf investigation on master. Verdict given: good fit if read-only, no git, evidence with file:line + measurements, I verify findings before making tasks; gave swarm prompt. Ask owner for F3/DevTools numbers at RD8 vs RD32.
 - 2026-11-17: #88 M22a merged (14febf4) without Update branch; checked: master has SPEC 48822e0 + M22a, fine.
 - 2026-11-17: #88 round 1 (Sonnet session_0155bUSDPCEbRGSEKFUX1hah): only blocking = docs cite run 44019966690 (code commit 14a2379) not head docs commit 406919a run 44024229144; overruled as with #87 (docs commit can't cite its own run). Head run all shards 50 passed, no retries; frame 14.7, upload 4.2, section 14.25 ms; m21c-world 52 ms first try. Told owner to merge. Carry to M22b prompt: add FOV + aspect to cave-culling recompute key (section-visibility.ts:111-123); note World.getHeight rewrite.
 - 2026-11-17: #88 head 406919a CI green (run 44024229144) with SwiftShader budgets. Codex also dropped its own meshMsP95 <= 6 assertion (not a SPEC row; m02:54 still enforces mesh p95 on master) - accepted, flagged to reviewer. Gave Sonnet reviewer prompt.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-14: #86 M21b-fix2 opened by Codex; head CI clean (no retries). Answered pending QUESTION: no M21c test edit. Gave reviewer prompt.
 - 2026-11-14: #85 M21c merged (ff53966). Owner chose M21b-fix2 (vitals/death/respawn) first; gave Codex prompt.
 - 2026-11-13: #85 M21c round 2 PASS. Told owner to merge; next: owner picks order of M21b-fix2 (vitals/death/respawn, recommended first) and M21b-fix (containers); M22a/M22c/M22d can start after merge.
-- 2026-11-13: #85 head eb2ba84 CI green (run 43466052812; shard 4: walk 0 corrections, replication 46 ms, no flaky). MP-only drain (cap 16, blocking drainNow on stats/quit/disconnect), TransferTrace removed, blocker resolved. Sent round 2 to reviewer session_0155bUSB9aPA99FKYrb2QCyC myself.
