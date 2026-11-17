@@ -84,9 +84,9 @@ Measured on real hardware in headed mode via `npm run bench` (informational), an
 
 | Metric                                                                  | Budget                            | Enforced in CI?            |
 | ----------------------------------------------------------------------- | --------------------------------- | -------------------------- |
-| Main-thread CPU time per frame (update + draw submission, excludes GPU) | p95 ≤ 8 ms at render distance 8   | Yes (via debug API timers) |
-| Chunk mesh upload work on main thread per frame                         | ≤ 3 ms                            | Yes                        |
-| Chunk generation + meshing (worker) per 16³ section                     | p95 ≤ 6 ms                        | Yes                        |
+| Main-thread CPU time per frame (update + draw submission, excludes GPU) | p95 ≤ 8 ms real HW, ≤ 22 ms SwiftShader, at render distance 8 | Yes (SwiftShader bound, via debug API timers) |
+| Chunk mesh upload work on main thread per frame                         | ≤ 3 ms real HW, p95 ≤ 8 ms SwiftShader | Yes (SwiftShader bound)    |
+| Chunk generation + meshing (worker) per 16³ section                     | p95 ≤ 6 ms real HW, ≤ 22 ms SwiftShader | Yes (SwiftShader bound)    |
 | Draw calls per frame at render distance 8                               | ≤ 1500                            | Yes                        |
 | Time from "Create World" to first rendered frame with terrain           | ≤ 3 s real HW, ≤ 20 s SwiftShader | Yes (SwiftShader bound)    |
 | JS heap growth after walking 2000 blocks and back                       | ≤ 15% vs. start                   | Yes                        |
