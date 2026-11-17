@@ -47,26 +47,23 @@ Last updated: 2026-11-17
 
 ## Task status
 
-Done (merged; notes in `progress/`): every SPEC task M00a–M21c (latest: M21a #83, M21b #84, M21c #85 = master ff53966), plus M13h (owner-added Cinderwraith), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Last block id on master: 834 (blast_charge 820, M19c 821-824, M20b 825-832, portal 833-834).
+Done (merged; notes in `progress/`): every SPEC task M00a–M22a (latest: M21c #85, M22a #88 = master 14febf4), plus owner-added M13h (Cinderwraith), M21b-fix2 #86 (protocol v4 vitals/death/respawn), M21b-fix #87 (protocol v5 container windows), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Master SPEC §2.3 has the owner's SwiftShader CI budget tier (48822e0). Last block id on master: 834.
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M22b, M22c, M22d (all ready, parallel); M23 last (+ M23-fix-N).
-In flight: none. Next: M22b (needs M22a, now merged; include FOV+aspect in cave-culling recompute key, section-visibility.ts:111-123), M22c, M22d, all ready.
-Done: M22a #88 merged (master 14febf4, merged without Update branch; only master change behind was SPEC.md, verified fine). Culling 9.5% visible; CI SwiftShader budgets met; m21c-world flake gone in 4 runs.
-Done: M21b-fix #87 merged (master 2f87382): protocol v5 container windows. Multiplayer follow-ups complete.
-Done: M21b-fix2 #86 merged (master 9bf4de9): protocol v4 vitals/death/respawn.
-Done: M21c #85 merged (master ff53966), 2 review rounds; notes in decisions/M21c-client.md.
-Owner-added task (decided 2026-11-12): M21b-fix after M21c merges = multiplayer container windows (chests, kilns, crafting tables: window ids >= 1, server-owned open-container state, distance checks, close on move away/break). Runs before or alongside M22.
+In flight: none (2026-11-17). Next: M22b, M22c, M22d, all ready (M22b needs M22a: merged). Owner hasn't picked yet.
+M22b prompt must include (from #88 review): add camera FOV and aspect ratio to the cave-culling recompute key (src/render/section-visibility.ts:111-123); M22a rewrote World.getHeight (section walk), not in its handoff. M22b owns RD > 12 heightmap LOD + loading screen; SPEC criterion RD16 horizon + drawCalls <= 1500.
+Perf investigation (owner, 2026-11-17): RTX 5060, RD32 feels laggy with GPU ~50% and low VRAM -> main-thread bound; no LOD beyond RD12 until M22b. Owner will run an Antigravity /swarm read-only investigation AFTER M22b merges (prompt drafted 2026-11-17: 4 investigators frame/streaming/tick-scaling/memory + verifier; read-only, no git; file:line + measurements; I verify findings before turning them into tasks). Suspect to check: game-tick work scaling with loaded area (no separate simulation distance found; ticks.ts random-tick hook exists but has no caller).
 Optional idle-slot fix tasks: M18c-fix (/fill into unloaded chunks, rebound menu keys act in chat, creative search IME); M19c follow-ups (spawner checks block light only, not sky light x daylight; setMiniature key string per tick; far spawners re-check every 100 ticks; no save-manager round-trip test for spawner/chest).
-Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays.
+Codex rule: Codex prompts use the GitHub plugin, not git; owner clicks Update branch instead of Codex merging master. I can't message Codex sessions; owner relays. Codex's env sometimes dies mid-task: a new thread on the same branch is fine.
+Handoff rule (#86-#88): a docs-only head commit can't cite its own CI run; citing the last code commit's run is accepted if the numbers match it and the head run is green.
 Merge rule: the second PR to merge clicks Update branch and needs a fresh green run (shard 2 ~12-25 min; check log for "flaky"). Block IDs: append only; second PR renumbers. Parallel PRs touching the same test line should make identical edits.
 
-### For the M21 prompts (decided / to include)
-- Keep `ws` and server/ code out of the browser (Vite) build; Cloudflare Pages deploy (static, single-player) must keep working. CI build catches leaks.
-- M21c (from #84 review): chat UI must render text safely (textContent; U+2028/2029, zero-width and bidi chars not stripped by server); break tolerance 100 ms vs real jitter (maybe tick-based later).
-- Later/M22 notes: entityMove uses `delete` on reused objects (V8 dictionary mode); server tick for..of iterators; ServerPlayer.down returns number-as-boolean (needs comment). Server measured (#84): RSS 109/330 MiB idle/2 clients, CPU 0.7%/20% of one core, tick p95 0.2/2.5 ms.
-- Server needs wss when reached from the https Pages site (Railway and Cloudflare Tunnel both provide TLS).
+### Multiplayer notes for later tasks
+- Protocol now v5 (M21b-fix). Server: input-driven movement with wall-clock credit (src/net/movement-clock.ts), socket worker client, MP-only GL error drain (src/game/net/error-drain.ts). Decisions in decisions/M21c-client.md, M21b-fix2-vitals.md, M21b-fix-containers.md.
+- Minor leftovers: entityMove `delete` on reused objects; server tick for..of iterators; ServerPlayer.down number-as-boolean; hurt feedback source always 'killed'; quickMoveInventoryToWindow spreads {...source} (copyStack cleaner); MP chest e2e break poll up to 30 s.
+- Server needs wss when reached from the https Pages site.
 
 ## Open items for the owner
 
@@ -86,8 +83,8 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - .save file: cheap once M17a/M17b exist (format + Blob download + file picker).
   - SPEC wording offered, not yet written (the owner hasn't asked).
 - Speed budgets: DONE. Owner edited SPEC §2.3 (48822e0, 2026-11-17): SwiftShader CI tier frame <= 22, upload p95 <= 8, gen+mesh <= 22 ms; real HW 8/3/6 via npm run bench.
-- Performance: the owner's Ryzen 7 5700U (Vega iGPU, the SPEC §1.2 target class) struggles, with the GPU maxed and the tab at ~1 GB. Culling and batching are M22a/M22b (end of the plan); there is only column-level frustum culling today. Suggested: get F3 numbers at RD8 after M09c merges, then the owner may edit SPEC to pull M22a's cave and section culling earlier (e.g. after M10).
-- CI retries 2 can hide flaky tests; decide later.
+- Performance: the owner's Ryzen 7 5700U (Vega iGPU, the SPEC §1.2 target class) struggles, with the GPU maxed and the tab at ~1 GB. Culling and batching are M22a/M22b (end of the plan); there is only column-level frustum culling today. M22a (culling/batching) now merged; owner may run npm run bench on real HW (optional).
+- CI retries 2 can hide flaky tests; decide later. Occasional flakes seen recently: m17b:278, M18b settings, M21b-fix containers e2e. m21c-world 500 ms flake: gone since M22a culling (4 clean runs) - watch.
 - m02:54 mesh p95 ≤ 6 ms is now borderline on GitHub CI too (#59: 8.2 then pass; #60: 7.9/6.1/6.3 all fail). Not caused by M15a/M15b (greedy change is a MODEL_NONE skip). If it keeps failing: profile the mesher, or the owner decides on the budget (SPEC perf numbers are owner territory).
 - sky-holes.test.ts timeout raised to 120 s on master by the owner (resolved).
 - npm ci reports 1 high-severity vulnerability; not investigated.
