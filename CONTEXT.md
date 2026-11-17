@@ -9,7 +9,7 @@ The orchestrator's memory between compactions and sessions. It lives only on the
 - Keep it under about 150 lines. When a task merges, move it to Done. Once a decision reaches `decisions/` on master, delete it from this file. Keep the last 20 log entries.
 - Facts only, each with its source (PR, session, file). No transcripts or long output.
 
-Last updated: 2026-11-16
+Last updated: 2026-11-17
 
 ## Setup
 
@@ -106,6 +106,7 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
+- 2026-11-17: #88 worker-side packing: CI (runs 43958564464, 43963599985, 6 attempts) frame 11.3-16.3, upload 4.1-6.4 (master m04 CI baseline 7.4 p95/8.9 max), section work 13.1-16.8, arena pack 0 ms; m21c-world no retry (53/78 ms). Recommended owner SPEC §2.3 two-tier edit: frame p95 <= 8 real HW / <= 22 SwiftShader; upload <= 3 real HW / p95 <= 8 SwiftShader; gen+mesh p95 <= 6 real HW / <= 22 SwiftShader; 'Yes (SwiftShader bound)'. Then Codex updates its own m22a-budgets numbers after Update branch.
 - 2026-11-16: #88 head b76cf72 CI red only on m22a budgets: frame 17.5-21.3 (8), upload 8.0-17.6 (3), section work 17-23 (6); first frame/draws/heap pass; culling criterion met; m21c-world first attempt 40 ms (no retry). Local A/B master->M22a: frame 56.9->43.8, update 16.7->5.5, upload 9.2->7.0, GL drain 4.9 s->2.7 s. Recommended to owner: M22a keeps only its own blocker (arena packing up to 16 ms on main thread -> move off main thread / into upload slice; CI upload no worse than master); frame CPU + section work are inherited SwiftShader cost -> owner decides a two-tier SPEC §2.3 (SwiftShader CI column like first-frame row; real-HW numbers via npm run bench). New flakes seen: M18b settings, M21b containers.
 - 2026-11-16: #88 Codex QUESTION (stop or continue). CI on 08ad46d had frameCpuMsP95 17.2 ms (budget 8). Local after opts: 44.7 frame, upload 9.1 (> 3: arena bypasses M04a upload deferral = bug), BFS 6.0 ms p95, game update 12.2, arena transfer 4.2, GL drain 3.4 s p95 (outside timer). Answered: continue, bounded: BFS cached + typed (<1 ms local), arena uploads obey M04a 3 ms budget, compare master vs branch on same flight (frame phases + drain), cut only M22a-introduced regressions + render-path costs; then run checks, push as [INCOMPLETE] for CI numbers, then QUESTION with CI breakdown. Budget is owner's call after that.
 - 2026-11-16: #88 Codex QUESTION (M01a multi-draw semantics). Answered option 1: getRenderStats.drawCalls counts represented section draws (keeps m01a-fix:38 >100 and the §2.3 1500 budget conservative); new separate stat for actual GL submissions; with ?glcheck=draw use the per-section fallback path (no multi-draw) so each real draw gets its own getError (m01a-fix:54 unchanged). Record in decisions/M22a-culling.md.
@@ -125,4 +126,3 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-13: #85 CI #373 red: m21c-world 500 ms replication fails 3/3; walk 0 corrections. Codex: A's main thread stalls 1.35-2 s in FencedErrorDrain blocking getError (cap 4 frames, src/render/fenced-error-drain.ts:64, game code not harness) under 2 SwiftShader contexts. Approved multiplayer-only nonblocking drain with conditions: SP unchanged, no error lost (blocking drainNow on getRenderStats/quit/disconnect + unit test), larger hard cap instead of unbounded, decisions note; remove diagnostic TransferTrace from production.
 - 2026-11-13: #85 wall-clock credit done locally (replication ~110 ms, 0 corrections, no queue warnings). CI retry trace showed `water` not `air`: mined block next to water floods -> test target choice. Approved: deterministic 50 ms clock in Codex's own m21c-survival-replay.test.ts; m21c-world target must have no fluid neighbours (assertions unchanged).
 - 2026-11-13: #85 speed fix pushed (credit per tick + survival replay fix) but head CI red: m21c-world 3/3 fail. Owner had said green. Sent Codex wall-clock credit fix.
-- 2026-11-13: #85 follow-up green (0 corrections, socket worker, input-driven server). Found speed hole (3 steps/tick sustained); sent Codex credit-limit fix before round 2.
