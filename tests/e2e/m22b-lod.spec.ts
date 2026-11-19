@@ -197,7 +197,20 @@ test('LOD defaults off at RD16 and restores full detail live', async ({ page }) 
   expect(initial).toMatchObject({ lod: disabled, full: 35 ** 2 });
   await page.evaluate(() => window.__blockcraft!.setSetting!('lod', true));
   await waitForLod(page, 16);
-  expect((await snapshot()).lod.tiles).toBeGreaterThan(0);
-  await page.evaluate(() => window.__blockcraft!.setSetting!('lod', false));
+  const enabled = await snapshot();
+  expect(enabled.lod.tiles).toBeGreaterThan(0);
+  const released = await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    const before = api.getGlResourceCounts!();
+    api.setSetting!('lod', false);
+    const after = api.getGlResourceCounts!();
+    return {
+      buffers: before.buffers - after.buffers,
+      textures: before.textures - after.textures,
+      vaos: before.vaos - after.vaos,
+      shaders: before.shaders - after.shaders,
+    };
+  });
+  expect(released).toEqual({ buffers: 8, textures: 1, vaos: 1, shaders: 1 });
   expect(await snapshot()).toMatchObject({ lod: disabled });
 });

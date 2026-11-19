@@ -24,11 +24,24 @@ const UPLOAD_BUFFER_BYTES = 256 * 1024;
 const UPLOAD_WORD_BYTES = Int32Array.BYTES_PER_ELEMENT;
 const UPLOAD_QUAD_BYTES = LOD_QUAD_WORDS * UPLOAD_WORD_BYTES;
 const UPLOAD_BUFFER_COUNT = 8;
+// WebGL resource creation calls are indivisible. Give each step most of the
+// shared budget, and wait until the next frame before issuing another step.
+const INIT_HEADROOM_MS = 2;
 
 interface UploadBuffer {
   buffer: WebGLBuffer;
   fence: WebGLSync | null;
 }
+interface GpuInit {
+  vertex?: WebGLShader;
+  fragment?: WebGLShader;
+  program?: WebGLProgram;
+  linked: boolean;
+  texture?: WebGLTexture;
+  uploadBuffers: UploadBuffer[];
+  frameFence: WebGLSync | null;
+}
+
 const DATA_UNIT = 6;
 const FS_LOD = FS_CHUNK.replace(
   'precision highp float;',
@@ -80,7 +93,7 @@ type MultiDraw = {
   ): void;
 };
 
-/** Owns worker scheduling, one shared vertex buffer, and a per-frame handoff mask. */
+/** Owns worker scheduling, the shared quad store, and the column handoff mask. */
 export class LodRenderer {
   readonly mask = new LodColumnMask();
   visibleTiles = 0;
@@ -109,7 +122,9 @@ export class LodRenderer {
   private samplingCounts = new Uint32Array(3);
   private planStart = 0;
   private planMs = 0;
-  private gpu: ReturnType<LodRenderer['createGpu']> | undefined;
+  private gpu: ReturnType<LodRenderer['finishGpu']> | undefined;
+  private gpuInit: GpuInit | undefined;
+  private parallelCompile?: KHR_parallel_shader_compile | null;
   private readonly multiDraw: MultiDraw | null;
 
   constructor(
@@ -138,17 +153,22 @@ export class LodRenderer {
     this.visibleTiles = 0;
     this.drawSubmissions = 0;
     this.rd = 0;
-    if (this.gpu) {
-      for (const staging of this.gpu.uploadBuffers) {
+    const gpu = this.gpu ?? this.gpuInit;
+    if (gpu) {
+      for (const staging of gpu.uploadBuffers) {
         if (staging.fence) this.wrapper.gl.deleteSync(staging.fence);
         this.wrapper.deleteBuffer(staging.buffer);
       }
-      this.uploadBufferIndex = 0;
-      this.wrapper.deleteTexture(this.gpu.texture);
-      this.wrapper.deleteVertexArray(this.gpu.vao);
-      this.wrapper.gl.deleteProgram(this.gpu.program);
-      this.gpu = undefined;
+      if (gpu.texture) this.wrapper.deleteTexture(gpu.texture);
+      if (gpu.program) this.wrapper.deleteProgram(gpu.program);
     }
+    if (this.gpu) this.wrapper.deleteVertexArray(this.gpu.vao);
+    if (this.gpuInit?.frameFence) this.wrapper.gl.deleteSync(this.gpuInit.frameFence);
+    if (this.gpuInit?.vertex) this.wrapper.deleteShader(this.gpuInit.vertex);
+    if (this.gpuInit?.fragment) this.wrapper.deleteShader(this.gpuInit.fragment);
+    this.uploadBufferIndex = 0;
+    this.gpu = undefined;
+    this.gpuInit = undefined;
   }
 
   update(cx: number, cz: number, rd: number, seed: number, variant: TerrainVariant): void {
@@ -275,24 +295,90 @@ export class LodRenderer {
     });
   }
 
-  private createGpu() {
+  private needsIdleGpu(init: GpuInit): boolean {
+    return !init.linked || init.uploadBuffers.length === UPLOAD_BUFFER_COUNT;
+  }
+
+  /** Wait for the outstanding draw and shader commands before querying the driver. */
+  finishUploadFrame(remainingMs: number): number {
+    const init = this.gpuInit;
+    if (!init || !this.needsIdleGpu(init) || init.frameFence || remainingMs <= 0.25) return 0;
+    const start = performance.now();
     const { gl } = this.wrapper;
-    const texture = this.wrapper.createTexture();
-    const vao = this.wrapper.createVertexArray();
-    const program = this.wrapper.createProgram(VS_LOD, FS_LOD);
-    gl.activeTexture(gl.TEXTURE0 + DATA_UNIT);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32I, LOD_DATA_WIDTH, DATA_ROWS);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    const uploadBuffers: UploadBuffer[] = [];
-    for (let i = 0; i < UPLOAD_BUFFER_COUNT; i++) {
+    init.frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    return performance.now() - start;
+  }
+
+  private advanceGpuInit(init: GpuInit, deadline: number): void {
+    const { gl } = this.wrapper;
+    if (this.needsIdleGpu(init)) {
+      if (!init.frameFence) return;
+      const status = gl.clientWaitSync(init.frameFence, 0, 0);
+      if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return;
+      gl.deleteSync(init.frameFence);
+      init.frameFence = null;
+      if (performance.now() + INIT_HEADROOM_MS >= deadline) return;
+    }
+    if (this.parallelCompile === undefined) {
+      this.parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
+      return;
+    }
+    if (!init.program) {
+      if (!init.vertex) {
+        init.vertex = this.wrapper.createShader(gl.VERTEX_SHADER, VS_LOD, false);
+      } else if (!init.fragment) {
+        init.fragment = this.wrapper.createShader(gl.FRAGMENT_SHADER, FS_LOD, false);
+      } else {
+        init.program = this.wrapper.linkProgram(init.vertex, init.fragment);
+      }
+      return;
+    }
+
+    if (!init.linked) {
+      if (
+        this.parallelCompile &&
+        !gl.getProgramParameter(init.program, this.parallelCompile.COMPLETION_STATUS_KHR)
+      )
+        return;
+      this.wrapper.checkProgramLink(init.program);
+      gl.detachShader(init.program, init.vertex!);
+      gl.detachShader(init.program, init.fragment!);
+      this.wrapper.deleteShader(init.vertex!);
+      this.wrapper.deleteShader(init.fragment!);
+      init.vertex = undefined;
+      init.fragment = undefined;
+      init.linked = true;
+      return;
+    }
+
+    if (!init.texture) {
+      init.texture = this.wrapper.createTexture();
+      gl.activeTexture(gl.TEXTURE0 + DATA_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, init.texture);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32I, LOD_DATA_WIDTH, DATA_ROWS);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.activeTexture(gl.TEXTURE0);
+      return;
+    }
+
+    if (init.uploadBuffers.length < UPLOAD_BUFFER_COUNT) {
       const buffer = this.wrapper.createBuffer();
       gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer);
       gl.bufferData(gl.PIXEL_UNPACK_BUFFER, UPLOAD_BUFFER_BYTES, gl.STREAM_DRAW);
-      uploadBuffers.push({ buffer, fence: null });
+      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+      init.uploadBuffers.push({ buffer, fence: null });
+      return;
     }
-    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+
+    this.gpu = this.finishGpu(init.program, init.texture, init.uploadBuffers);
+    this.gpuInit = undefined;
+  }
+
+  private finishGpu(program: WebGLProgram, texture: WebGLTexture, uploadBuffers: UploadBuffer[]) {
+    const { gl } = this.wrapper;
+    const vao = this.wrapper.createVertexArray();
     const uniform = (name: string) => gl.getUniformLocation(program, name);
     return {
       texture,
@@ -326,13 +412,14 @@ export class LodRenderer {
   }
 
   upload(deadline: number): void {
-    if (this.planTimer !== undefined || !this.ready.length || performance.now() >= deadline) return;
-    const { gl } = this.wrapper;
+    if (!this.rd || this.planTimer !== undefined) return;
     if (!this.gpu) {
-      this.gpu = this.createGpu();
-      gl.activeTexture(gl.TEXTURE0);
+      const init = (this.gpuInit ??= { linked: false, uploadBuffers: [], frameFence: null });
+      if (performance.now() + INIT_HEADROOM_MS < deadline) this.advanceGpuInit(init, deadline);
       return;
     }
+    if (!this.ready.length || performance.now() + 0.5 >= deadline) return;
+    const { gl } = this.wrapper;
     const gpu = this.gpu;
     const staging = gpu.uploadBuffers[this.uploadBufferIndex]!;
     if (staging.fence) {

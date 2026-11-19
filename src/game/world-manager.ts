@@ -2153,9 +2153,9 @@ export class WorldManager {
       this.drawWarp();
       return false;
     }
+    const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
     if (this.world && this.camera) {
       const streamerUpdateStart = renderPhaseStats.start();
-      const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
       const view = this.streamerView(this.camera);
       lod?.update(
         Math.floor(view.x / 16),
@@ -2168,7 +2168,6 @@ export class WorldManager {
       renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
       const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
       const uploadStart = performance.now();
-
       this.chunkRenderer?.beginUploadBatch();
       try {
         const editUploadStart = renderPhaseStats.start();
@@ -2222,6 +2221,11 @@ export class WorldManager {
     const terrainRenderStart = renderPhaseStats.start();
     const rendered = this.drawTerrain();
     renderPhaseStats.end('terrainRenderMs', terrainRenderStart);
+    if (rendered && lod) {
+      const fenceMs = lod.finishUploadFrame(UPLOAD_BUDGET_MS - this.lastUploadMs);
+      this.lastUploadMs += fenceMs;
+      if (fenceMs) renderPhaseStats.add('uploadOverheadMs', fenceMs);
+    }
     return rendered;
   }
 
