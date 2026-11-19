@@ -27,7 +27,7 @@ type RangeKey =
   | 'musicVolume'
   | 'effectsVolume'
   | 'ambientVolume';
-type BoolKey = 'invertY' | 'smoothLighting' | 'particles' | 'viewBobbing';
+type BoolKey = 'lod' | 'invertY' | 'smoothLighting' | 'particles' | 'viewBobbing';
 type EnumKey = 'leaves' | 'clouds' | 'guiScale';
 
 interface RangeRow {
@@ -115,6 +115,7 @@ const videoRows: SettingRow[] = [
     format: (v) => `${Math.round(v * 100)}%`,
   },
   { kind: 'bool', key: 'viewBobbing', label: 'View bobbing' },
+  { kind: 'bool', key: 'lod', label: 'Distant terrain (LOD)' },
 ];
 
 const audioRows: SettingRow[] = [
@@ -448,7 +449,7 @@ export class SettingsScreen {
 
     if (this.tab === 'video' || this.tab === 'audio') {
       const rows = this.tab === 'video' ? videoRows : audioRows;
-      const rowHeight = this.tab === 'video' ? 13 : 24;
+      const rowHeight = this.tab === 'video' ? 12 : 24;
       const startY = this.tab === 'video' ? 47 : 55;
       this.addSettingRows(rows, startY, rowHeight);
       rows.forEach((row, index) => {

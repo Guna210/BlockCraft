@@ -1,3 +1,5 @@
+import type { LodRenderer, LodAtmosphere } from './lod-renderer';
+import { chebyshev, FULL_DETAIL_RADIUS } from '../world/streaming-plan';
 import { fluidAnimation, windAnimation } from './fluid-animation';
 import { FluidDepth } from './fluid-depth';
 import {
@@ -28,7 +30,7 @@ import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
 import { ColumnTintCache } from './tint-cache';
 import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from '../world/frustum';
-import { bayerGlsl } from './dither';
+import { FS_CHUNK } from './terrain-fragment';
 import { ColumnFades } from './column-fade';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { SectionVisibility } from './section-visibility';
@@ -197,93 +199,6 @@ void main() {
   if (u_dimensionFog.a > 0.5) fogCol = u_dimensionFog.rgb;
   v_fogColor = fogCol;
   gl_Position = u_viewProj * vec4(worldPos, 1.0);
-}
-`;
-
-const FS_CHUNK = `#version 300 es
-precision highp float;
-flat in float v_leaf;
-flat in float v_fluid;
-flat in float v_flow;
-in vec3 v_normal;
-uniform float u_fluidTime;
-uniform int u_fastLeaves;
-uniform highp sampler2D u_sceneDepth;
-uniform mat4 u_inverseViewProj;
-uniform vec2 u_viewport;
-in vec2 v_unwrappedUV;
-flat in vec2 v_tileOrigin;
-in vec3 v_light;
-in vec3 v_tint;
-flat in float v_grassSide;
-in vec3 v_worldPos;
-in vec3 v_fogColor;
-in float v_puddle;
-uniform vec3 u_cameraPos;
-uniform float u_fogStart;
-uniform float u_fogEnd;
-uniform sampler2D u_atlasSampler;
-uniform vec2 u_atlasSize;
-uniform bool u_underwater;
-uniform vec3 u_waterFogColor;
-uniform highp int u_isCutout;
-uniform int u_isWireframe;
-uniform float u_fade;
-const float BAYER_4X4[16] = ${bayerGlsl()};
-out vec4 fragColor;
-void main() {
-  if (u_fade < 1.0) {
-    ivec2 pixel = ivec2(gl_FragCoord.xy);
-    if (BAYER_4X4[(pixel.y & 3) * 4 + (pixel.x & 3)] >= u_fade) discard;
-  }
-  if (u_isWireframe == 1) {
-    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
-  }
-  vec2 uv = v_unwrappedUV;
-  if (v_fluid > 0.5) {
-    uv = abs(v_normal.y) > 0.5 ? v_worldPos.xz : vec2(abs(v_normal.x) > 0.5 ? v_worldPos.z : v_worldPos.x, -v_worldPos.y);
-    if (v_flow > 8.5 || abs(v_normal.y) < 0.5) uv.y -= u_fluidTime * 0.35;
-    else if (v_flow > 0.5) {
-      float angle = (v_flow - 1.0) * 0.785398163;
-      uv -= vec2(cos(angle), sin(angle)) * u_fluidTime * 0.22;
-    }
-  }
-  vec2 tileSize = vec2(16.0) / u_atlasSize;
-  vec2 halfTexel = vec2(0.5) / u_atlasSize;
-  vec2 tileUV = clamp(v_tileOrigin + fract(uv) * tileSize, v_tileOrigin + halfTexel, v_tileOrigin + tileSize - halfTexel);
-  vec4 texColor = textureGrad(u_atlasSampler, tileUV, dFdx(uv) * tileSize, dFdy(uv) * tileSize);
-  if (u_fastLeaves == 1 && v_leaf > 0.5) {
-    // Fast leaves are opaque cubes: gaps in the sprite become a dark leaf colour.
-    texColor = texColor.a < 0.5 ? vec4(0.11, 0.17, 0.08, 1.0) : vec4(texColor.rgb, 1.0);
-  } else if (u_isCutout == 1 && texColor.a < 0.5) discard;
-  // Grass side alpha selects the tinted fringe; its dirt base stays untinted and opaque.
-  vec3 tint = mix(v_tint, mix(vec3(1.0), v_tint, texColor.a), v_grassSide);
-  vec3 litColor = texColor.rgb * tint * v_light;
-  float alpha = mix(texColor.a, 1.0, v_grassSide);
-  if (v_fluid > 0.5 && v_fluid < 1.5 && u_underwater) alpha = 1.0;
-  if (v_fluid > 1.5) { litColor = texColor.rgb; alpha = 1.0; }
-  if (v_fluid > 0.5 && v_fluid < 1.5 && !u_underwater) {
-    vec2 screenUV = gl_FragCoord.xy / u_viewport;
-    float depth = texture(u_sceneDepth, screenUV).r;
-    vec4 behind = u_inverseViewProj * vec4(screenUV * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    vec3 scenePos = behind.xyz / behind.w;
-    float thickness = depth >= 0.999999 ? 32.0 : max(0.0, length(scenePos-u_cameraPos)-length(v_worldPos-u_cameraPos));
-    float absorption = 1.0 - exp(-thickness * 0.16);
-    litColor = mix(litColor, vec3(0.025,0.085,0.19) * max(v_light,vec3(0.2)), absorption);
-    vec3 view = normalize(u_cameraPos-v_worldPos);
-    vec3 surfaceNormal = normalize(cross(dFdx(v_worldPos),dFdy(v_worldPos)));
-    float fresnel = 0.02 + 0.30 * pow(1.0-abs(dot(view,surfaceNormal)),5.0);
-    litColor = mix(litColor, v_fogColor, fresnel);
-    alpha = mix(0.26,0.96,absorption) + fresnel * 0.12;
-  }
-  if (v_puddle > 0.001) {
-    litColor *= (1.0 - 0.22 * v_puddle);
-  }
-  float horizDist = u_underwater ? length(v_worldPos - u_cameraPos) : length((v_worldPos - u_cameraPos).xz);
-  float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
-  vec3 finalColor = mix(litColor, u_underwater ? u_waterFogColor : v_fogColor, fogFactor);
-  fragColor = vec4(finalColor, alpha);
 }
 `;
 
@@ -473,6 +388,9 @@ export class ChunkRenderer {
   private rainFactor = 0;
   private lightningFlash = 0;
   private readonly dimensionFog = new Float32Array(4);
+  private cameraFov = 0;
+  private cameraAspect = 0;
+  private lodAtmosphere: (LodAtmosphere & { lod?: LodRenderer }) | undefined;
   private skyBrightness = 1;
   private debugLight = false;
   private cameraPos: [number, number, number] = [0, 0, 0];
@@ -668,9 +586,12 @@ export class ChunkRenderer {
   }
 
   public setAtmosphere(params: {
+    lod?: LodRenderer;
     cameraPos: ArrayLike<number>;
     cameraYaw?: number;
     cameraPitch?: number;
+    cameraFov?: number;
+    cameraAspect?: number;
     renderDistance?: number;
     fogStart: number;
     fogEnd: number;
@@ -689,6 +610,9 @@ export class ChunkRenderer {
     this.cameraPos[2] = params.cameraPos[2] ?? 0;
     this.cameraYaw = params.cameraYaw ?? 0;
     this.cameraPitch = params.cameraPitch ?? 0;
+    this.cameraFov = params.cameraFov ?? 0;
+    this.cameraAspect = params.cameraAspect ?? 0;
+    this.lodAtmosphere = params;
     this.renderDistance = params.renderDistance ?? this.renderDistance;
     this.fogStart = params.fogStart;
     this.fogEnd = params.fogEnd;
@@ -1583,6 +1507,7 @@ export class ChunkRenderer {
     drawPlayer?: () => number,
   ): void {
     const gl = this.glWrapper.gl;
+    const lod = this.lodAtmosphere?.lod;
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
@@ -1610,12 +1535,14 @@ export class ChunkRenderer {
       this.visibilityMasks.prepare(
         this.cameraPos,
         planes,
-        this.renderDistance,
+        lod ? FULL_DETAIL_RADIUS : this.renderDistance,
         cullingSettings.frustum,
         minMeshY,
         maxMeshY,
         Math.round(this.cameraYaw * 20),
         Math.round(this.cameraPitch * 20),
+        this.cameraFov,
+        this.cameraAspect,
       );
     }
     renderPhaseStats.end('caveFrustumMs', visibilityStart);
@@ -1629,11 +1556,17 @@ export class ChunkRenderer {
     const columns = this.visColumns;
     const nowMs = performance.now();
     let columnCount = 0;
+    const lodMask = lod?.mask;
+    lodMask?.moveTo(Math.floor(this.cameraPos[0]! / 16), Math.floor(this.cameraPos[2]! / 16));
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     for (let column = 0; column < this.columnLists.length; column++) {
       const list = this.columnLists[column]!;
       const first = list[0]!;
+      if (lodMask && chebyshev(first.sx, first.sz, lodMask.cx, lodMask.cz) > FULL_DETAIL_RADIUS)
+        continue;
       if (cullingSettings.frustum && !columnInFrustum(planes, first.sx, first.sz)) continue;
+      const fullMesh = lod?.hasFullMesh(first.sx, first.sz);
+      if (lod && !fullMesh && lod.covers(first.sx, first.sz)) continue;
       const visible = columns[columnCount]!;
       visible.length = 0;
       for (let i = 0; i < list.length; i++) {
@@ -1660,7 +1593,8 @@ export class ChunkRenderer {
       const pair = this.tintCache.getColumnTints(first.sx, first.sz, world);
       this.visGrass[columnCount] = pair.grassTexture;
       this.visFoliage[columnCount] = pair.foliageTexture;
-      this.visFade[columnCount] = this.fades.amount(first.sx, first.sz, nowMs);
+      this.visFade[columnCount] = lod ? 1 : this.fades.amount(first.sx, first.sz, nowMs);
+      if (fullMesh) lodMask?.markDrawn(first.sx, first.sz);
       columnCount++;
     }
     for (let i = columnCount; i < this.visColumnCount; i++) {
@@ -1690,6 +1624,22 @@ export class ChunkRenderer {
     this.drawLightingPass(0, viewProjMatrix, atlas);
     renderPhaseStats.end('opaquePassMs', opaquePassStart);
 
+    lod?.prepare(planes, this.cameraPos);
+    const lodDraws =
+      lod && this.lodAtmosphere
+        ? lod.draw(
+            false,
+            viewProjMatrix,
+            this.inverseViewProj,
+            this.skyBrightness,
+            this.lodAtmosphere,
+            atlas,
+            this.fluidTime,
+            this.activeUnit,
+            this.debugLight,
+          )
+        : 0;
+
     // 2. Cutout Pass
     const cutoutPassStart = renderPhaseStats.start();
     this.drawLightingPass(1, viewProjMatrix, atlas);
@@ -1699,7 +1649,7 @@ export class ChunkRenderer {
     if (playerDraws > 0) this.activeUnit = 0;
 
     // Opaque and cutout rendering is the depth pre-pass for water absorption.
-    let hasTranslucent = false;
+    let hasTranslucent = lod?.hasWater ?? false;
     for (let i = 0; i < meshes.length; i++) {
       if (meshes[i]!.translucent) {
         hasTranslucent = true;
@@ -1719,11 +1669,25 @@ export class ChunkRenderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     const translucentPassStart = renderPhaseStats.start();
+    const lodWaterDraws =
+      lod && this.lodAtmosphere
+        ? lod.draw(
+            true,
+            viewProjMatrix,
+            this.inverseViewProj,
+            this.skyBrightness,
+            this.lodAtmosphere,
+            atlas,
+            this.fluidTime,
+            this.activeUnit,
+            this.debugLight,
+          )
+        : 0;
     this.drawTranslucent(viewProjMatrix, atlas);
     renderPhaseStats.end('translucentPassMs', translucentPassStart);
 
-    let drawCalls = this.passDraws + playerDraws;
-    const triangles = this.passTriangles + playerDraws * 12;
+    let drawCalls = this.passDraws + playerDraws + lodDraws + lodWaterDraws;
+    const triangles = this.passTriangles + playerDraws * 12 + (lod?.submittedTriangles ?? 0);
 
     // Restore depth write
     gl.depthMask(true);

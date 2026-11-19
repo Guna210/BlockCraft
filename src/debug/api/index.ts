@@ -13,6 +13,7 @@ import './time';
 import './fluids';
 import './clouds';
 import './culling';
+import './lod';
 import './leaves';
 import './settings';
 import './weather';

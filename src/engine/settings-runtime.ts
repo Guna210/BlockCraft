@@ -44,6 +44,7 @@ export function applySetting<K extends SettingKey>(key: K, value: Settings[K]): 
   const manager = WorldManager.getInstance();
   if (previous.renderDistance !== settings.renderDistance)
     manager.setRenderDistance(settings.renderDistance);
+  else if (previous.lod !== settings.lod) manager.refreshLodSetting();
   if (previous.leaves !== settings.leaves) manager.setLeaves(settings.leaves);
   if (previous.fov !== settings.fov && manager.camera) {
     manager.camera.fov = (settings.fov * Math.PI) / 180;

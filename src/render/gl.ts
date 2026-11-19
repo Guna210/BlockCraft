@@ -103,13 +103,13 @@ export class GLWrapper {
 
   // --- Programs & Shaders ---
 
-  createShader(type: number, source: string): WebGLShader {
+  createShader(type: number, source: string, checkStatus = true): WebGLShader {
     const shader = this.gl.createShader(type);
     if (!shader) throw new Error('Could not create WebGL shader.');
     this.gl.shaderSource(shader, source);
     this.gl.compileShader(shader);
 
-    if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+    if (checkStatus && !this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
       const log = this.gl.getShaderInfoLog(shader) || '';
       const formatted = formatShaderError(log, source);
       this.gl.deleteShader(shader);
@@ -135,33 +135,36 @@ export class GLWrapper {
       throw e;
     }
 
-    const program = this.gl.createProgram();
-    if (!program) {
+    let program: WebGLProgram | undefined;
+    try {
+      program = this.linkProgram(vs, fs);
+      this.checkProgramLink(program);
+      this.gl.detachShader(program, vs);
+      this.gl.detachShader(program, fs);
+      return program;
+    } catch (e) {
+      if (program) this.deleteProgram(program);
+      throw e;
+    } finally {
       this.deleteShader(vs);
       this.deleteShader(fs);
-      throw new Error('Could not create WebGL program.');
     }
+  }
 
+  linkProgram(vs: WebGLShader, fs: WebGLShader): WebGLProgram {
+    const program = this.gl.createProgram();
+    if (!program) throw new Error('Could not create WebGL program.');
     this.gl.attachShader(program, vs);
     this.gl.attachShader(program, fs);
     this.gl.linkProgram(program);
-
-    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-      const log = this.gl.getProgramInfoLog(program);
-      this.gl.deleteProgram(program);
-      this.deleteShader(vs);
-      this.deleteShader(fs);
-      throw new Error(`Program link failed: ${log}`);
-    }
-
-    // Shaders can be detached and deleted after linking
-    this.gl.detachShader(program, vs);
-    this.gl.detachShader(program, fs);
-    this.deleteShader(vs);
-    this.deleteShader(fs);
-
     this.counts.shaders++;
     return program;
+  }
+
+  checkProgramLink(program: WebGLProgram): void {
+    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+      throw new Error(`Program link failed: ${this.gl.getProgramInfoLog(program)}`);
+    }
   }
 
   deleteProgram(program: WebGLProgram) {
