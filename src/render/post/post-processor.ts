@@ -4,6 +4,7 @@ import type { GLWrapper } from '../gl';
 import {
   computeGodRaysState,
   fillActivePostFxPasses,
+  type GodRaysParams,
   type GodRaysState,
   type PostFxPassName,
 } from './sun-visibility';
@@ -215,8 +216,6 @@ void main() {
 }`;
 
 const ZERO_4 = new Float32Array([0, 0, 0, 0]);
-const ONE_BUFFERS = [0x8ce0]; // COLOR_ATTACHMENT0 (numeric value assigned dynamically via gl.COLOR_ATTACHMENT0)
-void ONE_BUFFERS;
 
 export interface PostFxStats {
   enabled: boolean;
@@ -297,6 +296,19 @@ export class PostProcessor {
   private fxaaLocScene: WebGLUniformLocation | null = null;
   private fxaaLocTexel: WebGLUniformLocation | null = null;
 
+  private readonly drawBuf1: [number];
+  private readonly drawBuf2: [number, number];
+  private readonly godRaysParams: GodRaysParams = {
+    enabled: false,
+    dimension: 'overworld',
+    underwater: false,
+    sunDir: [0, 1, 0],
+    dayFactor: 1,
+    twilightFactor: 0,
+    rainFactor: 0,
+    viewMatrix: new Float32Array(16),
+    projectionMatrix: new Float32Array(16),
+  };
   private readonly godRaysState: GodRaysState = {
     enabled: false,
     sunUV: [0.5, 0.5],
@@ -311,7 +323,11 @@ export class PostProcessor {
   private totalMs = 0;
   private activeInLastFrame = false;
 
-  constructor(private readonly glWrapper: GLWrapper) {}
+  constructor(private readonly glWrapper: GLWrapper) {
+    const gl = glWrapper.gl;
+    this.drawBuf1 = [gl.COLOR_ATTACHMENT0];
+    this.drawBuf2 = [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1];
+  }
 
   private ensureSceneTarget(needBloom: boolean, needTempTarget: boolean): void {
     const gl = this.glWrapper.gl;
@@ -512,10 +528,10 @@ export class PostProcessor {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.viewport(0, 0, this.width, this.height);
     if (settings.bloom) {
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      gl.drawBuffers(this.drawBuf2);
       gl.clearBufferfv(gl.COLOR, 1, ZERO_4);
     }
-    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.drawBuffers(this.drawBuf1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     return this.sceneFbo;
   }
@@ -533,20 +549,17 @@ export class PostProcessor {
 
     const { settings } = context;
     const doBloom = settings.bloom;
-    const gr = computeGodRaysState(
-      {
-        enabled: settings.godRays,
-        dimension: context.dimension,
-        underwater: context.underwater,
-        sunDir: context.sunDir,
-        dayFactor: context.dayFactor,
-        twilightFactor: context.twilightFactor,
-        rainFactor: context.rainFactor,
-        viewMatrix: context.viewMatrix,
-        projectionMatrix: context.projectionMatrix,
-      },
-      this.godRaysState,
-    );
+    const grParams = this.godRaysParams;
+    grParams.enabled = settings.godRays;
+    grParams.dimension = context.dimension;
+    grParams.underwater = context.underwater;
+    grParams.sunDir = context.sunDir;
+    grParams.dayFactor = context.dayFactor;
+    grParams.twilightFactor = context.twilightFactor;
+    grParams.rainFactor = context.rainFactor;
+    grParams.viewMatrix = context.viewMatrix;
+    grParams.projectionMatrix = context.projectionMatrix;
+    const gr = computeGodRaysState(grParams, this.godRaysState);
     const doGodRays = gr.enabled;
     const doFxaa = settings.fxaa;
 

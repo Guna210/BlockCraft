@@ -5,7 +5,7 @@ These decisions are fixed for M22c and implement SPEC §2.3 / M22c.
 1. **Settings & UI integration**
    - Add three boolean fields to `Settings` (`src/engine/settings.ts`): `fxaa`, `bloom`, and `godRays`, all defaulting to `false`.
    - Persist and normalize them through `src/engine/settings-persistence.ts`; saved records without these fields load with `false`.
-   - Add `"FXAA"`, `"Bloom"`, and `"God rays"` toggles on the Video tab of `src/ui/settings-screen.ts` right after `"Smooth lighting"` and `"Particles"`. All 14 video rows use an `11 px` row pitch (`10 px` row height, matching `KEYS 1`) so every row sits cleanly above the key-conflict alert and bottom action buttons.
+   - Add `"FXAA"`, `"Bloom"`, and `"God rays"` toggles on the Video tab of `src/ui/settings-screen.ts` right after `"Smooth lighting"` and `"Particles"`. Re-pitched all 14 Video-tab rows from `13 px` to `11 px` (control height `11 px` to `10 px`, slider height `9 px` to `8 px`, matching `KEYS 1`) so every row clears the key-conflict alert and footer buttons cleanly.
    - Toggling any of the three applies live with no page reload and no chunk remeshing.
 
 2. **Zero-cost bypass when all toggles are off**
@@ -14,7 +14,7 @@ These decisions are fixed for M22c and implement SPEC §2.3 / M22c.
 3. **Offscreen target, composite order, and `FluidDepth`**
    - When any toggle is enabled, `PostProcessor` (`src/render/post/post-processor.ts`) lazily allocates a canvas-sized `RGBA8` scene color texture and a `DEPTH_STENCIL` texture whose internal format (`DEPTH32F_STENCIL8` or `DEPTH24_STENCIL8`) matches the default framebuffer's `DEPTH_BITS`, recreated on resize.
    - A small `begin()` / `end()` hook around world drawing in `WorldManager.drawTerrain()` captures sky, terrain, entities, particles, weather, clouds, portals, selection outline, underwater tint, spores, updraft glow, and warp overlay into the offscreen FBO while leaving HUD and DOM UI on the default framebuffer.
-   - Active composite passes run in order: **bloom** → **god rays** → **FXAA last**, finishing on the default framebuffer (`null`) without per-frame heap allocations.
+   - Active composite passes run in order: **bloom** → **god rays** → **FXAA last**, finishing on the default framebuffer (`null`) using preallocated `drawBuf1`, `drawBuf2`, `godRaysParams`, `activePasses`, and `godRaysState` (no per-frame heap allocations inside `PostProcessor.begin()`/`end()` after first-enable warmup).
    - `FluidDepth.capture(sourceFramebuffer)` (`src/render/fluid-depth.ts`) accepts the active scene framebuffer (defaulting to `null` when post-processing is off) so `gl.blitFramebuffer(DEPTH_BUFFER_BIT)` reads from and restores the offscreen target rather than hardcoding `null`.
 
 4. **Emissive-only subtle bloom**
