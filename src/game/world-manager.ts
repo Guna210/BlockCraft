@@ -2139,15 +2139,26 @@ export class WorldManager {
     };
   }
 
+  get needsLodLinkDrain(): boolean {
+    return this.lodRenderer?.needsLinkDrain ?? false;
+  }
+
   /**
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public render(): boolean {
+  public render(drainLodLink = false): boolean {
     this.lastUploadMs = 0;
     const saveFrameStart = renderPhaseStats.start();
     this.saves.frame();
     renderPhaseStats.end('saveFrameMs', saveFrameStart);
+    if (drainLodLink) {
+      const uploadStart = performance.now();
+      this.lodRenderer?.upload(uploadStart + UPLOAD_BUDGET_MS, true);
+      this.lastUploadMs = performance.now() - uploadStart;
+      renderPhaseStats.add('uploadOverheadMs', this.lastUploadMs);
+      return false;
+    }
     if (this.initialLoadCount > 0) {
       // A dimension change shows only the warp while the other world loads.
       this.drawWarp();

@@ -424,8 +424,11 @@ async function main() {
     // With no world and no test scene the only thing on the canvas is the static main menu: its
     // frame stays presented until something on it changes (decisions/M18a-menus.md).
     const idleMenu = !testScene && !worldManager.world && menu.visible && !menu.needsFrame;
+    // Keep the last frame on screen while the fallback LOD shader waits for
+    // outstanding GL commands. The upload work still has its own timed frame.
+    const drainLodLink = !testScene && !menu.visible && worldManager.needsLodLinkDrain;
     const clearStart = renderPhaseStats.start();
-    if (!idleMenu)
+    if (!idleMenu && !drainLodLink)
       glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
     renderPhaseStats.end('frameClearMs', clearStart);
     let rendered = false;
@@ -447,7 +450,7 @@ async function main() {
       const updateStart = renderPhaseStats.start();
       playerController.frame(dt / 1000);
       renderPhaseStats.end('gameUpdateMs', updateStart);
-      rendered = worldManager.render();
+      rendered = worldManager.render(drainLodLink);
     }
     const menuStart = renderPhaseStats.start();
     if (menu.visible) {
@@ -472,9 +475,10 @@ async function main() {
 
     const endTime = performance.now();
     const frameCpuMs = endTime - startTime;
-    if (rendered && measured) cpuTimes.push(frameCpuMs);
+    const sampled = (rendered || drainLodLink) && measured;
+    if (sampled) cpuTimes.push(frameCpuMs);
     const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
-    if (rendered && measured) uploadTimes.push(uploadMs);
+    if (sampled) uploadTimes.push(uploadMs);
 
     // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
     if (frameDrain) {
@@ -483,11 +487,11 @@ async function main() {
       glCheckMs += performance.now() - t;
     }
     renderPhaseStats.add('glErrorDrainMs', glCheckMs);
-    if (rendered && measured) {
-      frameStats.record(frameCpuMs, uploadMs, glCheckMs, renderStats.drawCalls);
-      frameCount++;
+    if (sampled) {
+      frameStats.record(frameCpuMs, uploadMs, glCheckMs, rendered ? renderStats.drawCalls : 0);
+      if (rendered) frameCount++;
+      renderPhaseStats.endFrame(frameCpuMs);
     }
-    if (rendered && measured) renderPhaseStats.endFrame(frameCpuMs);
     fpsTimer += dt;
     if (fpsTimer >= 1000) {
       renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);

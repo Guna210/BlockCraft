@@ -295,7 +295,13 @@ export class LodRenderer {
     });
   }
 
-  private advanceGpuInit(init: GpuInit, deadline: number): void {
+  get needsLinkDrain(): boolean {
+    return (
+      this.parallelCompile === null && this.gpuInit?.uploadBuffers.length === UPLOAD_BUFFER_COUNT
+    );
+  }
+
+  private advanceGpuInit(init: GpuInit, deadline: number, drainLink: boolean): void {
     const { gl } = this.wrapper;
     if (this.parallelCompile === undefined) {
       this.parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
@@ -308,7 +314,6 @@ export class LodRenderer {
         init.fragment = this.wrapper.createShader(gl.FRAGMENT_SHADER, FS_LOD, false);
       } else {
         init.program = this.wrapper.linkProgram(init.vertex, init.fragment);
-        init.linkFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
       }
       return;
     }
@@ -334,20 +339,23 @@ export class LodRenderer {
     }
 
     if (!init.linked) {
-      // Buffer allocation can advance while the link is in flight. Avoid a
-      // blocking status query until the driver's queued link has run.
-      if (init.linkFence) {
+      if (this.parallelCompile) {
+        if (!gl.getProgramParameter(init.program, this.parallelCompile.COMPLETION_STATUS_KHR))
+          return;
+      } else {
+        // Status queries can wait behind earlier draw commands. In the
+        // fallback, stop submitting draws and poll a fence for that queue.
+        if (!drainLink) return;
+        if (!init.linkFence) {
+          init.linkFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+          return;
+        }
         const status = gl.clientWaitSync(init.linkFence, gl.SYNC_FLUSH_COMMANDS_BIT, 0);
         if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return;
-        gl.deleteSync(init.linkFence);
-        init.linkFence = null;
       }
       if (performance.now() + INIT_HEADROOM_MS >= deadline) return;
-      if (
-        this.parallelCompile &&
-        !gl.getProgramParameter(init.program, this.parallelCompile.COMPLETION_STATUS_KHR)
-      )
-        return;
+      if (init.linkFence) gl.deleteSync(init.linkFence);
+      init.linkFence = null;
       this.wrapper.checkProgramLink(init.program);
       gl.detachShader(init.program, init.vertex!);
       gl.detachShader(init.program, init.fragment!);
@@ -398,11 +406,12 @@ export class LodRenderer {
     };
   }
 
-  upload(deadline: number): void {
+  upload(deadline: number, drainLink = false): void {
     if (!this.rd || this.planTimer !== undefined) return;
     if (!this.gpu) {
       const init = (this.gpuInit ??= { linked: false, uploadBuffers: [], linkFence: null });
-      if (performance.now() + INIT_HEADROOM_MS < deadline) this.advanceGpuInit(init, deadline);
+      if (performance.now() + INIT_HEADROOM_MS < deadline)
+        this.advanceGpuInit(init, deadline, drainLink);
       return;
     }
     if (!this.ready.length || performance.now() + 0.5 >= deadline) return;
