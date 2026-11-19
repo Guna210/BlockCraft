@@ -9,6 +9,7 @@ export const GUI_SCALE_CHANGE_EVENT = 'blockcraft:gui-scale-change';
 
 export interface Settings {
   renderDistance: number;
+  lod: boolean;
   fov: number;
   /** Multiplier over the original 0.002 camera sensitivity. */
   mouseSensitivity: number;
@@ -31,6 +32,7 @@ export interface Settings {
 /** Defaults preserve the game's pre-settings behavior. FOV is in degrees. */
 export const DEFAULT_SETTINGS: Settings = {
   renderDistance: 8,
+  lod: false,
   fov: 70,
   mouseSensitivity: 1,
   invertY: false,

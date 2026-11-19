@@ -10,7 +10,7 @@ import { collectLightPadding } from '../world/light-padding';
 import type { ColumnLight, LightRect } from '../world/batch-light';
 import { columnKey, fullDetailRadius, FULL_DETAIL_RADIUS } from '../world/streaming-plan';
 import { LodRenderer } from '../render/lod-renderer';
-import { buildLodColors } from '../render/lod-colors';
+import { buildLodMaterials } from '../render/lod-colors';
 import { LoadingScreen } from '../ui/loading-screen';
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from '../world/world';
@@ -382,7 +382,6 @@ export class WorldManager {
   private initialLoadCount = 0;
   private loadingScreen?: LoadingScreen;
   private lodRenderer?: LodRenderer;
-  private lodEnabled = true;
   private lodVariant: TerrainVariant = { type: 'default' };
   public terrainFrames = 0;
   private editSerial = 0;
@@ -964,20 +963,26 @@ export class WorldManager {
 
   private configureLod(distance: number): boolean {
     const enabled =
-      this.lodEnabled &&
+      settings.lod &&
       distance > FULL_DETAIL_RADIUS &&
       !!this.world &&
       this.streamer.active &&
       !this.panorama &&
       !this.remoteColumnSource &&
       this.dimension === 'overworld';
-    if (!enabled && this.streamer.lodEnabled) this.lodRenderer?.reset();
+    if (!enabled && this.streamer.lodEnabled) this.resetLod();
+    if (enabled && !this.lodRenderer && this.glWrapper && this.atlas) {
+      this.lodRenderer = new LodRenderer(
+        this.glWrapper,
+        buildLodMaterials(this.atlas, BlockRegistry.getInstance()),
+        (cx, cz) => this.streamer.canSimulate(cx, cz),
+      );
+    }
     this.streamer.lodEnabled = enabled;
     return enabled;
   }
 
-  public setLod(enabled: boolean): void {
-    this.lodEnabled = enabled;
+  public refreshLodSetting(): void {
     if (!this.panorama) this.setRenderDistance(this.renderDistance);
   }
 
@@ -991,12 +996,15 @@ export class WorldManager {
         pendingJobs: 0,
         coverageRadius: 0,
         fullDetailRadius: radius,
+        samplingMsPerTile: [0, 0, 0],
+        planMs: 0,
       }
     );
   }
 
   private resetLod(): void {
     this.lodRenderer?.reset();
+    this.lodRenderer = undefined;
     this.streamer.lodEnabled = false;
   }
 
@@ -1349,10 +1357,7 @@ export class WorldManager {
     this.movingBlockRenderer?.dispose();
     this.movingBlockRenderer = new MovingBlockRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
-    this.lodRenderer?.reset();
-    this.lodRenderer = new LodRenderer(this.glWrapper, buildLodColors(tiles, registry), (cx, cz) =>
-      this.streamer.canSimulate(cx, cz),
-    );
+    this.resetLod();
     this.weatherRenderer = new WeatherRenderer(this.glWrapper);
   }
 
@@ -2150,7 +2155,7 @@ export class WorldManager {
     }
     if (this.world && this.camera) {
       const streamerUpdateStart = renderPhaseStats.start();
-      const lod = this.configureLod(this.renderDistance) ? this.lodRenderer : undefined;
+      const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
       const view = this.streamerView(this.camera);
       lod?.update(
         Math.floor(view.x / 16),
@@ -2163,8 +2168,7 @@ export class WorldManager {
       renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
       const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
       const uploadStart = performance.now();
-      const uploadDeadline = uploadStart + UPLOAD_BUDGET_MS;
-      lod?.upload(uploadDeadline, 1);
+
       this.chunkRenderer?.beginUploadBatch();
       try {
         const editUploadStart = renderPhaseStats.start();
@@ -2209,7 +2213,7 @@ export class WorldManager {
         this.lastUploadMs = performance.now() - uploadStart;
       }
       if (lod) {
-        lod.upload(uploadDeadline);
+        lod.upload(uploadStart + UPLOAD_BUDGET_MS);
         this.lastUploadMs = performance.now() - uploadStart;
       }
       const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;

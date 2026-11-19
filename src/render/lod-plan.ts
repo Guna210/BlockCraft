@@ -55,3 +55,18 @@ export class LodColumnMask {
     );
   }
 }
+
+export type LodStep = 1 | 2 | 4;
+
+/** Chebyshev distance to the closest column belonging to the tile. */
+export function lodTileDistance(cx: number, cz: number, tx: number, tz: number): number {
+  const x = tx * 4;
+  const z = tz * 4;
+  return Math.max(0, x - cx, cx - x - 3, z - cz, cz - z - 3);
+}
+
+export function lodStep(distance: number, previous?: LodStep): LodStep {
+  if (distance <= (previous === 1 ? 17 : previous ? 15 : 16)) return 1;
+  if (distance <= (previous === 2 ? 25 : previous === 4 ? 23 : 24)) return 2;
+  return 4;
+}

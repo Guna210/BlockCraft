@@ -73,7 +73,7 @@ test('RD16 reaches the fog without holes and RD32 keeps the RD12 column count', 
   page,
   assertAndSaveScreenshot,
 }) => {
-  test.setTimeout(480_000);
+  test.setTimeout(1_100_000);
   await page.evaluate(async (seed) => {
     const api = window.__blockcraft!;
     api.setRenderDistance!(12);
@@ -104,6 +104,7 @@ test('RD16 reaches the fog without holes and RD32 keeps the RD12 column count', 
     return top + 40;
   });
 
+  await page.evaluate(() => window.__blockcraft!.setSetting!('lod', true));
   await setDistance(page, 16);
   await waitForLod(page, 16);
   const rd16 = await page.evaluate(() => {
@@ -145,9 +146,58 @@ test('RD16 reaches the fog without holes and RD32 keeps the RD12 column count', 
   const screenshot = await assertAndSaveScreenshot({ milestone: 'M22b', name: 'm22-lod-horizon' });
   assertNotBlank(screenshot);
   assertNoMissingTexture(screenshot);
-  fs.mkdirSync('docs/screenshots/M22b', { recursive: true });
-  fs.copyFileSync(
-    'artifacts/M22b/m22-lod-horizon.png',
-    'docs/screenshots/M22b/m22-lod-horizon.png',
+  await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.setSetting!('fov', 56);
+    api.look!(Math.PI / 2, -Math.PI / 8);
+  });
+  await assertAndSaveScreenshot({ milestone: 'M22b', name: 'm22-lod-seam' });
+  await page.evaluate(() => {
+    const api = window.__blockcraft!;
+    api.look!(Math.PI / 2, 1.55);
+    api.setSetting!('lod', false);
+    api.setSetting!('fov', 70);
+  });
+  expect(await page.evaluate(() => window.__blockcraft!.getStreamingStats!().renderDistance)).toBe(
+    32,
   );
+  await waitForStreamingIdle(page, 600_000);
+  await page.evaluate(() => window.__blockcraft!.look!(Math.PI / 2, -Math.PI / 18));
+  assertNotBlank(await assertAndSaveScreenshot({ milestone: 'M22b', name: 'm22-lod-off' }));
+  fs.mkdirSync('docs/screenshots/M22b', { recursive: true });
+  for (const name of ['m22-lod-horizon', 'm22-lod-off', 'm22-lod-seam']) {
+    fs.copyFileSync('artifacts/M22b/' + name + '.png', 'docs/screenshots/M22b/' + name + '.png');
+  }
+});
+
+test('LOD defaults off at RD16 and restores full detail live', async ({ page }) => {
+  test.setTimeout(360_000);
+  await page.evaluate(async () => {
+    const api = window.__blockcraft!;
+    await api.createWorld!({
+      name: 'm22b-disabled',
+      seed: 'flat',
+      mode: 'creative',
+      type: 'flat',
+      spawning: false,
+    });
+    api.pause!();
+    api.look!(0, 1.55);
+    api.setRenderDistance!(16);
+  });
+  await waitForStreamingIdle(page, 240_000);
+  const snapshot = () =>
+    page.evaluate(() => {
+      const api = window.__blockcraft!;
+      return { lod: api.getLodStats!(), full: api.getRenderStats().chunksLoaded };
+    });
+  const disabled = { tiles: 0, pendingJobs: 0, drawSubmissions: 0, fullDetailRadius: 16 };
+  const initial = await snapshot();
+  console.log('M22b RD16 disabled', JSON.stringify(initial));
+  expect(initial).toMatchObject({ lod: disabled, full: 35 ** 2 });
+  await page.evaluate(() => window.__blockcraft!.setSetting!('lod', true));
+  await waitForLod(page, 16);
+  expect((await snapshot()).lod.tiles).toBeGreaterThan(0);
+  await page.evaluate(() => window.__blockcraft!.setSetting!('lod', false));
+  expect(await snapshot()).toMatchObject({ lod: disabled });
 });
