@@ -1,0 +1,14 @@
+# M22b — LOD and loading screen
+
+- Local Overworlds use LOD when render distance exceeds 12. The streaming plan uses 12 as its base for the mesh, generation and retention rings. Generation retains the one-column neighbour perimeter required for meshing and the existing retention hysteresis. The LOD range uses Chebyshev distance to the camera column. The fog still uses `(RD - 1) * 16` blocks.
+- A two-worker queue builds 64×64 tiles on an absolute four-block lattice using `sampleTerrainTopY` and `sampleBiome`. Amplified and Single Biome use the existing terrain variant. Superflat uses its existing grass plane. As the camera crosses a column boundary, the planner discards out-of-range queued tiles and ignores late tile results. Tiles still in range keep their GPU slots.
+- Ground colours come from the top texture of each biome’s surface material, including snow above the biome snowline. Grass uses the biome grass tint, and water takes its colour from the existing atlas water tile. All averages are computed at startup.
+- Tiles use one shared vertex buffer with fixed slots and frustum culling. The shader uses a packed RGB colour and a face shade with the terrain’s sky brightness and atmosphere. LOD draws after opaque terrain. The renderer submits visible tiles in one `WEBGL_multi_draw` call when available and uses individual draws otherwise. Draw counts include every represented tile and the GL submission counter records the actual calls. Tile uploads use the existing terrain upload deadline and contribute to `uploadMs`.
+- The terrain draw list marks completed full-detail columns in a 25-row bit mask as they are drawn. It retains the marks until a mesh unloads or its column leaves full-detail range. Each LOD triangle carries its owner column, so the shader clips the complete column as soon as its opaque/cutout/translucent geometry is accepted for the frame. A ready LOD tile covers incomplete full-detail columns. When drawing the two representations together, the full-detail handoff is immediate to keep a faded column from opening holes. Skirts close tile edges and column edges next to drawn detail or the outer LOD boundary. LOD neighbours share the same absolute sample positions. The mask changes without rebuilding tile meshes.
+- Create World and Load World show the shared pixel-art panel from the start of the operation through the existing terrain barrier. The ready-column count keeps its high-water mark. The overlay closes before the promise resolves.
+- Cave visibility includes camera FOV and aspect ratio in its recompute key.
+
+## Known limitations
+
+- Hollowdeep and multiplayer use the existing full-detail streaming policy. Multiplayer join keeps its existing flow.
+- Heightmap tiles omit trees, structures, cave openings and player edits. Four-block sampling approximates coastlines and biome edges.

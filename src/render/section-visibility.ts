@@ -36,6 +36,8 @@ export class SectionVisibility {
   private frustumCount = 0;
   private yawBucket = 0x7fffffff;
   private pitchBucket = 0x7fffffff;
+  private fov = 0;
+  private aspect = 0;
   private valid = false;
 
   meshChanged(): void {
@@ -110,6 +112,8 @@ export class SectionVisibility {
     maxMeshY = HEIGHT - 1,
     yawBucket = 0,
     pitchBucket = 0,
+    fov = 0,
+    aspect = 0,
   ): void {
     const cx = Math.floor(camera[0]! / 16);
     const cy = Math.floor(camera[1]! / 16);
@@ -126,7 +130,9 @@ export class SectionVisibility {
       this.minY !== minY ||
       this.maxY !== maxY ||
       this.yawBucket !== yawBucket ||
-      this.pitchBucket !== pitchBucket;
+      this.pitchBucket !== pitchBucket ||
+      this.fov !== fov ||
+      this.aspect !== aspect;
     if (!viewChanged && this.computedVersion === this.version) return;
     this.cx = cx;
     this.cy = cy;
@@ -137,6 +143,8 @@ export class SectionVisibility {
     this.maxY = maxY;
     this.yawBucket = yawBucket;
     this.pitchBucket = pitchBucket;
+    this.fov = fov;
+    this.aspect = aspect;
     this.computedVersion = this.version;
     this.valid = cy >= 0 && cy < HEIGHT;
     if (!this.valid) return;

@@ -1,4 +1,6 @@
 export interface BlockCraftDebugAPI {
+  getLodStats?: () => ReturnType<import('../../game/world-manager').WorldManager['getLodStats']>;
+  setLod?: (enabled: boolean) => void;
   setCulling?: (options: { cave?: boolean; frustum?: boolean }) => void;
   ready(): Promise<void>;
   getNetStats?: () => {

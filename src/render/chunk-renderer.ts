@@ -1,3 +1,5 @@
+import type { LodRenderer, LodAtmosphere } from './lod-renderer';
+import { chebyshev, FULL_DETAIL_RADIUS } from '../world/streaming-plan';
 import { fluidAnimation, windAnimation } from './fluid-animation';
 import { FluidDepth } from './fluid-depth';
 import {
@@ -473,6 +475,9 @@ export class ChunkRenderer {
   private rainFactor = 0;
   private lightningFlash = 0;
   private readonly dimensionFog = new Float32Array(4);
+  private cameraFov = 0;
+  private cameraAspect = 0;
+  private lodAtmosphere: (LodAtmosphere & { lod?: LodRenderer }) | undefined;
   private skyBrightness = 1;
   private debugLight = false;
   private cameraPos: [number, number, number] = [0, 0, 0];
@@ -668,9 +673,12 @@ export class ChunkRenderer {
   }
 
   public setAtmosphere(params: {
+    lod?: LodRenderer;
     cameraPos: ArrayLike<number>;
     cameraYaw?: number;
     cameraPitch?: number;
+    cameraFov?: number;
+    cameraAspect?: number;
     renderDistance?: number;
     fogStart: number;
     fogEnd: number;
@@ -689,6 +697,9 @@ export class ChunkRenderer {
     this.cameraPos[2] = params.cameraPos[2] ?? 0;
     this.cameraYaw = params.cameraYaw ?? 0;
     this.cameraPitch = params.cameraPitch ?? 0;
+    this.cameraFov = params.cameraFov ?? 0;
+    this.cameraAspect = params.cameraAspect ?? 0;
+    this.lodAtmosphere = params;
     this.renderDistance = params.renderDistance ?? this.renderDistance;
     this.fogStart = params.fogStart;
     this.fogEnd = params.fogEnd;
@@ -1583,6 +1594,7 @@ export class ChunkRenderer {
     drawPlayer?: () => number,
   ): void {
     const gl = this.glWrapper.gl;
+    const lod = this.lodAtmosphere?.lod;
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
@@ -1610,12 +1622,14 @@ export class ChunkRenderer {
       this.visibilityMasks.prepare(
         this.cameraPos,
         planes,
-        this.renderDistance,
+        lod ? FULL_DETAIL_RADIUS : this.renderDistance,
         cullingSettings.frustum,
         minMeshY,
         maxMeshY,
         Math.round(this.cameraYaw * 20),
         Math.round(this.cameraPitch * 20),
+        this.cameraFov,
+        this.cameraAspect,
       );
     }
     renderPhaseStats.end('caveFrustumMs', visibilityStart);
@@ -1629,11 +1643,17 @@ export class ChunkRenderer {
     const columns = this.visColumns;
     const nowMs = performance.now();
     let columnCount = 0;
+    const cameraCx = Math.floor(this.cameraPos[0]! / 16);
+    const cameraCz = Math.floor(this.cameraPos[2]! / 16);
+    lod?.mask.moveTo(cameraCx, cameraCz);
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     for (let column = 0; column < this.columnLists.length; column++) {
       const list = this.columnLists[column]!;
       const first = list[0]!;
+      if (lod && chebyshev(first.sx, first.sz, cameraCx, cameraCz) > FULL_DETAIL_RADIUS) continue;
       if (cullingSettings.frustum && !columnInFrustum(planes, first.sx, first.sz)) continue;
+      const fullMesh = lod?.hasFullMesh(first.sx, first.sz);
+      if (lod && !fullMesh && lod.covers(first.sx, first.sz)) continue;
       const visible = columns[columnCount]!;
       visible.length = 0;
       for (let i = 0; i < list.length; i++) {
@@ -1660,7 +1680,8 @@ export class ChunkRenderer {
       const pair = this.tintCache.getColumnTints(first.sx, first.sz, world);
       this.visGrass[columnCount] = pair.grassTexture;
       this.visFoliage[columnCount] = pair.foliageTexture;
-      this.visFade[columnCount] = this.fades.amount(first.sx, first.sz, nowMs);
+      this.visFade[columnCount] = lod ? 1 : this.fades.amount(first.sx, first.sz, nowMs);
+      if (fullMesh) lod?.mask.markDrawn(first.sx, first.sz);
       columnCount++;
     }
     for (let i = columnCount; i < this.visColumnCount; i++) {
@@ -1689,6 +1710,11 @@ export class ChunkRenderer {
     const opaquePassStart = renderPhaseStats.start();
     this.drawLightingPass(0, viewProjMatrix, atlas);
     renderPhaseStats.end('opaquePassMs', opaquePassStart);
+
+    const lodDraws =
+      lod && this.lodAtmosphere
+        ? lod.draw(viewProjMatrix, planes, this.skyBrightness, this.lodAtmosphere)
+        : 0;
 
     // 2. Cutout Pass
     const cutoutPassStart = renderPhaseStats.start();
@@ -1722,8 +1748,8 @@ export class ChunkRenderer {
     this.drawTranslucent(viewProjMatrix, atlas);
     renderPhaseStats.end('translucentPassMs', translucentPassStart);
 
-    let drawCalls = this.passDraws + playerDraws;
-    const triangles = this.passTriangles + playerDraws * 12;
+    let drawCalls = this.passDraws + playerDraws + lodDraws;
+    const triangles = this.passTriangles + playerDraws * 12 + (lod?.submittedTriangles ?? 0);
 
     // Restore depth write
     gl.depthMask(true);
