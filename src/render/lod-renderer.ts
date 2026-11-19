@@ -39,7 +39,7 @@ interface GpuInit {
   linked: boolean;
   texture?: WebGLTexture;
   uploadBuffers: UploadBuffer[];
-  frameFence: WebGLSync | null;
+  linkFence: WebGLSync | null;
 }
 
 const DATA_UNIT = 6;
@@ -163,7 +163,7 @@ export class LodRenderer {
       if (gpu.program) this.wrapper.deleteProgram(gpu.program);
     }
     if (this.gpu) this.wrapper.deleteVertexArray(this.gpu.vao);
-    if (this.gpuInit?.frameFence) this.wrapper.gl.deleteSync(this.gpuInit.frameFence);
+    if (this.gpuInit?.linkFence) this.wrapper.gl.deleteSync(this.gpuInit.linkFence);
     if (this.gpuInit?.vertex) this.wrapper.deleteShader(this.gpuInit.vertex);
     if (this.gpuInit?.fragment) this.wrapper.deleteShader(this.gpuInit.fragment);
     this.uploadBufferIndex = 0;
@@ -295,31 +295,8 @@ export class LodRenderer {
     });
   }
 
-  private needsIdleGpu(init: GpuInit): boolean {
-    return !init.linked || init.uploadBuffers.length === UPLOAD_BUFFER_COUNT;
-  }
-
-  /** Wait for the outstanding draw and shader commands before querying the driver. */
-  finishUploadFrame(remainingMs: number): number {
-    const init = this.gpuInit;
-    if (!init || !this.needsIdleGpu(init) || init.frameFence || remainingMs <= 0.25) return 0;
-    const start = performance.now();
-    const { gl } = this.wrapper;
-    init.frameFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    gl.flush();
-    return performance.now() - start;
-  }
-
   private advanceGpuInit(init: GpuInit, deadline: number): void {
     const { gl } = this.wrapper;
-    if (this.needsIdleGpu(init)) {
-      if (!init.frameFence) return;
-      const status = gl.clientWaitSync(init.frameFence, 0, 0);
-      if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return;
-      gl.deleteSync(init.frameFence);
-      init.frameFence = null;
-      if (performance.now() + INIT_HEADROOM_MS >= deadline) return;
-    }
     if (this.parallelCompile === undefined) {
       this.parallelCompile = gl.getExtension('KHR_parallel_shader_compile');
       return;
@@ -331,24 +308,8 @@ export class LodRenderer {
         init.fragment = this.wrapper.createShader(gl.FRAGMENT_SHADER, FS_LOD, false);
       } else {
         init.program = this.wrapper.linkProgram(init.vertex, init.fragment);
+        init.linkFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
       }
-      return;
-    }
-
-    if (!init.linked) {
-      if (
-        this.parallelCompile &&
-        !gl.getProgramParameter(init.program, this.parallelCompile.COMPLETION_STATUS_KHR)
-      )
-        return;
-      this.wrapper.checkProgramLink(init.program);
-      gl.detachShader(init.program, init.vertex!);
-      gl.detachShader(init.program, init.fragment!);
-      this.wrapper.deleteShader(init.vertex!);
-      this.wrapper.deleteShader(init.fragment!);
-      init.vertex = undefined;
-      init.fragment = undefined;
-      init.linked = true;
       return;
     }
 
@@ -369,6 +330,32 @@ export class LodRenderer {
       gl.bufferData(gl.PIXEL_UNPACK_BUFFER, UPLOAD_BUFFER_BYTES, gl.STREAM_DRAW);
       gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
       init.uploadBuffers.push({ buffer, fence: null });
+      return;
+    }
+
+    if (!init.linked) {
+      // Buffer allocation can advance while the link is in flight. Avoid a
+      // blocking status query until the driver's queued link has run.
+      if (init.linkFence) {
+        const status = gl.clientWaitSync(init.linkFence, gl.SYNC_FLUSH_COMMANDS_BIT, 0);
+        if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) return;
+        gl.deleteSync(init.linkFence);
+        init.linkFence = null;
+      }
+      if (performance.now() + INIT_HEADROOM_MS >= deadline) return;
+      if (
+        this.parallelCompile &&
+        !gl.getProgramParameter(init.program, this.parallelCompile.COMPLETION_STATUS_KHR)
+      )
+        return;
+      this.wrapper.checkProgramLink(init.program);
+      gl.detachShader(init.program, init.vertex!);
+      gl.detachShader(init.program, init.fragment!);
+      this.wrapper.deleteShader(init.vertex!);
+      this.wrapper.deleteShader(init.fragment!);
+      init.vertex = undefined;
+      init.fragment = undefined;
+      init.linked = true;
       return;
     }
 
@@ -414,7 +401,7 @@ export class LodRenderer {
   upload(deadline: number): void {
     if (!this.rd || this.planTimer !== undefined) return;
     if (!this.gpu) {
-      const init = (this.gpuInit ??= { linked: false, uploadBuffers: [], frameFence: null });
+      const init = (this.gpuInit ??= { linked: false, uploadBuffers: [], linkFence: null });
       if (performance.now() + INIT_HEADROOM_MS < deadline) this.advanceGpuInit(init, deadline);
       return;
     }
