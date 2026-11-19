@@ -52,7 +52,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M22b (latest: M22a #
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota).
 
 Remaining SPEC tasks: M22b, M22c, M22d (all ready, parallel); M23 last (+ M23-fix-N).
-In flight (2026-11-19 ~17:45Z): M22c PR #90 merged master + integrated LOD/bloom + Video layout (6d2880f; docs head 6c3d96b, CI 44572583177 green). Round-2 review sent by me to session_0155bUSBWbBDaj5Z9gqbeQrW. (A stalled Codex thread was replaced by a new one; it pushed nothing.) M22d ready.
+In flight (2026-11-19 ~17:45Z): M22c PR #90 merged master + integrated LOD/bloom + Video layout (6d2880f; docs head 6c3d96b, CI 44572583177 green). Round-2 review PASS (2026-11-19 20:08Z): CI totals verified, allocs fixed, LOD draws use drawBuf1, Video tab = 9 rows + 3x2 toggle grid (Smooth lighting/Particles/View bobbing moved into grid), no m18 test edits. Ready for owner merge. (A stalled Codex thread was replaced by a new one; it pushed nothing.) M22d ready.
 M22b prompt decisions: LOD only overworld + single-player + RD>12; full-detail radius const 12 (plan mesh/gen/keep use min(RD,12)); LOD from sampleTerrainTopY+sampleBiome in workers (no full gen beyond 12), 4-block grid, water at sea level, biome colours = atlas average x tint; separate LodRenderer, 4x4-column tiles in one shared buffer with multi-draw, skirts, same fog; LOD hidden per column only once full mesh drawn; debug lod.ts; loading screen on SP create/load (MP join out of scope); FOV/aspect recompute-key fix included; arena/tint batching (A1/A2) explicitly out of scope; if RD16 drawCalls >1500 -> QUESTION, don't shrink radius; RD32+RD8 A/B required.
 M22b prompt must include (from #88 review): add camera FOV and aspect ratio to the cave-culling recompute key (src/render/section-visibility.ts:111-123); M22a rewrote World.getHeight (section walk), not in its handoff. M22b owns RD > 12 heightmap LOD + loading screen; SPEC criterion RD16 horizon + drawCalls <= 1500.
 Perf investigation (owner, 2026-11-17): RTX 5060, RD32 feels laggy with GPU ~50% and low VRAM -> main-thread bound; no LOD beyond RD12 until M22b. Owner will run an Antigravity /swarm read-only investigation AFTER M22b merges (prompt drafted 2026-11-17: 4 investigators frame/streaming/tick-scaling/memory + verifier; read-only, no git; file:line + measurements; I verify findings before turning them into tasks). Suspect to check: game-tick work scaling with loaded area (no separate simulation distance found; ticks.ts random-tick hook exists but has no caller).
@@ -106,7 +106,6 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (newest first)
-- 2026-11-16: #88 M22a CI red: m01a-fix x2, m03g x2 (arena broke debug readback), budget frame CPU > 8. Told owner yes, sent Codex fix message.
 - 2026-11-15: #87 M21b-fix merged (2f87382). Owner: M22a next (Codex), with m21c-world no-retry as extra goal; if still flaky after culling, investigate separately. Gave M22a prompt.
 - 2026-11-15: #87 round 2: both code findings fixed; reviewer's only blocking = handoff cites run 43688521527 (source commit 5d5680b) not head docs commit c48e28d run 43691062113. I overruled: a docs commit can't cite its own run; numbers match the source run; head run green. Told owner to merge. m21c-world first-attempt flake again on 5d5680b (now ~3 of last 7 runs) -> raised to owner.
 - 2026-11-15: #87 fixes 5d5680b + docs c48e28d (owner: CI green). setCapture(false) now only on close paths (checked). Sent round 2 to reviewer session_0155bUSAxWNf9YzFRTncPKiv myself.
@@ -126,3 +125,4 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-19: #89 and #90 reviews: both CHANGES NEEDED (small). Gave both fix prompts with conditional merge-integration step.
 - 2026-11-19: #89 round-2 review PASS. Told owner to merge #89 after head CI finishes; #90 then does the integration.
 - 2026-11-19: Owner merged #89 (M22b) -> master 964719c. #90 red only m02:54 on docs commit; gave #90 merge/integration prompt.
+- 2026-11-19: #90 round-2 review PASS; ready for owner merge. Then only M22d left in M22, then M23.
