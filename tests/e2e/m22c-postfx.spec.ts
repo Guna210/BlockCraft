@@ -486,4 +486,74 @@ test.describe('M22c post-processing', () => {
       path.join(reviewDir, 'm22-godrays.png'),
     );
   });
+
+  test('LOD at RD16 with bloom on does not brighten distant LOD terrain and emits zero GL errors', async ({
+    page,
+  }) => {
+    test.setTimeout(600_000);
+    await page.evaluate(async () => {
+      const a = window.__blockcraft!;
+      a.setRenderDistance!(12);
+      await a.createWorld!({
+        name: 'm22c-lod-bloom',
+        seed: 'blockcraft-test-seed-42',
+        mode: 'creative',
+        type: 'default',
+        spawning: false,
+      });
+      a.pause!();
+      a.setTimeOfDay!(6000);
+      a.setWeather!('clear');
+      a.setClouds!('off');
+      a.setFluidAnimationPaused!(true);
+    });
+    await waitForStreamingIdle(page, 240_000);
+    await page.evaluate(() => {
+      const a = window.__blockcraft!;
+      const [x, y, z] = a.getPlayer!().pos;
+      const eyeOffset = a.getRenderStats().cameraPosition[1] - y;
+      let top = 0;
+      for (let dx = -144; dx <= 144; dx += 8) {
+        for (let dz = -144; dz <= 144; dz += 8) top = Math.max(top, a.getHeight!(x + dx, z + dz));
+      }
+      a.teleport!(x, top + 40 - eyeOffset, z, 0, -Math.PI / 10);
+      a.setSetting!('lod', true);
+      a.setRenderDistance!(16);
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.__blockcraft!.getLodStats!().coverageRadius), {
+        timeout: 240_000,
+      })
+      .toBe(16);
+    await waitSettledFrames(page, 3);
+
+    const lodStats = await page.evaluate(() => window.__blockcraft!.getLodStats!());
+    expect(lodStats.visibleTiles).toBeGreaterThan(0);
+
+    const lodBloomOff = PNG.sync.read(await page.screenshot());
+    assertNotBlank(lodBloomOff);
+    assertNoMissingTexture(lodBloomOff);
+
+    await page.evaluate(() => window.__blockcraft!.setSetting!('bloom', true));
+    await waitSettledFrames(page, 3);
+
+    const postFxStats = await page.evaluate(() => window.__blockcraft!.getPostFx!());
+    expect(postFxStats.enabled).toBe(true);
+    expect(postFxStats.passes).toEqual(['bloom']);
+
+    const lodBloomOn = PNG.sync.read(await page.screenshot());
+    assertNotBlank(lodBloomOn);
+    assertNoMissingTexture(lodBloomOn);
+
+    // Distant LOD terrain band (between upper sky and near foreground) must not brighten under bloom.
+    const distantDiff = regionMeanDiff(
+      lodBloomOff,
+      lodBloomOn,
+      Math.floor(lodBloomOff.width * 0.15),
+      Math.floor(lodBloomOff.height * 0.2),
+      Math.floor(lodBloomOff.width * 0.85),
+      Math.floor(lodBloomOff.height * 0.55),
+    );
+    expect(distantDiff).toBeLessThan(0.005);
+  });
 });

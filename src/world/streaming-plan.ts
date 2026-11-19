@@ -11,6 +11,11 @@ import { columnInFrustum } from './frustum';
 export const MIN_RENDER_DISTANCE = 2;
 export const MAX_RENDER_DISTANCE = 32;
 export const DEFAULT_RENDER_DISTANCE = 8;
+export const FULL_DETAIL_RADIUS = 12;
+
+export function fullDetailRadius(rd: number, lod: boolean): number {
+  return lod ? Math.min(rd, FULL_DETAIL_RADIUS) : rd;
+}
 
 /** Clamps a requested render distance to a whole number in [2, 32]; NaN gives the default. */
 export function clampRenderDistance(n: number): number {
@@ -33,7 +38,8 @@ export interface StreamRings {
   keepData: number;
 }
 
-export function streamRings(rd: number): StreamRings {
+export function streamRings(distance: number, lod = false): StreamRings {
+  const rd = fullDetailRadius(distance, lod);
   return { mesh: rd, gen: rd + 1, keepMesh: rd + 1, keepData: rd + 2 };
 }
 

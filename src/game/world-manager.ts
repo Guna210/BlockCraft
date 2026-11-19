@@ -8,7 +8,10 @@ import type { PlayerController } from '../engine/player-controller';
 import { LightStorage, SKY_15_SECTION } from '../world/lighting';
 import { collectLightPadding } from '../world/light-padding';
 import type { ColumnLight, LightRect } from '../world/batch-light';
-import { columnKey } from '../world/streaming-plan';
+import { columnKey, fullDetailRadius, FULL_DETAIL_RADIUS } from '../world/streaming-plan';
+import { LodRenderer } from '../render/lod-renderer';
+import { buildLodMaterials } from '../render/lod-colors';
+import { LoadingScreen } from '../ui/loading-screen';
 import { vec3, mat4 } from 'gl-matrix';
 import { World } from '../world/world';
 import { setWorldInstance } from '../world/world-instance';
@@ -161,6 +164,8 @@ export interface WorldStartOptions {
   /** Natural creature spawning; default on. */
   spawning?: boolean;
 }
+
+const INITIAL_MESH_RADIUS = 4;
 
 /** Main-thread time per frame that may be spent uploading meshes. */
 const UPLOAD_BUDGET_MS = 3;
@@ -389,6 +394,9 @@ export class WorldManager {
   // milliseconds of main-thread time under software rendering, and the rendering task outranks the
   // worker message tasks that carry the generation, light and mesh results (decisions/M02c-fix-load-path.md).
   private initialLoadCount = 0;
+  private loadingScreen?: LoadingScreen;
+  private lodRenderer?: LodRenderer;
+  private lodVariant: TerrainVariant = { type: 'default' };
   public terrainFrames = 0;
   private editSerial = 0;
   private readonly editMeshes: Array<{ result: MeshResult; serial: number; primary: boolean }> = [];
@@ -644,7 +652,8 @@ export class WorldManager {
     this.worldOptions =
       type === 'single_biome' ? { ...options, biome: options.biome ?? 'plains' } : { ...options };
     if (type !== 'single_biome') delete this.worldOptions.biome;
-    setTerrainVariant(this.terrainVariant);
+    this.lodVariant = this.terrainVariant;
+    setTerrainVariant(this.lodVariant);
     this.pipeline = createDefaultPipeline(
       this.worldOptions.structures ? STRUCTURE_REGISTRATIONS : [],
     );
@@ -728,7 +737,9 @@ export class WorldManager {
       },
       endMeshAttempt: (cx, cz) => {
         const uploaded = this.meshAttempts.end(`${cx},${cz}`);
-        return this.chunkRenderer?.removeColumnMeshesExcept(cx, cz, uploaded) ?? false;
+        const hasMesh = this.chunkRenderer?.removeColumnMeshesExcept(cx, cz, uploaded) ?? false;
+        if (!hasMesh) this.lodRenderer?.mask.forget(cx, cz);
+        return hasMesh;
       },
       abandonMeshAttempt: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
@@ -737,10 +748,13 @@ export class WorldManager {
       freeMesh: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
         this.chunkRenderer?.removeColumnMeshes(cx, cz);
+        this.lodRenderer?.mask.forget(cx, cz);
       },
       freeMeshStep: (cx, cz) => {
         this.meshAttempts.abandon(`${cx},${cz}`);
-        return this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
+        const done = this.chunkRenderer?.removeColumnMeshStep(cx, cz) ?? true;
+        if (done) this.lodRenderer?.mask.forget(cx, cz);
+        return done;
       },
       freeData: (cx, cz) => {
         this.sectionGenerationTimes.delete(columnKey(cx, cz));
@@ -956,7 +970,56 @@ export class WorldManager {
       this.panoramaSavedRenderDistance = clampRenderDistance(n);
       return this.panoramaSavedRenderDistance;
     }
-    return this.streamer.setRenderDistance(clampRenderDistance(n));
+    const distance = clampRenderDistance(n);
+    this.configureLod(distance);
+    return this.streamer.setRenderDistance(distance);
+  }
+
+  private configureLod(distance: number): boolean {
+    const enabled =
+      settings.lod &&
+      distance > FULL_DETAIL_RADIUS &&
+      !!this.world &&
+      this.streamer.active &&
+      !this.panorama &&
+      !this.remoteColumnSource &&
+      this.dimension === 'overworld';
+    if (!enabled && this.streamer.lodEnabled) this.resetLod();
+    if (enabled && !this.lodRenderer && this.glWrapper && this.atlas) {
+      this.lodRenderer = new LodRenderer(
+        this.glWrapper,
+        buildLodMaterials(this.atlas, BlockRegistry.getInstance()),
+        (cx, cz) => this.streamer.canSimulate(cx, cz),
+      );
+    }
+    this.streamer.lodEnabled = enabled;
+    return enabled;
+  }
+
+  public refreshLodSetting(): void {
+    if (!this.panorama) this.setRenderDistance(this.renderDistance);
+  }
+
+  public getLodStats() {
+    const radius = fullDetailRadius(this.renderDistance, this.streamer.lodEnabled);
+    return (
+      this.lodRenderer?.stats(radius) ?? {
+        tiles: 0,
+        visibleTiles: 0,
+        drawSubmissions: 0,
+        pendingJobs: 0,
+        coverageRadius: 0,
+        fullDetailRadius: radius,
+        samplingMsPerTile: [0, 0, 0],
+        planMs: 0,
+      }
+    );
+  }
+
+  private resetLod(): void {
+    this.lodRenderer?.reset();
+    this.lodRenderer = undefined;
+    this.streamer.lodEnabled = false;
   }
 
   /**
@@ -1004,6 +1067,7 @@ export class WorldManager {
     const meshesBefore = this.chunkRenderer?.sectionMeshCount ?? 0;
     this.worldEpoch++;
     this.resetSectionWorkStats();
+    this.resetLod();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -1048,6 +1112,7 @@ export class WorldManager {
     this.remoteColumnSource = null;
     this.worldEpoch++;
     this.resetSectionWorkStats();
+    this.resetLod();
     this.streamer.reset();
     this.streamer.active = false;
     this.genWorkerPool.cancelAll();
@@ -1157,6 +1222,7 @@ export class WorldManager {
     setWorldInstance(this.world);
     this.mainThreadGenCount = 0;
     // Tests build this world by hand (generateColumnMainThread): nothing streams into it.
+    this.resetLod();
     this.streamer.reset();
     this.streamer.active = false;
   }
@@ -1215,6 +1281,7 @@ export class WorldManager {
   public initGL(glWrapper: GLWrapper, camera: Camera): void {
     this.glWrapper = glWrapper;
     this.camera = camera;
+    this.loadingScreen ??= new LoadingScreen();
 
     // 1. Build Atlas & Sentinel
     const tiles = new Map<string, TextureData>();
@@ -1304,6 +1371,7 @@ export class WorldManager {
     this.movingBlockRenderer?.dispose();
     this.movingBlockRenderer = new MovingBlockRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
+    this.resetLod();
     this.weatherRenderer = new WeatherRenderer(this.glWrapper);
     this.postProcessor?.dispose();
     this.postProcessor = null;
@@ -1321,10 +1389,26 @@ export class WorldManager {
   }
 
   public async createWorld(opts?: WorldStartOptions): Promise<void> {
-    this.leaveMenu();
-    // Leaving a world saves it first (the old world is gone once the new one starts loading).
-    await this.exitWorld();
-    await this.startWorld(opts);
+    await this.withLoadingScreen(async (progress) => {
+      this.leaveMenu();
+      // Leaving a world saves it first (the old world is gone once the new one starts loading).
+      await this.exitWorld();
+      await this.startWorld(opts, undefined, progress);
+    });
+  }
+
+  private async withLoadingScreen(
+    load: (progress: (ready: number) => void) => Promise<void>,
+  ): Promise<void> {
+    const screen = (this.loadingScreen ??= new LoadingScreen());
+    const required = (2 * INITIAL_MESH_RADIUS + 1) ** 2;
+    const session = screen.show(required);
+    try {
+      await load((ready) => screen.update(session, ready));
+      screen.update(session, required);
+    } finally {
+      screen.hide(session);
+    }
   }
 
   /** Enables or disables natural spawning in the active world. */
@@ -1340,40 +1424,43 @@ export class WorldManager {
    * the seed.
    */
   public async loadWorld(name: string): Promise<void> {
-    this.leaveMenu();
-    await this.exitWorld();
-    const loaded = await this.saves.load(name, (record) => {
-      if (!record) return 'overworld';
-      try {
-        const dimension = readPlayerData(record).dimension;
-        return isDimensionId(dimension) ? dimension : 'overworld';
-      } catch {
-        // The damaged player record is reported below; its world opens in the Overworld.
-        return 'overworld';
-      }
-    });
-    let player: ReturnType<typeof readPlayerData> | undefined;
-    try {
-      player = loaded.player ? readPlayerData(loaded.player) : undefined;
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new Error(`The saved player of world '${name}' is damaged: ${reason}`, {
-        cause: error,
+    await this.withLoadingScreen(async (progress) => {
+      this.leaveMenu();
+      await this.exitWorld();
+      const loaded = await this.saves.load(name, (record) => {
+        if (!record) return 'overworld';
+        try {
+          const dimension = readPlayerData(record).dimension;
+          return isDimensionId(dimension) ? dimension : 'overworld';
+        } catch {
+          // The damaged player record is reported below; its world opens in the Overworld.
+          return 'overworld';
+        }
       });
-    }
-    const options = normalizeWorldOptions(loaded.record.options);
-    await this.startWorld(
-      {
-        name,
-        seed: loaded.record.seedString,
-        type: loaded.record.worldType,
-        mode: player?.mode ?? 'survival',
-        structures: options.structures,
-        startingChest: options.startingChest,
-        ...(options.biome ? { biome: options.biome } : {}),
-      },
-      loaded,
-    );
+      let player: ReturnType<typeof readPlayerData> | undefined;
+      try {
+        player = loaded.player ? readPlayerData(loaded.player) : undefined;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`The saved player of world '${name}' is damaged: ${reason}`, {
+          cause: error,
+        });
+      }
+      const options = normalizeWorldOptions(loaded.record.options);
+      await this.startWorld(
+        {
+          name,
+          seed: loaded.record.seedString,
+          type: loaded.record.worldType,
+          mode: player?.mode ?? 'survival',
+          structures: options.structures,
+          startingChest: options.startingChest,
+          ...(options.biome ? { biome: options.biome } : {}),
+        },
+        loaded,
+        progress,
+      );
+    });
   }
 
   /** Saves the open world, if it is a named one, and lets go of it. A failed save is logged, not fatal. */
@@ -1394,12 +1481,16 @@ export class WorldManager {
     await this.saves.save('manual');
   }
 
-  private async startWorld(opts?: WorldStartOptions, restore?: LoadedWorld): Promise<void> {
+  private async startWorld(
+    opts?: WorldStartOptions,
+    restore?: LoadedWorld,
+    progress?: (ready: number) => void,
+  ): Promise<void> {
     this.initialLoadCount++;
     // The streamer loads only what the barrier below pins until the barrier is done.
     this.streamer.backgroundEnabled = false;
     try {
-      const completed = await this.loadInitialWorld(opts, restore);
+      const completed = await this.loadInitialWorld(opts, restore, progress);
       // The frame loop skipped terrain while loading. Draw the first frame with terrain now, in
       // this task, so it is presented before anything that awaits createWorld can look at the canvas.
       // A superseded call draws nothing: the newer call draws for its own world.
@@ -1413,9 +1504,10 @@ export class WorldManager {
   private async loadInitialWorld(
     opts?: WorldStartOptions,
     restore?: LoadedWorld,
+    progress?: (ready: number) => void,
   ): Promise<boolean> {
     this.spawning = opts?.spawning ?? true;
-    const radiusChunks = 4;
+    const radiusChunks = INITIAL_MESH_RADIUS;
     // One more ring of columns is generated and lit than is meshed, so that every meshed section
     // has real neighbour columns (decisions/M03g-mesh-perimeter.md).
     const loadRadius = radiusChunks + PERIMETER_RING;
@@ -1489,6 +1581,7 @@ export class WorldManager {
       if (this.playerController)
         this.playerController.loop.onPause = () => this.saves.saveSoon('pause');
     }
+    this.resetLod();
     this.streamer.reset(centerCX, centerCZ);
     this.streamer.active = true;
     this.updateStreamerLimits();
@@ -1537,7 +1630,7 @@ export class WorldManager {
         this.playerController.onInteractionEdit = (x, y, z) => this.requestInteractionMesh(x, y, z);
       }
       this.setTimeOfDay(getWorldTime());
-      await this.waitForTerrain(radiusChunks);
+      await this.waitForTerrain(radiusChunks, progress);
       return epoch === this.worldEpoch;
     }
 
@@ -1605,7 +1698,7 @@ export class WorldManager {
     if (this.playerController)
       this.playerController.onInteractionEdit = (x, y, z) => this.requestInteractionMesh(x, y, z);
     // Mesh terrain within radius 4
-    await this.waitForTerrain(radiusChunks);
+    await this.waitForTerrain(radiusChunks, progress);
     return epoch === this.worldEpoch;
   }
 
@@ -1742,6 +1835,7 @@ export class WorldManager {
 
       epoch = ++this.worldEpoch;
       this.resetSectionWorkStats();
+      this.resetLod();
       this.streamer.reset();
       this.genWorkerPool.cancelAll();
       this.lightWorkerPool.cancelAll();
@@ -1858,7 +1952,10 @@ export class WorldManager {
    * through the streamer: its columns are pinned at top priority until this resolves, and columns the
    * streamer already holds are not generated again.
    */
-  public async waitForTerrain(radiusChunks: number): Promise<void> {
+  public async waitForTerrain(
+    radiusChunks: number,
+    onMeshProgress?: (ready: number) => void,
+  ): Promise<void> {
     if (!this.world || !this.chunkRenderer || !this.tables) return;
     // The camera may have been placed without frames running (spawn, a test holding the frame loop):
     // tell the streamer where it is before the region is pinned, or its frees would work from the
@@ -1866,11 +1963,13 @@ export class WorldManager {
     if (this.camera) this.streamer.moveTo(this.streamerView(this.camera));
     const cx = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const cz = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
+    const radius = fullDetailRadius(radiusChunks, this.configureLod(this.renderDistance));
     await this.streamer.requestRegion({
       cx,
       cz,
-      genRadius: radiusChunks + PERIMETER_RING,
-      meshRadius: radiusChunks,
+      genRadius: radius + PERIMETER_RING,
+      meshRadius: radius,
+      onMeshProgress,
     });
     const epoch = this.worldEpoch;
     while (
@@ -2056,15 +2155,26 @@ export class WorldManager {
     };
   }
 
+  get needsLodLinkDrain(): boolean {
+    return this.lodRenderer?.needsLinkDrain ?? false;
+  }
+
   /**
    * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
    * budget, then the draw; `lastUploadMs` is the upload time.
    */
-  public render(): boolean {
+  public render(drainLodLink = false): boolean {
     this.lastUploadMs = 0;
     const saveFrameStart = renderPhaseStats.start();
     this.saves.frame();
     renderPhaseStats.end('saveFrameMs', saveFrameStart);
+    if (drainLodLink) {
+      const uploadStart = performance.now();
+      this.lodRenderer?.upload(uploadStart + UPLOAD_BUDGET_MS, true);
+      this.lastUploadMs = performance.now() - uploadStart;
+      renderPhaseStats.add('uploadOverheadMs', this.lastUploadMs);
+      return false;
+    }
     if (this.initialLoadCount > 0) {
       // A dimension change shows only the warp while the other world loads.
       this.drawWarp();
@@ -2072,7 +2182,16 @@ export class WorldManager {
     }
     if (this.world && this.camera) {
       const streamerUpdateStart = renderPhaseStats.start();
-      this.streamer.update(this.streamerView(this.camera), performance.now());
+      const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
+      const view = this.streamerView(this.camera);
+      lod?.update(
+        Math.floor(view.x / 16),
+        Math.floor(view.z / 16),
+        this.renderDistance,
+        this.worldSeed,
+        this.lodVariant,
+      );
+      this.streamer.update(view, performance.now());
       renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
       const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
       const uploadStart = performance.now();
@@ -2117,6 +2236,10 @@ export class WorldManager {
         renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
       } finally {
         this.chunkRenderer?.endUploadBatch();
+        this.lastUploadMs = performance.now() - uploadStart;
+      }
+      if (lod) {
+        lod.upload(uploadStart + UPLOAD_BUDGET_MS);
         this.lastUploadMs = performance.now() - uploadStart;
       }
       const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
@@ -2217,9 +2340,12 @@ export class WorldManager {
       this.chunkRenderer.setSkyBrightness?.(skyBrightness);
       this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
+        lod: this.streamer.lodEnabled ? this.lodRenderer : undefined,
         cameraPos: this.camera.position,
         cameraYaw: this.camera.yaw,
         cameraPitch: this.camera.pitch,
+        cameraFov: this.camera.fov,
+        cameraAspect: this.camera.aspect,
         renderDistance: this.renderDistance,
         fogStart,
         fogEnd,

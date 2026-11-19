@@ -28,7 +28,7 @@ type RangeKey =
   | 'effectsVolume'
   | 'ambientVolume';
 type BoolKey =
-  'invertY' | 'smoothLighting' | 'particles' | 'fxaa' | 'bloom' | 'godRays' | 'viewBobbing';
+  'lod' | 'invertY' | 'smoothLighting' | 'particles' | 'fxaa' | 'bloom' | 'godRays' | 'viewBobbing';
 type EnumKey = 'leaves' | 'clouds' | 'guiScale';
 
 interface RangeRow {
@@ -97,11 +97,6 @@ const videoRows: SettingRow[] = [
     values: ['fancy', 'fast', 'off'],
     format: (v) => String(v).toUpperCase(),
   },
-  { kind: 'bool', key: 'smoothLighting', label: 'Smooth lighting' },
-  { kind: 'bool', key: 'particles', label: 'Particles' },
-  { kind: 'bool', key: 'fxaa', label: 'FXAA' },
-  { kind: 'bool', key: 'bloom', label: 'Bloom' },
-  { kind: 'bool', key: 'godRays', label: 'God rays' },
   {
     kind: 'enum',
     key: 'guiScale',
@@ -118,7 +113,16 @@ const videoRows: SettingRow[] = [
     step: 0.05,
     format: (v) => `${Math.round(v * 100)}%`,
   },
+  { kind: 'bool', key: 'lod', label: 'Distant terrain (LOD)' },
+];
+
+const videoToggleRows: BoolRow[] = [
+  { kind: 'bool', key: 'smoothLighting', label: 'Smooth lighting' },
+  { kind: 'bool', key: 'particles', label: 'Particles' },
   { kind: 'bool', key: 'viewBobbing', label: 'View bobbing' },
+  { kind: 'bool', key: 'fxaa', label: 'FXAA' },
+  { kind: 'bool', key: 'bloom', label: 'Bloom' },
+  { kind: 'bool', key: 'godRays', label: 'God rays' },
 ];
 
 const audioRows: SettingRow[] = [
@@ -457,8 +461,8 @@ export class SettingsScreen {
 
     if (this.tab === 'video' || this.tab === 'audio') {
       const rows = this.tab === 'video' ? videoRows : audioRows;
-      const rowHeight = this.tab === 'video' ? 11 : 24;
-      const controlHeight = this.tab === 'video' ? 10 : 11;
+      const rowHeight = this.tab === 'video' ? 12 : 24;
+      const controlHeight = 11;
       const startY = this.tab === 'video' ? 47 : 55;
       this.addSettingRows(rows, startY, rowHeight, controlHeight);
       rows.forEach((row, index) => {
@@ -481,6 +485,29 @@ export class SettingsScreen {
           drawButton(ctx, { x: 164, y, w: 144, h: controlHeight }, value, 1, false);
         }
       });
+      if (this.tab === 'video') {
+        const toggleStartY = startY + rows.length * rowHeight + 4;
+        const toggleRowHeight = 13;
+        const colWidth = 148;
+        videoToggleRows.forEach((row, index) => {
+          const col = index % 2;
+          const rowIndex = Math.floor(index / 2);
+          const x = col === 0 ? 8 : 160;
+          const y = toggleStartY + rowIndex * toggleRowHeight;
+          const value = settings[row.key] ? 'ON' : 'OFF';
+          drawButton(
+            ctx,
+            { x, y, w: colWidth, h: controlHeight },
+            `${row.label.toUpperCase()}: ${value}`,
+            1,
+            false,
+          );
+          this.addHitTarget(`${row.label}: ${value}`, x, y, colWidth, controlHeight, () => {
+            setSetting(row.key, !settings[row.key]);
+            this.render();
+          });
+        });
+      }
     } else {
       const group = this.tab === 'controls-1' ? 0 : this.tab === 'controls-2' ? 1 : 2;
       const actions = actionGroups[group]!;

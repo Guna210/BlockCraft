@@ -14,6 +14,7 @@ import './fluids';
 import './clouds';
 import './culling';
 import './postfx';
+import './lod';
 import './leaves';
 import './settings';
 import './weather';

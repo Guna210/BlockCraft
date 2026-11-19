@@ -24,6 +24,7 @@ import {
   makePriorityKey,
   neighboursReady,
   streamRings,
+  fullDetailRadius,
   type StreamRings,
 } from './streaming-plan';
 
@@ -121,6 +122,7 @@ export interface RegionRequest {
   genRadius: number;
   /** Columns up to this radius must be meshed and uploaded; -1 for none. */
   meshRadius: number;
+  onMeshProgress?: (ready: number) => void;
 }
 
 interface Column {
@@ -190,6 +192,7 @@ const VIEW_CHANGE_RAD = 0.05;
 
 export class Streamer<G, M> {
   public renderDistance = DEFAULT_RENDER_DISTANCE;
+  public lodEnabled = false;
   /** How much work may be in flight at once; the owner sets it from the worker pool sizes. */
   public limits = { maxGenInFlight: 4, maxMeshColumnsInFlight: 2, maxDeferred: 256 };
   /** Off: only columns pinned by region requests are loaded (createWorld's barrier). */
@@ -685,9 +688,10 @@ export class Streamer<G, M> {
 
   /** The rings of the current render distance, computed once per change (they are read per column). */
   private currentRings(): StreamRings {
-    if (this.ringsRd !== this.renderDistance) {
-      this.ringsCache = streamRings(this.renderDistance);
-      this.ringsRd = this.renderDistance;
+    const radius = fullDetailRadius(this.renderDistance, this.lodEnabled);
+    if (this.ringsRd !== radius) {
+      this.ringsCache = streamRings(radius);
+      this.ringsRd = radius;
     }
     return this.ringsCache;
   }
@@ -1561,13 +1565,19 @@ export class Streamer<G, M> {
   private requestDone(req: RegionRequest): boolean {
     const mesh = req.meshRadius;
     if (mesh >= 0) {
+      let ready = 0;
+      let pending = false;
       for (let z = req.cz - mesh; z <= req.cz + mesh; z++) {
         for (let x = req.cx - mesh; x <= req.cx + mesh; x++) {
           const col = this.cols.get(columnKey(x, z));
           if (col && col.failed) continue;
-          if (!col || col.phase !== 'meshed') return false;
+          if (col?.phase === 'meshed') ready++;
+          else if (!req.onMeshProgress) return false;
+          else pending = true;
         }
       }
+      req.onMeshProgress?.(ready);
+      if (pending) return false;
     }
     const gen = req.genRadius;
     for (let z = req.cz - gen; z <= req.cz + gen; z++) {

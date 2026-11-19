@@ -27,6 +27,7 @@ export function normalizeSettings(value: unknown): Settings {
   const settings: Settings = {
     ...defaults,
     renderDistance: Math.round(finiteIn(raw.renderDistance, defaults.renderDistance, 2, 32)),
+    lod: raw.lod === true,
     fov: finiteIn(raw.fov, defaults.fov, 50, 110),
     mouseSensitivity: finiteIn(raw.mouseSensitivity, defaults.mouseSensitivity, 0.1, 5),
     invertY: typeof raw.invertY === 'boolean' ? raw.invertY : defaults.invertY,
