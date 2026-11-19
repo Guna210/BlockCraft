@@ -37,6 +37,7 @@ import { SectionVisibility } from './section-visibility';
 import { cullingSettings } from './culling-settings';
 import { TerrainArena, type TerrainAllocation } from './terrain-arena';
 import { renderPhaseStats } from '../engine/render-phase-stats';
+import { buildEmissiveTileTable, EMISSIVE_TABLE_SIZE } from './post/emissive-tiles';
 
 const VS_CHUNK = `#version 300 es
 precision highp float;
@@ -53,6 +54,10 @@ uniform bool u_debugLight;
 uniform float u_underwaterFloor;
 uniform sampler2D u_grassTintMap;
 uniform sampler2D u_foliageTintMap;
+#ifdef BLOOM_EMISSIVE
+uniform sampler2D u_emissiveMap;
+flat out float v_emissive;
+#endif
 uniform vec3 u_cameraPos;
 uniform float u_fogStart;
 uniform float u_fogEnd;
@@ -166,6 +171,9 @@ void main() {
   v_grassSide = tintIdx == 3u ? 1.0 : 0.0;
   uint tileIdx = a_word1 & (shape ? ${SHAPE_VERTEX.tileMask}u : ${VERTEX_LAYOUT.tileMask}u);
   if (fluid) tileIdx = uint(material == 4u ? u_waterTile : u_lavaTile) + uint(mod(floor(u_fluidTime * 8.0), 32.0));
+  #ifdef BLOOM_EMISSIVE
+  v_emissive = texelFetch(u_emissiveMap, ivec2(int(tileIdx & 63u), int(tileIdx >> 6u)), 0).r;
+  #endif
   uint cellsPerRow = uint(u_atlasSize.x / u_cellSize);
   v_tileOrigin = (vec2(float(tileIdx % cellsPerRow), float(tileIdx / cellsPerRow)) * u_cellSize + 4.0) / u_atlasSize;
   v_unwrappedUV = vec2(float((a_word1 >> ${VERTEX_LAYOUT.uShift}u) & ${VERTEX_LAYOUT.uvMask}u), float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u));
@@ -204,6 +212,7 @@ void main() {
 
 // Texture units 0, 1 and 2 hold the atlas and the grass and foliage tint maps while drawing.
 const SCRATCH_TEXTURE_UNIT = 3;
+const EMISSIVE_TEXTURE_UNIT = 5;
 const UNIFORM_CACHE_SLOT = {
   fluidTime: 0,
   swayOn: 1,
@@ -241,6 +250,7 @@ const UNIFORM_CACHE_SLOT = {
   swayPlant: 78,
   isCutout: 82,
   isWireframe: 83,
+  emissiveMap: 84,
 } as const;
 interface MultiDrawExtension {
   multiDrawElementsWEBGL(
@@ -317,30 +327,32 @@ export class ChunkRenderer {
   private readonly drawCounts = new Int32Array(20);
   private readonly drawOffsets = new Int32Array(20);
   private readonly drawData = new Float32Array(80);
-  private readonly priorDrawData = [
-    new Float32Array(80),
-    new Float32Array(80),
-    new Float32Array(80),
-    new Float32Array(80),
-  ];
-  private readonly drawDataValid = new Uint8Array(4);
+  private readonly priorDrawData = Array.from({ length: 8 }, () => new Float32Array(80));
+  private readonly drawDataValid = new Uint8Array(8);
   private activeLightingVariant = 0;
-  private readonly programUniformCache = [
-    new Float64Array(84).fill(Number.NaN),
-    new Float64Array(84).fill(Number.NaN),
-    new Float64Array(84).fill(Number.NaN),
-    new Float64Array(84).fill(Number.NaN),
-  ];
-  private readonly multiDrawModes = new Uint8Array(4);
-  private readonly swayUniformsValid = new Uint8Array(4);
-  private readonly fadeUniformValues = new Float64Array(4).fill(Number.NaN);
+  private readonly programUniformCache = Array.from({ length: 8 }, () =>
+    new Float64Array(85).fill(Number.NaN),
+  );
+  private readonly multiDrawModes = new Uint8Array(8);
+  private readonly swayUniformsValid = new Uint8Array(8);
+  private readonly fadeUniformValues = new Float64Array(8).fill(Number.NaN);
   private swayUniformAtlas: TextureAtlas | null = null;
   private locMultiDraw: WebGLUniformLocation | null = null;
   private locDrawData: WebGLUniformLocation | null = null;
+  private locEmissiveMap: WebGLUniformLocation | null = null;
   private glWrapper: GLWrapper;
   private program: WebGLProgram;
-  private programs: WebGLProgram[];
-  private programLocations: Array<Record<string, WebGLUniformLocation>>;
+  private programs: Array<WebGLProgram | null>;
+  private programLocations: Array<Record<string, WebGLUniformLocation | null> | null>;
+  private readonly baseVertexSource: string;
+  private readonly baseFragmentSource: string;
+  private readonly uniformLocationFields: string[];
+  private bloomProgramsCompiled = false;
+  private emissiveTexture: WebGLTexture | null = null;
+  private emissiveAtlas: TextureAtlas | null = null;
+  private bloomActive = false;
+  private readonly drawBuf1: [number];
+  private readonly drawBuf2: [number, number];
 
   private locFluidTime: WebGLUniformLocation;
   private locWaterTile: WebGLUniformLocation;
@@ -444,9 +456,12 @@ export class ChunkRenderer {
     this.cutoutArena = new TerrainArena(glWrapper);
     this.translucentArena = new TerrainArena(glWrapper);
     this.depth = new FluidDepth(glWrapper);
+    const gl = this.glWrapper.gl;
+    this.drawBuf1 = [gl.COLOR_ATTACHMENT0];
+    this.drawBuf2 = [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1];
     const extension = glWrapper.perDrawChecks
       ? null
-      : (glWrapper.gl.getExtension('WEBGL_multi_draw') as MultiDrawExtension | null);
+      : (gl.getExtension('WEBGL_multi_draw') as MultiDrawExtension | null);
     this.multiDraw = typeof extension?.multiDrawElementsWEBGL === 'function' ? extension : null;
     const vertexSource = this.multiDraw
       ? VS_CHUNK.replace(
@@ -472,6 +487,8 @@ export class ChunkRenderer {
           'v_drawFade',
         )
       : FS_CHUNK;
+    this.baseVertexSource = vertexSource;
+    this.baseFragmentSource = fragmentSource;
     this.program = this.glWrapper.createProgram(vertexSource, fragmentSource);
     const skyOnly = (source: string) =>
       source.replace('#version 300 es', '#version 300 es\n#define SKY_ONLY');
@@ -482,10 +499,13 @@ export class ChunkRenderer {
       this.glWrapper.createProgram(skyOnly(vertexSource), skyOnly(fragmentSource)),
       this.glWrapper.createProgram(wallTorch(vertexSource), fragmentSource),
       this.glWrapper.createProgram(skyOnly(wallTorch(vertexSource)), skyOnly(fragmentSource)),
+      null,
+      null,
+      null,
+      null,
     ];
     this.tintCache = new ColumnTintCache(glWrapper);
 
-    const gl = this.glWrapper.gl;
     this.locFluidTime = gl.getUniformLocation(this.program, 'u_fluidTime')!;
     this.locWaterTile = gl.getUniformLocation(this.program, 'u_waterTile')!;
     this.locLavaTile = gl.getUniformLocation(this.program, 'u_lavaTile')!;
@@ -524,7 +544,7 @@ export class ChunkRenderer {
     this.locSwayLeaf = gl.getUniformLocation(this.program, 'u_swayLeaf')!;
     this.locSwayPlant = gl.getUniformLocation(this.program, 'u_swayPlant')!;
     this.locFastLeaves = gl.getUniformLocation(this.program, 'u_fastLeaves')!;
-    const fields = [
+    this.uniformLocationFields = [
       'locFluidTime',
       'locWaterTile',
       'locLavaTile',
@@ -538,6 +558,7 @@ export class ChunkRenderer {
       'locAtlasSampler',
       'locGrassTintMap',
       'locFoliageTintMap',
+      'locEmissiveMap',
       'locAtlasSize',
       'locCellSize',
       'locIsCutout',
@@ -566,14 +587,79 @@ export class ChunkRenderer {
       'locSwayPlant',
       'locFastLeaves',
     ];
-    this.programLocations = this.programs.map((program) =>
-      Object.fromEntries(
-        fields.map((field) => [
-          field,
-          gl.getUniformLocation(program, `u_${field[3]!.toLowerCase()}${field.slice(4)}`)!,
-        ]),
-      ),
+    this.programLocations = [
+      this.collectLocations(this.programs[0]!),
+      this.collectLocations(this.programs[1]!),
+      this.collectLocations(this.programs[2]!),
+      this.collectLocations(this.programs[3]!),
+      null,
+      null,
+      null,
+      null,
+    ];
+  }
+
+  private collectLocations(program: WebGLProgram): Record<string, WebGLUniformLocation | null> {
+    const gl = this.glWrapper.gl;
+    return Object.fromEntries(
+      this.uniformLocationFields.map((field) => [
+        field,
+        gl.getUniformLocation(program, `u_${field[3]!.toLowerCase()}${field.slice(4)}`),
+      ]),
     );
+  }
+
+  private ensureBloomPrograms(): void {
+    if (this.bloomProgramsCompiled) return;
+    this.bloomProgramsCompiled = true;
+    const skyOnly = (source: string) =>
+      source.replace('#version 300 es', '#version 300 es\n#define SKY_ONLY');
+    const wallTorch = (source: string) =>
+      source.replace('#version 300 es', '#version 300 es\n#define WALL_TORCH');
+    const bloom = (source: string) =>
+      source.replace('#version 300 es', '#version 300 es\n#define BLOOM_EMISSIVE');
+    const vs = bloom(this.baseVertexSource);
+    const fs = bloom(this.baseFragmentSource);
+    this.programs[4] = this.glWrapper.createProgram(vs, fs);
+    this.programs[5] = this.glWrapper.createProgram(skyOnly(vs), skyOnly(fs));
+    this.programs[6] = this.glWrapper.createProgram(wallTorch(vs), fs);
+    this.programs[7] = this.glWrapper.createProgram(skyOnly(wallTorch(vs)), skyOnly(fs));
+    for (let i = 4; i < 8; i++) {
+      this.programLocations[i] = this.collectLocations(this.programs[i]!);
+    }
+  }
+
+  private getEmissiveTexture(atlas: TextureAtlas): WebGLTexture {
+    if (this.emissiveTexture && this.emissiveAtlas === atlas) {
+      return this.emissiveTexture;
+    }
+    const gl = this.glWrapper.gl;
+    if (!this.emissiveTexture) {
+      this.emissiveTexture = this.glWrapper.createTexture();
+    }
+    this.emissiveAtlas = atlas;
+    const table = buildEmissiveTileTable(BlockRegistry.getInstance(), atlas);
+    gl.activeTexture(gl.TEXTURE0 + EMISSIVE_TEXTURE_UNIT);
+    this.activeUnit = EMISSIVE_TEXTURE_UNIT;
+    gl.bindTexture(gl.TEXTURE_2D, this.emissiveTexture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R8,
+      EMISSIVE_TABLE_SIZE,
+      EMISSIVE_TABLE_SIZE,
+      0,
+      gl.RED,
+      gl.UNSIGNED_BYTE,
+      table,
+    );
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return this.emissiveTexture;
   }
 
   /** The simulation is paused: wind stands still, like every other world animation. */
@@ -934,6 +1020,11 @@ export class ChunkRenderer {
       this.removeSectionMesh(key);
     }
     this.depth.dispose();
+    if (this.emissiveTexture) {
+      this.glWrapper.deleteTexture(this.emissiveTexture);
+      this.emissiveTexture = null;
+      this.emissiveAtlas = null;
+    }
     this.visibleTranslucent.length = 0;
     this.previousVisibleTranslucentCount = 0;
     this.columnMeshes.clear();
@@ -1248,10 +1339,14 @@ export class ChunkRenderer {
     viewProjMatrix: mat4,
     atlas: TextureAtlas,
     wallTorch = false,
+    bloom = this.bloomActive,
   ): void {
     const uniformStart = renderPhaseStats.start();
     const gl = this.glWrapper.gl;
-    const index = (skyOnly ? 1 : 0) + (wallTorch ? 2 : 0);
+    const index = (skyOnly ? 1 : 0) + (wallTorch ? 2 : 0) + (bloom ? 4 : 0);
+    if (bloom && !this.programs[index]) {
+      this.ensureBloomPrograms();
+    }
     this.activeLightingVariant = index;
     this.program = this.programs[index]!;
     Object.assign(this, this.programLocations[index]);
@@ -1281,6 +1376,9 @@ export class ChunkRenderer {
     );
     this.uniform1i(this.locLavaTile, UNIFORM_CACHE_SLOT.lavaTile, atlasTileIndex(atlas, 'lava_0'));
     this.uniform1i(this.locSceneDepth, UNIFORM_CACHE_SLOT.sceneDepth, 4);
+    if (this.locEmissiveMap) {
+      this.uniform1i(this.locEmissiveMap, UNIFORM_CACHE_SLOT.emissiveMap, EMISSIVE_TEXTURE_UNIT);
+    }
     this.uniformMatrix4fv(
       this.locInverseViewProj,
       UNIFORM_CACHE_SLOT.inverseViewProj,
@@ -1393,7 +1491,8 @@ export class ChunkRenderer {
         bucket.sortCamera![2] = local[2]!;
       }
       // Program selection follows sorted geometry, never groups that break blend order.
-      const variant = (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0);
+      const variant =
+        (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0) + (this.bloomActive ? 4 : 0);
       if (
         batchCount &&
         (variant !== lastVariant ||
@@ -1405,7 +1504,13 @@ export class ChunkRenderer {
         batchCount = 0;
       }
       if (variant !== lastVariant) {
-        this.selectLightingProgram(!mesh.hasBlockLight, viewProjMatrix, atlas, mesh.hasWallTorch);
+        this.selectLightingProgram(
+          !mesh.hasBlockLight,
+          viewProjMatrix,
+          atlas,
+          mesh.hasWallTorch,
+          this.bloomActive,
+        );
         lastVariant = variant;
       }
       const uniformStart = renderPhaseStats.start();
@@ -1490,7 +1595,7 @@ export class ChunkRenderer {
         wallTorch = variant >= 2;
       const programIndex = (skyOnly ? 1 : 0) + (wallTorch ? 2 : 0);
       if (!this.visibleVariantBuckets[pass * 4 + programIndex]) continue;
-      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas, wallTorch);
+      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas, wallTorch, this.bloomActive);
       const uniformStart = renderPhaseStats.start();
       this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, pass === 1 ? 1 : 0);
       this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 0);
@@ -1505,8 +1610,11 @@ export class ChunkRenderer {
     atlas: TextureAtlas,
     world?: import('../world/world').World | null,
     drawPlayer?: () => number,
+    sceneFramebuffer: WebGLFramebuffer | null = null,
+    bloomEnabled = false,
   ): void {
     const gl = this.glWrapper.gl;
+    this.bloomActive = bloomEnabled && sceneFramebuffer !== null;
     const lod = this.lodAtmosphere?.lod;
 
     gl.enable(gl.DEPTH_TEST);
@@ -1617,6 +1725,14 @@ export class ChunkRenderer {
     this.windTime = windAnimation.sample(nowMs, this.worldPaused || fluidAnimation.pausedState);
     mat4.invert(this.inverseViewProj, viewProjMatrix);
 
+    if (this.bloomActive) {
+      const emissiveTex = this.getEmissiveTexture(atlas);
+      gl.activeTexture(gl.TEXTURE0 + EMISSIVE_TEXTURE_UNIT);
+      this.activeUnit = EMISSIVE_TEXTURE_UNIT;
+      gl.bindTexture(gl.TEXTURE_2D, emissiveTex);
+      gl.drawBuffers(this.drawBuf2);
+    }
+
     // 1. Opaque Pass
     gl.disable(gl.BLEND);
     gl.depthMask(true);
@@ -1625,6 +1741,7 @@ export class ChunkRenderer {
     renderPhaseStats.end('opaquePassMs', opaquePassStart);
 
     lod?.prepare(planes, this.cameraPos);
+    if (this.bloomActive && lod && this.lodAtmosphere) gl.drawBuffers(this.drawBuf1);
     const lodDraws =
       lod && this.lodAtmosphere
         ? lod.draw(
@@ -1639,12 +1756,14 @@ export class ChunkRenderer {
             this.debugLight,
           )
         : 0;
+    if (this.bloomActive && lod && this.lodAtmosphere) gl.drawBuffers(this.drawBuf2);
 
     // 2. Cutout Pass
     const cutoutPassStart = renderPhaseStats.start();
     this.drawLightingPass(1, viewProjMatrix, atlas);
     renderPhaseStats.end('cutoutPassMs', cutoutPassStart);
 
+    if (this.bloomActive) gl.drawBuffers(this.drawBuf1);
     const playerDraws = drawPlayer?.() ?? 0;
     if (playerDraws > 0) this.activeUnit = 0;
 
@@ -1660,11 +1779,11 @@ export class ChunkRenderer {
       const depthCaptureStart = renderPhaseStats.start();
       gl.activeTexture(gl.TEXTURE4);
       this.activeUnit = 4;
-      this.depth.capture();
+      this.depth.capture(sceneFramebuffer);
       this.activeUnit = 4;
       renderPhaseStats.end('depthCaptureMs', depthCaptureStart);
     }
-    // 3. Translucent Pass
+    // 3. Translucent Pass (LOD water runs with single-output drawBuf1 before drawTranslucent switches to drawBuf2)
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
@@ -1683,8 +1802,10 @@ export class ChunkRenderer {
             this.debugLight,
           )
         : 0;
+    if (this.bloomActive) gl.drawBuffers(this.drawBuf2);
     this.drawTranslucent(viewProjMatrix, atlas);
     renderPhaseStats.end('translucentPassMs', translucentPassStart);
+    if (this.bloomActive) gl.drawBuffers(this.drawBuf1);
 
     let drawCalls = this.passDraws + playerDraws + lodDraws + lodWaterDraws;
     const triangles = this.passTriangles + playerDraws * 12 + (lod?.submittedTriangles ?? 0);
@@ -1694,7 +1815,7 @@ export class ChunkRenderer {
 
     // 4. Wireframe Overlay Pass (if enabled)
     if (wireframeEnabled) {
-      this.selectLightingProgram(false, viewProjMatrix, atlas);
+      this.selectLightingProgram(false, viewProjMatrix, atlas, false, false);
       this.setMultiDrawMode(false);
       this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 1);
       this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);
@@ -1710,7 +1831,7 @@ export class ChunkRenderer {
           for (let pass = 0; pass < 3; pass++) {
             const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
             if (bucket) {
-              this.selectLightingProgram(false, viewProjMatrix, atlas, mesh.hasWallTorch);
+              this.selectLightingProgram(false, viewProjMatrix, atlas, mesh.hasWallTorch, false);
               this.setMultiDrawMode(false);
               this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 1);
               this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);

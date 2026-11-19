@@ -5,6 +5,9 @@ precision highp float;
 flat in float v_leaf;
 flat in float v_fluid;
 flat in float v_flow;
+#ifdef BLOOM_EMISSIVE
+flat in float v_emissive;
+#endif
 in vec3 v_normal;
 uniform float u_fluidTime;
 uniform int u_fastLeaves;
@@ -30,7 +33,12 @@ uniform highp int u_isCutout;
 uniform int u_isWireframe;
 uniform float u_fade;
 const float BAYER_4X4[16] = ${bayerGlsl()};
+#ifdef BLOOM_EMISSIVE
+layout(location = 0) out vec4 fragColor;
+layout(location = 1) out vec4 fragEmissive;
+#else
 out vec4 fragColor;
+#endif
 void main() {
   if (u_fade < 1.0) {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
@@ -38,6 +46,9 @@ void main() {
   }
   if (u_isWireframe == 1) {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+#ifdef BLOOM_EMISSIVE
+    fragEmissive = vec4(0.0);
+#endif
     return;
   }
   vec2 uv = v_unwrappedUV;
@@ -98,5 +109,11 @@ void main() {
   float fogFactor = u_fogEnd > u_fogStart ? smoothstep(u_fogStart, u_fogEnd, horizDist) : 0.0;
   vec3 finalColor = mix(litColor, u_underwater ? u_waterFogColor : v_fogColor, fogFactor);
   fragColor = vec4(finalColor, alpha);
+#ifdef BLOOM_EMISSIVE
+  float emissivePeak = max(texColor.r, max(texColor.g, texColor.b));
+  float bloomGate = v_emissive > 0.001 ? smoothstep(0.30, 0.70, emissivePeak) : 0.0;
+  float glowStrength = v_emissive * (1.0 - fogFactor) * bloomGate;
+  fragEmissive = vec4(texColor.rgb * tint * glowStrength, alpha);
+#endif
 }
 `;

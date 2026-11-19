@@ -27,7 +27,8 @@ type RangeKey =
   | 'musicVolume'
   | 'effectsVolume'
   | 'ambientVolume';
-type BoolKey = 'lod' | 'invertY' | 'smoothLighting' | 'particles' | 'viewBobbing';
+type BoolKey =
+  'lod' | 'invertY' | 'smoothLighting' | 'particles' | 'fxaa' | 'bloom' | 'godRays' | 'viewBobbing';
 type EnumKey = 'leaves' | 'clouds' | 'guiScale';
 
 interface RangeRow {
@@ -96,8 +97,6 @@ const videoRows: SettingRow[] = [
     values: ['fancy', 'fast', 'off'],
     format: (v) => String(v).toUpperCase(),
   },
-  { kind: 'bool', key: 'smoothLighting', label: 'Smooth lighting' },
-  { kind: 'bool', key: 'particles', label: 'Particles' },
   {
     kind: 'enum',
     key: 'guiScale',
@@ -114,8 +113,16 @@ const videoRows: SettingRow[] = [
     step: 0.05,
     format: (v) => `${Math.round(v * 100)}%`,
   },
-  { kind: 'bool', key: 'viewBobbing', label: 'View bobbing' },
   { kind: 'bool', key: 'lod', label: 'Distant terrain (LOD)' },
+];
+
+const videoToggleRows: BoolRow[] = [
+  { kind: 'bool', key: 'smoothLighting', label: 'Smooth lighting' },
+  { kind: 'bool', key: 'particles', label: 'Particles' },
+  { kind: 'bool', key: 'viewBobbing', label: 'View bobbing' },
+  { kind: 'bool', key: 'fxaa', label: 'FXAA' },
+  { kind: 'bool', key: 'bloom', label: 'Bloom' },
+  { kind: 'bool', key: 'godRays', label: 'God rays' },
 ];
 
 const audioRows: SettingRow[] = [
@@ -291,7 +298,7 @@ export class SettingsScreen {
     return button;
   }
 
-  private addSlider(row: RangeRow, y: number): void {
+  private addSlider(row: RangeRow, y: number, controlHeight: number): void {
     const rawValue = settings[row.key];
     const input = document.createElement('input');
     input.type = 'range';
@@ -305,7 +312,7 @@ export class SettingsScreen {
       left: `${177 * this.scale}px`,
       top: `${(y + 1) * this.scale}px`,
       width: `${78 * this.scale}px`,
-      height: `${9 * this.scale}px`,
+      height: `${Math.max(8, controlHeight - 2) * this.scale}px`,
       margin: '0',
       padding: '0',
       appearance: 'none',
@@ -322,14 +329,14 @@ export class SettingsScreen {
       this.render();
     });
     this.controls.appendChild(input);
-    this.addHitTarget(`${row.label} decrease`, 164, y, 12, 11, () => {
+    this.addHitTarget(`${row.label} decrease`, 164, y, 12, controlHeight, () => {
       setSetting(
         row.key,
         Math.max(row.min, Math.round((rawValue - row.step) / row.step) * row.step),
       );
       this.render();
     });
-    this.addHitTarget(`${row.label} increase`, 296, y, 12, 11, () => {
+    this.addHitTarget(`${row.label} increase`, 296, y, 12, controlHeight, () => {
       setSetting(
         row.key,
         Math.min(row.max, Math.round((rawValue + row.step) / row.step) * row.step),
@@ -338,14 +345,19 @@ export class SettingsScreen {
     });
   }
 
-  private addSettingRows(rows: readonly SettingRow[], startY: number, rowHeight: number): void {
+  private addSettingRows(
+    rows: readonly SettingRow[],
+    startY: number,
+    rowHeight: number,
+    controlHeight: number,
+  ): void {
     rows.forEach((row, index) => {
       const y = startY + index * rowHeight;
-      if (row.kind === 'range') return this.addSlider(row, y);
+      if (row.kind === 'range') return this.addSlider(row, y, controlHeight);
       const current = settings[row.key];
       const value =
         row.kind === 'bool' ? (current ? 'ON' : 'OFF') : row.format(current as string | number);
-      this.addHitTarget(`${row.label}: ${value}`, 164, y, 144, 11, () => {
+      this.addHitTarget(`${row.label}: ${value}`, 164, y, 144, controlHeight, () => {
         if (row.kind === 'bool') setSetting(row.key, !settings[row.key]);
         else {
           const currentIndex = row.values.indexOf(settings[row.key] as string | number);
@@ -450,8 +462,9 @@ export class SettingsScreen {
     if (this.tab === 'video' || this.tab === 'audio') {
       const rows = this.tab === 'video' ? videoRows : audioRows;
       const rowHeight = this.tab === 'video' ? 12 : 24;
+      const controlHeight = 11;
       const startY = this.tab === 'video' ? 47 : 55;
-      this.addSettingRows(rows, startY, rowHeight);
+      this.addSettingRows(rows, startY, rowHeight, controlHeight);
       rows.forEach((row, index) => {
         const y = startY + index * rowHeight;
         const value =
@@ -469,9 +482,32 @@ export class SettingsScreen {
           fillRect(ctx, 179, y + 4, Math.round(74 * ratio), 3, UI.accent, 1);
           drawText(ctx, value, 258, y + 2, 1, UI.text, UI.outline);
         } else {
-          drawButton(ctx, { x: 164, y, w: 144, h: 11 }, value, 1, false);
+          drawButton(ctx, { x: 164, y, w: 144, h: controlHeight }, value, 1, false);
         }
       });
+      if (this.tab === 'video') {
+        const toggleStartY = startY + rows.length * rowHeight + 4;
+        const toggleRowHeight = 13;
+        const colWidth = 148;
+        videoToggleRows.forEach((row, index) => {
+          const col = index % 2;
+          const rowIndex = Math.floor(index / 2);
+          const x = col === 0 ? 8 : 160;
+          const y = toggleStartY + rowIndex * toggleRowHeight;
+          const value = settings[row.key] ? 'ON' : 'OFF';
+          drawButton(
+            ctx,
+            { x, y, w: colWidth, h: controlHeight },
+            `${row.label.toUpperCase()}: ${value}`,
+            1,
+            false,
+          );
+          this.addHitTarget(`${row.label}: ${value}`, x, y, colWidth, controlHeight, () => {
+            setSetting(row.key, !settings[row.key]);
+            this.render();
+          });
+        });
+      }
     } else {
       const group = this.tab === 'controls-1' ? 0 : this.tab === 'controls-2' ? 1 : 2;
       const actions = actionGroups[group]!;

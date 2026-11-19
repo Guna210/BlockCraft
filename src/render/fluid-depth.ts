@@ -8,7 +8,7 @@ export class FluidDepth {
   private height = 0;
   constructor(private wrapper: GLWrapper) {}
 
-  capture(): void {
+  capture(sourceFramebuffer: WebGLFramebuffer | null = null): void {
     const gl = this.wrapper.gl;
     if (
       this.width !== gl.drawingBufferWidth ||
@@ -20,18 +20,20 @@ export class FluidDepth {
       this.height = gl.drawingBufferHeight;
       this.texture = this.wrapper.createTexture();
       this.framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sourceFramebuffer);
+      const depthBits = gl.getParameter(gl.DEPTH_BITS);
+      const depthInternalFormat = depthBits === 32 ? gl.DEPTH32F_STENCIL8 : gl.DEPTH24_STENCIL8;
+      const depthType = depthBits === 32 ? gl.FLOAT_32_UNSIGNED_INT_24_8_REV : gl.UNSIGNED_INT_24_8;
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
-        gl.getParameter(gl.DEPTH_BITS) === 32 ? gl.DEPTH32F_STENCIL8 : gl.DEPTH24_STENCIL8,
+        depthInternalFormat,
         this.width,
         this.height,
         0,
         gl.DEPTH_STENCIL,
-        gl.getParameter(gl.DEPTH_BITS) === 32
-          ? gl.FLOAT_32_UNSIGNED_INT_24_8_REV
-          : gl.UNSIGNED_INT_24_8,
+        depthType,
         null,
       );
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -49,9 +51,9 @@ export class FluidDepth {
       gl.drawBuffers([gl.NONE]);
       gl.readBuffer(gl.NONE);
     }
-    // Stencil is requested on the default context so its packed depth format
-    // is explicit. Resolving that existing depth avoids redrawing the world.
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    // Stencil is requested on the default context (and matched on offscreen FBOs) so its packed
+    // depth format is explicit. Resolving that existing depth avoids redrawing the world.
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sourceFramebuffer);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.framebuffer);
     gl.blitFramebuffer(
       0,
@@ -66,7 +68,7 @@ export class FluidDepth {
       gl.NEAREST,
     );
     gl.activeTexture(gl.TEXTURE4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sourceFramebuffer);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
   }
   dispose(): void {

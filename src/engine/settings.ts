@@ -20,6 +20,9 @@ export interface Settings {
   leaves: LeavesSetting;
   smoothLighting: boolean;
   particles: boolean;
+  fxaa: boolean;
+  bloom: boolean;
+  godRays: boolean;
   guiScale: GuiScaleSetting;
   brightness: number;
   masterVolume: number;
@@ -41,6 +44,9 @@ export const DEFAULT_SETTINGS: Settings = {
   leaves: 'fancy',
   smoothLighting: true,
   particles: true,
+  fxaa: false,
+  bloom: false,
+  godRays: false,
   guiScale: 'auto',
   brightness: 1,
   masterVolume: 1,
