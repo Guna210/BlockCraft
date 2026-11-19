@@ -38,6 +38,9 @@ export function normalizeSettings(value: unknown): Settings {
     smoothLighting:
       typeof raw.smoothLighting === 'boolean' ? raw.smoothLighting : defaults.smoothLighting,
     particles: typeof raw.particles === 'boolean' ? raw.particles : defaults.particles,
+    fxaa: typeof raw.fxaa === 'boolean' ? raw.fxaa : defaults.fxaa,
+    bloom: typeof raw.bloom === 'boolean' ? raw.bloom : defaults.bloom,
+    godRays: typeof raw.godRays === 'boolean' ? raw.godRays : defaults.godRays,
     guiScale:
       raw.guiScale === 'auto' ||
       raw.guiScale === 1 ||

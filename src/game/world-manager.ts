@@ -34,6 +34,8 @@ import { spawnerMiniatures } from '../gameplay/spawners';
 import { STRUCTURE_REGISTRATIONS } from '../gen/structures/registrations';
 import { UnderwaterView, UnderwaterTint } from '../render/underwater';
 import { ChunkRenderer } from '../render/chunk-renderer';
+import { PostProcessor, type PostFxContext, type PostFxStats } from '../render/post/post-processor';
+import { fillActivePostFxPasses } from '../render/post/sun-visibility';
 import { SkyRenderer } from '../render/sky';
 import { CloudRenderer } from '../render/clouds';
 import { WeatherRenderer } from '../render/weather';
@@ -283,6 +285,18 @@ export class WorldManager {
   public updraftGlow: UpdraftGlowRenderer | null = null;
   public movingBlockRenderer: MovingBlockRenderer | null = null;
   public weatherRenderer: WeatherRenderer | null = null;
+  private postProcessor: PostProcessor | null = null;
+  private readonly postFxContext: PostFxContext = {
+    settings,
+    dimension: 'overworld',
+    underwater: false,
+    sunDir: [0, 1, 0],
+    dayFactor: 1,
+    twilightFactor: 0,
+    rainFactor: 0,
+    viewMatrix: mat4.create(),
+    projectionMatrix: mat4.create(),
+  };
   public workerPool: WorkerPool;
   public genWorkerPool: GenWorkerPool;
   public lightWorkerPool: LightWorkerPool;
@@ -1291,6 +1305,8 @@ export class WorldManager {
     this.movingBlockRenderer = new MovingBlockRenderer(this.glWrapper, this.atlas);
     this.chunkRenderer = new ChunkRenderer(this.glWrapper);
     this.weatherRenderer = new WeatherRenderer(this.glWrapper);
+    this.postProcessor?.dispose();
+    this.postProcessor = null;
   }
 
   /** Sets the leaves mode; when it differs from the one the meshes were built for, remeshes every loaded section. */
@@ -2120,6 +2136,19 @@ export class WorldManager {
     if (this.drainGlErrors) this.drainGlErrors();
   }
 
+  public getPostFxStats(): PostFxStats {
+    if (this.postProcessor) {
+      return this.postProcessor.getStats(settings);
+    }
+    const passes = fillActivePostFxPasses(settings, []);
+    return {
+      enabled: passes.length > 0,
+      passes,
+      targetSize: [0, 0],
+      passMs: { scene: 0, bloom: 0, godRays: 0, fxaa: 0, total: 0 },
+    };
+  }
+
   private drawTerrain(): boolean {
     if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
       const setupStart = renderPhaseStats.start();
@@ -2140,6 +2169,12 @@ export class WorldManager {
             : 1.25;
       const lightningFlash = cavern ? 0 : weatherManager.flashIntensity;
       renderPhaseStats.end('terrainSetupMs', setupStart);
+
+      const postFxActive =
+        (settings.fxaa || settings.bloom || settings.godRays) && this.glWrapper !== null;
+      const sceneFbo = postFxActive
+        ? (this.postProcessor ??= new PostProcessor(this.glWrapper!)).begin(settings)
+        : null;
 
       if (cavern) {
         const fog = this.cavernClear;
@@ -2178,6 +2213,7 @@ export class WorldManager {
       const fogStart = underwater.submerged ? underwater.fogStart : airFogStart;
       const fogEnd = underwater.submerged ? underwater.fogEnd : airFogEnd;
       const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
+      const sunDir = sunDirection(ticks);
       this.chunkRenderer.setSkyBrightness?.(skyBrightness);
       this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
       this.chunkRenderer.setAtmosphere?.({
@@ -2188,7 +2224,7 @@ export class WorldManager {
         fogStart,
         fogEnd,
         underwater,
-        sunDir: sunDirection(ticks),
+        sunDir,
         dayFactor,
         twilightFactor,
         nightFactor,
@@ -2199,63 +2235,71 @@ export class WorldManager {
 
       mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       const chunkRenderStart = renderPhaseStats.start();
-      this.chunkRenderer.render(this.viewProj, this.atlasTexture, this.atlas, this.world, () => {
-        const entityStart = renderPhaseStats.start();
-        const playerDraws =
-          this.playerModelRenderer?.render(
-            this.playerController,
-            this.viewProj,
-            this.atlasTexture!,
-            this.atlas!,
-            underwater,
-            skyBrightness,
-            sunDirection(ticks),
-            dayFactor,
-            twilightFactor,
-            nightFactor,
-            fogStart,
-            fogEnd,
-            cavern?.fogColor ?? null,
-          ) ?? 0;
-        const entityDraws =
-          this.entityRenderer?.render(
-            this.playerController?.ecs ?? null,
-            this.world,
-            {
-              viewProj: this.viewProj,
-              atlasTexture: this.atlasTexture,
-              eye: this.camera!.position,
-              alpha: this.playerController?.renderAlpha ?? 1,
-              skyBrightness,
+      this.chunkRenderer.render(
+        this.viewProj,
+        this.atlasTexture,
+        this.atlas,
+        this.world,
+        () => {
+          const entityStart = renderPhaseStats.start();
+          const playerDraws =
+            this.playerModelRenderer?.render(
+              this.playerController,
+              this.viewProj,
+              this.atlasTexture!,
+              this.atlas!,
               underwater,
-              sunDir: sunDirection(ticks),
-              day: dayFactor,
-              twilight: twilightFactor,
-              night: nightFactor,
+              skyBrightness,
+              sunDir,
+              dayFactor,
+              twilightFactor,
+              nightFactor,
               fogStart,
               fogEnd,
-              dimensionFog: cavern?.fogColor ?? null,
-            },
-            spawnerMiniatures(this.world),
-          ) ?? 0;
-        const dropDraws =
-          this.dropRenderer?.render(
-            this.playerController,
-            this.viewProj,
-            this.atlasTexture!,
-            skyBrightness,
-          ) ?? 0;
-        const movingDraws =
-          this.movingBlockRenderer?.render(
-            this.world,
-            this.viewProj,
-            this.atlasTexture!,
-            skyBrightness,
-            this.playerController?.renderAlpha ?? 1,
-          ) ?? 0;
-        renderPhaseStats.end('entityRenderMs', entityStart);
-        return playerDraws + entityDraws + dropDraws + movingDraws;
-      });
+              cavern?.fogColor ?? null,
+            ) ?? 0;
+          const entityDraws =
+            this.entityRenderer?.render(
+              this.playerController?.ecs ?? null,
+              this.world,
+              {
+                viewProj: this.viewProj,
+                atlasTexture: this.atlasTexture,
+                eye: this.camera!.position,
+                alpha: this.playerController?.renderAlpha ?? 1,
+                skyBrightness,
+                underwater,
+                sunDir,
+                day: dayFactor,
+                twilight: twilightFactor,
+                night: nightFactor,
+                fogStart,
+                fogEnd,
+                dimensionFog: cavern?.fogColor ?? null,
+              },
+              spawnerMiniatures(this.world),
+            ) ?? 0;
+          const dropDraws =
+            this.dropRenderer?.render(
+              this.playerController,
+              this.viewProj,
+              this.atlasTexture!,
+              skyBrightness,
+            ) ?? 0;
+          const movingDraws =
+            this.movingBlockRenderer?.render(
+              this.world,
+              this.viewProj,
+              this.atlasTexture!,
+              skyBrightness,
+              this.playerController?.renderAlpha ?? 1,
+            ) ?? 0;
+          renderPhaseStats.end('entityRenderMs', entityStart);
+          return playerDraws + entityDraws + dropDraws + movingDraws;
+        },
+        sceneFbo,
+        settings.bloom,
+      );
       renderPhaseStats.end('chunkRendererMs', chunkRenderStart);
       const portalStart = renderPhaseStats.start();
       this.drawPortals();
@@ -2334,6 +2378,20 @@ export class WorldManager {
       const warpStart = renderPhaseStats.start();
       this.drawWarp();
       renderPhaseStats.end('warpRenderMs', warpStart);
+
+      if (sceneFbo && this.postProcessor) {
+        const ctx = this.postFxContext;
+        ctx.settings = settings;
+        ctx.dimension = this.dimension;
+        ctx.underwater = underwater.submerged;
+        ctx.sunDir = sunDir;
+        ctx.dayFactor = dayFactor;
+        ctx.twilightFactor = twilightFactor;
+        ctx.rainFactor = rainFactor;
+        ctx.viewMatrix = this.camera.viewMatrix;
+        ctx.projectionMatrix = this.camera.projectionMatrix;
+        this.postProcessor.end(ctx);
+      }
 
       renderStats.drawCalls +=
         skyStats.drawCalls +

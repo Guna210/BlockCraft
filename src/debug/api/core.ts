@@ -1,5 +1,6 @@
 export interface BlockCraftDebugAPI {
   setCulling?: (options: { cave?: boolean; frustum?: boolean }) => void;
+  getPostFx?: () => import('../../render/post/post-processor').PostFxStats;
   ready(): Promise<void>;
   getNetStats?: () => {
     connected: boolean;

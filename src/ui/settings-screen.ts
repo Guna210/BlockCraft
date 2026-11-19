@@ -27,7 +27,8 @@ type RangeKey =
   | 'musicVolume'
   | 'effectsVolume'
   | 'ambientVolume';
-type BoolKey = 'invertY' | 'smoothLighting' | 'particles' | 'viewBobbing';
+type BoolKey =
+  'invertY' | 'smoothLighting' | 'particles' | 'fxaa' | 'bloom' | 'godRays' | 'viewBobbing';
 type EnumKey = 'leaves' | 'clouds' | 'guiScale';
 
 interface RangeRow {
@@ -98,6 +99,9 @@ const videoRows: SettingRow[] = [
   },
   { kind: 'bool', key: 'smoothLighting', label: 'Smooth lighting' },
   { kind: 'bool', key: 'particles', label: 'Particles' },
+  { kind: 'bool', key: 'fxaa', label: 'FXAA' },
+  { kind: 'bool', key: 'bloom', label: 'Bloom' },
+  { kind: 'bool', key: 'godRays', label: 'God rays' },
   {
     kind: 'enum',
     key: 'guiScale',
@@ -290,7 +294,7 @@ export class SettingsScreen {
     return button;
   }
 
-  private addSlider(row: RangeRow, y: number): void {
+  private addSlider(row: RangeRow, y: number, controlHeight: number): void {
     const rawValue = settings[row.key];
     const input = document.createElement('input');
     input.type = 'range';
@@ -304,7 +308,7 @@ export class SettingsScreen {
       left: `${177 * this.scale}px`,
       top: `${(y + 1) * this.scale}px`,
       width: `${78 * this.scale}px`,
-      height: `${9 * this.scale}px`,
+      height: `${Math.max(8, controlHeight - 2) * this.scale}px`,
       margin: '0',
       padding: '0',
       appearance: 'none',
@@ -321,14 +325,14 @@ export class SettingsScreen {
       this.render();
     });
     this.controls.appendChild(input);
-    this.addHitTarget(`${row.label} decrease`, 164, y, 12, 11, () => {
+    this.addHitTarget(`${row.label} decrease`, 164, y, 12, controlHeight, () => {
       setSetting(
         row.key,
         Math.max(row.min, Math.round((rawValue - row.step) / row.step) * row.step),
       );
       this.render();
     });
-    this.addHitTarget(`${row.label} increase`, 296, y, 12, 11, () => {
+    this.addHitTarget(`${row.label} increase`, 296, y, 12, controlHeight, () => {
       setSetting(
         row.key,
         Math.min(row.max, Math.round((rawValue + row.step) / row.step) * row.step),
@@ -337,14 +341,19 @@ export class SettingsScreen {
     });
   }
 
-  private addSettingRows(rows: readonly SettingRow[], startY: number, rowHeight: number): void {
+  private addSettingRows(
+    rows: readonly SettingRow[],
+    startY: number,
+    rowHeight: number,
+    controlHeight: number,
+  ): void {
     rows.forEach((row, index) => {
       const y = startY + index * rowHeight;
-      if (row.kind === 'range') return this.addSlider(row, y);
+      if (row.kind === 'range') return this.addSlider(row, y, controlHeight);
       const current = settings[row.key];
       const value =
         row.kind === 'bool' ? (current ? 'ON' : 'OFF') : row.format(current as string | number);
-      this.addHitTarget(`${row.label}: ${value}`, 164, y, 144, 11, () => {
+      this.addHitTarget(`${row.label}: ${value}`, 164, y, 144, controlHeight, () => {
         if (row.kind === 'bool') setSetting(row.key, !settings[row.key]);
         else {
           const currentIndex = row.values.indexOf(settings[row.key] as string | number);
@@ -448,9 +457,10 @@ export class SettingsScreen {
 
     if (this.tab === 'video' || this.tab === 'audio') {
       const rows = this.tab === 'video' ? videoRows : audioRows;
-      const rowHeight = this.tab === 'video' ? 13 : 24;
+      const rowHeight = this.tab === 'video' ? 11 : 24;
+      const controlHeight = this.tab === 'video' ? 10 : 11;
       const startY = this.tab === 'video' ? 47 : 55;
-      this.addSettingRows(rows, startY, rowHeight);
+      this.addSettingRows(rows, startY, rowHeight, controlHeight);
       rows.forEach((row, index) => {
         const y = startY + index * rowHeight;
         const value =
@@ -468,7 +478,7 @@ export class SettingsScreen {
           fillRect(ctx, 179, y + 4, Math.round(74 * ratio), 3, UI.accent, 1);
           drawText(ctx, value, 258, y + 2, 1, UI.text, UI.outline);
         } else {
-          drawButton(ctx, { x: 164, y, w: 144, h: 11 }, value, 1, false);
+          drawButton(ctx, { x: 164, y, w: 144, h: controlHeight }, value, 1, false);
         }
       });
     } else {
