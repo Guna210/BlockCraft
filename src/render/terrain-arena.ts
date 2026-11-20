@@ -477,20 +477,45 @@ export class TerrainArena {
     this.wrapper.deleteBuffer(page.vertices);
     this.wrapper.deleteBuffer(page.vertexStaging);
     this.wrapper.deleteBuffer(page.indices);
-    if (this.pages.length === 0) {
-      const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
-      if (typeof gl.deleteSync === 'function') {
-        for (const record of this.frameFences) gl.deleteSync(record.fence);
-      }
-      this.frameFences.length = 0;
-      this.completedDrawFrame = this.drawFrame;
-      if (this.debugVertexBuffer) this.wrapper.deleteBuffer(this.debugVertexBuffer);
-      if (this.debugIndexBuffer) this.wrapper.deleteBuffer(this.debugIndexBuffer);
-      if (this.debugVertexArray) this.wrapper.deleteVertexArray(this.debugVertexArray);
-      this.debugVertexArray = null;
-      this.debugVertexBuffer = null;
-      this.debugIndexBuffer = null;
+    if (this.pages.length === 0) this.releaseIdleResources();
+  }
+
+  /** Deletes pending fences and debug readback objects once no page can still be drawn. */
+  private releaseIdleResources(): void {
+    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+    if (typeof gl.deleteSync === 'function') {
+      for (const record of this.frameFences) gl.deleteSync(record.fence);
     }
+    this.frameFences.length = 0;
+    this.completedDrawFrame = this.drawFrame;
+    if (this.debugVertexBuffer) this.wrapper.deleteBuffer(this.debugVertexBuffer);
+    if (this.debugIndexBuffer) this.wrapper.deleteBuffer(this.debugIndexBuffer);
+    if (this.debugVertexArray) this.wrapper.deleteVertexArray(this.debugVertexArray);
+    this.debugVertexArray = null;
+    this.debugVertexBuffer = null;
+    this.debugIndexBuffer = null;
+  }
+
+  /**
+   * World teardown: drops quarantined ranges, pending fences and every page (buffers + VAO).
+   * Nothing waits on fences that will never be polled again; pages are recreated lazily by the
+   * next `allocate`. Any allocation still held by a caller becomes invalid.
+   */
+  public releaseAll(): void {
+    for (const allocation of this.allocations) {
+      allocation.pendingUpload = false;
+      allocation.uploadSegments.length = 0;
+      allocation.debugIndices = null;
+      allocation.sortedIndices = null;
+      allocation.indicesSorted = false;
+    }
+    this.allocations.clear();
+    while (this.pages.length > 0) {
+      this.pages[this.pages.length - 1]!.quarantined.length = 0;
+      this.destroyPageAt(this.pages.length - 1);
+    }
+    this.releaseIdleResources();
+    this.drewInCurrentFrame = false;
   }
 
   private nextGrowCapacity(requiredQuads: number): number {

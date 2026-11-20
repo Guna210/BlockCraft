@@ -3,6 +3,8 @@ import {
   TerrainDrawBatcher,
   drawDataTexelCoords,
   DRAW_DATA_TEX_WIDTH,
+  DRAW_DATA_INITIAL_HEIGHT,
+  FLOATS_PER_TEXEL,
   FLOATS_PER_DRAW,
   type BatchSectionEntry,
 } from '../../src/render/terrain-batcher';
@@ -371,6 +373,74 @@ describe('PERF-batch terrain draw batching', () => {
       arena.free(p3);
       arena.free(p4);
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
+    });
+
+    it('deletes a page that was emptied, quarantined, then signalled', () => {
+      const { arena, wrapper, signaled } = makeFencedArena(16, 64);
+      const a = arena.upload(makeBucket(8));
+      arena.beginDrawFrame();
+      arena.markUsed(a);
+      arena.endDrawFrame();
+
+      // Emptied while the draw fence is pending: the range is quarantined and the page stays.
+      arena.free(a);
+      expect(a.page.allocations).toBe(0);
+      expect(a.page.quarantined).toHaveLength(1);
+      expect(arena.pages).toHaveLength(1);
+      expect(wrapper.getCounts()).toMatchObject({ buffers: 3, vaos: 1 });
+
+      // Still pending after a poll: nothing is deleted yet.
+      arena.pollFences();
+      expect(arena.pages).toHaveLength(1);
+
+      // Signalled: the empty page's buffers and VAO are deleted.
+      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
+        .frameFences[0]!.fence;
+      signaled.add(fence);
+      arena.pollFences();
+      expect(arena.pages).toHaveLength(0);
+      expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
+    });
+
+    it('releaseAll deletes every page, quarantined range and pending fence without waiting', () => {
+      const { arena, wrapper, deletedFences } = makeFencedArena(16, 64);
+      const a = arena.upload(makeBucket(16));
+      const b = arena.upload(makeBucket(16));
+      const c = arena.upload(makeBucket(4));
+      arena.beginDrawFrame();
+      arena.markUsed(a);
+      arena.markUsed(b);
+      arena.endDrawFrame();
+      arena.free(a); // quarantined behind an unsignalled fence
+      expect(arena.pages.length).toBeGreaterThanOrEqual(2);
+      expect(a.page.quarantined).toHaveLength(1);
+
+      arena.releaseAll();
+      expect(arena.pages).toHaveLength(0);
+      expect(deletedFences).toHaveLength(1);
+      expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
+      expect(c.pendingUpload).toBe(false);
+
+      // Pages are recreated lazily for the next world.
+      const d = arena.upload(makeBucket(8));
+      expect(arena.pages).toHaveLength(1);
+      arena.free(d);
+      expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
+    });
+  });
+
+  describe('draw-data capacity teardown', () => {
+    it('resetCapacity shrinks a grown draw-data buffer back to its initial height', () => {
+      const batcher = new TerrainDrawBatcher();
+      batcher.beginFrame();
+      const draws = (DRAW_DATA_TEX_WIDTH / 2) * DRAW_DATA_INITIAL_HEIGHT + 1;
+      for (let i = 0; i < draws; i++) batcher.appendTranslucentDraw(0, 1, 6, 0, 0, 0, 0, 1, 0);
+      expect(batcher.getTextureHeight()).toBe(DRAW_DATA_INITIAL_HEIGHT * 2);
+      batcher.resetCapacity();
+      expect(batcher.getTextureHeight()).toBe(DRAW_DATA_INITIAL_HEIGHT);
+      expect(batcher.drawData.length).toBe(
+        DRAW_DATA_TEX_WIDTH * DRAW_DATA_INITIAL_HEIGHT * FLOATS_PER_TEXEL,
+      );
     });
   });
 });

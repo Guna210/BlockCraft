@@ -296,6 +296,13 @@ export class TerrainDrawBatcher {
     return this.totalDraws;
   }
 
+  /** Shrinks the draw-data buffer back to its initial size (world teardown). */
+  public resetCapacity(): void {
+    if (this.texHeight === DRAW_DATA_INITIAL_HEIGHT) return;
+    this.texHeight = DRAW_DATA_INITIAL_HEIGHT;
+    this.drawData = new Float32Array(DRAW_DATA_TEX_WIDTH * this.texHeight * FLOATS_PER_TEXEL);
+  }
+
   public getTextureHeight(): number {
     return this.texHeight;
   }

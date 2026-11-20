@@ -1141,7 +1141,23 @@ export class ChunkRenderer {
       this.visColumns[i]!.length = 0;
     }
     this.visColumnCount = 0;
+    this.releaseBatchResources();
+  }
+
+  /**
+   * World teardown: deletes every arena page (buffers + VAO) with its quarantined ranges and
+   * pending fences, and shrinks the draw-data texture back to its initial size. The arena pages
+   * are recreated lazily by the next world. The draw-data texture and the tint atlas are fixed-size
+   * objects created with the renderer, so they stay as part of the pre-world baseline.
+   */
+  private releaseBatchResources(): void {
+    this.opaqueArena.releaseAll();
+    this.cutoutArena.releaseAll();
+    this.translucentArena.releaseAll();
+    this.batcher.resetCapacity();
+    this.ensureDrawDataTexture(this.batcher.getTextureHeight());
     this.tintCache.clearAll();
+    this.boundVao = null;
   }
 
   public beginUploadBatch(): void {
