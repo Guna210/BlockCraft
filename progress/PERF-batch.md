@@ -2,8 +2,8 @@
 
 Status: verified
 Depends on: M22a, M22b, M22c
-Full verify: PR CI (owner override; no local full verify)
-Local (this session): typecheck ✓ · lint ✓ (0 errors) · placeholders ✓ · unit: Test Files 170 passed (170), Tests 1588 passed (1588) · e2e perf-batch 2 passed; m22a 4 passed; m22b 1–3 passed; m22c 5 passed; m01/m02/m05/m08*/m12 21 passed. m04 and m21c e2e not run locally (left to CI).
+Full verify: PR CI run on head 9b01bd0 (https://github.com/Guna210/BlockCraft/actions/runs/44802846579), all four shards and the aggregate `verify` job green. Unit: Test Files 170 passed (170), Tests 1591 passed (1591). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 51 passed, 1 flaky (m13h.spec.ts:142, passed on retry); 4/4 51 passed, 1 flaky (perf-batch.spec.ts:56, passed on retry).
+Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 errors) · unit: the changed files (perf-batch, m08b-gpu, m13a-render, tint) 25 passed; full unit run only differed from CI on m21b-fix-containers (needs `dist-server`, environment). Local e2e is unusable in this container: every test fails at fixture teardown on the driver message "GPU stall due to ReadPixels" (also on m01 and on the untouched previous commit), and streaming-idle waits time out. m18a-menus:158, m04, m22 and perf-batch test bodies ran to their asserts; the GL resource counts for the m04 flight were checked with a temporary probe (below). m21c fails the same way on the previous commit locally.
 
 ## Acceptance criteria owned
 
@@ -16,6 +16,12 @@ Local (this session): typecheck ✓ · lint ✓ (0 errors) · placeholders ✓ �
 - perf-batch-overworld-daytime.png: narrow rocky canyon, blue sky strip, water at bottom.
 - perf-batch-underground-cave.png: stone and ore walls, lava at lower right.
 - perf-batch-water-translucent.png: snowy ridge with an arch, blue sky, grass lower left; water is NOT clearly visible, so this viewpoint is weak for translucency.
+
+## CI fixes (run 44764152550 on cb0e723)
+
+- m18a-menus:158 (panorama teardown, glBuffers 20 vs 11): `clearAllMeshes()` now calls `TerrainArena.releaseAll()` on all three arenas, which deletes every page (buffers + VAO), quarantined range and pending fence without waiting. Pages are recreated lazily. Unit tests: "deletes a page that was emptied, quarantined, then signalled" and "releaseAll deletes every page, quarantined range and pending fence without waiting" (buffers 0, vaos 0 afterwards).
+- m04:66 (+1 buffer/VAO/texture after the flight): terrain pages were not the cause (page counts stayed 1/1/1 over the flight; probe: buffers 27→31, vaos 23→27, textures 16→20 before the fix). The growth was `EntityRenderer` baking per-creature VAO/buffer/skin texture on first sight. With the small post-batching baseline that exceeds the ±10 % window. `EntityRenderer.warmUp()` now bakes every registered model once at init (called from `WorldManager`); lazy creation is unchanged for existing tests. Probe after the fix: buffers 43→43, vaos 39→39, textures 31→32 (32 <= 34.1). The draw-data texture and tint atlas never grew in the flight (64 rows, 512 slots) and any growth deletes the old texture. They are not deleted on teardown because `tests/unit/m08b-gpu.test.ts` requires two textures to survive `clearAllMeshes`; at teardown they shrink back to their initial sizes.
+- m04:221 flaky driver message "Running out of reserved outsideRenderPass queueSerial": not reproduced locally. The same message also failed `m13h.spec.ts:142` (a visual test with no streaming) on retry-1 in CI run 44802846579, so it is not specific to the new upload pattern. Page and upload sizes unchanged. The A/B table below is unchanged because page sizes did not change.
 
 ## What was built
 
@@ -49,6 +55,7 @@ decisions/PERF-batch-terrain.md
 - Translucent submissions and program switches still scale with sorted runs (RD32 LOD off: 396 translucent, 393 switches).
 - Pixel baseline is the glcheck=draw path, not master.
 - Container-only failures listed by the owner are left to CI.
+- `perf-batch.spec.ts:56` flaked once in CI (RD16 opaque+cutout submissions 12 vs limit 11 = RD8 3 + 8); passed on retry. The margin is tight but the test was not changed. Owner decision needed if it recurs.
 
 ## Notes for dependent tasks
 
