@@ -9,6 +9,7 @@ import { LIGHT_MIN_BRIGHTNESS, lightBrightness } from '../world/light-curve';
 import {
   MAX_MODEL_PARTS,
   cubeFaceRects,
+  entityModelIds,
   getEntityModel,
   getEntitySkin,
   type EntityModel,
@@ -312,6 +313,15 @@ export class EntityRenderer {
         gl.getUniformLocation(this.program, name === 'parts' ? 'u_parts[0]' : `u_${name}`)!,
       ]),
     ) as Record<(typeof UNIFORMS)[number], WebGLUniformLocation>;
+  }
+
+  /**
+   * Bakes every registered model now instead of on first sight, so the GL resource counts do not
+   * grow as new creature types come into view (M04a checks they return to baseline).
+   */
+  warmUp(): void {
+    if (this.disposed) return;
+    for (const id of entityModelIds()) this.resources(id);
   }
 
   private resources(id: string): ModelResources {

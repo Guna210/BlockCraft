@@ -156,6 +156,11 @@ export function registerEntityModel(model: EntityModel, skin: SkinGenerator): vo
   models.set(model.id, { model, skin });
 }
 
+/** Ids of every registered model, in registration order. */
+export function entityModelIds(): string[] {
+  return Array.from(models.keys());
+}
+
 export function hasEntityModel(id: string): boolean {
   return models.has(id);
 }

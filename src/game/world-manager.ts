@@ -1366,6 +1366,7 @@ export class WorldManager {
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
     this.entityRenderer?.dispose();
     this.entityRenderer = new EntityRenderer(this.glWrapper);
+    this.entityRenderer.warmUp();
     this.dropRenderer?.dispose();
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.movingBlockRenderer?.dispose();

@@ -28,14 +28,15 @@ import { atlasTileIndex, buildSwayMasks, type SwayMasks } from './foliage';
 import { SectionMeshData, MeshBucketData } from '../mesh/greedy';
 import { renderStats } from '../debug/api/core';
 import { wireframeEnabled } from '../debug/api/wireframe';
-import { ColumnTintCache } from './tint-cache';
+import { ColumnTintCache, TINT_DEFAULT_SLOT } from './tint-cache';
 import { columnInFrustum, sectionInFrustum, extractFrustumPlanes } from '../world/frustum';
 import { FS_CHUNK } from './terrain-fragment';
 import { ColumnFades } from './column-fade';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { SectionVisibility } from './section-visibility';
 import { cullingSettings } from './culling-settings';
-import { TerrainArena, type TerrainAllocation } from './terrain-arena';
+import { DrawFenceTimeline, TerrainArena, type TerrainAllocation } from './terrain-arena';
+import { TerrainDrawBatcher, DRAW_DATA_TEX_WIDTH, FLOATS_PER_TEXEL } from './terrain-batcher';
 import { renderPhaseStats } from '../engine/render-phase-stats';
 import { buildEmissiveTileTable, EMISSIVE_TABLE_SIZE } from './post/emissive-tiles';
 
@@ -44,7 +45,6 @@ precision highp float;
 layout(location = 0) in uint a_word0;
 layout(location = 1) in uint a_word1;
 uniform mat4 u_viewProj;
-uniform vec3 u_sectionOrigin;
 uniform vec2 u_atlasSize;
 uniform float u_cellSize;
 uniform float u_skyBrightness;
@@ -52,8 +52,11 @@ uniform float u_smoothLighting;
 uniform float u_brightness;
 uniform bool u_debugLight;
 uniform float u_underwaterFloor;
-uniform sampler2D u_grassTintMap;
-uniform sampler2D u_foliageTintMap;
+uniform highp sampler2D u_tintAtlas;
+uniform highp sampler2D u_drawDataTex;
+uniform int u_drawBase;
+uniform int u_useMultiDrawId;
+flat out float v_drawFade;
 #ifdef BLOOM_EMISSIVE
 uniform sampler2D u_emissiveMap;
 flat out float v_emissive;
@@ -99,6 +102,15 @@ ${GLSL_SKY_ATMOSPHERE}
 ${WALL_TORCH_GLSL}
 #endif
 void main() {
+  int drawIdx = u_drawBase + __DRAW_ID_EXPR__;
+  int texel0 = drawIdx << 1;
+  int texel1 = texel0 + 1;
+  vec4 draw0 = texelFetch(u_drawDataTex, ivec2(texel0 & 1023, texel0 >> 10), 0);
+  vec4 draw1 = texelFetch(u_drawDataTex, ivec2(texel1 & 1023, texel1 >> 10), 0);
+  vec3 sectionOrigin = draw0.xyz;
+  v_drawFade = draw0.w;
+  int tintSlot = int(draw1.x + 0.5);
+
   vec3 localPos = vec3(float(a_word0 & 31u), float((a_word0 >> 5u) & 31u), float((a_word0 >> 10u) & 31u));
   // Shape vertices (stairs, fences, doors, trapdoors) live in the cutout bucket only, which is
   // how they are told apart from fluid vertices whose two top word1 bits are also set.
@@ -118,7 +130,7 @@ void main() {
     shapeSub = vec3(float(packedSub & 31u), float((packedSub >> 5u) & 31u), float((packedSub >> 10u) & 31u)) / 16.0;
     localPos += shapeSub;
   }
-  vec3 worldPos = u_sectionOrigin + localPos;
+  vec3 worldPos = sectionOrigin + localPos;
   #ifdef WALL_TORCH
   uint normalIdx=(a_word0 >> 15u) & 7u;
   bool wallTorch=normalIdx>=6u;
@@ -141,7 +153,7 @@ void main() {
     // move together. Leaves move 0.03 blocks at most; plants sway 0.04 at the tip and stay fixed at the base.
     float weight = plant ? 1.0 - float((a_word1 >> ${VERTEX_LAYOUT.vShift}u) & ${VERTEX_LAYOUT.uvMask}u) : 1.0;
     float amplitude = plant ? 0.04 : 0.03;
-    vec3 base = u_sectionOrigin + localPos;
+    vec3 base = sectionOrigin + localPos;
     float phase = u_windTime * 1.6 + base.x * 0.7 + base.z * 0.5;
     worldPos.x += amplitude * weight * sin(phase + base.y * 0.3);
     worldPos.z += amplitude * weight * cos(phase * 0.8 + base.x * 0.2);
@@ -166,8 +178,11 @@ void main() {
   // Clamp to this column's edge texel: vertices at x/z=16 still belong to this column.
   ivec2 tintTexel = ivec2(clamp(floor(localPos.xz - 0.5 * normal.xz), vec2(0.0), vec2(15.0)));
   v_tint = vec3(1.0);
-  if (tintIdx == 1u || tintIdx == 3u) v_tint = texelFetch(u_grassTintMap, tintTexel, 0).rgb;
-  else if (tintIdx == 2u) v_tint = texelFetch(u_foliageTintMap, tintTexel, 0).rgb;
+  if (tintIdx >= 1u && tintIdx <= 3u) {
+    int tintCell = (tintSlot << 1) + (tintIdx == 2u ? 1 : 0);
+    ivec2 cellOrigin = ivec2((tintCell & 63) << 4, (tintCell >> 6) << 4);
+    v_tint = texelFetch(u_tintAtlas, cellOrigin + tintTexel, 0).rgb;
+  }
   v_grassSide = tintIdx == 3u ? 1.0 : 0.0;
   uint tileIdx = a_word1 & (shape ? ${SHAPE_VERTEX.tileMask}u : ${VERTEX_LAYOUT.tileMask}u);
   if (fluid) tileIdx = uint(material == 4u ? u_waterTile : u_lavaTile) + uint(mod(floor(u_fluidTime * 8.0), 32.0));
@@ -210,9 +225,18 @@ void main() {
 }
 `;
 
-// Texture units 0, 1 and 2 hold the atlas and the grass and foliage tint maps while drawing.
+// Texture units while drawing:
+// 0: block/item atlas
+// 1: shared 2D tint atlas (TEXTURE_2D, grass + foliage cells)
+// 2: per-frame draw-data TEXTURE_2D (RGBA32F)
+// 3: scratch unit for upload-time tint updates
+// 4: fluid scene depth texture
+// 5: emissive tile table (when bloom is active)
+const TINT_ATLAS_UNIT = 1;
+const DRAW_DATA_UNIT = 2;
 const SCRATCH_TEXTURE_UNIT = 3;
 const EMISSIVE_TEXTURE_UNIT = 5;
+
 const UNIFORM_CACHE_SLOT = {
   fluidTime: 0,
   swayOn: 1,
@@ -227,8 +251,8 @@ const UNIFORM_CACHE_SLOT = {
   brightness: 11,
   debugLight: 12,
   atlasSampler: 13,
-  grassTintMap: 14,
-  foliageTintMap: 15,
+  tintAtlas: 14,
+  drawDataTex: 15,
   atlasSize: 16,
   cellSize: 18,
   viewProj: 20,
@@ -251,7 +275,10 @@ const UNIFORM_CACHE_SLOT = {
   isCutout: 82,
   isWireframe: 83,
   emissiveMap: 84,
+  drawBase: 85,
+  useMultiDrawId: 86,
 } as const;
+
 interface MultiDrawExtension {
   multiDrawElementsWEBGL(
     mode: number,
@@ -300,6 +327,19 @@ interface PendingSectionUpload {
   nextBucket: number;
 }
 
+export interface TerrainBatchStatsSnapshot {
+  opaqueCutoutSubmissions: number;
+  translucentSubmissions: number;
+  programSwitches: number;
+  textureBinds: number;
+  vaoBinds: number;
+  arenaPages: number;
+  opaquePages: number;
+  cutoutPages: number;
+  translucentPages: number;
+  activeTintSlots: number;
+}
+
 export class ChunkRenderer {
   private depth: FluidDepth;
   private inverseViewProj = mat4.create();
@@ -320,25 +360,25 @@ export class ChunkRenderer {
       ((a.sx * 16 + 8 - this.cameraPos[0]) ** 2 +
         (a.sy * 16 + 8 - this.cameraPos[1]) ** 2 +
         (a.sz * 16 + 8 - this.cameraPos[2]) ** 2) || a.sortRank - b.sortRank;
-  private readonly opaqueArena: TerrainArena;
-  private readonly cutoutArena: TerrainArena;
-  private readonly translucentArena: TerrainArena;
-  private readonly multiDraw: MultiDrawExtension | null;
-  private readonly drawCounts = new Int32Array(20);
-  private readonly drawOffsets = new Int32Array(20);
-  private readonly drawData = new Float32Array(80);
-  private readonly priorDrawData = Array.from({ length: 8 }, () => new Float32Array(80));
-  private readonly drawDataValid = new Uint8Array(8);
-  private activeLightingVariant = 0;
+  private readonly drawFences: DrawFenceTimeline;
+  public readonly opaqueArena: TerrainArena;
+  public readonly cutoutArena: TerrainArena;
+  public readonly translucentArena: TerrainArena;
+  public multiDraw: MultiDrawExtension | null;
+  public readonly batcher = new TerrainDrawBatcher();
+  private drawDataTexture: WebGLTexture | null = null;
+  private drawDataTexHeight = 0;
+  private activeLightingVariant = -1;
+  private boundVao: WebGLVertexArrayObject | null = null;
   private readonly programUniformCache = Array.from({ length: 8 }, () =>
-    new Float64Array(85).fill(Number.NaN),
+    new Float64Array(88).fill(Number.NaN),
   );
-  private readonly multiDrawModes = new Uint8Array(8);
   private readonly swayUniformsValid = new Uint8Array(8);
-  private readonly fadeUniformValues = new Float64Array(8).fill(Number.NaN);
   private swayUniformAtlas: TextureAtlas | null = null;
-  private locMultiDraw: WebGLUniformLocation | null = null;
-  private locDrawData: WebGLUniformLocation | null = null;
+  private locDrawBase: WebGLUniformLocation | null = null;
+  private locUseMultiDrawId: WebGLUniformLocation | null = null;
+  private locDrawDataTex: WebGLUniformLocation | null = null;
+  private locTintAtlas: WebGLUniformLocation | null = null;
   private locEmissiveMap: WebGLUniformLocation | null = null;
   private glWrapper: GLWrapper;
   private program: WebGLProgram;
@@ -354,6 +394,13 @@ export class ChunkRenderer {
   private readonly drawBuf1: [number];
   private readonly drawBuf2: [number, number];
 
+  // Per-frame diagnostic counters for PERF-batch A/B reporting and acceptance tests
+  public lastOpaqueCutoutSubmissions = 0;
+  public lastTranslucentSubmissions = 0;
+  public lastProgramSwitches = 0;
+  public lastTextureBinds = 0;
+  public lastVaoBinds = 0;
+
   private locFluidTime: WebGLUniformLocation;
   private locWaterTile: WebGLUniformLocation;
   private locLavaTile: WebGLUniformLocation;
@@ -361,15 +408,11 @@ export class ChunkRenderer {
   private locInverseViewProj: WebGLUniformLocation;
   private locViewport: WebGLUniformLocation;
   private locViewProj: WebGLUniformLocation;
-  private locSectionOrigin: WebGLUniformLocation;
   private locAtlasSampler: WebGLUniformLocation;
   private locAtlasSize: WebGLUniformLocation;
   private locCellSize: WebGLUniformLocation;
   private locIsCutout: WebGLUniformLocation;
   private locIsWireframe: WebGLUniformLocation;
-  private locGrassTintMap: WebGLUniformLocation;
-  private locFoliageTintMap: WebGLUniformLocation;
-  private locFade: WebGLUniformLocation;
   private locSkyBrightness: WebGLUniformLocation;
   private locSmoothLighting: WebGLUniformLocation;
   private locBrightness: WebGLUniformLocation;
@@ -419,15 +462,12 @@ export class ChunkRenderer {
   private dayFactor = 1;
   private twilightFactor = 0;
   private nightFactor = 0;
-  private tintCache: ColumnTintCache;
+  public tintCache: ColumnTintCache;
   private sectionMeshes: Map<string, GPUSectionMesh> = new Map();
   private readonly pendingSectionUploads = new Map<string, PendingSectionUpload>();
   private readonly sectionCounts = new Uint32Array(20);
-  private readonly visibleVariantBuckets = new Uint8Array(8);
   // Includes empty meshes: those sections still carry connectivity through open space.
   private visibilityMasks = new SectionVisibility();
-  // The same meshes grouped by column ("sx,sz"), so one frustum test covers a whole column and the
-  // draws of a column are adjacent (one tint texture bind per column).
   private columnMeshes: Map<string, GPUSectionMesh[]> = new Map();
   private readonly columnLists: GPUSectionMesh[][] = [];
   // Fade-in of each column that has section meshes (decisions/M04b-fade-and-memory.md).
@@ -437,11 +477,8 @@ export class ChunkRenderer {
   // Per-frame scratch state of render(), kept as fields so the draw loop allocates nothing.
   private visColumns: GPUSectionMesh[][] = Array.from({ length: 69 * 69 }, () => []);
   private visColumnCount = 0;
-  private visGrass: Array<WebGLTexture | null> = new Array(69 * 69).fill(null);
-  private visFoliage: Array<WebGLTexture | null> = new Array(69 * 69).fill(null);
+  private visTintSlot = new Int32Array(69 * 69);
   private visFade = new Float32Array(69 * 69);
-  private boundGrass: WebGLTexture | null = null;
-  private boundFoliage: WebGLTexture | null = null;
   private activeUnit = 0;
   private uploadTintUnitReady = false;
   private passDraws = 0;
@@ -452,9 +489,22 @@ export class ChunkRenderer {
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
-    this.opaqueArena = new TerrainArena(glWrapper);
-    this.cutoutArena = new TerrainArena(glWrapper);
-    this.translucentArena = new TerrainArena(glWrapper);
+    this.drawFences = new DrawFenceTimeline(glWrapper);
+    this.opaqueArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
+      initialPageQuads: 1_048_576,
+      maxPageQuads: 2_097_152,
+    });
+    this.cutoutArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
+      initialPageQuads: 524_288,
+      maxPageQuads: 1_048_576,
+    });
+    this.translucentArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
+      initialPageQuads: 262_144,
+      maxPageQuads: 524_288,
+    });
     this.depth = new FluidDepth(glWrapper);
     const gl = this.glWrapper.gl;
     this.drawBuf1 = [gl.COLOR_ATTACHMENT0];
@@ -467,26 +517,12 @@ export class ChunkRenderer {
       ? VS_CHUNK.replace(
           '#version 300 es',
           '#version 300 es\n#extension GL_ANGLE_multi_draw : require',
-        )
-          .replace(
-            'uniform vec3 u_sectionOrigin;',
-            'uniform vec3 u_sectionOrigin;\nuniform vec4 u_drawData[20];\nuniform bool u_multiDraw;\nuniform float u_fade;\nflat out float v_drawFade;',
-          )
-          .replace(
-            'void main() {',
-            'void main() {\n  v_drawFade = u_multiDraw ? u_drawData[gl_DrawID].w : u_fade;',
-          )
-          .replaceAll(
-            'u_sectionOrigin + localPos',
-            '(u_multiDraw ? u_drawData[gl_DrawID].xyz : u_sectionOrigin) + localPos',
-          )
-      : VS_CHUNK;
-    const fragmentSource = this.multiDraw
-      ? FS_CHUNK.replace('uniform float u_fade;', 'flat in float v_drawFade;').replaceAll(
-          'u_fade',
-          'v_drawFade',
-        )
-      : FS_CHUNK;
+        ).replace('__DRAW_ID_EXPR__', '(u_useMultiDrawId != 0 ? gl_DrawID : 0)')
+      : VS_CHUNK.replace('__DRAW_ID_EXPR__', '0');
+    const fragmentSource = FS_CHUNK.replace(
+      'uniform float u_fade;',
+      'flat in float v_drawFade;',
+    ).replaceAll('u_fade', 'v_drawFade');
     this.baseVertexSource = vertexSource;
     this.baseFragmentSource = fragmentSource;
     this.program = this.glWrapper.createProgram(vertexSource, fragmentSource);
@@ -505,6 +541,7 @@ export class ChunkRenderer {
       null,
     ];
     this.tintCache = new ColumnTintCache(glWrapper);
+    this.ensureDrawDataTexture(this.batcher.getTextureHeight());
 
     this.locFluidTime = gl.getUniformLocation(this.program, 'u_fluidTime')!;
     this.locWaterTile = gl.getUniformLocation(this.program, 'u_waterTile')!;
@@ -513,10 +550,11 @@ export class ChunkRenderer {
     this.locInverseViewProj = gl.getUniformLocation(this.program, 'u_inverseViewProj')!;
     this.locViewport = gl.getUniformLocation(this.program, 'u_viewport')!;
     this.locViewProj = gl.getUniformLocation(this.program, 'u_viewProj')!;
-    this.locSectionOrigin = gl.getUniformLocation(this.program, 'u_sectionOrigin')!;
     this.locAtlasSampler = gl.getUniformLocation(this.program, 'u_atlasSampler')!;
-    this.locGrassTintMap = gl.getUniformLocation(this.program, 'u_grassTintMap')!;
-    this.locFoliageTintMap = gl.getUniformLocation(this.program, 'u_foliageTintMap')!;
+    this.locTintAtlas = gl.getUniformLocation(this.program, 'u_tintAtlas')!;
+    this.locDrawDataTex = gl.getUniformLocation(this.program, 'u_drawDataTex')!;
+    this.locDrawBase = gl.getUniformLocation(this.program, 'u_drawBase')!;
+    this.locUseMultiDrawId = gl.getUniformLocation(this.program, 'u_useMultiDrawId')!;
     this.locAtlasSize = gl.getUniformLocation(this.program, 'u_atlasSize')!;
     this.locCellSize = gl.getUniformLocation(this.program, 'u_cellSize')!;
     this.locIsCutout = gl.getUniformLocation(this.program, 'u_isCutout')!;
@@ -525,7 +563,6 @@ export class ChunkRenderer {
     this.locSmoothLighting = gl.getUniformLocation(this.program, 'u_smoothLighting')!;
     this.locBrightness = gl.getUniformLocation(this.program, 'u_brightness')!;
     this.locDebugLight = gl.getUniformLocation(this.program, 'u_debugLight')!;
-    this.locFade = gl.getUniformLocation(this.program, 'u_fade')!;
     this.locCameraPos = gl.getUniformLocation(this.program, 'u_cameraPos')!;
     this.locFogStart = gl.getUniformLocation(this.program, 'u_fogStart')!;
     this.locFogEnd = gl.getUniformLocation(this.program, 'u_fogEnd')!;
@@ -552,12 +589,11 @@ export class ChunkRenderer {
       'locInverseViewProj',
       'locViewport',
       'locViewProj',
-      'locSectionOrigin',
-      'locMultiDraw',
-      'locDrawData',
+      'locDrawBase',
+      'locUseMultiDrawId',
+      'locDrawDataTex',
+      'locTintAtlas',
       'locAtlasSampler',
-      'locGrassTintMap',
-      'locFoliageTintMap',
       'locEmissiveMap',
       'locAtlasSize',
       'locCellSize',
@@ -567,7 +603,6 @@ export class ChunkRenderer {
       'locSmoothLighting',
       'locBrightness',
       'locDebugLight',
-      'locFade',
       'locCameraPos',
       'locFogStart',
       'locFogEnd',
@@ -597,6 +632,79 @@ export class ChunkRenderer {
       null,
       null,
     ];
+  }
+
+  public getBatchStats(): TerrainBatchStatsSnapshot {
+    const opaquePages = this.opaqueArena.pages.length;
+    const cutoutPages = this.cutoutArena.pages.length;
+    const translucentPages = this.translucentArena.pages.length;
+    return {
+      opaqueCutoutSubmissions: this.lastOpaqueCutoutSubmissions,
+      translucentSubmissions: this.lastTranslucentSubmissions,
+      programSwitches: this.lastProgramSwitches,
+      textureBinds: this.lastTextureBinds,
+      vaoBinds: this.lastVaoBinds,
+      arenaPages: opaquePages + cutoutPages + translucentPages,
+      opaquePages,
+      cutoutPages,
+      translucentPages,
+      activeTintSlots: this.tintCache.activeSlotCount,
+    };
+  }
+
+  private ensureDrawDataTexture(requiredHeight: number): WebGLTexture {
+    const gl = this.glWrapper.gl;
+    if (this.drawDataTexture && this.drawDataTexHeight === requiredHeight) {
+      return this.drawDataTexture;
+    }
+    if (this.drawDataTexture) {
+      this.glWrapper.deleteTexture(this.drawDataTexture);
+    }
+    const tex = this.glWrapper.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+    this.activeUnit = SCRATCH_TEXTURE_UNIT;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, DRAW_DATA_TEX_WIDTH, requiredHeight);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.drawDataTexture = tex;
+    this.drawDataTexHeight = requiredHeight;
+    return tex;
+  }
+
+  private uploadDrawDataTexture(rows: number): void {
+    const gl = this.glWrapper.gl;
+    const tex = this.ensureDrawDataTexture(this.batcher.getTextureHeight());
+    if (this.activeUnit !== DRAW_DATA_UNIT) {
+      gl.activeTexture(gl.TEXTURE0 + DRAW_DATA_UNIT);
+      this.activeUnit = DRAW_DATA_UNIT;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    this.lastTextureBinds++;
+    if (rows <= 0) return;
+    const uploadStart = renderPhaseStats.start();
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      0,
+      0,
+      DRAW_DATA_TEX_WIDTH,
+      rows,
+      gl.RGBA,
+      gl.FLOAT,
+      this.batcher.drawData,
+      0,
+    );
+    renderPhaseStats.end('uniformUploadMs', uploadStart);
+  }
+
+  private bindVao(vao: WebGLVertexArrayObject | null): void {
+    if (this.boundVao === vao) return;
+    this.glWrapper.gl.bindVertexArray(vao);
+    this.boundVao = vao;
+    if (vao !== null) this.lastVaoBinds++;
   }
 
   private collectLocations(program: WebGLProgram): Record<string, WebGLUniformLocation | null> {
@@ -776,7 +884,8 @@ export class ChunkRenderer {
     const colKey = `${sx},${sz}`;
     let pending = this.pendingSectionUploads.get(key);
     if (!pending || pending.meshData !== meshData) {
-      // Production results reserve ranges before entering the frame-budgeted upload path.
+      // Production results reserve ranges before entering the frame-budgeted upload path; direct
+      // unbudgeted test calls expect a dedicated page per section upload.
       this.prepareSectionUpload(sx, sy, sz, meshData, !Number.isFinite(budgetMs));
       pending = this.pendingSectionUploads.get(key)!;
     }
@@ -990,8 +1099,8 @@ export class ChunkRenderer {
   }
 
   /**
-   * Creates the column's tint textures now, as part of its upload, instead of in the first frame that
-   * draws it. The textures are created on the scratch unit (see render()).
+   * Allocates and uploads the column's tint layers now, as part of its upload, instead of in the
+   * first frame that draws it. The upload runs on the scratch texture unit (see render()).
    */
   public prepareColumnTints(
     cx: number,
@@ -1035,11 +1144,26 @@ export class ChunkRenderer {
     this.lastVisible.length = 0;
     for (let i = 0; i < this.visColumnCount; i++) {
       this.visColumns[i]!.length = 0;
-      this.visGrass[i] = null;
-      this.visFoliage[i] = null;
     }
     this.visColumnCount = 0;
+    this.releaseBatchResources();
+  }
+
+  /**
+   * World teardown: deletes every arena page (buffers + VAO) with its quarantined ranges and
+   * pending fences, and shrinks the draw-data texture back to its initial size. The arena pages
+   * are recreated lazily by the next world. The draw-data texture and the tint atlas are fixed-size
+   * objects created with the renderer, so they stay as part of the pre-world baseline.
+   */
+  private releaseBatchResources(): void {
+    this.opaqueArena.releaseAll();
+    this.cutoutArena.releaseAll();
+    this.translucentArena.releaseAll();
+    this.drawFences.releaseAll();
+    this.batcher.resetCapacity();
+    this.ensureDrawDataTexture(this.batcher.getTextureHeight());
     this.tintCache.clearAll();
+    this.boundVao = null;
   }
 
   public beginUploadBatch(): void {
@@ -1163,88 +1287,29 @@ export class ChunkRenderer {
     return this.foliage;
   }
 
-  /** Draws one pass (0 opaque, 1 cutout, 2 translucent) over the visible columns gathered by render(). */
-  private drawPass(pass: number, skyOnly: boolean, wallTorch = false): void {
-    const gl = this.glWrapper.gl;
-    const columns = this.visColumns;
-    for (let c = 0; c < this.visColumnCount; c++) {
-      const list = columns[c]!;
-      let tintsBound = false;
-      let batchVao: WebGLVertexArrayObject | null = null;
-      let batchCount = 0;
-      for (let i = 0; i < list.length; i++) {
-        const mesh = list[i]!;
-        if (mesh.hasBlockLight === skyOnly || Boolean(mesh.hasWallTorch) !== wallTorch) continue;
-        const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
-        if (!bucket) continue;
-        bucket.arena.markUsed(bucket.allocation);
-        if (!tintsBound) {
-          tintsBound = true;
-          // One fade value per column, set before the column's first draw of this pass.
-          const uniformStart = renderPhaseStats.start();
-          this.setFade(this.visFade[c]!);
-          renderPhaseStats.end('uniformUploadMs', uniformStart);
-          // Only a texture that differs from the one already bound is bound again.
-          const grass = this.visGrass[c]!;
-          if (grass !== this.boundGrass) {
-            if (this.activeUnit !== 1) gl.activeTexture(gl.TEXTURE1);
-            this.activeUnit = 1;
-            gl.bindTexture(gl.TEXTURE_2D, grass);
-            this.boundGrass = grass;
-          }
-          const foliage = this.visFoliage[c]!;
-          if (foliage !== this.boundFoliage) {
-            if (this.activeUnit !== 2) gl.activeTexture(gl.TEXTURE2);
-            this.activeUnit = 2;
-            gl.bindTexture(gl.TEXTURE_2D, foliage);
-            this.boundFoliage = foliage;
-          }
-        }
-        if (this.multiDraw) {
-          if (batchCount && batchVao !== bucket.vao) {
-            this.flushMultiDraw(batchVao!, batchCount);
-            batchCount = 0;
-          }
-          batchVao = bucket.vao;
-          this.drawCounts[batchCount] = bucket.indexCount;
-          this.drawOffsets[batchCount] = bucket.allocation.indices.offset;
-          this.drawData[batchCount * 4] = mesh.sx * 16;
-          this.drawData[batchCount * 4 + 1] = mesh.sy * 16;
-          this.drawData[batchCount * 4 + 2] = mesh.sz * 16;
-          this.drawData[batchCount * 4 + 3] = this.visFade[c]!;
-          batchCount++;
-        } else {
-          gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-          gl.bindVertexArray(bucket.vao);
-          this.glWrapper.drawElements(
-            gl.TRIANGLES,
-            bucket.indexCount,
-            gl.UNSIGNED_INT,
-            bucket.allocation.indices.offset,
-          );
-          this.passDraws++;
-        }
-        this.passTriangles += bucket.indexCount / 3;
-      }
-      if (batchCount) this.flushMultiDraw(batchVao!, batchCount);
-    }
-  }
-
-  private uniform1f(location: WebGLUniformLocation, slot: number, value: number): void {
+  private uniform1f(location: WebGLUniformLocation | null, slot: number, value: number): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     if (cache[slot] === value) return;
     this.glWrapper.gl.uniform1f(location, value);
     cache[slot] = value;
   }
 
-  private uniform1i(location: WebGLUniformLocation, slot: number, value: number): void {
+  private uniform1i(location: WebGLUniformLocation | null, slot: number, value: number): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     if (cache[slot] === value) return;
     this.glWrapper.gl.uniform1i(location, value);
     cache[slot] = value;
   }
 
-  private uniform2f(location: WebGLUniformLocation, slot: number, x: number, y: number): void {
+  private uniform2f(
+    location: WebGLUniformLocation | null,
+    slot: number,
+    x: number,
+    y: number,
+  ): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     if (cache[slot] === x && cache[slot + 1] === y) return;
     this.glWrapper.gl.uniform2f(location, x, y);
@@ -1253,12 +1318,13 @@ export class ChunkRenderer {
   }
 
   private uniform3f(
-    location: WebGLUniformLocation,
+    location: WebGLUniformLocation | null,
     slot: number,
     x: number,
     y: number,
     z: number,
   ): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     if (cache[slot] === x && cache[slot + 1] === y && cache[slot + 2] === z) return;
     this.glWrapper.gl.uniform3f(location, x, y, z);
@@ -1267,7 +1333,12 @@ export class ChunkRenderer {
     cache[slot + 2] = z;
   }
 
-  private uniform4fv(location: WebGLUniformLocation, slot: number, values: Float32Array): void {
+  private uniform4fv(
+    location: WebGLUniformLocation | null,
+    slot: number,
+    values: Float32Array,
+  ): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     let changed = false;
     for (let i = 0; i < 4 && !changed; i++) changed = cache[slot + i] !== values[i];
@@ -1277,61 +1348,17 @@ export class ChunkRenderer {
   }
 
   private uniformMatrix4fv(
-    location: WebGLUniformLocation,
+    location: WebGLUniformLocation | null,
     slot: number,
     values: ArrayLike<number>,
   ): void {
+    if (!location) return;
     const cache = this.programUniformCache[this.activeLightingVariant]!;
     let changed = false;
     for (let i = 0; i < 16 && !changed; i++) changed = cache[slot + i] !== values[i];
     if (!changed) return;
     this.glWrapper.gl.uniformMatrix4fv(location, false, values as Float32List);
     for (let i = 0; i < 16; i++) cache[slot + i] = values[i]!;
-  }
-
-  private setFade(value: number): void {
-    if (this.fadeUniformValues[this.activeLightingVariant] === value) return;
-    this.glWrapper.gl.uniform1f(this.locFade, value);
-    this.fadeUniformValues[this.activeLightingVariant] = value;
-  }
-
-  private setMultiDrawMode(enabled: boolean): void {
-    if (!this.multiDraw) return;
-    const value = enabled ? 1 : 0;
-    if (this.multiDrawModes[this.activeLightingVariant] === value) return;
-    this.glWrapper.gl.uniform1i(this.locMultiDraw, value);
-    this.multiDrawModes[this.activeLightingVariant] = value;
-  }
-
-  private flushMultiDraw(vao: WebGLVertexArrayObject, count: number): void {
-    const gl = this.glWrapper.gl;
-    gl.bindVertexArray(vao);
-    const uniformStart = renderPhaseStats.start();
-    this.setMultiDrawMode(true);
-    const prior = this.priorDrawData[this.activeLightingVariant]!;
-    const dataLength = count * 4;
-    let dataChanged = this.drawDataValid[this.activeLightingVariant] === 0;
-    for (let i = 0; i < dataLength && !dataChanged; i++)
-      dataChanged = prior[i] !== this.drawData[i];
-    if (dataChanged) {
-      gl.uniform4fv(this.locDrawData, this.drawData, 0, dataLength);
-      for (let i = 0; i < dataLength; i++) prior[i] = this.drawData[i]!;
-      this.drawDataValid[this.activeLightingVariant] = 1;
-    }
-    renderPhaseStats.end('uniformUploadMs', uniformStart);
-    const drawStart = renderPhaseStats.start();
-    this.multiDraw!.multiDrawElementsWEBGL(
-      gl.TRIANGLES,
-      this.drawCounts,
-      0,
-      gl.UNSIGNED_INT,
-      this.drawOffsets,
-      0,
-      count,
-    );
-    this.glWrapper.recordDrawSubmission();
-    renderPhaseStats.end('drawSubmissionMs', drawStart);
-    this.passDraws += count;
   }
 
   private selectLightingProgram(
@@ -1347,10 +1374,13 @@ export class ChunkRenderer {
     if (bloom && !this.programs[index]) {
       this.ensureBloomPrograms();
     }
-    this.activeLightingVariant = index;
-    this.program = this.programs[index]!;
-    Object.assign(this, this.programLocations[index]);
-    gl.useProgram(this.program);
+    if (this.activeLightingVariant !== index) {
+      this.activeLightingVariant = index;
+      this.program = this.programs[index]!;
+      Object.assign(this, this.programLocations[index]);
+      gl.useProgram(this.program);
+      this.lastProgramSwitches++;
+    }
     const { sway } = this.getFoliage(atlas);
     this.uniform1f(this.locFluidTime, UNIFORM_CACHE_SLOT.fluidTime, this.fluidTime);
     if (atlas !== this.swayUniformAtlas) {
@@ -1399,8 +1429,8 @@ export class ChunkRenderer {
     this.uniform1f(this.locBrightness, UNIFORM_CACHE_SLOT.brightness, settings.brightness);
     this.uniform1i(this.locDebugLight, UNIFORM_CACHE_SLOT.debugLight, this.debugLight ? 1 : 0);
     this.uniform1i(this.locAtlasSampler, UNIFORM_CACHE_SLOT.atlasSampler, 0);
-    this.uniform1i(this.locGrassTintMap, UNIFORM_CACHE_SLOT.grassTintMap, 1);
-    this.uniform1i(this.locFoliageTintMap, UNIFORM_CACHE_SLOT.foliageTintMap, 2);
+    this.uniform1i(this.locTintAtlas, UNIFORM_CACHE_SLOT.tintAtlas, TINT_ATLAS_UNIT);
+    this.uniform1i(this.locDrawDataTex, UNIFORM_CACHE_SLOT.drawDataTex, DRAW_DATA_UNIT);
     this.uniform2f(this.locAtlasSize, UNIFORM_CACHE_SLOT.atlasSize, atlas.width, atlas.height);
     this.uniform1f(this.locCellSize, UNIFORM_CACHE_SLOT.cellSize, CELL_SIZE);
     this.uniformMatrix4fv(this.locViewProj, UNIFORM_CACHE_SLOT.viewProj, viewProjMatrix);
@@ -1447,118 +1477,81 @@ export class ChunkRenderer {
     renderPhaseStats.end('uniformUploadMs', uniformStart);
   }
 
-  private drawTranslucent(viewProjMatrix: mat4, atlas: TextureAtlas): void {
+  private submitPassCommands(
+    pass: 0 | 1 | 2,
+    arena: TerrainArena,
+    viewProjMatrix: mat4,
+    atlas: TextureAtlas,
+  ): void {
     const gl = this.glWrapper.gl;
-    const camera = this.cameraPos;
-    const meshes = this.visibleTranslucent;
-    const moved = distanceSquared(camera, this.sortedCamera) >= TRANSLUCENT_SORT_STEP ** 2;
-    if (moved || this.sortDirty) {
-      const sortStart = renderPhaseStats.start();
-      this.sortTranslucentMeshes(meshes);
-      renderPhaseStats.end('translucentSortMs', sortStart);
-      this.sortedCamera[0] = camera[0];
-      this.sortedCamera[1] = camera[1];
-      this.sortedCamera[2] = camera[2];
-      this.sortDirty = false;
-    }
-    let lastVariant = -1;
-    let batchCount = 0;
-    let batchColumn = -1;
-    let batchVao: WebGLVertexArrayObject | null = null;
-    let lastGrass: WebGLTexture | null = null;
-    let lastFoliage: WebGLTexture | null = null;
-    let lastTextureUnit = -1;
-    for (let i = 0; i < meshes.length; i++) {
-      const mesh = meshes[i]!;
-      const c = mesh.visibleColumn;
-      const bucket = mesh.translucent!;
-      bucket.arena.markUsed(bucket.allocation);
-      const local = this.translucentLocal;
-      local[0] = camera[0] - mesh.sx * 16;
-      local[1] = camera[1] - mesh.sy * 16;
-      local[2] = camera[2] - mesh.sz * 16;
-      if (
-        (local[0]! - 8) ** 2 + (local[1]! - 8) ** 2 + (local[2]! - 8) ** 2 <
-          TRANSLUCENT_NEAR_DISTANCE ** 2 &&
-        (!bucket.sortCamera ||
-          distanceSquared(local, bucket.sortCamera) >= TRANSLUCENT_SORT_STEP ** 2)
-      ) {
-        gl.bindVertexArray(bucket.vao);
-        const sorted = bucket.sorter!.sort(local, bucket.allocation.vertexBase);
-        bucket.arena.updateSortedIndices(bucket.allocation, sorted);
-        bucket.sortCamera![0] = local[0]!;
-        bucket.sortCamera![1] = local[1]!;
-        bucket.sortCamera![2] = local[2]!;
-      }
-      // Program selection follows sorted geometry, never groups that break blend order.
-      const variant =
-        (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0) + (this.bloomActive ? 4 : 0);
-      if (
-        batchCount &&
-        (variant !== lastVariant ||
-          c !== batchColumn ||
-          bucket.vao !== batchVao ||
-          batchCount === 20)
-      ) {
-        this.flushMultiDraw(batchVao!, batchCount);
-        batchCount = 0;
-      }
-      if (variant !== lastVariant) {
-        this.selectLightingProgram(
-          !mesh.hasBlockLight,
-          viewProjMatrix,
-          atlas,
-          mesh.hasWallTorch,
-          this.bloomActive,
+    const cmdCount = this.batcher.getCommandCount(pass);
+    if (cmdCount === 0) return;
+
+    const counts = this.batcher.counts;
+    const offsets = this.batcher.offsets;
+    let currentVariant = -1;
+
+    for (let i = 0; i < cmdCount; i++) {
+      const cmd = this.batcher.getCommand(pass, i);
+      const page = arena.getPageById(cmd.pageId);
+      if (!page) continue;
+
+      if (cmd.variant !== currentVariant) {
+        currentVariant = cmd.variant;
+        const skyOnly = (currentVariant & 1) !== 0;
+        const wallTorch = (currentVariant & 2) !== 0;
+        this.selectLightingProgram(skyOnly, viewProjMatrix, atlas, wallTorch, this.bloomActive);
+        const uniformStart = renderPhaseStats.start();
+        this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, pass === 1 ? 1 : 0);
+        this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 0);
+        this.uniform1i(
+          this.locUseMultiDrawId,
+          UNIFORM_CACHE_SLOT.useMultiDrawId,
+          this.multiDraw ? 1 : 0,
         );
-        lastVariant = variant;
+        renderPhaseStats.end('uniformUploadMs', uniformStart);
       }
-      const uniformStart = renderPhaseStats.start();
-      this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);
-      this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 0);
-      this.setFade(this.visFade[c]!);
-      const grass = this.visGrass[c]!;
-      if (grass !== lastGrass) {
-        if (lastTextureUnit !== 1) gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, grass);
-        lastGrass = grass;
-        lastTextureUnit = 1;
-      }
-      const foliage = this.visFoliage[c]!;
-      if (foliage !== lastFoliage) {
-        if (lastTextureUnit !== 2) gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, foliage);
-        lastFoliage = foliage;
-        lastTextureUnit = 2;
-      }
-      this.activeUnit = 2;
-      if (!this.multiDraw) {
-        gl.bindVertexArray(bucket.vao);
-        gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-      }
-      renderPhaseStats.end('uniformUploadMs', uniformStart);
+
+      this.bindVao(page.vao);
+
       if (this.multiDraw) {
-        batchColumn = c;
-        batchVao = bucket.vao;
-        this.drawCounts[batchCount] = bucket.indexCount;
-        this.drawOffsets[batchCount] = bucket.allocation.indices.offset;
-        this.drawData[batchCount * 4] = mesh.sx * 16;
-        this.drawData[batchCount * 4 + 1] = mesh.sy * 16;
-        this.drawData[batchCount * 4 + 2] = mesh.sz * 16;
-        this.drawData[batchCount * 4 + 3] = this.visFade[c]!;
-        batchCount++;
-      } else {
-        this.glWrapper.drawElements(
+        const uniformStart = renderPhaseStats.start();
+        this.uniform1i(this.locDrawBase, UNIFORM_CACHE_SLOT.drawBase, cmd.drawBase);
+        renderPhaseStats.end('uniformUploadMs', uniformStart);
+
+        const drawStart = renderPhaseStats.start();
+        this.multiDraw.multiDrawElementsWEBGL(
           gl.TRIANGLES,
-          bucket.indexCount,
+          counts,
+          cmd.countsOffset,
           gl.UNSIGNED_INT,
-          bucket.allocation.indices.offset,
+          offsets,
+          cmd.offsetsOffset,
+          cmd.drawCount,
         );
-        this.passDraws++;
+        this.glWrapper.recordDrawSubmission();
+        renderPhaseStats.end('drawSubmissionMs', drawStart);
+        if (pass === 2) this.lastTranslucentSubmissions++;
+        else this.lastOpaqueCutoutSubmissions++;
+        this.passDraws += cmd.drawCount;
+      } else {
+        for (let d = 0; d < cmd.drawCount; d++) {
+          const drawIdx = cmd.drawBase + d;
+          const uniformStart = renderPhaseStats.start();
+          this.uniform1i(this.locDrawBase, UNIFORM_CACHE_SLOT.drawBase, drawIdx);
+          renderPhaseStats.end('uniformUploadMs', uniformStart);
+          this.glWrapper.drawElements(
+            gl.TRIANGLES,
+            counts[drawIdx]!,
+            gl.UNSIGNED_INT,
+            offsets[drawIdx]!,
+          );
+          if (pass === 2) this.lastTranslucentSubmissions++;
+          else this.lastOpaqueCutoutSubmissions++;
+          this.passDraws++;
+        }
       }
-      this.passTriangles += bucket.indexCount / 3;
     }
-    if (batchCount) this.flushMultiDraw(batchVao!, batchCount);
   }
 
   private sortTranslucentMeshes(meshes: GPUSectionMesh[]): void {
@@ -1589,21 +1582,6 @@ export class ChunkRenderer {
     }
   }
 
-  private drawLightingPass(pass: number, viewProjMatrix: mat4, atlas: TextureAtlas): void {
-    for (let variant = 0; variant < 4; variant++) {
-      const skyOnly = (variant & 1) === 0,
-        wallTorch = variant >= 2;
-      const programIndex = (skyOnly ? 1 : 0) + (wallTorch ? 2 : 0);
-      if (!this.visibleVariantBuckets[pass * 4 + programIndex]) continue;
-      this.selectLightingProgram(skyOnly, viewProjMatrix, atlas, wallTorch, this.bloomActive);
-      const uniformStart = renderPhaseStats.start();
-      this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, pass === 1 ? 1 : 0);
-      this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 0);
-      renderPhaseStats.end('uniformUploadMs', uniformStart);
-      this.drawPass(pass, skyOnly, wallTorch);
-    }
-  }
-
   public render(
     viewProjMatrix: mat4,
     atlasTexture: WebGLTexture,
@@ -1617,17 +1595,26 @@ export class ChunkRenderer {
     this.bloomActive = bloomEnabled && sceneFramebuffer !== null;
     const lod = this.lodAtmosphere?.lod;
 
+    this.lastOpaqueCutoutSubmissions = 0;
+    this.lastTranslucentSubmissions = 0;
+    this.lastProgramSwitches = 0;
+    this.lastTextureBinds = 0;
+    this.lastVaoBinds = 0;
+    this.activeLightingVariant = -1;
+    this.boundVao = null;
+
+    this.drawFences.begin();
+    this.opaqueArena.beginDrawFrame();
+    this.cutoutArena.beginDrawFrame();
+    this.translucentArena.beginDrawFrame();
+
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+    this.lastTextureBinds++;
 
-    // Column-level frustum culling: every pass draws only the sections of columns whose box touches
-    // the frustum (decisions/M04a-streaming.md). Each visible column's tint textures are fetched once
-    // per frame, on a texture unit this renderer does not sample from: the cache creates (or
-    // re-uploads) textures on the active unit, and the first column seen in a frame must not replace
-    // the atlas on unit 0 (stale first frame, see decisions/M02c-fix-load-path.md).
     const visibilityStart = renderPhaseStats.start();
     const planeStart = renderPhaseStats.start();
     const planes = extractFrustumPlanes(viewProjMatrix, this.frustumPlanes);
@@ -1654,19 +1641,24 @@ export class ChunkRenderer {
       );
     }
     renderPhaseStats.end('caveFrustumMs', visibilityStart);
+
     const drawListStart = renderPhaseStats.start();
     const meshes = this.lastVisible;
     meshes.length = 0;
     this.visibleTranslucent.length = 0;
     const previousTranslucentGeneration = this.translucentVisibilityGeneration;
     this.translucentVisibilityGeneration++;
-    this.visibleVariantBuckets.fill(0);
     const columns = this.visColumns;
     const nowMs = performance.now();
     let columnCount = 0;
     const lodMask = lod?.mask;
     lodMask?.moveTo(Math.floor(this.cameraPos[0]! / 16), Math.floor(this.cameraPos[2]! / 16));
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+    this.activeUnit = SCRATCH_TEXTURE_UNIT;
+    this.batcher.beginFrame();
+    this.passDraws = 0;
+    this.passTriangles = 0;
+
     for (let column = 0; column < this.columnLists.length; column++) {
       const list = this.columnLists[column]!;
       const first = list[0]!;
@@ -1683,9 +1675,6 @@ export class ChunkRenderer {
           continue;
         if (cullingSettings.cave && !this.visibilityMasks.visible(mesh.sx, mesh.sy, mesh.sz))
           continue;
-        const variant = (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0);
-        if (mesh.opaque) this.visibleVariantBuckets[variant] = 1;
-        if (mesh.cutout) this.visibleVariantBuckets[4 + variant] = 1;
         visible.push(mesh);
         meshes.push(mesh);
         if (mesh.translucent) {
@@ -1698,28 +1687,131 @@ export class ChunkRenderer {
       }
       if (visible.length === 0) continue;
       columns[columnCount] = visible;
-      const pair = this.tintCache.getColumnTints(first.sx, first.sz, world);
-      this.visGrass[columnCount] = pair.grassTexture;
-      this.visFoliage[columnCount] = pair.foliageTexture;
-      this.visFade[columnCount] = lod ? 1 : this.fades.amount(first.sx, first.sz, nowMs);
+      const tintSlot = this.tintCache.getColumnTintSlot(first.sx, first.sz, world);
+      const fade = lod ? 1 : this.fades.amount(first.sx, first.sz, nowMs);
+      this.visTintSlot[columnCount] = tintSlot;
+      this.visFade[columnCount] = fade;
       if (fullMesh) lodMask?.markDrawn(first.sx, first.sz);
+
+      for (let i = 0; i < visible.length; i++) {
+        const mesh = visible[i]!;
+        const variant = (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0);
+        const ox = mesh.sx * 16;
+        const oy = mesh.sy * 16;
+        const oz = mesh.sz * 16;
+        const opaque = mesh.opaque;
+        if (opaque) {
+          opaque.arena.markUsed(opaque.allocation);
+          this.batcher.addUnordered(
+            0,
+            variant,
+            opaque.allocation.page.id,
+            opaque.indexCount,
+            opaque.allocation.indices.offset,
+            ox,
+            oy,
+            oz,
+            fade,
+            tintSlot,
+          );
+          this.passTriangles += opaque.indexCount / 3;
+        }
+        const cutout = mesh.cutout;
+        if (cutout) {
+          cutout.arena.markUsed(cutout.allocation);
+          this.batcher.addUnordered(
+            1,
+            variant,
+            cutout.allocation.page.id,
+            cutout.indexCount,
+            cutout.allocation.indices.offset,
+            ox,
+            oy,
+            oz,
+            fade,
+            tintSlot,
+          );
+          this.passTriangles += cutout.indexCount / 3;
+        }
+      }
       columnCount++;
     }
     for (let i = columnCount; i < this.visColumnCount; i++) {
       columns[i]!.length = 0;
-      this.visGrass[i] = null;
-      this.visFoliage[i] = null;
     }
     this.visColumnCount = columnCount;
     if (this.visibleTranslucent.length !== this.previousVisibleTranslucentCount)
       this.sortDirty = true;
     this.previousVisibleTranslucentCount = this.visibleTranslucent.length;
-    this.boundGrass = null;
-    this.boundFoliage = null;
-    this.activeUnit = SCRATCH_TEXTURE_UNIT;
-    this.passDraws = 0;
-    this.passTriangles = 0;
+
+    // Pack opaque and cutout commands into the per-frame draw-data buffer
+    this.batcher.finalizeUnorderedPass(0);
+    this.batcher.finalizeUnorderedPass(1);
     renderPhaseStats.end('drawListMs', drawListStart);
+
+    // Sort translucent sections and pack consecutive runs into the same per-frame draw-data buffer
+    const translucentMeshes = this.visibleTranslucent;
+    if (translucentMeshes.length > 0) {
+      const camera = this.cameraPos;
+      const moved = distanceSquared(camera, this.sortedCamera) >= TRANSLUCENT_SORT_STEP ** 2;
+      if (moved || this.sortDirty) {
+        const sortStart = renderPhaseStats.start();
+        this.sortTranslucentMeshes(translucentMeshes);
+        renderPhaseStats.end('translucentSortMs', sortStart);
+        this.sortedCamera[0] = camera[0];
+        this.sortedCamera[1] = camera[1];
+        this.sortedCamera[2] = camera[2];
+        this.sortDirty = false;
+      }
+      this.batcher.beginTranslucentPass();
+      for (let i = 0; i < translucentMeshes.length; i++) {
+        const mesh = translucentMeshes[i]!;
+        const c = mesh.visibleColumn;
+        const bucket = mesh.translucent!;
+        bucket.arena.markUsed(bucket.allocation);
+        const local = this.translucentLocal;
+        local[0] = camera[0] - mesh.sx * 16;
+        local[1] = camera[1] - mesh.sy * 16;
+        local[2] = camera[2] - mesh.sz * 16;
+        if (
+          (local[0]! - 8) ** 2 + (local[1]! - 8) ** 2 + (local[2]! - 8) ** 2 <
+            TRANSLUCENT_NEAR_DISTANCE ** 2 &&
+          (!bucket.sortCamera ||
+            distanceSquared(local, bucket.sortCamera) >= TRANSLUCENT_SORT_STEP ** 2)
+        ) {
+          this.bindVao(bucket.vao);
+          const sorted = bucket.sorter!.sort(local, bucket.allocation.vertexBase);
+          bucket.arena.updateSortedIndices(bucket.allocation, sorted);
+          bucket.sortCamera![0] = local[0]!;
+          bucket.sortCamera![1] = local[1]!;
+          bucket.sortCamera![2] = local[2]!;
+        }
+        const variant = (mesh.hasBlockLight ? 0 : 1) + (mesh.hasWallTorch ? 2 : 0);
+        this.batcher.appendTranslucentDraw(
+          variant,
+          bucket.allocation.page.id,
+          bucket.indexCount,
+          bucket.allocation.indices.offset,
+          mesh.sx * 16,
+          mesh.sy * 16,
+          mesh.sz * 16,
+          this.visFade[c]!,
+          this.visTintSlot[c]!,
+        );
+        this.passTriangles += bucket.indexCount / 3;
+      }
+    }
+
+    // Bind the shared 2D tint atlas once per frame on unit 1
+    if (this.tintCache.texture) {
+      gl.activeTexture(gl.TEXTURE0 + TINT_ATLAS_UNIT);
+      this.activeUnit = TINT_ATLAS_UNIT;
+      gl.bindTexture(gl.TEXTURE_2D, this.tintCache.texture);
+      this.lastTextureBinds++;
+    }
+
+    // Upload the per-frame draw-data texture once per frame on unit 2
+    this.uploadDrawDataTexture(this.batcher.getDirtyRows());
 
     this.fluidTime = fluidAnimation.sample(nowMs);
     this.windTime = windAnimation.sample(nowMs, this.worldPaused || fluidAnimation.pausedState);
@@ -1730,6 +1822,7 @@ export class ChunkRenderer {
       gl.activeTexture(gl.TEXTURE0 + EMISSIVE_TEXTURE_UNIT);
       this.activeUnit = EMISSIVE_TEXTURE_UNIT;
       gl.bindTexture(gl.TEXTURE_2D, emissiveTex);
+      this.lastTextureBinds++;
       gl.drawBuffers(this.drawBuf2);
     }
 
@@ -1737,7 +1830,7 @@ export class ChunkRenderer {
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     const opaquePassStart = renderPhaseStats.start();
-    this.drawLightingPass(0, viewProjMatrix, atlas);
+    this.submitPassCommands(0, this.opaqueArena, viewProjMatrix, atlas);
     renderPhaseStats.end('opaquePassMs', opaquePassStart);
 
     lod?.prepare(planes, this.cameraPos);
@@ -1756,25 +1849,23 @@ export class ChunkRenderer {
             this.debugLight,
           )
         : 0;
+    this.activeLightingVariant = -1;
+    this.boundVao = null;
     if (this.bloomActive && lod && this.lodAtmosphere) gl.drawBuffers(this.drawBuf2);
 
     // 2. Cutout Pass
     const cutoutPassStart = renderPhaseStats.start();
-    this.drawLightingPass(1, viewProjMatrix, atlas);
+    this.submitPassCommands(1, this.cutoutArena, viewProjMatrix, atlas);
     renderPhaseStats.end('cutoutPassMs', cutoutPassStart);
 
     if (this.bloomActive) gl.drawBuffers(this.drawBuf1);
     const playerDraws = drawPlayer?.() ?? 0;
-    if (playerDraws > 0) this.activeUnit = 0;
+    this.activeUnit = 0;
+    this.activeLightingVariant = -1;
+    this.boundVao = null;
 
     // Opaque and cutout rendering is the depth pre-pass for water absorption.
-    let hasTranslucent = lod?.hasWater ?? false;
-    for (let i = 0; i < meshes.length; i++) {
-      if (meshes[i]!.translucent) {
-        hasTranslucent = true;
-        break;
-      }
-    }
+    const hasTranslucent = (lod?.hasWater ?? false) || translucentMeshes.length > 0;
     if (hasTranslucent) {
       const depthCaptureStart = renderPhaseStats.start();
       gl.activeTexture(gl.TEXTURE4);
@@ -1802,8 +1893,10 @@ export class ChunkRenderer {
             this.debugLight,
           )
         : 0;
+    this.activeLightingVariant = -1;
+    this.boundVao = null;
     if (this.bloomActive) gl.drawBuffers(this.drawBuf2);
-    this.drawTranslucent(viewProjMatrix, atlas);
+    this.submitPassCommands(2, this.translucentArena, viewProjMatrix, atlas);
     renderPhaseStats.end('translucentPassMs', translucentPassStart);
     if (this.bloomActive) gl.drawBuffers(this.drawBuf1);
 
@@ -1815,16 +1908,42 @@ export class ChunkRenderer {
 
     // 4. Wireframe Overlay Pass (if enabled)
     if (wireframeEnabled) {
-      this.selectLightingProgram(false, viewProjMatrix, atlas, false, false);
-      this.setMultiDrawMode(false);
-      this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 1);
-      this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(-1.0, -1.0);
 
-      // The overlay follows the column fades like the solid passes.
+      // Pack wireframe draw entries after the frame's solid draws or reuse each section's origin
+      let wireDrawIndex = this.batcher.getTotalDraws();
+      const wireStartDraw = wireDrawIndex;
       for (let c = 0; c < this.visColumnCount; c++) {
-        this.setFade(this.visFade[c]!);
+        const fade = this.visFade[c]!;
+        const list = columns[c]!;
+        for (let m = 0; m < list.length; m++) {
+          const mesh = list[m]!;
+          for (let pass = 0; pass < 3; pass++) {
+            const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
+            if (bucket) {
+              this.batcher.appendTranslucentDraw(
+                0,
+                bucket.allocation.page.id,
+                bucket.lineIndexCount,
+                0,
+                mesh.sx * 16,
+                mesh.sy * 16,
+                mesh.sz * 16,
+                fade,
+                TINT_DEFAULT_SLOT,
+              );
+              wireDrawIndex++;
+            }
+          }
+        }
+      }
+      if (wireDrawIndex > wireStartDraw) {
+        this.uploadDrawDataTexture(this.batcher.getDirtyRows());
+      }
+
+      let cursor = wireStartDraw;
+      for (let c = 0; c < this.visColumnCount; c++) {
         const list = columns[c]!;
         for (let m = 0; m < list.length; m++) {
           const mesh = list[m]!;
@@ -1832,12 +1951,11 @@ export class ChunkRenderer {
             const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
             if (bucket) {
               this.selectLightingProgram(false, viewProjMatrix, atlas, mesh.hasWallTorch, false);
-              this.setMultiDrawMode(false);
+              this.uniform1i(this.locUseMultiDrawId, UNIFORM_CACHE_SLOT.useMultiDrawId, 0);
               this.uniform1i(this.locIsWireframe, UNIFORM_CACHE_SLOT.isWireframe, 1);
               this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);
-              this.setFade(this.visFade[c]!);
-              gl.uniform3f(this.locSectionOrigin, mesh.sx * 16, mesh.sy * 16, mesh.sz * 16);
-              gl.bindVertexArray(bucket.vao);
+              this.uniform1i(this.locDrawBase, UNIFORM_CACHE_SLOT.drawBase, cursor++);
+              this.bindVao(bucket.vao);
               gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.wireframeBuffer(bucket));
               this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
               // The VAO records its element buffer: put the triangle indices back for the next frame.
@@ -1851,12 +1969,18 @@ export class ChunkRenderer {
       gl.disable(gl.POLYGON_OFFSET_FILL);
     }
 
-    gl.bindVertexArray(null);
+    this.bindVao(null);
+
+    this.drawFences.end();
+    this.opaqueArena.endDrawFrame();
+    this.cutoutArena.endDrawFrame();
+    this.translucentArena.endDrawFrame();
 
     renderStats.drawCalls = drawCalls;
     renderStats.triangles = triangles;
     // chunksLoaded and chunksMeshed come from the streamer (WorldManager); only the draw knows
     // how many section meshes were visible.
     renderStats.chunksVisible = meshes.length;
+    void FLOATS_PER_TEXEL;
   }
 }

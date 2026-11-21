@@ -4,34 +4,64 @@ import { canonicalQuadVertices } from './shared-quads';
 import { GLWrapper } from './gl';
 import { renderPhaseStats } from '../engine/render-phase-stats';
 
-let indexPattern = new Uint32Array(0);
-let indexPatternQuads = 0;
+export const DEFAULT_ARENA_PAGE_QUADS = 4_096;
+export const MAX_ARENA_PAGE_QUADS = 262_144;
 
-function sharedIndexPattern(requiredQuads: number): Uint32Array {
-  if (requiredQuads <= indexPatternQuads) return indexPattern;
-  indexPatternQuads = Math.max(4_096, 2 ** Math.ceil(Math.log2(requiredQuads)));
-  indexPattern = new Uint32Array(indexPatternQuads * 6);
-  for (let quad = 0; quad < indexPatternQuads; quad++) {
-    const vertex = quad * 4;
-    const index = quad * 6;
-    indexPattern[index] = vertex;
-    indexPattern[index + 1] = vertex + 1;
-    indexPattern[index + 2] = vertex + 2;
-    indexPattern[index + 3] = vertex;
-    indexPattern[index + 4] = vertex + 2;
-    indexPattern[index + 5] = vertex + 3;
+/** Pages up to this many quads get their whole index pattern at creation (<= 1.5 MB). */
+const EAGER_INDEX_QUADS = 65_536;
+/** Larger pages fill their index buffer lazily in chunks of this many quads (768 KB). */
+const INDEX_CHUNK_QUADS = 32_768;
+
+let indexScratch = new Uint32Array(0);
+
+/** Canonical quad indices (0,1,2,0,2,3 + 4q) for quads [startQuad, startQuad + count) in a reused scratch array. */
+function canonicalIndices(startQuad: number, count: number): Uint32Array {
+  if (indexScratch.length < count * 6) indexScratch = new Uint32Array(count * 6);
+  for (let q = 0; q < count; q++) {
+    const vertex = (startQuad + q) * 4;
+    const index = q * 6;
+    indexScratch[index] = vertex;
+    indexScratch[index + 1] = vertex + 1;
+    indexScratch[index + 2] = vertex + 2;
+    indexScratch[index + 3] = vertex;
+    indexScratch[index + 4] = vertex + 2;
+    indexScratch[index + 5] = vertex + 3;
   }
-  return indexPattern;
+  return indexScratch.subarray(0, count * 6);
 }
 
-interface ArenaPage {
+let eagerPattern: Uint32Array | null = null;
+function eagerIndexPattern(): Uint32Array {
+  eagerPattern ??= canonicalIndices(0, EAGER_INDEX_QUADS).slice();
+  return eagerPattern;
+}
+
+export interface QuarantinedRange {
+  quads: ArenaRange;
+  lastUsedDrawFrame: number;
+  /** The range's sorted index data must be reset to canonical order once it is reclaimed. */
+  restoreIndices: boolean;
+}
+
+export interface ArenaPage {
+  id: number;
   vao: WebGLVertexArrayObject;
   vertices: WebGLBuffer;
   vertexStaging: WebGLBuffer;
   indices: WebGLBuffer;
+  quadCapacity: number;
+  /** Quads [0, indexFilledQuads) of the index buffer hold the canonical pattern. */
+  indexFilledQuads: number;
   quadSpace: BufferArenaAllocator;
   allocations: number;
   lastUsedFrame: number;
+  lastUsedDrawFrame: number;
+  quarantined: QuarantinedRange[];
+}
+
+interface FrameFenceRecord {
+  drawFrame: number;
+  fence: WebGLSync;
 }
 
 interface VertexUploadSegment {
@@ -57,25 +87,235 @@ export interface TerrainAllocation {
   debugIndices: Uint32Array | null;
 }
 
-/** Each page owns its vertex and index buffers and is freed with its final range. */
+/**
+ * One GPU fence per terrain draw frame, shared by every arena. Only the oldest unsignalled fence
+ * is polled (at most one pending `clientWaitSync` per frame), which keeps the number of sync
+ * objects and driver round trips independent of the arena count.
+ */
+export class DrawFenceTimeline {
+  private readonly fences: FrameFenceRecord[] = [];
+  private drawFrame = 0;
+  private completed = 0;
+  private used = false;
+
+  constructor(private readonly wrapper: GLWrapper) {}
+
+  public get currentDrawFrame(): number {
+    return this.drawFrame;
+  }
+
+  public get completedDrawFrame(): number {
+    return this.completed;
+  }
+
+  /** Call once per draw frame before any draw. Returns true when the completed frame advanced. */
+  public begin(): void {
+    this.poll();
+    this.drawFrame++;
+    this.used = false;
+  }
+
+  public markUsed(): void {
+    this.used = true;
+  }
+
+  /** Call once per draw frame after every arena has drawn. */
+  public end(): void {
+    if (this.used) {
+      const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+      if (typeof gl.fenceSync === 'function' && typeof gl.clientWaitSync === 'function') {
+        const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE!, 0);
+        if (fence) this.fences.push({ drawFrame: this.drawFrame, fence });
+        else if (this.fences.length === 0) this.completed = this.drawFrame;
+      } else if (this.fences.length === 0) {
+        this.completed = this.drawFrame;
+      }
+    } else if (this.fences.length === 0) {
+      // Nothing drawn: earlier frames' fences stay in force, otherwise everything is complete.
+      this.completed = this.drawFrame;
+    }
+    this.used = false;
+  }
+
+  /** Releases fences that have signalled, oldest first, stopping at the first pending one. */
+  public poll(): void {
+    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+    if (typeof gl.clientWaitSync !== 'function') {
+      if (this.fences.length > 0) {
+        this.fences.length = 0;
+        this.completed = this.drawFrame;
+      }
+      return;
+    }
+    while (this.fences.length > 0) {
+      const record = this.fences[0]!;
+      const status = gl.clientWaitSync(record.fence, 0, 0);
+      if (status === gl.TIMEOUT_EXPIRED || status === gl.WAIT_FAILED) break;
+      if (typeof gl.deleteSync === 'function') gl.deleteSync(record.fence);
+      this.completed = Math.max(this.completed, record.drawFrame);
+      this.fences.shift();
+    }
+  }
+
+  /** World teardown: drops pending fences; nothing will draw the old pages again. */
+  public releaseAll(): void {
+    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+    if (typeof gl.deleteSync === 'function') {
+      for (const record of this.fences) gl.deleteSync(record.fence);
+    }
+    this.fences.length = 0;
+    this.completed = this.drawFrame;
+    this.used = false;
+  }
+}
+
+export interface TerrainArenaOptions {
+  initialPageQuads?: number;
+  maxPageQuads?: number;
+  /** Shared draw-fence timeline; the owner calls begin/end. Omitted: the arena owns its own. */
+  timeline?: DrawFenceTimeline;
+}
+
+/**
+ * Each page owns its vertex and index buffers and is freed when its active and quarantined
+ * allocations both reach zero. Freed ranges from drawn pages remain quarantined until the
+ * fence inserted after their last draw frame signals (`decisions/PERF-batch-terrain.md`).
+ */
 export class TerrainArena {
   private static readonly MAX_UPLOAD_BYTES = 16 * 1024;
   private static readonly FRAME_UPLOAD_BYTES = 4 * 1024;
-  private readonly pages: ArenaPage[] = [];
+  /** Adjacent streamed vertex chunks are merged into one `bufferSubData` of up to this many words. */
+  private static readonly RUN_WORDS = 16 * 1024;
+  private runPage: ArenaPage | null = null;
+  private runStartByte = 0;
+  private runWords = 0;
+  private runScratch: Uint32Array | null = null;
+  private static nextPageId = 1;
+  public readonly pages: ArenaPage[] = [];
+  private readonly pageById = new Map<number, ArenaPage>();
   private readonly allocations = new Set<TerrainAllocation>();
+  private readonly timeline: DrawFenceTimeline;
+  private readonly ownsTimeline: boolean;
   private frame = 0;
+  private readonly initialPageQuads: number;
+  private readonly maxPageQuads: number;
   private debugVertexArray: WebGLVertexArrayObject | null = null;
   private debugVertexBuffer: WebGLBuffer | null = null;
   private debugIndexBuffer: WebGLBuffer | null = null;
-  constructor(private readonly wrapper: GLWrapper) {}
+
+  constructor(
+    private readonly wrapper: GLWrapper,
+    options?: TerrainArenaOptions,
+  ) {
+    this.ownsTimeline = !options?.timeline;
+    this.timeline = options?.timeline ?? new DrawFenceTimeline(wrapper);
+    this.initialPageQuads = options?.initialPageQuads ?? DEFAULT_ARENA_PAGE_QUADS;
+    this.maxPageQuads = Math.max(
+      this.initialPageQuads,
+      options?.maxPageQuads ?? MAX_ARENA_PAGE_QUADS,
+    );
+  }
+
+  public getPageById(pageId: number): ArenaPage | undefined {
+    return this.pageById.get(pageId);
+  }
+
+  public get pageCount(): number {
+    return this.pages.length;
+  }
 
   beginUploadBatch(frame = this.frame + 1): void {
     this.frame = frame;
-    // Uploads are advanced by the frame-budgeted streamer in small arena ranges.
   }
 
   endUploadBatch(): void {
-    // Kept as a frame boundary hook for ChunkRenderer's upload lifecycle.
+    this.flushRun();
+  }
+
+  /** Appends a streamed vertex chunk to the open run, flushing first when it is not adjacent. */
+  private stageVertices(
+    page: ArenaPage,
+    destinationByte: number,
+    source: Uint32Array,
+    sourceWord: number,
+    words: number,
+  ): void {
+    if (
+      this.runWords > 0 &&
+      (this.runPage !== page ||
+        destinationByte !== this.runStartByte + this.runWords * 4 ||
+        this.runWords + words > TerrainArena.RUN_WORDS)
+    ) {
+      this.flushRun();
+    }
+    const scratch = (this.runScratch ??= new Uint32Array(TerrainArena.RUN_WORDS));
+    if (this.runWords === 0) {
+      this.runPage = page;
+      this.runStartByte = destinationByte;
+    }
+    scratch.set(source.subarray(sourceWord, sourceWord + words), this.runWords);
+    this.runWords += words;
+  }
+
+  /** Writes the open run with a single `bufferSubData`. */
+  private flushRun(): void {
+    if (this.runWords === 0 || !this.runPage) {
+      this.runWords = 0;
+      return;
+    }
+    const gl = this.wrapper.gl;
+    const start = renderPhaseStats.start();
+    const clockStart = performance.now();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.runPage.vertices);
+    gl.bufferSubData(gl.ARRAY_BUFFER, this.runStartByte, this.runScratch!, 0, this.runWords);
+    this.runWords = 0;
+    this.runPage = null;
+    renderPhaseStats.end('arenaTransferMs', start);
+    renderPhaseStats.add('arenaUploadMs', performance.now() - clockStart);
+  }
+
+  /**
+   * Starts a draw frame. With a shared timeline the owner has already called `timeline.begin()`;
+   * this only reclaims ranges whose draw frame has completed.
+   */
+  public beginDrawFrame(): void {
+    this.flushRun();
+    if (this.ownsTimeline) this.timeline.begin();
+    this.reclaimQuarantined();
+  }
+
+  /** Ends a draw frame (the fence is recorded by the timeline's owner when shared). */
+  public endDrawFrame(): void {
+    if (this.ownsTimeline) this.timeline.end();
+    this.reclaimQuarantined();
+  }
+
+  /** Polls the timeline's oldest fence without blocking and reclaims quarantined ranges. */
+  public pollFences(): void {
+    this.timeline.poll();
+    this.reclaimQuarantined();
+  }
+
+  private reclaimQuarantined(): void {
+    for (let p = this.pages.length - 1; p >= 0; p--) {
+      const page = this.pages[p]!;
+      const q = page.quarantined;
+      if (q.length === 0) continue;
+      let writeIdx = 0;
+      for (let i = 0; i < q.length; i++) {
+        const item = q[i]!;
+        if (item.lastUsedDrawFrame <= this.timeline.completedDrawFrame) {
+          if (item.restoreIndices) this.writeCanonicalIndices(page, item.quads);
+          page.quadSpace.free(item.quads);
+        } else {
+          q[writeIdx++] = item;
+        }
+      }
+      q.length = writeIdx;
+      if (page.allocations === 0 && q.length === 0) {
+        this.destroyPageAt(p);
+      }
+    }
   }
 
   /** Readable aliases for debug inspection; the data is copied from this section's arena range. */
@@ -84,6 +324,7 @@ export class TerrainArena {
     const gl = this.wrapper.gl;
     this.debugVertexBuffer ??= this.wrapper.createBuffer();
     if (allocation.pendingUpload) this.uploadPending(allocation, Infinity);
+    this.flushRun();
     gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertices);
     const vertices = new Uint32Array(allocation.vertices.length / 4);
     gl.getBufferSubData(gl.COPY_READ_BUFFER, allocation.vertices.offset, vertices);
@@ -98,9 +339,6 @@ export class TerrainArena {
     this.debugIndexBuffer ??= this.wrapper.createBuffer();
     let indices = allocation.debugIndices;
     if (!indices) {
-      // The debug VAO uses section-local indices. Build them only when geometry inspection asks
-      // for this section; creating a CPU copy for every streamed bucket made normal debug frames
-      // pay for readback data they never inspect.
       indices = this.buildDebugIndices(indexCount);
       allocation.debugIndices = indices;
     }
@@ -158,8 +396,8 @@ export class TerrainArena {
       page = this.createPage(quadCount, initialVertices);
       quadRange = page.quadSpace.allocate(quadCount, 1)!;
     } else {
-      for (const candidate of this.pages) {
-        if (this.frame - candidate.lastUsedFrame <= 4) continue;
+      for (let i = 0; i < this.pages.length; i++) {
+        const candidate = this.pages[i]!;
         quadRange = candidate.quadSpace.allocate(quadCount, 1);
         if (!quadRange) continue;
         page = candidate;
@@ -171,6 +409,7 @@ export class TerrainArena {
       }
     }
     const allocatedQuads = quadRange!;
+    this.ensureIndices(page, allocatedQuads.offset + quadCount);
     const vertexRange = { offset: allocatedQuads.offset * 32, length: quadCount * 32 };
     const indexRange = { offset: allocatedQuads.offset * 24, length: quadCount * 24 };
     const base = vertexRange.offset / 8;
@@ -224,8 +463,8 @@ export class TerrainArena {
     const start = renderPhaseStats.start();
     const clockStart = performance.now();
     const gl = this.wrapper.gl;
-    if (frameBudgeted) gl.bindBuffer(gl.ARRAY_BUFFER, allocation.page.vertices);
-    else {
+    if (!frameBudgeted) {
+      this.flushRun();
       gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertexStaging);
       gl.bindBuffer(gl.COPY_WRITE_BUFFER, allocation.page.vertices);
     }
@@ -242,8 +481,8 @@ export class TerrainArena {
       const words = Math.min(remaining, maxBytes / 4);
       const destination = segment.destinationByteOffset + allocation.uploadSegmentWordOffset * 4;
       if (frameBudgeted) {
-        gl.bufferSubData(
-          gl.ARRAY_BUFFER,
+        this.stageVertices(
+          allocation.page,
           destination,
           segment.vertices,
           segment.sourceWordOffset + allocation.uploadSegmentWordOffset,
@@ -305,6 +544,8 @@ export class TerrainArena {
 
   markUsed(allocation: TerrainAllocation): void {
     allocation.page.lastUsedFrame = this.frame;
+    allocation.page.lastUsedDrawFrame = this.timeline.currentDrawFrame;
+    this.timeline.markUsed();
   }
 
   free(allocation: TerrainAllocation): void {
@@ -312,44 +553,119 @@ export class TerrainArena {
     allocation.uploadSegments.length = 0;
     allocation.debugIndices = null;
     this.allocations.delete(allocation);
-    if (allocation.indicesSorted) {
-      const gl = this.wrapper.gl;
-      gl.bindVertexArray(allocation.page.vao);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, allocation.page.indices);
-      gl.bufferSubData(
-        gl.ELEMENT_ARRAY_BUFFER,
-        allocation.indices.offset,
-        sharedIndexPattern(allocation.quads.offset + allocation.quads.length),
-        allocation.quads.offset * 6,
-        allocation.indexCount,
-      );
-      allocation.indicesSorted = false;
-      allocation.sortedIndices = null;
-    }
+    const restoreIndices = allocation.indicesSorted;
+    allocation.indicesSorted = false;
+    allocation.sortedIndices = null;
     const page = allocation.page;
+    page.allocations--;
+    if (page.lastUsedDrawFrame > this.timeline.completedDrawFrame) {
+      // Any write to the range (the sorted-index reset included) waits until it is reclaimed.
+      page.quarantined.push({
+        quads: allocation.quads,
+        lastUsedDrawFrame: page.lastUsedDrawFrame,
+        restoreIndices,
+      });
+      return;
+    }
+    if (restoreIndices) this.writeCanonicalIndices(page, allocation.quads);
     page.quadSpace.free(allocation.quads);
-    if (--page.allocations !== 0) return;
+    if (page.allocations !== 0 || page.quarantined.length !== 0) return;
     const index = this.pages.indexOf(page);
     if (index < 0) throw new Error('Unknown arena page');
+    this.destroyPageAt(index);
+  }
+
+  /**
+   * Fills the page's index buffer with the canonical pattern up to `endQuad`, a bounded chunk at
+   * a time, so a large page never uploads its whole index buffer in one go.
+   */
+  private ensureIndices(page: ArenaPage, endQuad: number): void {
+    if (page.indexFilledQuads >= endQuad) return;
+    const gl = this.wrapper.gl;
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
+    while (page.indexFilledQuads < endQuad) {
+      const start = page.indexFilledQuads;
+      const count = Math.min(INDEX_CHUNK_QUADS, page.quadCapacity - start);
+      gl.bufferSubData(gl.COPY_WRITE_BUFFER, start * 24, canonicalIndices(start, count));
+      page.indexFilledQuads = start + count;
+    }
+  }
+
+  /** Resets a range whose index data was sorted back to the canonical pattern. */
+  private writeCanonicalIndices(page: ArenaPage, range: ArenaRange): void {
+    const gl = this.wrapper.gl;
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
+    for (let done = 0; done < range.length; done += INDEX_CHUNK_QUADS) {
+      const count = Math.min(INDEX_CHUNK_QUADS, range.length - done);
+      gl.bufferSubData(
+        gl.COPY_WRITE_BUFFER,
+        (range.offset + done) * 24,
+        canonicalIndices(range.offset + done, count),
+      );
+    }
+  }
+
+  private destroyPageAt(index: number): void {
+    const page = this.pages[index]!;
+    if (this.runPage === page) {
+      this.runWords = 0;
+      this.runPage = null;
+    }
     this.pages.splice(index, 1);
+    this.pageById.delete(page.id);
     this.wrapper.deleteVertexArray(page.vao);
     this.wrapper.deleteBuffer(page.vertices);
     this.wrapper.deleteBuffer(page.vertexStaging);
     this.wrapper.deleteBuffer(page.indices);
-    if (this.pages.length === 0) {
-      if (this.debugVertexBuffer) this.wrapper.deleteBuffer(this.debugVertexBuffer);
-      if (this.debugIndexBuffer) this.wrapper.deleteBuffer(this.debugIndexBuffer);
-      if (this.debugVertexArray) this.wrapper.deleteVertexArray(this.debugVertexArray);
-      this.debugVertexArray = null;
-      this.debugVertexBuffer = null;
-      this.debugIndexBuffer = null;
+    if (this.pages.length === 0) this.releaseIdleResources();
+  }
+
+  /** Deletes the own fences and debug readback objects once no page can still be drawn. */
+  private releaseIdleResources(): void {
+    if (this.ownsTimeline) this.timeline.releaseAll();
+    if (this.debugVertexBuffer) this.wrapper.deleteBuffer(this.debugVertexBuffer);
+    if (this.debugIndexBuffer) this.wrapper.deleteBuffer(this.debugIndexBuffer);
+    if (this.debugVertexArray) this.wrapper.deleteVertexArray(this.debugVertexArray);
+    this.debugVertexArray = null;
+    this.debugVertexBuffer = null;
+    this.debugIndexBuffer = null;
+  }
+
+  /**
+   * World teardown: drops quarantined ranges, pending fences and every page (buffers + VAO).
+   * Nothing waits on fences that will never be polled again; pages are recreated lazily by the
+   * next `allocate`. Any allocation still held by a caller becomes invalid.
+   */
+  public releaseAll(): void {
+    for (const allocation of this.allocations) {
+      allocation.pendingUpload = false;
+      allocation.uploadSegments.length = 0;
+      allocation.debugIndices = null;
+      allocation.sortedIndices = null;
+      allocation.indicesSorted = false;
     }
+    this.allocations.clear();
+    while (this.pages.length > 0) {
+      this.pages[this.pages.length - 1]!.quarantined.length = 0;
+      this.destroyPageAt(this.pages.length - 1);
+    }
+    this.releaseIdleResources();
+  }
+
+  private nextGrowCapacity(requiredQuads: number): number {
+    const minRequired = 2 ** Math.ceil(Math.log2(Math.max(1, requiredQuads)));
+    if (this.pages.length === 0) {
+      return Math.max(this.initialPageQuads, minRequired);
+    }
+    const lastCap = this.pages[this.pages.length - 1]!.quadCapacity;
+    const grown = Math.min(this.maxPageQuads, lastCap * 2);
+    return Math.max(grown, minRequired);
   }
 
   private createPage(quadCount: number, initialVertices?: Uint32Array): ArenaPage {
     const quadCapacity = initialVertices
       ? Math.max(1, quadCount)
-      : Math.max(4_096, 2 ** Math.ceil(Math.log2(quadCount)));
+      : this.nextGrowCapacity(quadCount);
     const vertexCapacity = quadCapacity * 32;
     const gl = this.wrapper.gl;
     const indices = this.wrapper.createBuffer();
@@ -358,7 +674,17 @@ export class TerrainArena {
     const vertexStaging = this.wrapper.createBuffer();
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sharedIndexPattern(quadCapacity), gl.STATIC_DRAW);
+    const eager = quadCapacity <= EAGER_INDEX_QUADS;
+    if (eager) {
+      gl.bufferData(
+        gl.ELEMENT_ARRAY_BUFFER,
+        eagerIndexPattern().subarray(0, quadCapacity * 6),
+        gl.STATIC_DRAW,
+      );
+    } else {
+      // Large pages allocate the index storage now and fill it as sections are allocated.
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadCapacity * 24, gl.STATIC_DRAW);
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
     if (initialVertices) gl.bufferData(gl.ARRAY_BUFFER, initialVertices, gl.DYNAMIC_DRAW);
     else gl.bufferData(gl.ARRAY_BUFFER, vertexCapacity, gl.DYNAMIC_DRAW);
@@ -366,18 +692,23 @@ export class TerrainArena {
     gl.vertexAttribIPointer(0, 1, gl.UNSIGNED_INT, 8, 0);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, 8, 4);
-    // WebGL distinguishes element buffers from other buffers, including when copying.
     gl.bindVertexArray(null);
-    const page = {
+    const page: ArenaPage = {
+      id: TerrainArena.nextPageId++,
       vao,
       vertices,
       vertexStaging,
       indices,
+      quadCapacity,
+      indexFilledQuads: eager ? quadCapacity : 0,
       quadSpace: new BufferArenaAllocator(quadCapacity),
       allocations: 0,
       lastUsedFrame: -1000,
+      lastUsedDrawFrame: 0,
+      quarantined: [],
     };
     this.pages.push(page);
+    this.pageById.set(page.id, page);
     return page;
   }
 }
