@@ -2,13 +2,13 @@
 
 Status: verified
 Depends on: M22a, M22b, M22c
-Full verify: PR CI run 44880552715 on head cab5297 (https://github.com/Guna210/BlockCraft/actions/runs/44880552715), all four shards and the aggregate `verify` job green. Unit: Test Files 170 passed, Tests 1591 passed (1591). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 51 passed, 1 flaky (m13h.spec.ts:142, "outsideRenderPass queueSerial" driver message, passed on retry); 4/4 51 passed, 1 flaky (m18b-settings.spec.ts:92 key-rebind predicate timeout, passed on retry). perf-batch.spec.ts:56 passed on its first attempt (RD16 opaque+cutout submissions 12, opaque+cutout pages 4).
+Full verify: PR CI run 44899573773 on head 8f02add (https://github.com/Guna210/BlockCraft/actions/runs/44899573773), all four shards and the aggregate `verify` job green. Unit: Tests 1595 passed (1595). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 53 passed (0 flaky); 4/4 51 passed, 1 flaky (m22a-budgets.spec.ts:186 heap test, "outsideRenderPass queueSerial" driver message, passed on retry).
 Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 errors) · unit: the changed files (perf-batch, m08b-gpu, m13a-render, tint) 25 passed; full unit run only differed from CI on m21b-fix-containers (needs `dist-server`, environment). Local e2e is unusable in this container: every test fails at fixture teardown on the driver message "GPU stall due to ReadPixels" (also on m01 and on the untouched previous commit), and streaming-idle waits time out. m18a-menus:158, m04, m22 and perf-batch test bodies ran to their asserts; the GL resource counts for the m04 flight were checked with a temporary probe (below). m21c fails the same way on the previous commit locally.
 
 ## Acceptance criteria owned
 
-- [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (RD8: 3, RD16: 11; translucent 1 / 75 reported separately)
-- [x] Pixel identity at 3 viewpoints, diff 0 (batched vs glcheck=draw on the same build; master baseline not used) → tests/e2e/perf-batch.spec.ts
+- [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
+- [x] Pixel identity at 3 viewpoints plus an ocean water viewpoint (14-18 translucent submissions vs 347 per-section), diff 0 (batched vs glcheck=draw on the same build; master baseline not used) → tests/e2e/perf-batch.spec.ts
 - [x] Batch bucketing, draw-data layout, tint slots, fence quarantine, page growth → tests/unit/perf-batch.test.ts
 
 ## Screenshots (docs/screenshots/PERF-batch/)
@@ -16,12 +16,20 @@ Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 erro
 - perf-batch-overworld-daytime.png: narrow rocky canyon, blue sky strip, water at bottom.
 - perf-batch-underground-cave.png: stone and ore walls, lava at lower right.
 - perf-batch-water-translucent.png: snowy ridge with an arch, blue sky, grass lower left; water is NOT clearly visible, so this viewpoint is weak for translucency.
+- perf-batch-ocean-translucent.png: looking steeply down at a shoreline; sand, reeds and grass along the top and right edges, the seabed visible through the water surface and deepening to dark blue at lower left (water covers about 62 % of the frame; viewed).
 
 ## CI fixes (run 44764152550 on cb0e723)
 
 - m18a-menus:158 (panorama teardown, glBuffers 20 vs 11): `clearAllMeshes()` now calls `TerrainArena.releaseAll()` on all three arenas, which deletes every page (buffers + VAO), quarantined range and pending fence without waiting. Pages are recreated lazily. Unit tests: "deletes a page that was emptied, quarantined, then signalled" and "releaseAll deletes every page, quarantined range and pending fence without waiting" (buffers 0, vaos 0 afterwards).
 - m04:66 (+1 buffer/VAO/texture after the flight): terrain pages were not the cause (page counts stayed 1/1/1 over the flight; probe: buffers 27→31, vaos 23→27, textures 16→20 before the fix). The growth was `EntityRenderer` baking per-creature VAO/buffer/skin texture on first sight. With the small post-batching baseline that exceeds the ±10 % window. `EntityRenderer.warmUp()` now bakes every registered model once at init (called from `WorldManager`); lazy creation is unchanged for existing tests. Probe after the fix: buffers 43→43, vaos 39→39, textures 31→32 (32 <= 34.1). The draw-data texture and tint atlas never grew in the flight (64 rows, 512 slots) and any growth deletes the old texture. They are not deleted on teardown because `tests/unit/m08b-gpu.test.ts` requires two textures to survive `clearAllMeshes`; at teardown they shrink back to their initial sizes.
 - m04:221 flaky driver message "Running out of reserved outsideRenderPass queueSerial": not reproduced locally. The same message also failed `m13h.spec.ts:142` (a visual test with no streaming) on retry-1 in CI run 44802846579, so it is not specific to the new upload pattern. Page and upload sizes unchanged. The A/B table below is unchanged because page sizes did not change.
+
+## Review round 1 fixes
+
+- Fence hole: an idle draw frame no longer advances completedDrawFrame while a fence is pending (unit test added).
+- First terrain: cause was up-front per-page index data (index pattern build 29.7 ms + index uploads 41.0 / 52.4 / 29.6 ms for the opaque / translucent / cutout pages, about 150 ms in total; warmUp 10-18 ms; atlas and draw-data texture 0.1 ms each). Pages above 65,536 quads now fill their index buffer lazily in chunks of at most 32,768 quads. 5-run alternating A/B of createWorld in the same container: branch mean 3348 ms (range 3081-3711), master c7909b1 mean 3317 ms (range 3069-3649).
+- Tint atlas 512 initial slots (matches the decision file) with a MAX_TEXTURE_SIZE guard; sorted translucent index reset deferred until quarantine is reclaimed; ocean translucency pixel test; test title reworded.
+- "outsideRenderPass queueSerial": still seen in CI (1 of 4 shards this run, m22a heap test, passed on retry; m13h in the previous run). Not reproduced locally and not shown to be unrelated to the new page/upload pattern; master comparison is the reviewer's (0 of 4 runs). Open for the owner.
 
 ## What was built
 
