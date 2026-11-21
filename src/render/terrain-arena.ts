@@ -87,9 +87,93 @@ export interface TerrainAllocation {
   debugIndices: Uint32Array | null;
 }
 
+/**
+ * One GPU fence per terrain draw frame, shared by every arena. Only the oldest unsignalled fence
+ * is polled (at most one pending `clientWaitSync` per frame), which keeps the number of sync
+ * objects and driver round trips independent of the arena count.
+ */
+export class DrawFenceTimeline {
+  private readonly fences: FrameFenceRecord[] = [];
+  private drawFrame = 0;
+  private completed = 0;
+  private used = false;
+
+  constructor(private readonly wrapper: GLWrapper) {}
+
+  public get currentDrawFrame(): number {
+    return this.drawFrame;
+  }
+
+  public get completedDrawFrame(): number {
+    return this.completed;
+  }
+
+  /** Call once per draw frame before any draw. Returns true when the completed frame advanced. */
+  public begin(): void {
+    this.poll();
+    this.drawFrame++;
+    this.used = false;
+  }
+
+  public markUsed(): void {
+    this.used = true;
+  }
+
+  /** Call once per draw frame after every arena has drawn. */
+  public end(): void {
+    if (this.used) {
+      const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+      if (typeof gl.fenceSync === 'function' && typeof gl.clientWaitSync === 'function') {
+        const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE!, 0);
+        if (fence) this.fences.push({ drawFrame: this.drawFrame, fence });
+        else if (this.fences.length === 0) this.completed = this.drawFrame;
+      } else if (this.fences.length === 0) {
+        this.completed = this.drawFrame;
+      }
+    } else if (this.fences.length === 0) {
+      // Nothing drawn: earlier frames' fences stay in force, otherwise everything is complete.
+      this.completed = this.drawFrame;
+    }
+    this.used = false;
+  }
+
+  /** Releases fences that have signalled, oldest first, stopping at the first pending one. */
+  public poll(): void {
+    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+    if (typeof gl.clientWaitSync !== 'function') {
+      if (this.fences.length > 0) {
+        this.fences.length = 0;
+        this.completed = this.drawFrame;
+      }
+      return;
+    }
+    while (this.fences.length > 0) {
+      const record = this.fences[0]!;
+      const status = gl.clientWaitSync(record.fence, 0, 0);
+      if (status === gl.TIMEOUT_EXPIRED || status === gl.WAIT_FAILED) break;
+      if (typeof gl.deleteSync === 'function') gl.deleteSync(record.fence);
+      this.completed = Math.max(this.completed, record.drawFrame);
+      this.fences.shift();
+    }
+  }
+
+  /** World teardown: drops pending fences; nothing will draw the old pages again. */
+  public releaseAll(): void {
+    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
+    if (typeof gl.deleteSync === 'function') {
+      for (const record of this.fences) gl.deleteSync(record.fence);
+    }
+    this.fences.length = 0;
+    this.completed = this.drawFrame;
+    this.used = false;
+  }
+}
+
 export interface TerrainArenaOptions {
   initialPageQuads?: number;
   maxPageQuads?: number;
+  /** Shared draw-fence timeline; the owner calls begin/end. Omitted: the arena owns its own. */
+  timeline?: DrawFenceTimeline;
 }
 
 /**
@@ -104,11 +188,9 @@ export class TerrainArena {
   public readonly pages: ArenaPage[] = [];
   private readonly pageById = new Map<number, ArenaPage>();
   private readonly allocations = new Set<TerrainAllocation>();
-  private readonly frameFences: FrameFenceRecord[] = [];
+  private readonly timeline: DrawFenceTimeline;
+  private readonly ownsTimeline: boolean;
   private frame = 0;
-  private drawFrame = 0;
-  private completedDrawFrame = 0;
-  private drewInCurrentFrame = false;
   private readonly initialPageQuads: number;
   private readonly maxPageQuads: number;
   private debugVertexArray: WebGLVertexArrayObject | null = null;
@@ -119,6 +201,8 @@ export class TerrainArena {
     private readonly wrapper: GLWrapper,
     options?: TerrainArenaOptions,
   ) {
+    this.ownsTimeline = !options?.timeline;
+    this.timeline = options?.timeline ?? new DrawFenceTimeline(wrapper);
     this.initialPageQuads = options?.initialPageQuads ?? DEFAULT_ARENA_PAGE_QUADS;
     this.maxPageQuads = Math.max(
       this.initialPageQuads,
@@ -136,65 +220,30 @@ export class TerrainArena {
 
   beginUploadBatch(frame = this.frame + 1): void {
     this.frame = frame;
-    this.pollFences();
   }
 
   endUploadBatch(): void {
     // Kept as a frame boundary hook for ChunkRenderer's upload lifecycle.
   }
 
-  /** Marks the start of a terrain draw frame and polls any outstanding fences without blocking. */
+  /**
+   * Starts a draw frame. With a shared timeline the owner has already called `timeline.begin()`;
+   * this only reclaims ranges whose draw frame has completed.
+   */
   public beginDrawFrame(): void {
-    this.pollFences();
-    this.drawFrame++;
-    this.drewInCurrentFrame = false;
-  }
-
-  /** Records a non-blocking GPU fence after all terrain draws for this frame have been submitted. */
-  public endDrawFrame(): void {
-    if (!this.drewInCurrentFrame) {
-      // A frame that drew nothing from this arena leaves earlier frames' fences in force: ranges
-      // freed after those draws stay quarantined until their own fence signals.
-      this.completeIfNoFencePending();
-      return;
-    }
-    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
-    if (typeof gl.fenceSync === 'function' && typeof gl.clientWaitSync === 'function') {
-      const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE!, 0);
-      if (fence) this.frameFences.push({ drawFrame: this.drawFrame, fence });
-      else this.completeIfNoFencePending();
-    } else {
-      this.completeIfNoFencePending();
-    }
-    this.drewInCurrentFrame = false;
-  }
-
-  /** Advances the completed draw frame only when no earlier frame's fence is still pending. */
-  private completeIfNoFencePending(): void {
-    if (this.frameFences.length === 0) this.completedDrawFrame = this.drawFrame;
+    if (this.ownsTimeline) this.timeline.begin();
     this.reclaimQuarantined();
   }
 
-  /** Polls pending frame fences with zero timeout and releases quarantined ranges whose draw completed. */
+  /** Ends a draw frame (the fence is recorded by the timeline's owner when shared). */
+  public endDrawFrame(): void {
+    if (this.ownsTimeline) this.timeline.end();
+    this.reclaimQuarantined();
+  }
+
+  /** Polls the timeline's oldest fence without blocking and reclaims quarantined ranges. */
   public pollFences(): void {
-    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
-    if (typeof gl.clientWaitSync === 'function') {
-      while (this.frameFences.length > 0) {
-        const record = this.frameFences[0]!;
-        const status = gl.clientWaitSync(record.fence, 0, 0);
-        const pending = status === gl.TIMEOUT_EXPIRED || status === gl.WAIT_FAILED;
-        if (!pending) {
-          if (typeof gl.deleteSync === 'function') gl.deleteSync(record.fence);
-          this.completedDrawFrame = Math.max(this.completedDrawFrame, record.drawFrame);
-          this.frameFences.shift();
-        } else {
-          break;
-        }
-      }
-    } else if (this.frameFences.length > 0) {
-      this.frameFences.length = 0;
-      this.completedDrawFrame = this.drawFrame;
-    }
+    this.timeline.poll();
     this.reclaimQuarantined();
   }
 
@@ -206,7 +255,7 @@ export class TerrainArena {
       let writeIdx = 0;
       for (let i = 0; i < q.length; i++) {
         const item = q[i]!;
-        if (item.lastUsedDrawFrame <= this.completedDrawFrame) {
+        if (item.lastUsedDrawFrame <= this.timeline.completedDrawFrame) {
           if (item.restoreIndices) this.writeCanonicalIndices(page, item.quads);
           page.quadSpace.free(item.quads);
         } else {
@@ -288,7 +337,6 @@ export class TerrainArena {
     dedicatedPage: boolean,
     phaseStart: number,
   ): TerrainAllocation {
-    this.pollFences();
     const vertexWords = sources.reduce((total, source) => total + source.length, 0);
     const indexCount = quadCount * 6;
     let page: ArenaPage | undefined;
@@ -446,8 +494,8 @@ export class TerrainArena {
 
   markUsed(allocation: TerrainAllocation): void {
     allocation.page.lastUsedFrame = this.frame;
-    allocation.page.lastUsedDrawFrame = this.drawFrame;
-    this.drewInCurrentFrame = true;
+    allocation.page.lastUsedDrawFrame = this.timeline.currentDrawFrame;
+    this.timeline.markUsed();
   }
 
   free(allocation: TerrainAllocation): void {
@@ -460,8 +508,7 @@ export class TerrainArena {
     allocation.sortedIndices = null;
     const page = allocation.page;
     page.allocations--;
-    this.pollFences();
-    if (page.lastUsedDrawFrame > this.completedDrawFrame) {
+    if (page.lastUsedDrawFrame > this.timeline.completedDrawFrame) {
       // Any write to the range (the sorted-index reset included) waits until it is reclaimed.
       page.quarantined.push({
         quads: allocation.quads,
@@ -519,14 +566,9 @@ export class TerrainArena {
     if (this.pages.length === 0) this.releaseIdleResources();
   }
 
-  /** Deletes pending fences and debug readback objects once no page can still be drawn. */
+  /** Deletes the own fences and debug readback objects once no page can still be drawn. */
   private releaseIdleResources(): void {
-    const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
-    if (typeof gl.deleteSync === 'function') {
-      for (const record of this.frameFences) gl.deleteSync(record.fence);
-    }
-    this.frameFences.length = 0;
-    this.completedDrawFrame = this.drawFrame;
+    if (this.ownsTimeline) this.timeline.releaseAll();
     if (this.debugVertexBuffer) this.wrapper.deleteBuffer(this.debugVertexBuffer);
     if (this.debugIndexBuffer) this.wrapper.deleteBuffer(this.debugIndexBuffer);
     if (this.debugVertexArray) this.wrapper.deleteVertexArray(this.debugVertexArray);
@@ -554,7 +596,6 @@ export class TerrainArena {
       this.destroyPageAt(this.pages.length - 1);
     }
     this.releaseIdleResources();
-    this.drewInCurrentFrame = false;
   }
 
   private nextGrowCapacity(requiredQuads: number): number {

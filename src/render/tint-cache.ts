@@ -293,6 +293,8 @@ export class ColumnTintCache {
     }
 
     const slot = this.allocateSlot();
+    // Atlas full: share the plains pair; never write into the plains slot itself.
+    if (this.useSharedAtlas && slot === TINT_DEFAULT_SLOT) return this.plainsPair;
     if (this.useSharedAtlas) {
       this.uploadSlotCells(slot, col.grassTints, col.foliageTints);
       const tex = this.sharedTexture!;

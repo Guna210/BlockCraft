@@ -50,3 +50,19 @@ The owner fixed the following decisions for `PERF-batch`:
    - **Tint atlas.** `TINT_INITIAL_SLOTS` is now 512 (1024 x 256 px), matching the earlier text, so RD8 (289 columns) never grows it. The atlas never grows past `MAX_TEXTURE_SIZE` (slots <= floor(max/16) x 32); when full, further columns use the plains slot 0 and never free it. Unit test: "never grows the atlas past MAX_TEXTURE_SIZE and falls back to the plains slot".
    - **Translucency pixel coverage.** New e2e test: the M03g ocean (camera (-284.5, 72.5, -187.5), pitch -50 degrees) batched vs the per-section path: diff 0, 62 % blue water pixels, 18 translucent submissions vs 347 total per-section submissions (local run). Screenshot `docs/screenshots/PERF-batch/perf-batch-ocean-translucent.png` shows the seabed shoreline seen through the water, deepening to dark blue.
 
+8. **Review round 2 (queueSerial regression, tint overflow)**
+   - **One fence per draw frame.** `DrawFenceTimeline` (`src/render/terrain-arena.ts`) is shared by the opaque, cutout and translucent arenas. `ChunkRenderer.render` calls `begin()` once, then `end()` after all three passes: at most one `fenceSync` per draw frame, and `begin()` polls only the oldest unsignalled fence (one pending `clientWaitSync` per frame). `allocate`, `free` and `beginUploadBatch` no longer poll; ranges freed mid-frame simply wait for the next frame's poll. An arena constructed without a timeline owns one (used by the existing unit tests). Teardown calls `timeline.releaseAll()` after the arenas.
+   - **Counts per rAF frame (temporary `WebGL2RenderingContext` prototype counters in a probe spec, not committed; SwiftShader container, RD8):**
+
+     | Call | Settled before | Settled after | Flight before | Flight after |
+     | --- | --- | --- | --- | --- |
+     | fenceSync | 4 | 2 | 3.09 | 1.82 |
+     | clientWaitSync | 12.4 | 2 | 17.48 | 1.82 |
+     | deleteSync | 4.13 | 2 | 3.1 | 1.82 |
+     | bufferSubData | 30.47 | 2 | 15.83 | 14.6 |
+     | texSubImage2D | 2.33 | 1 | 1.95 | 1.77 |
+     | copyBufferSubData | 0 | 0 | 0 | 0 |
+
+     (Settled sampled 10 s, ~14 frames; flight 124-131 frames of a 450-block flight at 30 b/s. fenceSync is above 1 per rAF because `render()` runs more than once per rAF in this harness.) The draw-data texture is already a single `texSubImage2D` of the used rows per draw frame; the remaining flight `bufferSubData` calls are chunk streaming uploads, not changed.
+   - **Tint overflow.** When the atlas is at `MAX_TEXTURE_SIZE`, `getColumnTints` now returns the plains pair without calling `uploadSlotCells`, so slot 0 (atlas cells and `slotDataGrass[0]/slotDataFoliage[0]`) is never overwritten. Unit test asserts slot 0 data is unchanged after 2,100 columns.
+

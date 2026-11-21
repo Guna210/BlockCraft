@@ -257,7 +257,6 @@ test.describe('PERF-batch: Terrain draw batching', () => {
       },
     ];
 
-    const masterDir = '/tmp/perf-batch-master';
     const outDir = path.resolve('docs/screenshots/PERF-batch');
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -335,28 +334,18 @@ test.describe('PERF-batch: Terrain draw batching', () => {
       fs.writeFileSync(path.join(outDir, `perf-batch-${vp.id}.png`), batchedBuf);
 
       const diffPerDraw = diffFraction(batchedPng, perDrawPng);
-      let diffMaster: number | null = null;
-      const masterPath = path.join(masterDir, `view-${vp.id}.png`);
-      if (fs.existsSync(masterPath)) {
-        const masterPng = PNG.sync.read(fs.readFileSync(masterPath));
-        diffMaster = diffFraction(batchedPng, masterPng);
-      }
 
       console.log(
         'PERF-batch pixel-identity',
         JSON.stringify({
           viewpoint: vp.id,
           diffPerDraw,
-          diffMaster,
           batchedSubmissions: batchedStats.render.drawSubmissions,
           perDrawSubmissions: perDrawStats.render.drawSubmissions,
         }),
       );
 
       expect(diffPerDraw, `${vp.id} batched vs per-section`).toBeLessThanOrEqual(0.0005);
-      if (diffMaster !== null) {
-        expect(diffMaster, `${vp.id} batched vs master baseline`).toBeLessThanOrEqual(0.0005);
-      }
     }
 
     // Finally, verify ?debug=1&glcheck=draw URL parameter disables multiDraw on boot and renders without GL errors

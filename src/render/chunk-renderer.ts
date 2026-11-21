@@ -35,7 +35,7 @@ import { ColumnFades } from './column-fade';
 import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { SectionVisibility } from './section-visibility';
 import { cullingSettings } from './culling-settings';
-import { TerrainArena, type TerrainAllocation } from './terrain-arena';
+import { DrawFenceTimeline, TerrainArena, type TerrainAllocation } from './terrain-arena';
 import { TerrainDrawBatcher, DRAW_DATA_TEX_WIDTH, FLOATS_PER_TEXEL } from './terrain-batcher';
 import { renderPhaseStats } from '../engine/render-phase-stats';
 import { buildEmissiveTileTable, EMISSIVE_TABLE_SIZE } from './post/emissive-tiles';
@@ -360,6 +360,7 @@ export class ChunkRenderer {
       ((a.sx * 16 + 8 - this.cameraPos[0]) ** 2 +
         (a.sy * 16 + 8 - this.cameraPos[1]) ** 2 +
         (a.sz * 16 + 8 - this.cameraPos[2]) ** 2) || a.sortRank - b.sortRank;
+  private readonly drawFences: DrawFenceTimeline;
   public readonly opaqueArena: TerrainArena;
   public readonly cutoutArena: TerrainArena;
   public readonly translucentArena: TerrainArena;
@@ -488,15 +489,19 @@ export class ChunkRenderer {
 
   constructor(glWrapper: GLWrapper) {
     this.glWrapper = glWrapper;
+    this.drawFences = new DrawFenceTimeline(glWrapper);
     this.opaqueArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
       initialPageQuads: 1_048_576,
       maxPageQuads: 2_097_152,
     });
     this.cutoutArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
       initialPageQuads: 524_288,
       maxPageQuads: 1_048_576,
     });
     this.translucentArena = new TerrainArena(glWrapper, {
+      timeline: this.drawFences,
       initialPageQuads: 262_144,
       maxPageQuads: 524_288,
     });
@@ -1154,6 +1159,7 @@ export class ChunkRenderer {
     this.opaqueArena.releaseAll();
     this.cutoutArena.releaseAll();
     this.translucentArena.releaseAll();
+    this.drawFences.releaseAll();
     this.batcher.resetCapacity();
     this.ensureDrawDataTexture(this.batcher.getTextureHeight());
     this.tintCache.clearAll();
@@ -1597,6 +1603,7 @@ export class ChunkRenderer {
     this.activeLightingVariant = -1;
     this.boundVao = null;
 
+    this.drawFences.begin();
     this.opaqueArena.beginDrawFrame();
     this.cutoutArena.beginDrawFrame();
     this.translucentArena.beginDrawFrame();
@@ -1964,6 +1971,7 @@ export class ChunkRenderer {
 
     this.bindVao(null);
 
+    this.drawFences.end();
     this.opaqueArena.endDrawFrame();
     this.cutoutArena.endDrawFrame();
     this.translucentArena.endDrawFrame();

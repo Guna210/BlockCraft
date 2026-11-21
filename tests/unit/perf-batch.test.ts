@@ -9,7 +9,7 @@ import {
   type BatchSectionEntry,
 } from '../../src/render/terrain-batcher';
 import { ColumnTintCache, TINT_DEFAULT_SLOT } from '../../src/render/tint-cache';
-import { TerrainArena } from '../../src/render/terrain-arena';
+import { DrawFenceTimeline, TerrainArena } from '../../src/render/terrain-arena';
 import { GLWrapper } from '../../src/render/gl';
 import { quadIndices } from '../../src/render/shared-quads';
 
@@ -299,6 +299,52 @@ describe('PERF-batch terrain draw batching', () => {
       };
     }
 
+    it('shares one fence per draw frame across arenas and polls only the oldest pending fence', () => {
+      const { arena: arenaA, wrapper, signaled } = makeFencedArena(16, 64);
+      const gl = wrapper.gl as unknown as Record<string, ReturnType<typeof vi.fn> | unknown>;
+      let fenceCalls = 0;
+      let waitCalls = 0;
+      const origFence = gl.fenceSync as () => WebGLSync;
+      const origWait = gl.clientWaitSync as (s: WebGLSync) => number;
+      gl.fenceSync = () => (fenceCalls++, origFence());
+      gl.clientWaitSync = (s: WebGLSync) => (waitCalls++, origWait(s));
+      const timeline = new DrawFenceTimeline(wrapper);
+      const a = new TerrainArena(wrapper, { initialPageQuads: 16, maxPageQuads: 64, timeline });
+      const b = new TerrainArena(wrapper, { initialPageQuads: 16, maxPageQuads: 64, timeline });
+      const ua = a.upload(makeBucket(8));
+      const ub = b.upload(makeBucket(8));
+      void arenaA;
+
+      timeline.begin();
+      a.beginDrawFrame();
+      b.beginDrawFrame();
+      a.markUsed(ua);
+      b.markUsed(ub);
+      timeline.end();
+      a.endDrawFrame();
+      b.endDrawFrame();
+      expect(fenceCalls).toBe(1);
+
+      a.free(ua);
+      expect(ua.page.quarantined).toHaveLength(1);
+
+      // Several unsignalled frames: each begin polls the single oldest fence once.
+      waitCalls = 0;
+      for (let i = 0; i < 3; i++) {
+        timeline.begin();
+        timeline.end();
+      }
+      expect(waitCalls).toBe(3);
+      expect(ua.page.quarantined).toHaveLength(1);
+
+      const fence = (timeline as unknown as { fences: Array<{ fence: WebGLSync }> }).fences[0]!
+        .fence;
+      signaled.add(fence);
+      timeline.begin();
+      a.beginDrawFrame();
+      expect(ua.page.quarantined).toHaveLength(0);
+    });
+
     it('quarantines freed ranges from drawn pages until the frame fence signals', () => {
       const { arena, wrapper, signaled, deletedFences } = makeFencedArena(16, 64);
 
@@ -325,8 +371,8 @@ describe('PERF-batch terrain draw batching', () => {
       expect(arena.pages).toHaveLength(2);
 
       // Now signal the fence for frame 1 and poll
-      const fenceObj = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
-        .frameFences[0]!.fence;
+      const fenceObj = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
+        .timeline.fences[0]!.fence;
       signaled.add(fenceObj);
       arena.pollFences();
       expect(deletedFences).toContain(fenceObj);
@@ -394,8 +440,8 @@ describe('PERF-batch terrain draw batching', () => {
       expect(arena.pages).toHaveLength(1);
 
       // Signalled: the empty page's buffers and VAO are deleted.
-      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
-        .frameFences[0]!.fence;
+      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
+        .timeline.fences[0]!.fence;
       signaled.add(fence);
       arena.pollFences();
       expect(arena.pages).toHaveLength(0);
@@ -430,8 +476,8 @@ describe('PERF-batch terrain draw batching', () => {
       arena.endDrawFrame();
       expect(arena.pages).toContain(a.page);
 
-      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
-        .frameFences[0]!.fence;
+      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
+        .timeline.fences[0]!.fence;
       signaled.add(fence);
       arena.beginDrawFrame();
       arena.endDrawFrame();
@@ -482,8 +528,8 @@ describe('PERF-batch terrain draw batching', () => {
       expect(a.page.quarantined).toHaveLength(1);
       expect(a.page.quarantined[0]!.restoreIndices).toBe(true);
 
-      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
-        .frameFences[0]!.fence;
+      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
+        .timeline.fences[0]!.fence;
       signaled.add(fence);
       arena.pollFences();
       expect(writes()).toBe(before + 1);
@@ -569,7 +615,16 @@ describe('PERF-batch terrain draw batching', () => {
       };
       // 1024 px max -> 64 rows of 32 slots = 2048 slots (slot 0 is the plains default).
       const slots = new Set<number>();
+      const slot0Grass = (cache as unknown as { slotDataGrass: Uint8Array[] }).slotDataGrass[
+        TINT_DEFAULT_SLOT
+      ] as Uint8Array;
+      const slot0Before = slot0Grass.slice();
       for (let c = 0; c < 2100; c++) slots.add(cache.getColumnTints(c, 0, world).slot);
+      // Overflow columns must not overwrite the plains slot (data or atlas cells).
+      expect(
+        (cache as unknown as { slotDataGrass: Uint8Array[] }).slotDataGrass[TINT_DEFAULT_SLOT],
+      ).toBe(slot0Grass);
+      expect(Array.from(slot0Grass)).toEqual(Array.from(slot0Before));
       expect(Math.max(...sizes.map(([, h]) => h))).toBeLessThanOrEqual(1024);
       expect(Math.max(...slots)).toBe(2047);
       expect(cache.getColumnTints(2099, 0, world).slot).toBe(TINT_DEFAULT_SLOT);
