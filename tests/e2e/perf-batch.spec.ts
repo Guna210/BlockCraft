@@ -6,6 +6,9 @@ import { test, expect } from '../harness/fixture';
 import { assertNoMissingTexture, assertNotBlank, diffFraction } from '../harness/pixels';
 import { waitForStreamingIdle } from './helpers/flight';
 
+const MAX_MULTI_DRAW_BATCH = 4096; // src/render/terrain-batcher.ts
+const LIGHTING_VARIANT_COUNT = 4;
+
 const SEED = 'blockcraft-test-seed-42';
 
 type Camera = { position: Float32Array; yaw: number; pitch: number; updateView(): void };
@@ -157,10 +160,31 @@ test.describe('PERF-batch: Terrain draw batching', () => {
     expect(rd16.batch.opaqueCutoutSubmissions).toBeGreaterThan(0);
     expect(rd16.batch.opaqueCutoutSubmissions).toBeLessThanOrEqual(32);
 
-    // RD16 opaque+cutout submissions are at most RD8 count + a small margin (8)
-    expect(rd16.batch.opaqueCutoutSubmissions).toBeLessThanOrEqual(
-      rd8.batch.opaqueCutoutSubmissions + 8,
-    );
+    // Submissions are one per non-empty (pass, lighting variant, arena page) key, plus one extra per
+    // MAX_MULTI_DRAW_BATCH draws. Which pages and variants hold visible sections depends on the order
+    // in which columns streamed in, so a fixed "RD8 + 8" margin flaked in CI (run 44802846579 saw 12
+    // and 11 for identical scenes). The bound is derived from the counted pages instead:
+    // keys <= variants x (opaque pages + cutout pages), splits <= ceil(draws / 4096).
+    // A fixed page cap keeps that formula from hiding page proliferation: opaque pages start at
+    // 1,048,576 quads and cutout pages at 524,288, so RD8 fits one of each (cap 4 leaves slack for
+    // fragmentation) and RD16 (about 5x the columns) needs at most two of each plus slack (cap 6).
+    const pageCaps = new Map([
+      [rd8, 4],
+      [rd16, 6],
+    ]);
+    for (const sample of [rd8, rd16]) {
+      const pages = sample.batch.opaquePages + sample.batch.cutoutPages;
+      expect(pages, 'opaque + cutout arena pages').toBeLessThanOrEqual(pageCaps.get(sample)!);
+      const keyBound = LIGHTING_VARIANT_COUNT * pages;
+      const splitBound = Math.ceil(sample.render.drawCalls / MAX_MULTI_DRAW_BATCH);
+      expect(sample.batch.opaqueCutoutSubmissions).toBeLessThanOrEqual(keyBound + splitBound);
+      // Submissions do not scale with sections: far fewer submissions than logical draws.
+      expect(sample.batch.opaqueCutoutSubmissions * 50).toBeLessThanOrEqual(
+        sample.render.drawCalls,
+      );
+    }
+    // RD16 loads about 5x the columns of RD8, so the bounds above are not trivially met by a tiny scene.
+    expect(rd16.render.drawCalls).toBeGreaterThan(rd8.render.drawCalls * 2);
   });
 
   test('batched path is pixel-identical to glcheck=draw per-section path at 3 fixed viewpoints', async ({
