@@ -2,7 +2,7 @@
 
 Status: verified
 Depends on: M22a, M22b, M22c
-Full verify: PR CI run on head 9b01bd0 (https://github.com/Guna210/BlockCraft/actions/runs/44802846579), all four shards and the aggregate `verify` job green. Unit: Test Files 170 passed (170), Tests 1591 passed (1591). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 51 passed, 1 flaky (m13h.spec.ts:142, passed on retry); 4/4 51 passed, 1 flaky (perf-batch.spec.ts:56, passed on retry).
+Full verify: PR CI run 44880552715 on head cab5297 (https://github.com/Guna210/BlockCraft/actions/runs/44880552715), all four shards and the aggregate `verify` job green. Unit: Test Files 170 passed, Tests 1591 passed (1591). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 51 passed, 1 flaky (m13h.spec.ts:142, "outsideRenderPass queueSerial" driver message, passed on retry); 4/4 51 passed, 1 flaky (m18b-settings.spec.ts:92 key-rebind predicate timeout, passed on retry). perf-batch.spec.ts:56 passed on its first attempt (RD16 opaque+cutout submissions 12, opaque+cutout pages 4).
 Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 errors) · unit: the changed files (perf-batch, m08b-gpu, m13a-render, tint) 25 passed; full unit run only differed from CI on m21b-fix-containers (needs `dist-server`, environment). Local e2e is unusable in this container: every test fails at fixture teardown on the driver message "GPU stall due to ReadPixels" (also on m01 and on the untouched previous commit), and streaming-idle waits time out. m18a-menus:158, m04, m22 and perf-batch test bodies ran to their asserts; the GL resource counts for the m04 flight were checked with a temporary probe (below). m21c fails the same way on the previous commit locally.
 
 ## Acceptance criteria owned
@@ -55,7 +55,8 @@ decisions/PERF-batch-terrain.md
 - Translucent submissions and program switches still scale with sorted runs (RD32 LOD off: 396 translucent, 393 switches).
 - Pixel baseline is the glcheck=draw path, not master.
 - Container-only failures listed by the owner are left to CI.
-- `perf-batch.spec.ts:56` flaked once in CI (RD16 opaque+cutout submissions 12 vs limit 11 = RD8 3 + 8); passed on retry. The margin is tight but the test was not changed. Owner decision needed if it recurs.
+- `perf-batch.spec.ts:56` flaked once in CI run 44802846579 (RD16 12 vs fixed limit 11). With owner approval its bound is now derived from the counted pages (4 x (opaque+cutout pages) + ceil(drawCalls/4096)) with page caps (RD8 <= 4, RD16 <= 6), `submissions x 50 <= drawCalls` and RD16 drawCalls > 2x RD8 (decisions/PERF-batch-terrain.md item 6).
+- `EntityRenderer.warmUp()`: 10.8 ms for 23 models, 23 buffers + 23 VAOs + 23 textures, run once at init (see decisions file).
 
 ## Notes for dependent tasks
 
