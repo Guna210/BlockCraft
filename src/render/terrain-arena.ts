@@ -184,6 +184,12 @@ export interface TerrainArenaOptions {
 export class TerrainArena {
   private static readonly MAX_UPLOAD_BYTES = 16 * 1024;
   private static readonly FRAME_UPLOAD_BYTES = 4 * 1024;
+  /** Adjacent streamed vertex chunks are merged into one `bufferSubData` of up to this many words. */
+  private static readonly RUN_WORDS = 16 * 1024;
+  private runPage: ArenaPage | null = null;
+  private runStartByte = 0;
+  private runWords = 0;
+  private runScratch: Uint32Array | null = null;
   private static nextPageId = 1;
   public readonly pages: ArenaPage[] = [];
   private readonly pageById = new Map<number, ArenaPage>();
@@ -223,7 +229,49 @@ export class TerrainArena {
   }
 
   endUploadBatch(): void {
-    // Kept as a frame boundary hook for ChunkRenderer's upload lifecycle.
+    this.flushRun();
+  }
+
+  /** Appends a streamed vertex chunk to the open run, flushing first when it is not adjacent. */
+  private stageVertices(
+    page: ArenaPage,
+    destinationByte: number,
+    source: Uint32Array,
+    sourceWord: number,
+    words: number,
+  ): void {
+    if (
+      this.runWords > 0 &&
+      (this.runPage !== page ||
+        destinationByte !== this.runStartByte + this.runWords * 4 ||
+        this.runWords + words > TerrainArena.RUN_WORDS)
+    ) {
+      this.flushRun();
+    }
+    const scratch = (this.runScratch ??= new Uint32Array(TerrainArena.RUN_WORDS));
+    if (this.runWords === 0) {
+      this.runPage = page;
+      this.runStartByte = destinationByte;
+    }
+    scratch.set(source.subarray(sourceWord, sourceWord + words), this.runWords);
+    this.runWords += words;
+  }
+
+  /** Writes the open run with a single `bufferSubData`. */
+  private flushRun(): void {
+    if (this.runWords === 0 || !this.runPage) {
+      this.runWords = 0;
+      return;
+    }
+    const gl = this.wrapper.gl;
+    const start = renderPhaseStats.start();
+    const clockStart = performance.now();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.runPage.vertices);
+    gl.bufferSubData(gl.ARRAY_BUFFER, this.runStartByte, this.runScratch!, 0, this.runWords);
+    this.runWords = 0;
+    this.runPage = null;
+    renderPhaseStats.end('arenaTransferMs', start);
+    renderPhaseStats.add('arenaUploadMs', performance.now() - clockStart);
   }
 
   /**
@@ -231,6 +279,7 @@ export class TerrainArena {
    * this only reclaims ranges whose draw frame has completed.
    */
   public beginDrawFrame(): void {
+    this.flushRun();
     if (this.ownsTimeline) this.timeline.begin();
     this.reclaimQuarantined();
   }
@@ -275,6 +324,7 @@ export class TerrainArena {
     const gl = this.wrapper.gl;
     this.debugVertexBuffer ??= this.wrapper.createBuffer();
     if (allocation.pendingUpload) this.uploadPending(allocation, Infinity);
+    this.flushRun();
     gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertices);
     const vertices = new Uint32Array(allocation.vertices.length / 4);
     gl.getBufferSubData(gl.COPY_READ_BUFFER, allocation.vertices.offset, vertices);
@@ -413,8 +463,8 @@ export class TerrainArena {
     const start = renderPhaseStats.start();
     const clockStart = performance.now();
     const gl = this.wrapper.gl;
-    if (frameBudgeted) gl.bindBuffer(gl.ARRAY_BUFFER, allocation.page.vertices);
-    else {
+    if (!frameBudgeted) {
+      this.flushRun();
       gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertexStaging);
       gl.bindBuffer(gl.COPY_WRITE_BUFFER, allocation.page.vertices);
     }
@@ -431,8 +481,8 @@ export class TerrainArena {
       const words = Math.min(remaining, maxBytes / 4);
       const destination = segment.destinationByteOffset + allocation.uploadSegmentWordOffset * 4;
       if (frameBudgeted) {
-        gl.bufferSubData(
-          gl.ARRAY_BUFFER,
+        this.stageVertices(
+          allocation.page,
           destination,
           segment.vertices,
           segment.sourceWordOffset + allocation.uploadSegmentWordOffset,
@@ -557,6 +607,10 @@ export class TerrainArena {
 
   private destroyPageAt(index: number): void {
     const page = this.pages[index]!;
+    if (this.runPage === page) {
+      this.runWords = 0;
+      this.runPage = null;
+    }
     this.pages.splice(index, 1);
     this.pageById.delete(page.id);
     this.wrapper.deleteVertexArray(page.vao);

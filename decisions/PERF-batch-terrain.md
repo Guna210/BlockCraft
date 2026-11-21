@@ -59,10 +59,11 @@ The owner fixed the following decisions for `PERF-batch`:
      | fenceSync | 4 | 2 | 3.09 | 1.82 |
      | clientWaitSync | 12.4 | 2 | 17.48 | 1.82 |
      | deleteSync | 4.13 | 2 | 3.1 | 1.82 |
-     | bufferSubData | 30.47 | 2 | 15.83 | 14.6 |
+     | bufferSubData | 30.47 | 2 | 15.83 | 14.6 (6.3 after the run merge below) |
      | texSubImage2D | 2.33 | 1 | 1.95 | 1.77 |
      | copyBufferSubData | 0 | 0 | 0 | 0 |
 
      (Settled sampled 10 s, ~14 frames; flight 124-131 frames of a 450-block flight at 30 b/s. fenceSync is above 1 per rAF because `render()` runs more than once per rAF in this harness.) The draw-data texture is already a single `texSubImage2D` of the used rows per draw frame; the remaining flight `bufferSubData` calls are chunk streaming uploads, not changed.
    - **Tint overflow.** When the atlas is at `MAX_TEXTURE_SIZE`, `getColumnTints` now returns the plains pair without calling `uploadSlotCells`, so slot 0 (atlas cells and `slotDataGrass[0]/slotDataFoliage[0]`) is never overwritten. Unit test asserts slot 0 data is unchanged after 2,100 columns.
+   - **Merged streamed vertex uploads.** In frame-budgeted mode `uploadPending` no longer calls `bufferSubData` per 4 KB chunk. Chunks are copied into one scratch run (up to 16,384 words = 64 KB) while they are adjacent in the same page, and the run is written with one `bufferSubData` at `endUploadBatch` (also at `beginDrawFrame`, before any staging-path upload and before a debug readback, so no draw or read sees stale data; a run for a destroyed page is dropped). Same budgets, fewer driver commands outside the render pass. Unit test: "merges adjacent streamed vertex chunks into one bufferSubData per upload batch". Measured flight `bufferSubData` per frame 14.6 -> 6.3, settled 2 (final counts: fenceSync 2 / 1.72, clientWaitSync 2 / 1.72, texSubImage2D 1 / 1.55, bufferSubData 2 / 6.31, copyBufferSubData 0 / 0 for settled / flight).
 

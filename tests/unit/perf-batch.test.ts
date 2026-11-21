@@ -299,6 +299,25 @@ describe('PERF-batch terrain draw batching', () => {
       };
     }
 
+    it('merges adjacent streamed vertex chunks into one bufferSubData per upload batch', () => {
+      const { arena, wrapper } = makeFencedArena(64, 64);
+      const gl = wrapper.gl as unknown as { bufferSubData: ReturnType<typeof vi.fn> };
+      gl.bufferSubData.mockClear();
+      const a = arena.upload(makeBucket(8));
+      const b = arena.upload(makeBucket(8));
+      const calls = () =>
+        gl.bufferSubData.mock.calls.filter((c: unknown[]) => c[0] === 1 /* ARRAY_BUFFER */);
+      arena.beginUploadBatch();
+      expect(arena.uploadPending(a, 5, true)).toBe(true);
+      expect(arena.uploadPending(b, 5, true)).toBe(true);
+      expect(calls()).toHaveLength(0);
+      arena.endUploadBatch();
+      // Two 256-byte allocations are adjacent in the page: one write of 512 bytes (128 words).
+      expect(calls()).toHaveLength(1);
+      expect(calls()[0]![1]).toBe(0);
+      expect(calls()[0]![4]).toBe(128);
+    });
+
     it('shares one fence per draw frame across arenas and polls only the oldest pending fence', () => {
       const { arena: arenaA, wrapper, signaled } = makeFencedArena(16, 64);
       const gl = wrapper.gl as unknown as Record<string, ReturnType<typeof vi.fn> | unknown>;
