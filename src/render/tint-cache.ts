@@ -3,7 +3,7 @@ import { columnKey } from '../world/streaming-plan';
 import { renderPhaseStats } from '../engine/render-phase-stats';
 
 export const TINT_DEFAULT_SLOT = 0;
-export const TINT_INITIAL_SLOTS = 128; // 128 slots = 256 cells (grass + foliage)
+export const TINT_INITIAL_SLOTS = 512; // 512 slots = 1024 cells (grass + foliage), 1024 x 256 px; RD8 (289 columns) never grows it
 export const TINT_ATLAS_CELLS_PER_ROW = 64; // 64 * 16 = 1024 px width
 
 export interface ColumnTintPair {
@@ -37,6 +37,9 @@ export class ColumnTintCache {
   private readonly useSharedAtlas: boolean;
   private sharedTexture: WebGLTexture | null = null;
   private slotCapacity = TINT_INITIAL_SLOTS;
+  private initialCapacity = TINT_INITIAL_SLOTS;
+  /** Largest slot count whose atlas height fits `MAX_TEXTURE_SIZE`. */
+  private maxSlots = Number.POSITIVE_INFINITY;
   private nextSlot = 1; // Slot 0 is reserved for plains default
   private readonly freeSlots: number[] = [];
   private readonly slotDataGrass: Array<Uint8Array | null> = [];
@@ -54,6 +57,7 @@ export class ColumnTintCache {
   constructor(glWrapper: GLWrapper, initialSlots = TINT_INITIAL_SLOTS) {
     this.glWrapper = glWrapper;
     this.slotCapacity = Math.max(32, initialSlots);
+    this.initialCapacity = this.slotCapacity;
     const gl = glWrapper.gl as Partial<WebGL2RenderingContext>;
     this.useSharedAtlas =
       typeof gl.texStorage2D === 'function' && typeof gl.texSubImage2D === 'function';
@@ -74,6 +78,13 @@ export class ColumnTintCache {
     this.slotDataFoliage[TINT_DEFAULT_SLOT] = this.plainsFoliageData;
 
     if (this.useSharedAtlas) {
+      const maxTexture = (gl.getParameter?.(gl.MAX_TEXTURE_SIZE as number) ?? 0) as number;
+      if (typeof maxTexture === 'number' && maxTexture >= TINT_ATLAS_CELLS_PER_ROW * 16) {
+        // height = rows * 16 <= maxTexture, 32 slots (64 cells) per row
+        this.maxSlots = Math.floor(maxTexture / 16) * (TINT_ATLAS_CELLS_PER_ROW / 2);
+        this.slotCapacity = Math.min(this.slotCapacity, this.maxSlots);
+        this.initialCapacity = this.slotCapacity;
+      }
       this.sharedTexture = this.createSharedAtlasTexture(this.slotCapacity);
       this.uploadSlotCells(TINT_DEFAULT_SLOT, this.plainsGrassData, this.plainsFoliageData);
       this.plainsPair = {
@@ -149,7 +160,8 @@ export class ColumnTintCache {
       return this.freeSlots.pop()!;
     }
     if (this.nextSlot >= this.slotCapacity) {
-      this.growCapacity(this.slotCapacity * 2);
+      if (this.slotCapacity >= this.maxSlots) return TINT_DEFAULT_SLOT; // atlas is at MAX_TEXTURE_SIZE
+      this.growCapacity(Math.min(this.slotCapacity * 2, this.maxSlots));
     }
     return this.nextSlot++;
   }
@@ -316,9 +328,11 @@ export class ColumnTintCache {
         if (cached.grassTexture) this.glWrapper.deleteTexture(cached.grassTexture);
         if (cached.foliageTexture) this.glWrapper.deleteTexture(cached.foliageTexture);
       }
-      this.slotDataGrass[cached.slot] = null;
-      this.slotDataFoliage[cached.slot] = null;
-      this.freeSlots.push(cached.slot);
+      if (cached.slot !== TINT_DEFAULT_SLOT) {
+        this.slotDataGrass[cached.slot] = null;
+        this.slotDataFoliage[cached.slot] = null;
+        this.freeSlots.push(cached.slot);
+      }
       this.columnTextures.delete(colKey);
     }
   }
@@ -330,9 +344,9 @@ export class ColumnTintCache {
     this.columnSections.clear();
     this.freeSlots.length = 0;
     this.nextSlot = 1;
-    if (this.useSharedAtlas && this.slotCapacity > TINT_INITIAL_SLOTS) {
+    if (this.useSharedAtlas && this.slotCapacity > this.initialCapacity) {
       if (this.sharedTexture) this.glWrapper.deleteTexture(this.sharedTexture);
-      this.slotCapacity = TINT_INITIAL_SLOTS;
+      this.slotCapacity = this.initialCapacity;
       this.sharedTexture = this.createSharedAtlasTexture(this.slotCapacity);
       this.uploadSlotCells(TINT_DEFAULT_SLOT, this.plainsGrassData, this.plainsFoliageData);
       this.plainsPair.grassTexture = this.sharedTexture;

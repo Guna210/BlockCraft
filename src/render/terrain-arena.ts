@@ -7,29 +7,40 @@ import { renderPhaseStats } from '../engine/render-phase-stats';
 export const DEFAULT_ARENA_PAGE_QUADS = 4_096;
 export const MAX_ARENA_PAGE_QUADS = 262_144;
 
-let indexPattern = new Uint32Array(0);
-let indexPatternQuads = 0;
+/** Pages up to this many quads get their whole index pattern at creation (<= 1.5 MB). */
+const EAGER_INDEX_QUADS = 65_536;
+/** Larger pages fill their index buffer lazily in chunks of this many quads (768 KB). */
+const INDEX_CHUNK_QUADS = 32_768;
 
-function sharedIndexPattern(requiredQuads: number): Uint32Array {
-  if (requiredQuads <= indexPatternQuads) return indexPattern;
-  indexPatternQuads = Math.max(4_096, 2 ** Math.ceil(Math.log2(requiredQuads)));
-  indexPattern = new Uint32Array(indexPatternQuads * 6);
-  for (let quad = 0; quad < indexPatternQuads; quad++) {
-    const vertex = quad * 4;
-    const index = quad * 6;
-    indexPattern[index] = vertex;
-    indexPattern[index + 1] = vertex + 1;
-    indexPattern[index + 2] = vertex + 2;
-    indexPattern[index + 3] = vertex;
-    indexPattern[index + 4] = vertex + 2;
-    indexPattern[index + 5] = vertex + 3;
+let indexScratch = new Uint32Array(0);
+
+/** Canonical quad indices (0,1,2,0,2,3 + 4q) for quads [startQuad, startQuad + count) in a reused scratch array. */
+function canonicalIndices(startQuad: number, count: number): Uint32Array {
+  if (indexScratch.length < count * 6) indexScratch = new Uint32Array(count * 6);
+  for (let q = 0; q < count; q++) {
+    const vertex = (startQuad + q) * 4;
+    const index = q * 6;
+    indexScratch[index] = vertex;
+    indexScratch[index + 1] = vertex + 1;
+    indexScratch[index + 2] = vertex + 2;
+    indexScratch[index + 3] = vertex;
+    indexScratch[index + 4] = vertex + 2;
+    indexScratch[index + 5] = vertex + 3;
   }
-  return indexPattern;
+  return indexScratch.subarray(0, count * 6);
+}
+
+let eagerPattern: Uint32Array | null = null;
+function eagerIndexPattern(): Uint32Array {
+  eagerPattern ??= canonicalIndices(0, EAGER_INDEX_QUADS).slice();
+  return eagerPattern;
 }
 
 export interface QuarantinedRange {
   quads: ArenaRange;
   lastUsedDrawFrame: number;
+  /** The range's sorted index data must be reset to canonical order once it is reclaimed. */
+  restoreIndices: boolean;
 }
 
 export interface ArenaPage {
@@ -39,6 +50,8 @@ export interface ArenaPage {
   vertexStaging: WebGLBuffer;
   indices: WebGLBuffer;
   quadCapacity: number;
+  /** Quads [0, indexFilledQuads) of the index buffer hold the canonical pattern. */
+  indexFilledQuads: number;
   quadSpace: BufferArenaAllocator;
   allocations: number;
   lastUsedFrame: number;
@@ -140,24 +153,26 @@ export class TerrainArena {
   /** Records a non-blocking GPU fence after all terrain draws for this frame have been submitted. */
   public endDrawFrame(): void {
     if (!this.drewInCurrentFrame) {
-      this.completedDrawFrame = this.drawFrame;
-      this.reclaimQuarantined();
+      // A frame that drew nothing from this arena leaves earlier frames' fences in force: ranges
+      // freed after those draws stay quarantined until their own fence signals.
+      this.completeIfNoFencePending();
       return;
     }
     const gl = this.wrapper.gl as Partial<WebGL2RenderingContext>;
     if (typeof gl.fenceSync === 'function' && typeof gl.clientWaitSync === 'function') {
       const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE!, 0);
-      if (fence) {
-        this.frameFences.push({ drawFrame: this.drawFrame, fence });
-      } else {
-        this.completedDrawFrame = this.drawFrame;
-        this.reclaimQuarantined();
-      }
+      if (fence) this.frameFences.push({ drawFrame: this.drawFrame, fence });
+      else this.completeIfNoFencePending();
     } else {
-      this.completedDrawFrame = this.drawFrame;
-      this.reclaimQuarantined();
+      this.completeIfNoFencePending();
     }
     this.drewInCurrentFrame = false;
+  }
+
+  /** Advances the completed draw frame only when no earlier frame's fence is still pending. */
+  private completeIfNoFencePending(): void {
+    if (this.frameFences.length === 0) this.completedDrawFrame = this.drawFrame;
+    this.reclaimQuarantined();
   }
 
   /** Polls pending frame fences with zero timeout and releases quarantined ranges whose draw completed. */
@@ -192,6 +207,7 @@ export class TerrainArena {
       for (let i = 0; i < q.length; i++) {
         const item = q[i]!;
         if (item.lastUsedDrawFrame <= this.completedDrawFrame) {
+          if (item.restoreIndices) this.writeCanonicalIndices(page, item.quads);
           page.quadSpace.free(item.quads);
         } else {
           q[writeIdx++] = item;
@@ -295,6 +311,7 @@ export class TerrainArena {
       }
     }
     const allocatedQuads = quadRange!;
+    this.ensureIndices(page, allocatedQuads.offset + quadCount);
     const vertexRange = { offset: allocatedQuads.offset * 32, length: quadCount * 32 };
     const indexRange = { offset: allocatedQuads.offset * 24, length: quadCount * 24 };
     const base = vertexRange.offset / 8;
@@ -438,35 +455,57 @@ export class TerrainArena {
     allocation.uploadSegments.length = 0;
     allocation.debugIndices = null;
     this.allocations.delete(allocation);
-    if (allocation.indicesSorted) {
-      const gl = this.wrapper.gl;
-      gl.bindVertexArray(allocation.page.vao);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, allocation.page.indices);
-      gl.bufferSubData(
-        gl.ELEMENT_ARRAY_BUFFER,
-        allocation.indices.offset,
-        sharedIndexPattern(allocation.quads.offset + allocation.quads.length),
-        allocation.quads.offset * 6,
-        allocation.indexCount,
-      );
-      allocation.indicesSorted = false;
-      allocation.sortedIndices = null;
-    }
+    const restoreIndices = allocation.indicesSorted;
+    allocation.indicesSorted = false;
+    allocation.sortedIndices = null;
     const page = allocation.page;
     page.allocations--;
     this.pollFences();
     if (page.lastUsedDrawFrame > this.completedDrawFrame) {
+      // Any write to the range (the sorted-index reset included) waits until it is reclaimed.
       page.quarantined.push({
         quads: allocation.quads,
         lastUsedDrawFrame: page.lastUsedDrawFrame,
+        restoreIndices,
       });
       return;
     }
+    if (restoreIndices) this.writeCanonicalIndices(page, allocation.quads);
     page.quadSpace.free(allocation.quads);
     if (page.allocations !== 0 || page.quarantined.length !== 0) return;
     const index = this.pages.indexOf(page);
     if (index < 0) throw new Error('Unknown arena page');
     this.destroyPageAt(index);
+  }
+
+  /**
+   * Fills the page's index buffer with the canonical pattern up to `endQuad`, a bounded chunk at
+   * a time, so a large page never uploads its whole index buffer in one go.
+   */
+  private ensureIndices(page: ArenaPage, endQuad: number): void {
+    if (page.indexFilledQuads >= endQuad) return;
+    const gl = this.wrapper.gl;
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
+    while (page.indexFilledQuads < endQuad) {
+      const start = page.indexFilledQuads;
+      const count = Math.min(INDEX_CHUNK_QUADS, page.quadCapacity - start);
+      gl.bufferSubData(gl.COPY_WRITE_BUFFER, start * 24, canonicalIndices(start, count));
+      page.indexFilledQuads = start + count;
+    }
+  }
+
+  /** Resets a range whose index data was sorted back to the canonical pattern. */
+  private writeCanonicalIndices(page: ArenaPage, range: ArenaRange): void {
+    const gl = this.wrapper.gl;
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
+    for (let done = 0; done < range.length; done += INDEX_CHUNK_QUADS) {
+      const count = Math.min(INDEX_CHUNK_QUADS, range.length - done);
+      gl.bufferSubData(
+        gl.COPY_WRITE_BUFFER,
+        (range.offset + done) * 24,
+        canonicalIndices(range.offset + done, count),
+      );
+    }
   }
 
   private destroyPageAt(index: number): void {
@@ -540,7 +579,17 @@ export class TerrainArena {
     const vertexStaging = this.wrapper.createBuffer();
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sharedIndexPattern(quadCapacity), gl.STATIC_DRAW);
+    const eager = quadCapacity <= EAGER_INDEX_QUADS;
+    if (eager) {
+      gl.bufferData(
+        gl.ELEMENT_ARRAY_BUFFER,
+        eagerIndexPattern().subarray(0, quadCapacity * 6),
+        gl.STATIC_DRAW,
+      );
+    } else {
+      // Large pages allocate the index storage now and fill it as sections are allocated.
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadCapacity * 24, gl.STATIC_DRAW);
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
     if (initialVertices) gl.bufferData(gl.ARRAY_BUFFER, initialVertices, gl.DYNAMIC_DRAW);
     else gl.bufferData(gl.ARRAY_BUFFER, vertexCapacity, gl.DYNAMIC_DRAW);
@@ -556,6 +605,7 @@ export class TerrainArena {
       vertexStaging,
       indices,
       quadCapacity,
+      indexFilledQuads: eager ? quadCapacity : 0,
       quadSpace: new BufferArenaAllocator(quadCapacity),
       allocations: 0,
       lastUsedFrame: -1000,

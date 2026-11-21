@@ -56,7 +56,7 @@ async function waitSettledFrames(page: Page, count = 3): Promise<void> {
 }
 
 test.describe('PERF-batch: Terrain draw batching', () => {
-  test('opaque and cutout GL submissions stay bounded and nearly constant from RD8 to RD16 with LOD off', async ({
+  test('opaque and cutout GL submissions stay within the page-and-variant bound from RD8 to RD16 with LOD off', async ({
     page,
   }) => {
     test.setTimeout(600_000);
@@ -383,5 +383,110 @@ test.describe('PERF-batch: Terrain draw batching', () => {
     expect(glCheckDrawBoot.multiDraw).toBe(false);
     expect(glCheckDrawBoot.stats.drawCalls).toBeGreaterThan(0);
     expect(glCheckDrawBoot.stats.glErrors).toBe(0);
+  });
+
+  test('a large water surface of overlapping translucent sections is pixel-identical batched vs per-section', async ({
+    page,
+  }) => {
+    test.setTimeout(480_000);
+    await page.evaluate(async (seed) => {
+      const api = window.__blockcraft!;
+      await api.ready();
+      api.setRenderDistance!(8);
+      await api.createWorld!({
+        name: 'perf-batch-water',
+        seed,
+        mode: 'creative',
+        type: 'default',
+        spawning: false,
+      });
+      api.pause!();
+      api.setTimeOfDay!(6000);
+      api.setWeather!('clear');
+      api.setClouds!('off');
+      api.setFluidAnimationPaused!(true);
+      api.setSetting!('lod', false);
+    }, SEED);
+    await waitForStreamingIdle(page, 240_000);
+
+    // The seed's ocean off (-266, -188) (the M03g ocean viewpoint): the camera floats 7 blocks above
+    // the sea and looks steeply down at the surface so water fills most of the frame.
+    await page.evaluate(async () => {
+      const api = window.__blockcraft!;
+      const cam = (window as unknown as Host).WorldManager.getInstance().camera;
+      cam.position.set([-266.5, 100, -187.5]);
+      cam.updateView();
+      await api.waitForTerrain!(8);
+      cam.position.set([-284.5, 72.5, -187.5]);
+      cam.yaw = 0;
+      cam.pitch = (-50 * Math.PI) / 180;
+      cam.updateView();
+      await api.waitForTerrain!(8);
+    });
+    await waitForStreamingIdle(page, 240_000);
+    await waitSettledFrames(page, 4);
+
+    const batchedStats = await page.evaluate(() => {
+      const cr = (window as unknown as Host).WorldManager.getInstance().chunkRenderer;
+      return { multiDraw: Boolean(cr.multiDraw), batch: cr.getBatchStats() };
+    });
+    expect(batchedStats.multiDraw).toBe(true);
+    expect(batchedStats.batch.translucentSubmissions).toBeGreaterThan(0);
+    const batchedBuf = await page.locator('#game-canvas').screenshot();
+
+    const perDrawStats = await page.evaluate(async () => {
+      const cr = (window as unknown as Host).WorldManager.getInstance().chunkRenderer as {
+        multiDraw: unknown;
+        __savedMultiDraw?: unknown;
+        getBatchStats(): BatchStats;
+      };
+      cr.__savedMultiDraw = cr.multiDraw;
+      cr.multiDraw = null;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return window.__blockcraft!.getRenderStats();
+    });
+    const perDrawBuf = await page.locator('#game-canvas').screenshot();
+    await page.evaluate(() => {
+      const cr = (window as unknown as Host).WorldManager.getInstance().chunkRenderer as {
+        multiDraw: unknown;
+        __savedMultiDraw?: unknown;
+      };
+      cr.multiDraw = cr.__savedMultiDraw ?? null;
+    });
+
+    const batchedPng = PNG.sync.read(batchedBuf);
+    const perDrawPng = PNG.sync.read(perDrawBuf);
+    assertNotBlank(batchedPng);
+    assertNoMissingTexture(batchedPng);
+
+    // The screenshot really shows water: a large share of pixels is blue-dominant and the sky,
+    // which is not in view at this pitch, cannot account for it. Several translucent sections
+    // were drawn (one draw per section on the per-section path).
+    let waterPixels = 0;
+    for (let i = 0; i < batchedPng.data.length; i += 4) {
+      const r = batchedPng.data[i]!;
+      const g = batchedPng.data[i + 1]!;
+      const b = batchedPng.data[i + 2]!;
+      if (b > r + 25 && b >= g) waterPixels++;
+    }
+    const waterShare = waterPixels / (batchedPng.width * batchedPng.height);
+    expect(waterShare, 'share of blue water pixels').toBeGreaterThan(0.25);
+    expect(perDrawStats.drawSubmissions).toBeGreaterThan(batchedStats.batch.translucentSubmissions);
+
+    const outDir = path.resolve('docs/screenshots/PERF-batch');
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, 'perf-batch-ocean-translucent.png'), batchedBuf);
+
+    const diffPerDraw = diffFraction(batchedPng, perDrawPng);
+    console.log(
+      'PERF-batch water pixel-identity',
+      JSON.stringify({
+        diffPerDraw,
+        waterShare,
+        translucentSubmissions: batchedStats.batch.translucentSubmissions,
+        perDrawSubmissions: perDrawStats.drawSubmissions,
+      }),
+    );
+    expect(diffPerDraw, 'ocean batched vs per-section').toBeLessThanOrEqual(0.0005);
   });
 });

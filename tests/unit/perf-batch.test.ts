@@ -402,6 +402,97 @@ describe('PERF-batch terrain draw batching', () => {
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
     });
 
+    it('an idle draw frame with a pending fence does not reclaim quarantined ranges', () => {
+      const { arena, signaled } = makeFencedArena(16, 64);
+      const a = arena.upload(makeBucket(8));
+      const b = arena.upload(makeBucket(8));
+      arena.beginDrawFrame();
+      arena.markUsed(a);
+      arena.markUsed(b);
+      arena.endDrawFrame(); // fence 1, unsignalled
+      arena.free(a);
+      expect(a.page.quarantined).toHaveLength(1);
+
+      // Frames that draw nothing from this arena (culled, or an arena that is often empty).
+      for (let i = 0; i < 3; i++) {
+        arena.beginDrawFrame();
+        arena.endDrawFrame();
+        expect(a.page.quarantined).toHaveLength(1);
+      }
+      // The freed range cannot be handed out while the GPU may still read it.
+      const c = arena.upload(makeBucket(8));
+      expect(c.page === a.page && c.quads.offset === a.quads.offset).toBe(false);
+
+      // Emptying the page behind the pending fence must not delete it either.
+      arena.free(b);
+      arena.free(c);
+      arena.beginDrawFrame();
+      arena.endDrawFrame();
+      expect(arena.pages).toContain(a.page);
+
+      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
+        .frameFences[0]!.fence;
+      signaled.add(fence);
+      arena.beginDrawFrame();
+      arena.endDrawFrame();
+      expect(a.page.quarantined).toHaveLength(0);
+      expect(arena.pages).toHaveLength(0);
+    });
+
+    it('fills the index buffer of a large page lazily in bounded chunks', () => {
+      const { arena, wrapper } = makeFencedArena(131_072, 131_072);
+      const gl = wrapper.gl as unknown as {
+        bufferData: ReturnType<typeof vi.fn>;
+        bufferSubData: ReturnType<typeof vi.fn>;
+        ELEMENT_ARRAY_BUFFER: number;
+      };
+      const a = arena.upload(makeBucket(8));
+      // Allocated without uploading the whole 131,072-quad pattern (3 MB).
+      const elementData = gl.bufferData.mock.calls.filter(
+        (call) => call[0] === gl.ELEMENT_ARRAY_BUFFER,
+      );
+      expect(elementData).toHaveLength(1);
+      expect(typeof elementData[0]![1]).toBe('number');
+      expect(elementData[0]![1]).toBe(131_072 * 24);
+      // Only the first chunk is written, and it holds the canonical pattern.
+      const fills = gl.bufferSubData.mock.calls.filter((call) => call[2] instanceof Uint32Array);
+      expect(fills).toHaveLength(1);
+      const [, byteOffset, data] = fills[0]! as [number, number, Uint32Array];
+      expect(byteOffset).toBe(0);
+      expect(data.length).toBeLessThanOrEqual(32_768 * 6);
+      expect(Array.from(data.subarray(0, 12))).toEqual([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+      expect(a.page.indexFilledQuads).toBe(32_768);
+      arena.free(a);
+    });
+
+    it('defers resetting a sorted translucent range until its quarantine is reclaimed', () => {
+      const { arena, wrapper, signaled } = makeFencedArena(16, 64);
+      const gl = wrapper.gl as unknown as { bufferSubData: ReturnType<typeof vi.fn> };
+      const a = arena.upload(makeBucket(8));
+      const b = arena.upload(makeBucket(8));
+      arena.beginDrawFrame();
+      arena.markUsed(a);
+      arena.markUsed(b);
+      arena.endDrawFrame(); // fence pending
+      arena.updateSortedIndices(a, new Uint32Array(48));
+      const writes = () => gl.bufferSubData.mock.calls.length;
+      const before = writes();
+      arena.free(a);
+      expect(writes()).toBe(before); // no write to a range the GPU may still read
+      expect(a.page.quarantined).toHaveLength(1);
+      expect(a.page.quarantined[0]!.restoreIndices).toBe(true);
+
+      const fence = (arena as unknown as { frameFences: Array<{ fence: WebGLSync }> })
+        .frameFences[0]!.fence;
+      signaled.add(fence);
+      arena.pollFences();
+      expect(writes()).toBe(before + 1);
+      const last = gl.bufferSubData.mock.calls[gl.bufferSubData.mock.calls.length - 1]!;
+      expect(last[1]).toBe(0);
+      expect(Array.from((last[2] as Uint32Array).subarray(0, 6))).toEqual([0, 1, 2, 0, 2, 3]);
+      arena.free(b);
+    });
+
     it('releaseAll deletes every page, quarantined range and pending fence without waiting', () => {
       const { arena, wrapper, deletedFences } = makeFencedArena(16, 64);
       const a = arena.upload(makeBucket(16));
@@ -441,6 +532,48 @@ describe('PERF-batch terrain draw batching', () => {
       expect(batcher.drawData.length).toBe(
         DRAW_DATA_TEX_WIDTH * DRAW_DATA_INITIAL_HEIGHT * FLOATS_PER_TEXEL,
       );
+    });
+  });
+
+  describe('tint atlas size guard', () => {
+    it('never grows the atlas past MAX_TEXTURE_SIZE and falls back to the plains slot', () => {
+      const sizes: Array<[number, number]> = [];
+      const gl = {
+        TEXTURE_2D: 0x0de1,
+        TEXTURE_MIN_FILTER: 0x2801,
+        TEXTURE_MAG_FILTER: 0x2800,
+        TEXTURE_WRAP_S: 0x2802,
+        TEXTURE_WRAP_T: 0x2803,
+        NEAREST: 0x2600,
+        CLAMP_TO_EDGE: 0x812f,
+        RGB8: 0x8051,
+        RGB: 0x1907,
+        UNSIGNED_BYTE: 0x1401,
+        UNPACK_ALIGNMENT: 0x0cf5,
+        MAX_TEXTURE_SIZE: 0x0d33,
+        getParameter: (pname: number) => (pname === 0x0d33 ? 1024 : null),
+        createTexture: () => ({}),
+        deleteTexture: vi.fn(),
+        bindTexture: vi.fn(),
+        texParameteri: vi.fn(),
+        pixelStorei: vi.fn(),
+        texStorage2D: (_t: number, _l: number, _f: number, w: number, h: number) => {
+          sizes.push([w, h]);
+        },
+        texSubImage2D: vi.fn(),
+      } as unknown as WebGL2RenderingContext;
+      const cache = new ColumnTintCache(new GLWrapper(gl, false), 32);
+      const world = {
+        worldType: 'default',
+        getColumn: () => ({ grassTints: new Uint8Array(768), foliageTints: new Uint8Array(768) }),
+      };
+      // 1024 px max -> 64 rows of 32 slots = 2048 slots (slot 0 is the plains default).
+      const slots = new Set<number>();
+      for (let c = 0; c < 2100; c++) slots.add(cache.getColumnTints(c, 0, world).slot);
+      expect(Math.max(...sizes.map(([, h]) => h))).toBeLessThanOrEqual(1024);
+      expect(Math.max(...slots)).toBe(2047);
+      expect(cache.getColumnTints(2099, 0, world).slot).toBe(TINT_DEFAULT_SLOT);
+      expect(cache.capacitySlots).toBe(2048);
     });
   });
 });
