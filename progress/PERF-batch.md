@@ -1,10 +1,10 @@
 # PERF-batch — Terrain draw batching
 
-Status: incomplete
+Status: incomplete — the ANGLE `outsideRenderPass queueSerial` warning remains in Verify.
 Depends on: M22a, M22b, M22c
-Full verify: PR CI run 44899573773 on head 8f02add (https://github.com/Guna210/BlockCraft/actions/runs/44899573773), all four shards and the aggregate `verify` job green. Unit: Tests 1595 passed (1595). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 53 passed (0 flaky); 4/4 51 passed, 1 flaky (m22a-budgets.spec.ts:186 heap test, "outsideRenderPass queueSerial" driver message, passed on retry).
-Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 errors) · unit: the changed files (perf-batch, m08b-gpu, m13a-render, tint) 25 passed; full unit run only differed from CI on m21b-fix-containers (needs `dist-server`, environment). Local e2e is unusable in this container: every test fails at fixture teardown on the driver message "GPU stall due to ReadPixels" (also on m01 and on the untouched previous commit), and streaming-idle waits time out. m18a-menus:158, m04, m22 and perf-batch test bodies ran to their asserts; the GL resource counts for the m04 flight were checked with a temporary probe (below). m21c fails the same way on the previous commit locally.
-
+Historical full Verify: run 44899573773 on head 8f02add was green before the queueSerial review rounds. Master had 0 matches in the last 10 runs; earlier branch runs in this investigation had 57 and 65 matches.
+Controlled experiments A-D are listed below. A reduced the count to 49 but did not clear the warning; B and C increased it, and D's render-call audit found no duplicate production terrain render. D Verify run 45046840628 failed on all four shards and the aggregate job.
+Local final code checks (through C; D changed documentation only): typecheck and build passed; lint passed with 0 errors and 2 pre-existing `no-explicit-any` warnings; all 173 unit files / 1603 tests passed after `npm run build:server`. Focused tint-upload, perf-batch and M08b tests passed 17/17. Local e2e was not run; CI is the GPU-fixture evidence.
 ## Acceptance criteria owned
 
 - [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
@@ -21,7 +21,7 @@ Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 erro
 ## CI fixes (run 44764152550 on cb0e723)
 
 - m18a-menus:158 (panorama teardown, glBuffers 20 vs 11): `clearAllMeshes()` now calls `TerrainArena.releaseAll()` on all three arenas, which deletes every page (buffers + VAO), quarantined range and pending fence without waiting. Pages are recreated lazily. Unit tests: "deletes a page that was emptied, quarantined, then signalled" and "releaseAll deletes every page, quarantined range and pending fence without waiting" (buffers 0, vaos 0 afterwards).
-- m04:66 (+1 buffer/VAO/texture after the flight): terrain pages were not the cause (page counts stayed 1/1/1 over the flight; probe: buffers 27→31, vaos 23→27, textures 16→20 before the fix). The growth was `EntityRenderer` baking per-creature VAO/buffer/skin texture on first sight. With the small post-batching baseline that exceeds the ±10 % window. `EntityRenderer.warmUp()` now bakes every registered model once at init (called from `WorldManager`); lazy creation is unchanged for existing tests. Probe after the fix: buffers 43→43, vaos 39→39, textures 31→32 (32 <= 34.1). The draw-data texture and tint atlas never grew in the flight (64 rows, 512 slots) and any growth deletes the old texture. They are not deleted on teardown because `tests/unit/m08b-gpu.test.ts` requires two textures to survive `clearAllMeshes`; at teardown they shrink back to their initial sizes.
+- m04:66 (+1 buffer/VAO/texture after the flight): terrain pages were not the cause (page counts stayed 1/1/1 over the flight; probe: buffers 27→31, vaos 23→27, textures 16→20 before the fix). The growth was `EntityRenderer` baking per-creature VAO/buffer/skin texture on first sight. With the small post-batching baseline that exceeds the ±10 % window. `EntityRenderer.warmUp()` now bakes every registered model once at init (called from `WorldManager`); lazy creation is unchanged for existing tests. Probe after the fix: buffers 43→43, vaos 39→39, textures 31→32 (32 <= 34.1). The three-texture draw-data ring and tint atlas never grew in the flight (64 rows, 512 slots) and any growth deletes the old texture. They are not deleted on teardown because `tests/unit/m08b-gpu.test.ts` requires exactly four textures to survive `clearAllMeshes`: the three draw-data ring textures and the tint atlas; at teardown they shrink back to their initial sizes.
 - m04:221 flaky driver message "Running out of reserved outsideRenderPass queueSerial": not reproduced locally. The same message also failed `m13h.spec.ts:142` (a visual test with no streaming) on retry-1 in CI run 44802846579, so it is not specific to the new upload pattern. Page and upload sizes unchanged. The A/B table below is unchanged because page sizes did not change.
 
 ## Review round 1 fixes
@@ -91,7 +91,7 @@ Experiment A is implemented on top of `e43befd`: the draw-data texture is a thre
 | 45026518265 | 04b4cbc | A: draw-data texture ring | 33 | 0 | 0 | 16 | Warning remained; shards 1 and 4 failed on fixture-recorded driver warning |
 | 45034508418 | 99569e6 | B: arena pre-draw staging copies | 272 | 241 | 224 | 375 | Warning remained; all four shards failed on fixture-recorded driver warnings |
 | 45039393236 | 69f18de | C: fence-gated tint-atlas uploads | 277 | 259 | 208 | 402 | Warning remained; all four shards failed on fixture-recorded driver warnings |
-| Pending | pending | D: ChunkRenderer.render call audit | pending | pending | pending | pending | No second production call found; Verify pending |
+| 45046840628 | 036c585 | D: render-call audit | 277 | 260 | 243 | 391 | Warning remained; all shards and aggregate failed; staging-copy GL warning also present |
 
 Experiment A completed on 04b4ccbc4e1a19a58650853c2271ffa280907d1b in Verify run 45026518265. The grep counts were shard 1: 33, shard 2: 0, shard 3: 0, shard 4: 16 (49 total); shards 1 and 4 failed because the fixture recorded the driver warning. Experiment A did not clear the blocker.
 
@@ -99,7 +99,7 @@ Experiment B completed on `99569e6781702b26bd6416bca5ae64947df746f0` in Verify r
 
 Experiment C completed on `69f18def147c34b9210b6f402d4b24c5eb4ba7dd` in Verify run 45039393236. The grep counts were shard 1: 277, shard 2: 259, shard 3: 208, shard 4: 402 (1,146 total); all four shards failed because the fixture recorded the driver warning. Experiment C did not clear the blocker.
 
-Experiment D source audit: `main.ts` schedules one `render` callback per `requestAnimationFrame`, and `WorldManager.render()` has one production callsite for `ChunkRenderer.render()`. The debug `FencedErrorDrain.endFrame()` also inserts a fence once per callback, so a prototype count above one `fenceSync` per frame does not imply duplicate terrain rendering. D's Verify counts are pending.
+Experiment D source audit: `main.ts` schedules one `render` callback per `requestAnimationFrame`, and `WorldManager.render()` has one production callsite for `ChunkRenderer.render()`. The debug `FencedErrorDrain.endFrame()` also inserts a fence once per callback, so a prototype count above one `fenceSync` per frame does not imply duplicate terrain rendering. Verify run 45046840628 on `036c585` recorded 277 / 260 / 243 / 391 `queueSerial` lines (1,171 total); all four shards and the aggregate failed on fixture-recorded errors. Its logs also contain 14,430 `copyBufferSubData: Cannot copy into an element buffer destination from a non-element buffer source` warning lines across the shards.
 
 Local B checks: typecheck passed; lint passed with 0 errors and the same 2 pre-existing `no-explicit-any` warnings; 172 unit files passed (1602 tests), after `npm run build:server`; the focused arena/M08b tests passed (22 tests). Local e2e was not run; CI is the evidence for the fixture's GPU behavior.
 
@@ -122,4 +122,4 @@ RD32's short software-renderer samples make its p95 noisy; the two B runs bracke
 
 ### Final per-shard totals
 
-Per-shard `queueSerial` totals so far: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / experiment A = 49 (33 + 0 + 0 + 16); run 45034508418 / experiment B = 1,112 (272 + 241 + 224 + 375); run 45039393236 / experiment C = 1,146 (277 + 259 + 208 + 402). D Verify counts remain pending. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
+Per-shard `queueSerial` totals: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / A = 49 (33 + 0 + 0 + 16); run 45034508418 / B = 1,112 (272 + 241 + 224 + 375); run 45039393236 / C = 1,146 (277 + 259 + 208 + 402); run 45046840628 / D = 1,171 (277 + 260 + 243 + 391). D's shard logs also contain 14,430 invalid `copyBufferSubData` warning lines. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
