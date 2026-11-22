@@ -1822,7 +1822,7 @@ export class ChunkRenderer {
         ) {
           this.bindVao(bucket.vao);
           const sorted = bucket.sorter!.sort(local, bucket.allocation.vertexBase);
-          bucket.arena.updateSortedIndices(bucket.allocation, sorted);
+          bucket.arena.queueSortedIndices(bucket.allocation, sorted);
           bucket.sortCamera![0] = local[0]!;
           bucket.sortCamera![1] = local[1]!;
           bucket.sortCamera![2] = local[2]!;
@@ -1890,6 +1890,11 @@ export class ChunkRenderer {
       this.lastTextureBinds++;
       gl.drawBuffers(this.drawBuf2);
     }
+
+    // Copy camera-dependent index updates while all terrain passes are still unopened.
+    this.opaqueArena.flushPendingSortedIndices();
+    this.cutoutArena.flushPendingSortedIndices();
+    this.translucentArena.flushPendingSortedIndices();
 
     // 1. Opaque Pass
     gl.disable(gl.BLEND);

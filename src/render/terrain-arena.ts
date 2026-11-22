@@ -48,6 +48,8 @@ export interface ArenaPage {
   vao: WebGLVertexArrayObject;
   vertices: WebGLBuffer;
   vertexStaging: WebGLBuffer;
+  vertexStagingCapacityBytes: number;
+  vertexStagingBytesUsed: number;
   indices: WebGLBuffer;
   quadCapacity: number;
   /** Quads [0, indexFilledQuads) of the index buffer hold the canonical pattern. */
@@ -84,7 +86,17 @@ export interface TerrainAllocation {
   uploadSegmentWordOffset: number;
   indicesSorted: boolean;
   sortedIndices: Uint32Array | null;
+  pendingSortedIndices: Uint32Array | null;
   debugIndices: Uint32Array | null;
+}
+
+interface PendingArenaCopy {
+  page: ArenaPage;
+  stagingByteOffset: number;
+  destination: WebGLBuffer;
+  destinationByteOffset: number;
+  byteLength: number;
+  data: Uint32Array;
 }
 
 /**
@@ -184,12 +196,14 @@ export interface TerrainArenaOptions {
 export class TerrainArena {
   private static readonly MAX_UPLOAD_BYTES = 16 * 1024;
   private static readonly FRAME_UPLOAD_BYTES = 4 * 1024;
+  private static readonly PAGE_STAGING_BYTES = 1024 * 1024;
   /** Adjacent streamed vertex chunks are merged into one `bufferSubData` of up to this many words. */
   private static readonly RUN_WORDS = 16 * 1024;
   private runPage: ArenaPage | null = null;
   private runStartByte = 0;
   private runWords = 0;
   private runScratch: Uint32Array | null = null;
+  private readonly pendingArenaCopies: PendingArenaCopy[] = [];
   private static nextPageId = 1;
   public readonly pages: ArenaPage[] = [];
   private readonly pageById = new Map<number, ArenaPage>();
@@ -263,15 +277,104 @@ export class TerrainArena {
       this.runWords = 0;
       return;
     }
-    const gl = this.wrapper.gl;
     const start = renderPhaseStats.start();
     const clockStart = performance.now();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.runPage.vertices);
-    gl.bufferSubData(gl.ARRAY_BUFFER, this.runStartByte, this.runScratch!, 0, this.runWords);
+    const page = this.runPage;
+    const data = this.runScratch!.slice(0, this.runWords);
+    this.stageArenaCopy(page, page.vertices, this.runStartByte, data);
     this.runWords = 0;
     this.runPage = null;
     renderPhaseStats.end('arenaTransferMs', start);
     renderPhaseStats.add('arenaUploadMs', performance.now() - clockStart);
+  }
+
+  /** Uploads source data to the page's non-draw staging buffer and queues its next-frame copy. */
+  private stageArenaCopy(
+    page: ArenaPage,
+    destination: WebGLBuffer,
+    destinationByteOffset: number,
+    data: Uint32Array,
+  ): void {
+    const gl = this.wrapper.gl;
+    let wordOffset = 0;
+    while (wordOffset < data.length) {
+      const words = Math.min(
+        data.length - wordOffset,
+        TerrainArena.PAGE_STAGING_BYTES / Uint32Array.BYTES_PER_ELEMENT,
+      );
+      const chunk =
+        words === data.length ? data : data.subarray(wordOffset, wordOffset + words).slice();
+      if (page.vertexStagingBytesUsed + chunk.byteLength > TerrainArena.PAGE_STAGING_BYTES) {
+        this.flushPendingArenaCopies();
+      }
+      const requiredBytes = page.vertexStagingBytesUsed + chunk.byteLength;
+      if (requiredBytes > page.vertexStagingCapacityBytes) {
+        let capacity = Math.max(64 * 1024, page.vertexStagingCapacityBytes);
+        while (capacity < requiredBytes) capacity *= 2;
+        const existing = this.pendingArenaCopies.filter((copy) => copy.page === page);
+        gl.bindBuffer(gl.ARRAY_BUFFER, page.vertexStaging);
+        gl.bufferData(gl.ARRAY_BUFFER, capacity, gl.STREAM_DRAW);
+        for (const copy of existing) {
+          gl.bufferSubData(gl.ARRAY_BUFFER, copy.stagingByteOffset, copy.data, 0, copy.data.length);
+        }
+        page.vertexStagingCapacityBytes = capacity;
+      }
+      const stagingByteOffset = page.vertexStagingBytesUsed;
+      const chunkDestinationByteOffset = destinationByteOffset + wordOffset * 4;
+      gl.bindBuffer(gl.ARRAY_BUFFER, page.vertexStaging);
+      gl.bufferSubData(gl.ARRAY_BUFFER, stagingByteOffset, chunk, 0, chunk.length);
+      page.vertexStagingBytesUsed += chunk.byteLength;
+      this.pendingArenaCopies.push({
+        page,
+        stagingByteOffset,
+        destination,
+        destinationByteOffset: chunkDestinationByteOffset,
+        byteLength: chunk.byteLength,
+        data: chunk,
+      });
+      wordOffset += words;
+    }
+  }
+
+  /** Copies staged writes into draw buffers at the start of a frame, before any terrain pass. */
+  private flushPendingArenaCopies(): void {
+    if (this.pendingArenaCopies.length === 0) return;
+    const gl = this.wrapper.gl;
+    const start = renderPhaseStats.start();
+    const clockStart = performance.now();
+    for (const copy of this.pendingArenaCopies) {
+      gl.bindBuffer(gl.COPY_READ_BUFFER, copy.page.vertexStaging);
+      gl.bindBuffer(gl.COPY_WRITE_BUFFER, copy.destination);
+      gl.copyBufferSubData(
+        gl.COPY_READ_BUFFER,
+        gl.COPY_WRITE_BUFFER,
+        copy.stagingByteOffset,
+        copy.destinationByteOffset,
+        copy.byteLength,
+      );
+      copy.page.vertexStagingBytesUsed = 0;
+    }
+    this.pendingArenaCopies.length = 0;
+    renderPhaseStats.end('arenaTransferMs', start);
+    renderPhaseStats.add('arenaUploadMs', performance.now() - clockStart);
+  }
+
+  /** Defers camera-dependent index writes until the next frame's pre-draw upload window. */
+  public flushPendingSortedIndices(): void {
+    let staged = false;
+    for (const allocation of this.allocations) {
+      const indices = allocation.pendingSortedIndices;
+      if (!indices) continue;
+      this.stageArenaCopy(
+        allocation.page,
+        allocation.page.indices,
+        allocation.indices.offset,
+        indices,
+      );
+      allocation.pendingSortedIndices = null;
+      staged = true;
+    }
+    if (staged) this.flushPendingArenaCopies();
   }
 
   /**
@@ -281,7 +384,9 @@ export class TerrainArena {
   public beginDrawFrame(): void {
     this.flushRun();
     if (this.ownsTimeline) this.timeline.begin();
+    this.flushPendingArenaCopies();
     this.reclaimQuarantined();
+    this.flushPendingSortedIndices();
   }
 
   /** Ends a draw frame (the fence is recorded by the timeline's owner when shared). */
@@ -325,6 +430,7 @@ export class TerrainArena {
     this.debugVertexBuffer ??= this.wrapper.createBuffer();
     if (allocation.pendingUpload) this.uploadPending(allocation, Infinity);
     this.flushRun();
+    this.flushPendingArenaCopies();
     gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertices);
     const vertices = new Uint32Array(allocation.vertices.length / 4);
     gl.getBufferSubData(gl.COPY_READ_BUFFER, allocation.vertices.offset, vertices);
@@ -438,6 +544,7 @@ export class TerrainArena {
       uploadSegmentWordOffset: 0,
       indicesSorted: false,
       sortedIndices: null,
+      pendingSortedIndices: null,
       debugIndices: null,
     };
     this.allocations.add(allocation);
@@ -465,6 +572,7 @@ export class TerrainArena {
     const gl = this.wrapper.gl;
     if (!frameBudgeted) {
       this.flushRun();
+      this.flushPendingArenaCopies();
       gl.bindBuffer(gl.COPY_READ_BUFFER, allocation.page.vertexStaging);
       gl.bindBuffer(gl.COPY_WRITE_BUFFER, allocation.page.vertices);
     }
@@ -531,11 +639,20 @@ export class TerrainArena {
   }
 
   updateSortedIndices(allocation: TerrainAllocation, indices: Uint32Array): void {
+    allocation.pendingSortedIndices = null;
     const gl = this.wrapper.gl;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, allocation.page.indices);
     gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, allocation.indices.offset, indices);
     allocation.indicesSorted = true;
     allocation.sortedIndices = indices;
+  }
+
+  /** Queues sorted translucent indices to be copied before the next frame's first terrain draw. */
+  queueSortedIndices(allocation: TerrainAllocation, indices: Uint32Array): void {
+    const copy = indices.slice();
+    allocation.indicesSorted = true;
+    allocation.sortedIndices = copy;
+    allocation.pendingSortedIndices = copy;
   }
 
   bindSharedIndices(allocation: TerrainAllocation): void {
@@ -556,6 +673,7 @@ export class TerrainArena {
     const restoreIndices = allocation.indicesSorted;
     allocation.indicesSorted = false;
     allocation.sortedIndices = null;
+    allocation.pendingSortedIndices = null;
     const page = allocation.page;
     page.allocations--;
     if (page.lastUsedDrawFrame > this.timeline.completedDrawFrame) {
@@ -581,26 +699,23 @@ export class TerrainArena {
    */
   private ensureIndices(page: ArenaPage, endQuad: number): void {
     if (page.indexFilledQuads >= endQuad) return;
-    const gl = this.wrapper.gl;
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
     while (page.indexFilledQuads < endQuad) {
       const start = page.indexFilledQuads;
       const count = Math.min(INDEX_CHUNK_QUADS, page.quadCapacity - start);
-      gl.bufferSubData(gl.COPY_WRITE_BUFFER, start * 24, canonicalIndices(start, count));
+      this.stageArenaCopy(page, page.indices, start * 24, canonicalIndices(start, count).slice());
       page.indexFilledQuads = start + count;
     }
   }
 
   /** Resets a range whose index data was sorted back to the canonical pattern. */
   private writeCanonicalIndices(page: ArenaPage, range: ArenaRange): void {
-    const gl = this.wrapper.gl;
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
     for (let done = 0; done < range.length; done += INDEX_CHUNK_QUADS) {
       const count = Math.min(INDEX_CHUNK_QUADS, range.length - done);
-      gl.bufferSubData(
-        gl.COPY_WRITE_BUFFER,
+      this.stageArenaCopy(
+        page,
+        page.indices,
         (range.offset + done) * 24,
-        canonicalIndices(range.offset + done, count),
+        canonicalIndices(range.offset + done, count).slice(),
       );
     }
   }
@@ -610,6 +725,9 @@ export class TerrainArena {
     if (this.runPage === page) {
       this.runWords = 0;
       this.runPage = null;
+    }
+    for (let i = this.pendingArenaCopies.length - 1; i >= 0; i--) {
+      if (this.pendingArenaCopies[i]!.page === page) this.pendingArenaCopies.splice(i, 1);
     }
     this.pages.splice(index, 1);
     this.pageById.delete(page.id);
@@ -698,6 +816,8 @@ export class TerrainArena {
       vao,
       vertices,
       vertexStaging,
+      vertexStagingCapacityBytes: 0,
+      vertexStagingBytesUsed: 0,
       indices,
       quadCapacity,
       indexFilledQuads: eager ? quadCapacity : 0,

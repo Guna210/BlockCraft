@@ -88,10 +88,28 @@ Experiment A is implemented on top of `e43befd`: the draw-data texture is a thre
 | 44906419565 | a5db85b | Previous fence-only mitigation | 38 | 0 | 0 | 19 | Warning remained |
 | 44911258811 | 08483e6 | Previous fence + merged-upload mitigation | 41 | 0 | 4 | 20 | Warning remained |
 | 44915434533 | e43befd | Baseline before experiment A | 34 | 0 | 0 | 23 | Warning remained |
-| Pending | pending | A: draw-data texture ring | pending | pending | pending | pending | CI pending |
+| 45026518265 | 04b4cbc | A: draw-data texture ring | 33 | 0 | 0 | 16 | Warning remained; shards 1 and 4 failed on fixture-recorded driver warning |
+| Pending | pending | B: arena pre-draw staging copies | pending | pending | pending | pending | Not pushed |
 
-Local checks before the experiment A push: typecheck passed; lint passed with 0 errors and the same 2 pre-existing `no-explicit-any` warnings; unit tests 1601 passed (171 files). Local e2e was not run; the required CI run is the evidence for the fixture's GPU behavior.
+Experiment A completed on 04b4ccbc4e1a19a58650853c2271ffa280907d1b in Verify run 45026518265. The grep counts were shard 1: 33, shard 2: 0, shard 3: 0, shard 4: 16 (49 total); shards 1 and 4 failed because the fixture recorded the driver warning. Experiment A did not clear the blocker.
+
+Local B checks: typecheck passed; lint passed with 0 errors and the same 2 pre-existing `no-explicit-any` warnings; 172 unit files passed (1602 tests), after `npm run build:server`; the focused arena/M08b tests passed (22 tests). Local e2e was not run; CI is the evidence for the fixture's GPU behavior.
+
+### SwiftShader A/B measurements (LOD off)
+
+Same local Playwright/Chromium SwiftShader probe on `e43befd` and B: seed `blockcraft-test-seed-42`, creative default world, elevated camera, and a 10-second sample window after streaming settled. Frame counts varied between runs, so both B samples are retained.
+
+| RD | Head | Frames | Submissions | Frame CPU p95 | Upload p95 |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 8 | `e43befd` | 13 | 6 | 5.2 ms | 0.2 ms |
+| 8 | B, sample 1 | 59 | 6 | 4.0 ms | 0.1 ms |
+| 8 | B, sample 2 | 63 | 6 | 4.4 ms | 0.1 ms |
+| 32 | `e43befd` | 18 | 351 | 54.8 ms | 0.0 ms |
+| 32 | B, sample 1 | 18 | 351 | 59.8 ms | 0.1 ms |
+| 32 | B, sample 2 | 15 | 351 | 48.6 ms | 0.1 ms |
+
+RD32's short software-renderer samples make its p95 noisy; the two B runs bracket the `e43befd` result. The 0.0 ms upload value is below the timer's 0.1 ms resolution.
 
 ### Final per-shard totals
 
-Pending experiment CI runs. The current baseline total is 57 `queueSerial` matches (34 + 0 + 0 + 23). The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
+Per-shard `queueSerial` totals so far: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / experiment A = 49 (33 + 0 + 0 + 16). B and any later experiment runs remain pending. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
