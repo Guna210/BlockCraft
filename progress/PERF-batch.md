@@ -90,11 +90,16 @@ Experiment A is implemented on top of `e43befd`: the draw-data texture is a thre
 | 44915434533 | e43befd | Baseline before experiment A | 34 | 0 | 0 | 23 | Warning remained |
 | 45026518265 | 04b4cbc | A: draw-data texture ring | 33 | 0 | 0 | 16 | Warning remained; shards 1 and 4 failed on fixture-recorded driver warning |
 | 45034508418 | 99569e6 | B: arena pre-draw staging copies | 272 | 241 | 224 | 375 | Warning remained; all four shards failed on fixture-recorded driver warnings |
-| Pending | pending | C: fence-gated tint-atlas uploads | pending | pending | pending | pending | Not pushed |
+| 45039393236 | 69f18de | C: fence-gated tint-atlas uploads | 277 | 259 | 208 | 402 | Warning remained; all four shards failed on fixture-recorded driver warnings |
+| Pending | pending | D: ChunkRenderer.render call audit | pending | pending | pending | pending | No second production call found; Verify pending |
 
 Experiment A completed on 04b4ccbc4e1a19a58650853c2271ffa280907d1b in Verify run 45026518265. The grep counts were shard 1: 33, shard 2: 0, shard 3: 0, shard 4: 16 (49 total); shards 1 and 4 failed because the fixture recorded the driver warning. Experiment A did not clear the blocker.
 
 Experiment B completed on `99569e6781702b26bd6416bca5ae64947df746f0` in Verify run 45034508418. The grep counts were shard 1: 272, shard 2: 241, shard 3: 224, shard 4: 375 (1,112 total); all four shards failed because the fixture recorded the driver warning. Experiment B did not clear the blocker.
+
+Experiment C completed on `69f18def147c34b9210b6f402d4b24c5eb4ba7dd` in Verify run 45039393236. The grep counts were shard 1: 277, shard 2: 259, shard 3: 208, shard 4: 402 (1,146 total); all four shards failed because the fixture recorded the driver warning. Experiment C did not clear the blocker.
+
+Experiment D source audit: `main.ts` schedules one `render` callback per `requestAnimationFrame`, and `WorldManager.render()` has one production callsite for `ChunkRenderer.render()`. The debug `FencedErrorDrain.endFrame()` also inserts a fence once per callback, so a prototype count above one `fenceSync` per frame does not imply duplicate terrain rendering. D's Verify counts are pending.
 
 Local B checks: typecheck passed; lint passed with 0 errors and the same 2 pre-existing `no-explicit-any` warnings; 172 unit files passed (1602 tests), after `npm run build:server`; the focused arena/M08b tests passed (22 tests). Local e2e was not run; CI is the evidence for the fixture's GPU behavior.
 
@@ -117,4 +122,4 @@ RD32's short software-renderer samples make its p95 noisy; the two B runs bracke
 
 ### Final per-shard totals
 
-Per-shard `queueSerial` totals so far: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / experiment A = 49 (33 + 0 + 0 + 16); run 45034508418 / experiment B = 1,112 (272 + 241 + 224 + 375). C and any later experiment runs remain pending. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
+Per-shard `queueSerial` totals so far: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / experiment A = 49 (33 + 0 + 0 + 16); run 45034508418 / experiment B = 1,112 (272 + 241 + 224 + 375); run 45039393236 / experiment C = 1,146 (277 + 259 + 208 + 402). D Verify counts remain pending. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
