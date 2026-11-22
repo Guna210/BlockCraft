@@ -1,10 +1,10 @@
 # PERF-batch — Terrain draw batching
 
-Status: incomplete — the ANGLE `outsideRenderPass queueSerial` warning remains in Verify.
+Status: incomplete — the ANGLE `outsideRenderPass queueSerial` warning remains in Verify; E also exceeds the current opaque+cutout submission and page caps.
 Depends on: M22a, M22b, M22c
 Historical full Verify: run 44899573773 on head 8f02add was green before the queueSerial review rounds. Master had 0 matches in the last 10 runs; earlier branch runs in this investigation had 57 and 65 matches.
-Controlled experiments A-D are listed below. A reduced the count to 49 but did not clear the warning; B and C increased it, and D's render-call audit found no duplicate production terrain render. D Verify run 45046840628 failed on all four shards and the aggregate job.
-Local final code checks (through C; D changed documentation only): typecheck and build passed; lint passed with 0 errors and 2 pre-existing `no-explicit-any` warnings; all 173 unit files / 1603 tests passed after `npm run build:server`. Focused tint-upload, perf-batch and M08b tests passed 17/17. Local e2e was not run; CI is the GPU-fixture evidence.
+Controlled experiments A-E and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run also failed Verify.
+Full Verify (this session): local typecheck ✓ · lint ✓ (0 errors, 2 pre-existing `no-explicit-any` warnings) · server build ✓ · unit 1,601 passed; CI Verify 45062912539 failed on shards 1 and 4, while shards 2 and 3 passed. Local E checkout: all 171 unit files / 1,601 tests passed after `npm run build:server`; the temporary SwiftShader metric probe passed. CI remains the GPU-fixture evidence.
 ## Acceptance criteria owned
 
 - [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
@@ -33,7 +33,7 @@ Local final code checks (through C; D changed documentation only): typecheck and
 
 ## What was built
 
-Cross-column multi-draw keyed by (pass, lighting variant, arena page); per-frame RGBA32F draw-data texture (texelFetch at u_drawBase + gl_DrawID); shared 1024-px-wide 2D tint atlas (slot*2 grass, slot*2+1 foliage; slot 0 plains); arena free-range reuse with fenceSync quarantine; larger pages (1,048,576 / 524,288 / 262,144 quads for opaque / cutout / translucent).
+Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures (texelFetch at u_drawBase + gl_DrawID); shared 1024-px-wide 2D tint atlas (slot*2 grass, slot*2+1 foliage; slot 0 plains); arena free-range reuse with fenceSync quarantine and direct arena uploads. The final experiment E sets initial and maximum page sizes to 65,536 quads for opaque, cutout and translucent; its runtime diff contains only those six page-size values. B/C staging changes are reverted.
 
 ## A/B (same container, SwiftShader)
 
@@ -120,6 +120,45 @@ Same local Playwright/Chromium SwiftShader probe on `e43befd` and B: seed `block
 
 RD32's short software-renderer samples make its p95 noisy; the two B runs bracket the `e43befd` result. The 0.0 ms upload value is below the timer's 0.1 ms resolution.
 
+## Review round 4 — B/C reverts and page-size E
+
+Commit `fd99cc1a9b935e5e0418035fe79cbf40953a255b` reverts B and C's runtime changes and removes their staging tests. It restores the A runtime tree: the three-texture draw-data ring and its exact M08b `toBe(4)` assertion remain. D's render-call audit is retained in documentation only; it introduced no runtime work. The A-only revert validation was Verify run 45056603376: 37 / 0 / 0 / 22 queueSerial lines (59 total), with fixture-recorded queueSerial e2e failures and no invalid copyBufferSubData warnings.
+
+Commit `0c17d50d41f09491d0584e1115d8765e4e2e0e7c` is experiment E. Its only code change is setting both initial and maximum page sizes to 65,536 quads for each arena. The RD8 <= 4 and RD16 <= 6 page caps in `perf-batch.spec.ts` are unchanged.
+
+E Verify run 45062912539 failed: shard counts were 38 / 0 / 0 / 18 (56 total). Shard 1 had 4 failed e2e tests due to fixture-recorded queueSerial warnings; its typecheck, lint, placeholder and unit checks passed (171 files / 1,601 tests). Shard 4 had 3 failed attempts of the scaling test and 49 passed; shards 2 and 3 passed. The logs contain no invalid copyBufferSubData warnings or other WebGL warning types. The scaling test fails its existing RD16 opaque+cutout submission limit of 32 first (93–95 measured), so the page-cap assertions are not reached. The measured opaque+cutout page totals are 15 at RD8 and 50 at RD16, over the unchanged caps of 4 and 6; the owner decides whether those caps should change.
+
+### E CI scaling measurements
+
+| RD | Opaque+cutout submissions | Translucent submissions | Opaque / cutout / translucent pages | All arena pages | Total draw submissions |
+|---:|---:|---:|---:|---:|---:|
+| 8 | 18 | 1 | 13 / 2 / 1 | 16 | 21 |
+| 16 | 93–95 across three attempts | 75 | 40 / 10 / 1 | 51 | 170–172 |
+
+The four pixel-identity outputs on shard 4 remained at `diffPerDraw: 0`, including the water view (14 translucent submissions vs 347 per-section submissions). The earlier first-terrain parity results remain recorded in review round 1.
+
+### E SwiftShader comparison (LOD off)
+
+Same seed/camera, settled scene, 10-second sample windows; E data came from a temporary local metric-only probe at commit `0c17d50`.
+
+| RD | Head | Frames | Submissions | Frame CPU p95 | Upload p95 |
+|---:|---|---:|---:|---:|---:|
+| 8 | `e43befd` | 13 | 6 | 5.2 ms | 0.2 ms |
+| 8 | E | 10 | 21 | 9.9 ms | 0.1 ms |
+| 32 | `e43befd` | 18 | 351 | 54.8 ms | 0.0 ms |
+| 32 | E | 13 | 691 | 58.2 ms | 0.2 ms |
+
+The RD32 SwiftShader samples are short and noisy; 0.0 ms upload is below the timer's 0.1 ms resolution.
+
 ### Final per-shard totals
 
-Per-shard `queueSerial` totals: run 44906419565 = 57 (38 + 0 + 0 + 19); run 44911258811 = 65 (41 + 0 + 4 + 20); run 44915434533 = 57 (34 + 0 + 0 + 23); run 45026518265 / A = 49 (33 + 0 + 0 + 16); run 45034508418 / B = 1,112 (272 + 241 + 224 + 375); run 45039393236 / C = 1,146 (277 + 259 + 208 + 402); run 45046840628 / D = 1,171 (277 + 260 + 243 + 391). D's shard logs also contain 14,430 invalid `copyBufferSubData` warning lines. The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.
+| Experiment / validation | Commit | Verify run | Shard 1 / 2 / 3 / 4 | Total | Result |
+|---|---|---:|---:|---:|---|
+| A draw-data ring | `04b4cbc` | 45026518265 | 33 / 0 / 0 / 16 | 49 | QueueSerial remained |
+| B arena staging (reverted) | `99569e6` | 45034508418 | 272 / 241 / 224 / 375 | 1,112 | Invalid element-buffer copies |
+| C tint staging (reverted) | `69f18de` | 45039393236 | 277 / 259 / 208 / 402 | 1,146 | Reverted with B |
+| D docs-only render-call audit | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate terrain render; its logs contained 14,430 invalid copyBufferSubData warnings from the contaminated B path |
+| B/C revert; A-only validation | `fd99cc1` | 45056603376 | 37 / 0 / 0 / 22 | 59 | QueueSerial remained; no copyBufferSubData warnings |
+| E 65,536-quad pages | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial and scaling limit remained |
+
+Earlier branch runs: 44906419565 = 57 (38 / 0 / 0 / 19); 44911258811 = 65 (41 / 0 / 4 / 20); 44915434533 = 57 (34 / 0 / 0 / 23). No A–E variant cleared queueSerial across all shards.
