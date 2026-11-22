@@ -1,6 +1,6 @@
 # PERF-batch — Terrain draw batching
 
-Status: verified
+Status: incomplete
 Depends on: M22a, M22b, M22c
 Full verify: PR CI run 44899573773 on head 8f02add (https://github.com/Guna210/BlockCraft/actions/runs/44899573773), all four shards and the aggregate `verify` job green. Unit: Tests 1595 passed (1595). Playwright per shard: 1/4 53 passed (0 flaky); 2/4 53 passed (0 flaky); 3/4 53 passed (0 flaky); 4/4 51 passed, 1 flaky (m22a-budgets.spec.ts:186 heap test, "outsideRenderPass queueSerial" driver message, passed on retry).
 Local (this session, after the CI-fix commit): typecheck ✓ · lint ✓ (0 errors) · unit: the changed files (perf-batch, m08b-gpu, m13a-render, tint) 25 passed; full unit run only differed from CI on m21b-fix-containers (needs `dist-server`, environment). Local e2e is unusable in this container: every test fails at fixture teardown on the driver message "GPU stall due to ReadPixels" (also on m01 and on the untouched previous commit), and streaming-idle waits time out. m18a-menus:158, m04, m22 and perf-batch test bodies ran to their asserts; the GL resource counts for the m04 flight were checked with a temporary probe (below). m21c fails the same way on the previous commit locally.
@@ -78,3 +78,20 @@ decisions/PERF-batch-terrain.md
 - Mitigations pushed: (a) one shared `DrawFenceTimeline` fence per draw frame, oldest-fence-only polling, no polling in allocate/free; (c) adjacent streamed vertex chunks merged into one `bufferSubData` per upload batch; tint overflow fix (slot 0 untouched, unit-tested). Draw-data texture was already one `texSubImage2D` of used rows per frame.
 - Per rAF frame, RD8 (before -> after): settled fenceSync 4 -> 2, clientWaitSync 12.4 -> 2, bufferSubData 30.5 -> 2, texSubImage2D 2.3 -> 1; flight fenceSync 3.09 -> 1.72, clientWaitSync 17.5 -> 1.72, bufferSubData 15.8 -> 6.3, texSubImage2D 1.95 -> 1.55; copyBufferSubData 0.
 - CI "queueSerial" grep per shard log: run 44906419565 (a5db85b, fences only): shard1 38, shard2 0, shard3 0, shard4 19. Run 44911258811 (08483e6, fences + merged uploads): shard1 41, shard2 0, shard3 4, shard4 20. The message is still present, so these mitigations did not remove it; the success condition (2 clean runs) is not met. Not reproducible locally.
+
+## Review round 3 (queueSerial experiments)
+
+Experiment A is implemented on top of `e43befd`: the draw-data texture is a three-texture ring; writes avoid the previous two draw invocations; unchanged data skips `texSubImage2D`; and wireframe metadata is packed before the frame's only upload. The M08b teardown test now asserts exactly four retained textures (three ring textures plus the tint atlas).
+
+| Run | Head | Experiment | Shard 1 | Shard 2 | Shard 3 | Shard 4 | Result |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| 44906419565 | a5db85b | Previous fence-only mitigation | 38 | 0 | 0 | 19 | Warning remained |
+| 44911258811 | 08483e6 | Previous fence + merged-upload mitigation | 41 | 0 | 4 | 20 | Warning remained |
+| 44915434533 | e43befd | Baseline before experiment A | 34 | 0 | 0 | 23 | Warning remained |
+| Pending | pending | A: draw-data texture ring | pending | pending | pending | pending | CI pending |
+
+Local checks before the experiment A push: typecheck passed; lint passed with 0 errors and the same 2 pre-existing `no-explicit-any` warnings; unit tests 1601 passed (171 files). Local e2e was not run; the required CI run is the evidence for the fixture's GPU behavior.
+
+### Final per-shard totals
+
+Pending experiment CI runs. The current baseline total is 57 `queueSerial` matches (34 + 0 + 0 + 23). The M08b exact texture-count update is coupled to the draw-data ring and must be reverted if the ring is removed.

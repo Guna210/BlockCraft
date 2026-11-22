@@ -36,7 +36,8 @@ import { GLSL_SKY_ATMOSPHERE } from './sky';
 import { SectionVisibility } from './section-visibility';
 import { cullingSettings } from './culling-settings';
 import { DrawFenceTimeline, TerrainArena, type TerrainAllocation } from './terrain-arena';
-import { TerrainDrawBatcher, DRAW_DATA_TEX_WIDTH, FLOATS_PER_TEXEL } from './terrain-batcher';
+import { TerrainDrawBatcher, DRAW_DATA_TEX_WIDTH, FLOATS_PER_DRAW } from './terrain-batcher';
+import { DrawDataTextureRing, DRAW_DATA_TEXTURE_RING_SIZE } from './draw-data-texture-ring';
 import { renderPhaseStats } from '../engine/render-phase-stats';
 import { buildEmissiveTileTable, EMISSIVE_TABLE_SIZE } from './post/emissive-tiles';
 
@@ -366,8 +367,14 @@ export class ChunkRenderer {
   public readonly translucentArena: TerrainArena;
   public multiDraw: MultiDrawExtension | null;
   public readonly batcher = new TerrainDrawBatcher();
-  private drawDataTexture: WebGLTexture | null = null;
+  private readonly drawDataTextures: Array<WebGLTexture | null> = Array.from(
+    { length: DRAW_DATA_TEXTURE_RING_SIZE },
+    () => null,
+  );
+  private readonly drawDataTextureRing = new DrawDataTextureRing();
   private drawDataTexHeight = 0;
+  private drawDataSnapshot = new Float32Array(0);
+  private drawDataSnapshotCount = 0;
   private activeLightingVariant = -1;
   private boundVao: WebGLVertexArrayObject | null = null;
   private readonly programUniformCache = Array.from({ length: 8 }, () =>
@@ -541,7 +548,7 @@ export class ChunkRenderer {
       null,
     ];
     this.tintCache = new ColumnTintCache(glWrapper);
-    this.ensureDrawDataTexture(this.batcher.getTextureHeight());
+    this.ensureDrawDataTextures(this.batcher.getTextureHeight());
 
     this.locFluidTime = gl.getUniformLocation(this.program, 'u_fluidTime')!;
     this.locWaterTile = gl.getUniformLocation(this.program, 'u_waterTile')!;
@@ -652,52 +659,85 @@ export class ChunkRenderer {
     };
   }
 
-  private ensureDrawDataTexture(requiredHeight: number): WebGLTexture {
+  private ensureDrawDataTextures(requiredHeight: number): void {
+    if (
+      this.drawDataTexHeight === requiredHeight &&
+      this.drawDataTextures.every((texture) => texture !== null)
+    ) {
+      return;
+    }
+
+    for (let i = 0; i < this.drawDataTextures.length; i++) {
+      const texture = this.drawDataTextures[i]!;
+      if (texture) this.glWrapper.deleteTexture(texture);
+      this.drawDataTextures[i] = null;
+    }
+
     const gl = this.glWrapper.gl;
-    if (this.drawDataTexture && this.drawDataTexHeight === requiredHeight) {
-      return this.drawDataTexture;
+    if (this.activeUnit !== SCRATCH_TEXTURE_UNIT) {
+      gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
+      this.activeUnit = SCRATCH_TEXTURE_UNIT;
     }
-    if (this.drawDataTexture) {
-      this.glWrapper.deleteTexture(this.drawDataTexture);
+    for (let i = 0; i < this.drawDataTextures.length; i++) {
+      const tex = this.glWrapper.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, DRAW_DATA_TEX_WIDTH, requiredHeight);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.drawDataTextures[i] = tex;
     }
-    const tex = this.glWrapper.createTexture();
-    gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
-    this.activeUnit = SCRATCH_TEXTURE_UNIT;
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, DRAW_DATA_TEX_WIDTH, requiredHeight);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.drawDataTexture = tex;
     this.drawDataTexHeight = requiredHeight;
-    return tex;
+    this.drawDataSnapshot = new Float32Array(DRAW_DATA_TEX_WIDTH * requiredHeight * 4);
+    this.drawDataSnapshotCount = 0;
+    this.drawDataTextureRing.reset();
   }
 
   private uploadDrawDataTexture(rows: number): void {
+    const drawCount = this.batcher.getTotalDraws();
+    if (rows <= 0 || drawCount <= 0) return;
+
+    this.ensureDrawDataTextures(this.batcher.getTextureHeight());
+    const usedFloats = drawCount * FLOATS_PER_DRAW;
+    let unchanged = this.drawDataSnapshotCount >= drawCount;
+    if (unchanged) {
+      for (let i = 0; i < usedFloats; i++) {
+        if (this.batcher.drawData[i] !== this.drawDataSnapshot[i]) {
+          unchanged = false;
+          break;
+        }
+      }
+    }
+
+    const textureIndex = this.drawDataTextureRing.acquire(!unchanged);
+    const tex = this.drawDataTextures[textureIndex]!;
     const gl = this.glWrapper.gl;
-    const tex = this.ensureDrawDataTexture(this.batcher.getTextureHeight());
     if (this.activeUnit !== DRAW_DATA_UNIT) {
       gl.activeTexture(gl.TEXTURE0 + DRAW_DATA_UNIT);
       this.activeUnit = DRAW_DATA_UNIT;
     }
     gl.bindTexture(gl.TEXTURE_2D, tex);
     this.lastTextureBinds++;
-    if (rows <= 0) return;
-    const uploadStart = renderPhaseStats.start();
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      0,
-      0,
-      DRAW_DATA_TEX_WIDTH,
-      rows,
-      gl.RGBA,
-      gl.FLOAT,
-      this.batcher.drawData,
-      0,
-    );
-    renderPhaseStats.end('uniformUploadMs', uploadStart);
+
+    if (!unchanged) {
+      const uploadStart = renderPhaseStats.start();
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        DRAW_DATA_TEX_WIDTH,
+        rows,
+        gl.RGBA,
+        gl.FLOAT,
+        this.batcher.drawData,
+        0,
+      );
+      this.drawDataSnapshot.set(this.batcher.drawData.subarray(0, usedFloats), 0);
+      this.drawDataSnapshotCount = drawCount;
+      renderPhaseStats.end('uniformUploadMs', uploadStart);
+    }
   }
 
   private bindVao(vao: WebGLVertexArrayObject | null): void {
@@ -1151,8 +1191,8 @@ export class ChunkRenderer {
 
   /**
    * World teardown: deletes every arena page (buffers + VAO) with its quarantined ranges and
-   * pending fences, and shrinks the draw-data texture back to its initial size. The arena pages
-   * are recreated lazily by the next world. The draw-data texture and the tint atlas are fixed-size
+   * pending fences, and shrinks the draw-data texture ring back to its initial size. The arena pages
+   * are recreated lazily by the next world. The three draw-data ring textures and the tint atlas are fixed-size
    * objects created with the renderer, so they stay as part of the pre-world baseline.
    */
   private releaseBatchResources(): void {
@@ -1161,7 +1201,7 @@ export class ChunkRenderer {
     this.translucentArena.releaseAll();
     this.drawFences.releaseAll();
     this.batcher.resetCapacity();
-    this.ensureDrawDataTexture(this.batcher.getTextureHeight());
+    this.ensureDrawDataTextures(this.batcher.getTextureHeight());
     this.tintCache.clearAll();
     this.boundVao = null;
   }
@@ -1603,6 +1643,7 @@ export class ChunkRenderer {
     this.activeLightingVariant = -1;
     this.boundVao = null;
 
+    this.drawDataTextureRing.beginFrame();
     this.drawFences.begin();
     this.opaqueArena.beginDrawFrame();
     this.cutoutArena.beginDrawFrame();
@@ -1802,6 +1843,30 @@ export class ChunkRenderer {
       }
     }
 
+    let wireStartDraw = 0;
+    if (wireframeEnabled) {
+      wireStartDraw = this.batcher.getTotalDraws();
+      for (let c = 0; c < this.visColumnCount; c++) {
+        const fade = this.visFade[c]!;
+        const list = columns[c]!;
+        for (let m = 0; m < list.length; m++) {
+          const mesh = list[m]!;
+          for (let pass = 0; pass < 3; pass++) {
+            const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
+            if (bucket) {
+              this.batcher.appendAuxiliaryDraw(
+                mesh.sx * 16,
+                mesh.sy * 16,
+                mesh.sz * 16,
+                fade,
+                TINT_DEFAULT_SLOT,
+              );
+            }
+          }
+        }
+      }
+    }
+
     // Bind the shared 2D tint atlas once per frame on unit 1
     if (this.tintCache.texture) {
       gl.activeTexture(gl.TEXTURE0 + TINT_ATLAS_UNIT);
@@ -1810,7 +1875,7 @@ export class ChunkRenderer {
       this.lastTextureBinds++;
     }
 
-    // Upload the per-frame draw-data texture once per frame on unit 2
+    // Bind the draw-data ring texture on unit 2; upload only when its payload changed.
     this.uploadDrawDataTexture(this.batcher.getDirtyRows());
 
     this.fluidTime = fluidAnimation.sample(nowMs);
@@ -1911,37 +1976,7 @@ export class ChunkRenderer {
       gl.enable(gl.POLYGON_OFFSET_FILL);
       gl.polygonOffset(-1.0, -1.0);
 
-      // Pack wireframe draw entries after the frame's solid draws or reuse each section's origin
-      let wireDrawIndex = this.batcher.getTotalDraws();
-      const wireStartDraw = wireDrawIndex;
-      for (let c = 0; c < this.visColumnCount; c++) {
-        const fade = this.visFade[c]!;
-        const list = columns[c]!;
-        for (let m = 0; m < list.length; m++) {
-          const mesh = list[m]!;
-          for (let pass = 0; pass < 3; pass++) {
-            const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
-            if (bucket) {
-              this.batcher.appendTranslucentDraw(
-                0,
-                bucket.allocation.page.id,
-                bucket.lineIndexCount,
-                0,
-                mesh.sx * 16,
-                mesh.sy * 16,
-                mesh.sz * 16,
-                fade,
-                TINT_DEFAULT_SLOT,
-              );
-              wireDrawIndex++;
-            }
-          }
-        }
-      }
-      if (wireDrawIndex > wireStartDraw) {
-        this.uploadDrawDataTexture(this.batcher.getDirtyRows());
-      }
-
+      // Wireframe draw metadata was packed before the frame's single texture upload.
       let cursor = wireStartDraw;
       for (let c = 0; c < this.visColumnCount; c++) {
         const list = columns[c]!;
@@ -1972,6 +2007,7 @@ export class ChunkRenderer {
     this.bindVao(null);
 
     this.drawFences.end();
+    this.drawDataTextureRing.endFrame();
     this.opaqueArena.endDrawFrame();
     this.cutoutArena.endDrawFrame();
     this.translucentArena.endDrawFrame();
@@ -1981,6 +2017,5 @@ export class ChunkRenderer {
     // chunksLoaded and chunksMeshed come from the streamer (WorldManager); only the draw knows
     // how many section meshes were visible.
     renderStats.chunksVisible = meshes.length;
-    void FLOATS_PER_TEXEL;
   }
 }

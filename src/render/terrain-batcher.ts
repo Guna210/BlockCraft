@@ -280,6 +280,20 @@ export class TerrainDrawBatcher {
     this.pushCommand(2, variant, pageId, drawIndex, 1);
   }
 
+  /** Adds draw metadata for overlays that do not belong to an opaque/cutout/translucent pass. */
+  public appendAuxiliaryDraw(
+    originX: number,
+    originY: number,
+    originZ: number,
+    fade: number,
+    tintSlot: number,
+  ): void {
+    const drawIndex = this.totalDraws;
+    this.ensureCapacity(drawIndex + 1);
+    this.writeDrawValues(drawIndex, 0, 0, originX, originY, originZ, fade, tintSlot);
+    this.totalDraws++;
+  }
+
   public getCommandCount(pass: 0 | 1 | 2): number {
     return this.commandCounts[pass];
   }
