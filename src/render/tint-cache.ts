@@ -1,7 +1,6 @@
 import { GLWrapper } from './gl';
 import { columnKey } from '../world/streaming-plan';
 import { renderPhaseStats } from '../engine/render-phase-stats';
-import type { DrawFenceTimeline } from './terrain-arena';
 
 export const TINT_DEFAULT_SLOT = 0;
 export const TINT_INITIAL_SLOTS = 512; // 512 slots = 1024 cells (grass + foliage), 1024 x 256 px; RD8 (289 columns) never grows it
@@ -15,23 +14,11 @@ export interface ColumnTintPair {
 
 interface ColumnTintEntry {
   slot: number;
-  pendingSlot: number | null;
   grassTexture: WebGLTexture | null;
   foliageTexture: WebGLTexture | null;
   pair: ColumnTintPair;
   grassTintsRef: Uint8Array;
   foliageTintsRef: Uint8Array;
-}
-
-interface PendingTintUpload {
-  slot: number;
-  grassData: Uint8Array;
-  foliageData: Uint8Array;
-}
-
-interface RetiredTintSlot {
-  slot: number;
-  lastUsedDrawFrame: number | null;
 }
 
 /**
@@ -57,10 +44,6 @@ export class ColumnTintCache {
   private readonly freeSlots: number[] = [];
   private readonly slotDataGrass: Array<Uint8Array | null> = [];
   private readonly slotDataFoliage: Array<Uint8Array | null> = [];
-  private readonly slotLastUsedDrawFrame: number[] = [];
-  private readonly pendingUploads = new Map<number, PendingTintUpload>();
-  private readonly retiredSlots: RetiredTintSlot[] = [];
-  private lastAtlasReadDrawFrame = 0;
 
   private plainsGrassTexture: WebGLTexture | null = null;
   private plainsFoliageTexture: WebGLTexture | null = null;
@@ -71,11 +54,7 @@ export class ColumnTintCache {
   private columnTextures: Map<number, ColumnTintEntry> = new Map();
   private columnSections: Map<number, Set<number>> = new Map();
 
-  constructor(
-    glWrapper: GLWrapper,
-    initialSlots = TINT_INITIAL_SLOTS,
-    private readonly drawTimeline?: DrawFenceTimeline,
-  ) {
+  constructor(glWrapper: GLWrapper, initialSlots = TINT_INITIAL_SLOTS) {
     this.glWrapper = glWrapper;
     this.slotCapacity = Math.max(32, initialSlots);
     this.initialCapacity = this.slotCapacity;
@@ -136,50 +115,6 @@ export class ColumnTintCache {
     return this.freeSlots.length;
   }
 
-  /** Record the terrain draw frame that most recently read the shared atlas. */
-  public markAtlasUsed(): void {
-    if (this.drawTimeline) this.lastAtlasReadDrawFrame = this.drawTimeline.currentDrawFrame;
-  }
-
-  /** Record which slot was referenced by a terrain draw for the three-frame reuse quarantine. */
-  public markSlotUsed(slot: number): void {
-    if (slot <= TINT_DEFAULT_SLOT || !this.drawTimeline) return;
-    const frame = this.drawTimeline.currentDrawFrame;
-    this.slotLastUsedDrawFrame[slot] = frame;
-    this.lastAtlasReadDrawFrame = frame;
-  }
-
-  /** Apply staged atlas writes only after the last terrain draw that sampled it has completed. */
-  public flushPendingUploads(): number {
-    if (!this.useSharedAtlas || this.pendingUploads.size === 0) return 0;
-    if (this.drawTimeline && this.drawTimeline.completedDrawFrame < this.lastAtlasReadDrawFrame) {
-      return 0;
-    }
-
-    let flushed = 0;
-    for (const [colKey, pending] of this.pendingUploads) {
-      const entry = this.columnTextures.get(colKey);
-      if (!entry || entry.pendingSlot !== pending.slot) {
-        this.releaseUnusedSlot(pending.slot);
-        this.pendingUploads.delete(colKey);
-        continue;
-      }
-
-      const previousSlot = entry.slot;
-      this.uploadSlotCells(pending.slot, pending.grassData, pending.foliageData);
-
-      entry.slot = pending.slot;
-      entry.pendingSlot = null;
-      entry.pair.slot = pending.slot;
-      if (previousSlot !== TINT_DEFAULT_SLOT && previousSlot !== pending.slot) {
-        this.retireSlot(previousSlot);
-      }
-      this.pendingUploads.delete(colKey);
-      flushed++;
-    }
-    return flushed;
-  }
-
   public get capacitySlots(): number {
     return this.slotCapacity;
   }
@@ -221,7 +156,6 @@ export class ColumnTintCache {
   }
 
   private allocateSlot(): number {
-    this.reclaimRetiredSlots();
     if (this.freeSlots.length > 0) {
       return this.freeSlots.pop()!;
     }
@@ -252,67 +186,7 @@ export class ColumnTintCache {
     }
     if (oldTex) {
       this.glWrapper.deleteTexture(oldTex);
-      this.lastAtlasReadDrawFrame = 0;
     }
-  }
-
-  private releaseUnusedSlot(slot: number): void {
-    if (slot === TINT_DEFAULT_SLOT) return;
-    this.slotDataGrass[slot] = null;
-    this.slotDataFoliage[slot] = null;
-    this.slotLastUsedDrawFrame[slot] = 0;
-    this.freeSlots.push(slot);
-  }
-
-  private retireSlot(slot: number): void {
-    if (slot === TINT_DEFAULT_SLOT) return;
-    if (!this.drawTimeline) {
-      this.releaseUnusedSlot(slot);
-      return;
-    }
-    const lastUsedDrawFrame = this.slotLastUsedDrawFrame[slot] ?? 0;
-    this.retiredSlots.push({
-      slot,
-      lastUsedDrawFrame: lastUsedDrawFrame > 0 ? lastUsedDrawFrame : null,
-    });
-  }
-
-  private reclaimRetiredSlots(): void {
-    const timeline = this.drawTimeline;
-    for (let i = this.retiredSlots.length - 1; i >= 0; i--) {
-      const retired = this.retiredSlots[i]!;
-      const safe =
-        retired.lastUsedDrawFrame === null ||
-        !timeline ||
-        (timeline.completedDrawFrame >= retired.lastUsedDrawFrame &&
-          timeline.currentDrawFrame - retired.lastUsedDrawFrame > 3);
-      if (!safe) continue;
-      this.retiredSlots.splice(i, 1);
-      this.releaseUnusedSlot(retired.slot);
-    }
-  }
-
-  private queueSharedAtlasUpload(
-    colKey: number,
-    entry: ColumnTintEntry,
-    grassData: Uint8Array,
-    foliageData: Uint8Array,
-  ): boolean {
-    const pending = this.pendingUploads.get(colKey);
-    if (pending) {
-      pending.grassData = grassData;
-      pending.foliageData = foliageData;
-      entry.grassTintsRef = grassData;
-      entry.foliageTintsRef = foliageData;
-      return true;
-    }
-    const slot = this.allocateSlot();
-    if (slot === TINT_DEFAULT_SLOT) return false;
-    entry.pendingSlot = slot;
-    entry.grassTintsRef = grassData;
-    entry.foliageTintsRef = foliageData;
-    this.pendingUploads.set(colKey, { slot, grassData, foliageData });
-    return true;
   }
 
   private createTintTexture2D(data: Uint8Array): WebGLTexture {
@@ -329,6 +203,16 @@ export class ColumnTintCache {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
     renderPhaseStats.end('tintTextureUploadMs', uploadStart);
     return tex;
+  }
+
+  private uploadTextureData2D(tex: WebGLTexture, data: Uint8Array): void {
+    const gl = this.glWrapper.gl;
+    const bindingStart = renderPhaseStats.start();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    renderPhaseStats.end('tintTextureBindingMs', bindingStart);
+    const uploadStart = renderPhaseStats.start();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+    renderPhaseStats.end('tintTextureUploadMs', uploadStart);
   }
 
   public onSectionAdded(sx: number, sy: number, sz: number): void {
@@ -397,20 +281,13 @@ export class ColumnTintCache {
     if (cached) {
       if (cached.grassTintsRef !== col.grassTints || cached.foliageTintsRef !== col.foliageTints) {
         if (this.useSharedAtlas) {
-          this.queueSharedAtlasUpload(colKey, cached, col.grassTints, col.foliageTints);
-          if (!this.drawTimeline) this.flushPendingUploads();
+          this.uploadSlotCells(cached.slot, col.grassTints, col.foliageTints);
         } else {
-          const oldGrass = cached.grassTexture;
-          const oldFoliage = cached.foliageTexture;
-          cached.grassTexture = this.createTintTexture2D(col.grassTints);
-          cached.foliageTexture = this.createTintTexture2D(col.foliageTints);
-          cached.pair.grassTexture = cached.grassTexture;
-          cached.pair.foliageTexture = cached.foliageTexture;
-          if (oldGrass) this.glWrapper.deleteTexture(oldGrass);
-          if (oldFoliage) this.glWrapper.deleteTexture(oldFoliage);
-          cached.grassTintsRef = col.grassTints;
-          cached.foliageTintsRef = col.foliageTints;
+          this.uploadTextureData2D(cached.grassTexture!, col.grassTints);
+          this.uploadTextureData2D(cached.foliageTexture!, col.foliageTints);
         }
+        cached.grassTintsRef = col.grassTints;
+        cached.foliageTintsRef = col.foliageTints;
       }
       return cached.pair;
     }
@@ -419,28 +296,21 @@ export class ColumnTintCache {
     // Atlas full: share the plains pair; never write into the plains slot itself.
     if (this.useSharedAtlas && slot === TINT_DEFAULT_SLOT) return this.plainsPair;
     if (this.useSharedAtlas) {
+      this.uploadSlotCells(slot, col.grassTints, col.foliageTints);
       const tex = this.sharedTexture!;
       cached = {
-        // The new column uses plains until the shared atlas write is safe to flush.
-        slot: TINT_DEFAULT_SLOT,
-        pendingSlot: slot,
+        slot,
         grassTexture: null,
         foliageTexture: null,
-        pair: { grassTexture: tex, foliageTexture: tex, slot: TINT_DEFAULT_SLOT },
+        pair: { grassTexture: tex, foliageTexture: tex, slot },
         grassTintsRef: col.grassTints,
         foliageTintsRef: col.foliageTints,
       };
-      this.pendingUploads.set(colKey, {
-        slot,
-        grassData: col.grassTints,
-        foliageData: col.foliageTints,
-      });
     } else {
       const grassTexture = this.createTintTexture2D(col.grassTints);
       const foliageTexture = this.createTintTexture2D(col.foliageTints);
       cached = {
         slot,
-        pendingSlot: null,
         grassTexture,
         foliageTexture,
         pair: { grassTexture, foliageTexture, slot },
@@ -449,7 +319,6 @@ export class ColumnTintCache {
       };
     }
     this.columnTextures.set(colKey, cached);
-    if (this.useSharedAtlas && !this.drawTimeline) this.flushPendingUploads();
 
     return cached.pair;
   }
@@ -457,18 +326,14 @@ export class ColumnTintCache {
   private freeColumnTextures(colKey: number): void {
     const cached = this.columnTextures.get(colKey);
     if (cached) {
-      const pending = this.pendingUploads.get(colKey);
-      if (pending) {
-        this.pendingUploads.delete(colKey);
-        if (pending.slot !== cached.slot) this.releaseUnusedSlot(pending.slot);
-      }
       if (!this.useSharedAtlas) {
         if (cached.grassTexture) this.glWrapper.deleteTexture(cached.grassTexture);
         if (cached.foliageTexture) this.glWrapper.deleteTexture(cached.foliageTexture);
       }
       if (cached.slot !== TINT_DEFAULT_SLOT) {
-        if (this.useSharedAtlas) this.retireSlot(cached.slot);
-        else this.releaseUnusedSlot(cached.slot);
+        this.slotDataGrass[cached.slot] = null;
+        this.slotDataFoliage[cached.slot] = null;
+        this.freeSlots.push(cached.slot);
       }
       this.columnTextures.delete(colKey);
     }
@@ -479,25 +344,15 @@ export class ColumnTintCache {
       this.freeColumnTextures(colKey);
     }
     this.columnSections.clear();
-    if (this.useSharedAtlas) {
-      // Keep the old texture alive for its in-flight readers through GL's object lifetime, while
-      // the next world starts on a fresh atlas that can accept uploads immediately.
+    this.freeSlots.length = 0;
+    this.nextSlot = 1;
+    if (this.useSharedAtlas && this.slotCapacity > this.initialCapacity) {
       if (this.sharedTexture) this.glWrapper.deleteTexture(this.sharedTexture);
       this.slotCapacity = this.initialCapacity;
       this.sharedTexture = this.createSharedAtlasTexture(this.slotCapacity);
-      this.slotDataGrass.length = 0;
-      this.slotDataFoliage.length = 0;
-      this.freeSlots.length = 0;
-      this.retiredSlots.length = 0;
-      this.slotLastUsedDrawFrame.length = 0;
-      this.nextSlot = 1;
-      this.lastAtlasReadDrawFrame = 0;
       this.uploadSlotCells(TINT_DEFAULT_SLOT, this.plainsGrassData, this.plainsFoliageData);
       this.plainsPair.grassTexture = this.sharedTexture;
       this.plainsPair.foliageTexture = this.sharedTexture;
-    } else {
-      this.freeSlots.length = 0;
-      this.nextSlot = 1;
     }
   }
 
