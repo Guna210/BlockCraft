@@ -547,7 +547,7 @@ export class ChunkRenderer {
       null,
       null,
     ];
-    this.tintCache = new ColumnTintCache(glWrapper);
+    this.tintCache = new ColumnTintCache(glWrapper, undefined, this.drawFences);
     this.ensureDrawDataTextures(this.batcher.getTextureHeight());
 
     this.locFluidTime = gl.getUniformLocation(this.program, 'u_fluidTime')!;
@@ -1139,8 +1139,8 @@ export class ChunkRenderer {
   }
 
   /**
-   * Allocates and uploads the column's tint layers now, as part of its upload, instead of in the
-   * first frame that draws it. The upload runs on the scratch texture unit (see render()).
+   * Allocates or stages the column's tint layers as part of its upload, instead of first creating
+   * them in the frame that draws it. Shared-atlas writes flush after the last atlas-reading fence.
    */
   public prepareColumnTints(
     cx: number,
@@ -1192,8 +1192,8 @@ export class ChunkRenderer {
   /**
    * World teardown: deletes every arena page (buffers + VAO) with its quarantined ranges and
    * pending fences, and shrinks the draw-data texture ring back to its initial size. The arena pages
-   * are recreated lazily by the next world. The three draw-data ring textures and the tint atlas are fixed-size
-   * objects created with the renderer, so they stay as part of the pre-world baseline.
+   * are recreated lazily by the next world. The three draw-data ring textures and a fresh initial-size
+   * tint atlas remain retained as the pre-world baseline.
    */
   private releaseBatchResources(): void {
     this.opaqueArena.releaseAll();
@@ -1696,6 +1696,7 @@ export class ChunkRenderer {
     lodMask?.moveTo(Math.floor(this.cameraPos[0]! / 16), Math.floor(this.cameraPos[2]! / 16));
     gl.activeTexture(gl.TEXTURE0 + SCRATCH_TEXTURE_UNIT);
     this.activeUnit = SCRATCH_TEXTURE_UNIT;
+    this.tintCache.flushPendingUploads();
     this.batcher.beginFrame();
     this.passDraws = 0;
     this.passTriangles = 0;
@@ -1742,6 +1743,7 @@ export class ChunkRenderer {
         const oz = mesh.sz * 16;
         const opaque = mesh.opaque;
         if (opaque) {
+          this.tintCache.markSlotUsed(tintSlot);
           opaque.arena.markUsed(opaque.allocation);
           this.batcher.addUnordered(
             0,
@@ -1759,6 +1761,7 @@ export class ChunkRenderer {
         }
         const cutout = mesh.cutout;
         if (cutout) {
+          this.tintCache.markSlotUsed(tintSlot);
           cutout.arena.markUsed(cutout.allocation);
           this.batcher.addUnordered(
             1,
@@ -1809,6 +1812,7 @@ export class ChunkRenderer {
         const mesh = translucentMeshes[i]!;
         const c = mesh.visibleColumn;
         const bucket = mesh.translucent!;
+        this.tintCache.markSlotUsed(this.visTintSlot[c]!);
         bucket.arena.markUsed(bucket.allocation);
         const local = this.translucentLocal;
         local[0] = camera[0] - mesh.sx * 16;
@@ -2011,6 +2015,7 @@ export class ChunkRenderer {
 
     this.bindVao(null);
 
+    if (this.passDraws > 0) this.tintCache.markAtlasUsed();
     this.drawFences.end();
     this.drawDataTextureRing.endFrame();
     this.opaqueArena.endDrawFrame();
