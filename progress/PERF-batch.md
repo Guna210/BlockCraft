@@ -1,15 +1,15 @@
 # PERF-batch — Terrain draw batching
 
-Status: incomplete — the ANGLE `outsideRenderPass queueSerial` warning remains in Verify; E also exceeds the current opaque+cutout submission and page caps.
+Status: incomplete — experiment E was reverted in commit `fa456e1`; experiment F uses four completed draw frames for terrain quarantine. Verify run 45131052066 passed with zero queueSerial lines on all shards; the required second clean run needs an owner-triggered rerun because the local GitHub CLI token is invalid.
 Depends on: M22a, M22b, M22c
 Historical full Verify: run 44899573773 on head 8f02add was green before the queueSerial review rounds. Master had 0 matches in the last 10 runs; earlier branch runs in this investigation had 57 and 65 matches.
-Controlled experiments A-E and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run also failed Verify.
-Full Verify (this session): local typecheck ✓ · lint ✓ (0 errors, 2 pre-existing `no-explicit-any` warnings) · server build ✓ · unit 1,601 passed; CI Verify 45062912539 failed on shards 1 and 4, while shards 2 and 3 passed. Local E checkout: all 171 unit files / 1,601 tests passed after `npm run build:server`; the temporary SwiftShader metric probe passed. CI remains the GPU-fixture evidence.
+Controlled experiments A-F and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run also failed Verify and was reverted. F's first Verify run passed all four shards with zero queueSerial lines; a second clean run is still required.
+Full Verify (this session): local F typecheck ✓ · lint ✓ (0 errors, 2 pre-existing `no-explicit-any` warnings) · placeholders ✓ · server build ✓ · unit 1,600 passed across 171 files. CI Verify run 45131052066 passed all four shards; each shard had zero queueSerial lines and no other WebGL or console errors. A temporary local SwiftShader probe passed with zero GL errors.
 ## Acceptance criteria owned
 
 - [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
 - [x] Pixel identity at 3 viewpoints plus an ocean water viewpoint (14-18 translucent submissions vs 347 per-section), diff 0 (batched vs glcheck=draw on the same build; master baseline not used) → tests/e2e/perf-batch.spec.ts
-- [x] Batch bucketing, draw-data layout, tint slots, fence quarantine, page growth → tests/unit/perf-batch.test.ts
+- [x] Batch bucketing, draw-data layout, tint slots, four-frame quarantine, page growth → tests/unit/perf-batch.test.ts
 
 ## Screenshots (docs/screenshots/PERF-batch/)
 
@@ -33,7 +33,7 @@ Full Verify (this session): local typecheck ✓ · lint ✓ (0 errors, 2 pre-exi
 
 ## What was built
 
-Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures (texelFetch at u_drawBase + gl_DrawID); shared 1024-px-wide 2D tint atlas (slot*2 grass, slot*2+1 foliage; slot 0 plains); arena free-range reuse with fenceSync quarantine and direct arena uploads. The final experiment E sets initial and maximum page sizes to 65,536 quads for opaque, cutout and translucent; its runtime diff contains only those six page-size values. B/C staging changes are reverted.
+Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures (texelFetch at u_drawBase + gl_DrawID); shared 1024-px-wide 2D tint atlas (slot*2 grass, slot*2+1 foliage; slot 0 plains); arena free-range reuse with four-draw-frame quarantine and direct arena uploads. E's temporary 65,536-quad page sizes were reverted in `fa456e1`; the final runtime is the pre-E page sizes with A's draw-data ring and F's frame-count quarantine. B/C staging changes are reverted, and D's render-call audit added no runtime work.
 
 ## A/B (same container, SwiftShader)
 
@@ -70,7 +70,7 @@ decisions/PERF-batch-terrain.md
 
 - Draw-data texture: width 1024, unit 2, two RGBA32F texels per draw (see src/render/terrain-batcher.ts, drawDataTexelCoords).
 - Tint atlas on unit 1; slots are freed with columns.
-- Arena ranges are quarantined until the fence inserted at endDrawFrame signals; after lod.draw and drawPlayer the program and VAO caches must be reset.
+- Arena ranges become reusable after four completed draw frames since their last use; idle frames count when no draw references that range. After lod.draw and drawPlayer the program and VAO caches must be reset.
 - Stats: getBatchStats() and getRenderStats().drawSubmissions.
 
 ## Review round 2 (queueSerial) — status: NOT RESOLVED
@@ -159,6 +159,51 @@ The RD32 SwiftShader samples are short and noisy; 0.0 ms upload is below the tim
 | C tint staging (reverted) | `69f18de` | 45039393236 | 277 / 259 / 208 / 402 | 1,146 | Reverted with B |
 | D docs-only render-call audit | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate terrain render; its logs contained 14,430 invalid copyBufferSubData warnings from the contaminated B path |
 | B/C revert; A-only validation | `fd99cc1` | 45056603376 | 37 / 0 / 0 / 22 | 59 | QueueSerial remained; no copyBufferSubData warnings |
-| E 65,536-quad pages | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial and scaling limit remained |
+| E 65,536-quad pages (reverted) | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial and scaling limit remained |
+| F four-frame terrain quarantine | `820f0b1` | 45131052066 | 0 / 0 / 0 / 0 | 0 | All shards passed; first clean run; owner rerun required |
 
 Earlier branch runs: 44906419565 = 57 (38 / 0 / 0 / 19); 44911258811 = 65 (41 / 0 / 4 / 20); 44915434533 = 57 (34 / 0 / 0 / 23). No A–E variant cleared queueSerial across all shards.
+
+## Review round 5 — E revert and experiment F
+
+Commit `fa456e120b733236ceb664bc4e6c227d4b21689b` reverts E's six page-size changes and restores the prior opaque, cutout and translucent capacities. Experiment F is commit `820f0b177b3395fc3b47ebe10a278e36772cd404`, based on that revert. It removes `DrawFenceTimeline` and all terrain-path sync calls. Each allocation records its last drawn arena frame; freed ranges and empty pages wait until four completed draw frames have passed since their last draw. Idle calls to `beginDrawFrame` / `endDrawFrame` advance the age when they did not reference the range. The draw-data texture ring (A) and exact M08b `toBe(4)` assertion remain. B/C runtime changes remain reverted; D remains a documentation-only audit.
+
+### F local SwiftShader measurements (LOD off)
+
+Temporary metric-only Playwright probe, same seed and elevated pose, settled scene, 10-second samples. It avoided screenshot/readback work and passed the fixture with zero GL errors.
+
+| RD | `fenceSync` / animation frames | Opaque+cutout submissions | Translucent submissions | Total draw submissions | Frame CPU p95 | Upload p95 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 8 | 10 / 10 | 3 | 1 | 6 | 7.7 ms | 0.1 ms |
+| 16 | 18 / 18 | 11 | 75 | 88 | 37.2 ms | 0.1 ms |
+| 32 | 17 / 17 | 19 | 330 | 351 | 55.0 ms | 0.1 ms |
+
+The sampled `fenceSync` rate is one call per frame, from the debug `FencedErrorDrain`; the terrain arena contributes none. LOD was off at all three distances. The RD8 and RD32 values are close to the prior `e43befd` local probe (6 total submissions / 5.2 ms CPU p95 / 0.2 ms upload p95 at RD8; 351 / 54.8 ms / below 0.1 ms at RD32), subject to short SwiftShader samples.
+
+### F Verify results
+
+Verify run `45131052066` on F head `820f0b177b3395fc3b47ebe10a278e36772cd404` completed successfully. Per-shard `queueSerial` grep counts were 0 / 0 / 0 / 0. No other WebGL warning/error, `INVALID_OPERATION`, `copyBufferSubData`, console error, page error or failed request was present. Shards 1–4 passed 53 / 53 / 53 / 52 e2e tests; shard 1 also passed typecheck, lint, placeholders and 1,600 unit tests.
+
+| RD | Opaque+cutout submissions | Translucent submissions | Total submissions | Opaque / cutout / translucent pages |
+|---:|---:|---:|---:|---:|
+| 8 | 3 | 1 | 6 | 1 / 1 / 1 |
+| 16 | 11 | 75 | 88 | 2 / 2 / 1 |
+
+Pixel identity remained exact in all four CI viewpoints (`diffPerDraw: 0`); the ocean view measured 62.0% water coverage and 16 translucent submissions versus 347 per-draw submissions. This is the first clean F Verify run. The required second clean run is pending: the local `GH_TOKEN` is invalid and the GitHub connector cannot rerun all successful jobs, so the owner needs to choose “Re-run all jobs” on run `45131052066`.
+
+### Experiment table A-F
+
+| Experiment | Commit | Verify run | Shard 1 / 2 / 3 / 4 | Total | Result |
+|---|---|---:|---:|---:|---|
+| A draw-data ring | `04b4cbc` | 45026518265 | 33 / 0 / 0 / 16 | 49 | QueueSerial remained |
+| B arena staging (reverted) | `99569e6` | 45034508418 | 272 / 241 / 224 / 375 | 1,112 | Invalid element-buffer copies; reverted |
+| C tint staging (reverted) | `69f18de` | 45039393236 | 277 / 259 / 208 / 402 | 1,146 | Reverted with B |
+| D render-call audit (docs only) | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate render; run contaminated by B warnings |
+| E 65,536-quad pages (reverted) | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial remained; scaling limit remained |
+| F four-frame terrain quarantine | `820f0b1` | 45131052066 | 0 / 0 / 0 / 0 | 0 | All shards passed; second run pending owner rerun |
+
+E revert commit `fa456e1` restored the prior page capacities as a separate commit before F. No Verify run was started on the revert-only tree; F is tested on top of it. Run 45131052066 completed successfully on F's exact head `820f0b177b3395fc3b47ebe10a278e36772cd404` (PR merge commit `d045529ad119c0bbb9bfdb777ca43cee9ce1bb15`). The `queueSerial` grep counts were 0 / 0 / 0 / 0; the logs had no WebGL warnings/errors, `INVALID_OPERATION`, `copyBufferSubData`, console errors, page errors, or failed requests. E2E totals were 53 / 53 / 53 / 52 passed on shards 1–4, and shard 1 also passed typecheck, lint, placeholders and all 1,600 unit tests.
+
+CI scaling at RD8 measured 3 opaque+cutout and 1 translucent submission (6 total), with pages 1 / 1 / 1. RD16 measured 11 opaque+cutout and 75 translucent submissions (88 total), with pages 2 / 2 / 1. All four pixel-identity views had `diffPerDraw: 0`; the ocean view measured a 62.0% water share and 16 translucent submissions versus 347 per-draw submissions.
+
+This is the first clean F Verify run. A second clean run on the same F commit is required. `gh auth status` reports the local `GH_TOKEN` is invalid, and the GitHub connector has no rerun-all action; the owner needs to choose “Re-run all jobs” on run 45131052066.
