@@ -499,18 +499,18 @@ export class ChunkRenderer {
     this.drawFences = new DrawFenceTimeline(glWrapper);
     this.opaqueArena = new TerrainArena(glWrapper, {
       timeline: this.drawFences,
-      initialPageQuads: 65_536,
-      maxPageQuads: 65_536,
+      initialPageQuads: 1_048_576,
+      maxPageQuads: 2_097_152,
     });
     this.cutoutArena = new TerrainArena(glWrapper, {
       timeline: this.drawFences,
-      initialPageQuads: 65_536,
-      maxPageQuads: 65_536,
+      initialPageQuads: 524_288,
+      maxPageQuads: 1_048_576,
     });
     this.translucentArena = new TerrainArena(glWrapper, {
       timeline: this.drawFences,
-      initialPageQuads: 65_536,
-      maxPageQuads: 65_536,
+      initialPageQuads: 262_144,
+      maxPageQuads: 524_288,
     });
     this.depth = new FluidDepth(glWrapper);
     const gl = this.glWrapper.gl;
