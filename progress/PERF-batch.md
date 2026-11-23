@@ -1,10 +1,10 @@
 # PERF-batch — Terrain draw batching
 
-Status: incomplete — experiment E was reverted in commit `fa456e1`; experiment F uses four completed draw frames for terrain quarantine. Verify run 45131052066 passed with zero queueSerial lines on all shards; the required second clean run needs an owner-triggered rerun because the local GitHub CLI token is invalid.
+Status: incomplete — experiment E was reverted in commit `fa456e1`. F's repeat run 45138816097 had 4 queueSerial lines on shard 1 and M04 flakes. G is commit `ed697bd`; Verify run 45156849018 ended with available shard-log queueSerial counts 0 / 0 / 0 / 0, but shard 1 was cancelled at 90 minutes and shard 4 had M18a/M18b menu-test failures. The run is incomplete; a second full Verify requires the owner to click “Re-run all jobs” on run 45156849018.
 Depends on: M22a, M22b, M22c
 Historical full Verify: run 44899573773 on head 8f02add was green before the queueSerial review rounds. Master had 0 matches in the last 10 runs; earlier branch runs in this investigation had 57 and 65 matches.
-Controlled experiments A-F and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run also failed Verify and was reverted. F's first Verify run passed all four shards with zero queueSerial lines; a second clean run is still required.
-Full Verify (this session): local F typecheck ✓ · lint ✓ (0 errors, 2 pre-existing `no-explicit-any` warnings) · placeholders ✓ · server build ✓ · unit 1,600 passed across 171 files. CI Verify run 45131052066 passed all four shards; each shard had zero queueSerial lines and no other WebGL or console errors. A temporary local SwiftShader probe passed with zero GL errors.
+Controlled experiments A-G and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run failed Verify and was reverted. F had one clean run followed by a repeat run with four shard-1 queueSerial matches. G moves terrain GPU writes into a pre-draw phase; its available logs have no queueSerial matches, but the full Verify run did not complete.
+Full Verify (this session): local G typecheck ✓ · lint ✓ (0 errors, 2 pre-existing `no-explicit-any` warnings) · unit 1,600 passed across 171 files. CI Verify run 45156849018 was incomplete: shard 1 was cancelled at 90 minutes after 1,600 unit tests passed; shard 4 had 4 failed and 2 flaky M18a/M18b menu-transition cases. Local e2e was not run; CI is the GPU-fixture evidence.
 ## Acceptance criteria owned
 
 - [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
@@ -20,20 +20,20 @@ Full Verify (this session): local F typecheck ✓ · lint ✓ (0 errors, 2 pre-e
 
 ## CI fixes (run 44764152550 on cb0e723)
 
-- m18a-menus:158 (panorama teardown, glBuffers 20 vs 11): `clearAllMeshes()` now calls `TerrainArena.releaseAll()` on all three arenas, which deletes every page (buffers + VAO), quarantined range and pending fence without waiting. Pages are recreated lazily. Unit tests: "deletes a page that was emptied, quarantined, then signalled" and "releaseAll deletes every page, quarantined range and pending fence without waiting" (buffers 0, vaos 0 afterwards).
+- m18a-menus:158 (panorama teardown, glBuffers 20 vs 11): `clearAllMeshes()` calls `TerrainArena.releaseAll()` on all three arenas, deleting every page (buffers + VAO) and dropping quarantined ranges. Pages are recreated lazily. Unit tests cover deletion after four completed frames and `releaseAll` of every page and quarantined range (buffers 0, VAOs 0 afterwards).
 - m04:66 (+1 buffer/VAO/texture after the flight): terrain pages were not the cause (page counts stayed 1/1/1 over the flight; probe: buffers 27→31, vaos 23→27, textures 16→20 before the fix). The growth was `EntityRenderer` baking per-creature VAO/buffer/skin texture on first sight. With the small post-batching baseline that exceeds the ±10 % window. `EntityRenderer.warmUp()` now bakes every registered model once at init (called from `WorldManager`); lazy creation is unchanged for existing tests. Probe after the fix: buffers 43→43, vaos 39→39, textures 31→32 (32 <= 34.1). The three-texture draw-data ring and tint atlas never grew in the flight (64 rows, 512 slots) and any growth deletes the old texture. They are not deleted on teardown because `tests/unit/m08b-gpu.test.ts` requires exactly four textures to survive `clearAllMeshes`: the three draw-data ring textures and the tint atlas; at teardown they shrink back to their initial sizes.
 - m04:221 flaky driver message "Running out of reserved outsideRenderPass queueSerial": not reproduced locally. The same message also failed `m13h.spec.ts:142` (a visual test with no streaming) on retry-1 in CI run 44802846579, so it is not specific to the new upload pattern. Page and upload sizes unchanged. The A/B table below is unchanged because page sizes did not change.
 
 ## Review round 1 fixes
 
-- Fence hole: an idle draw frame no longer advances completedDrawFrame while a fence is pending (unit test added).
+- Historical fence hole, superseded by F: under the fence rule, an idle frame could not advance completion while a prior fence was pending. The frame-count rule counts idle render frames when they do not draw the freed range.
 - First terrain: cause was up-front per-page index data (index pattern build 29.7 ms + index uploads 41.0 / 52.4 / 29.6 ms for the opaque / translucent / cutout pages, about 150 ms in total; warmUp 10-18 ms; atlas and draw-data texture 0.1 ms each). Pages above 65,536 quads now fill their index buffer lazily in chunks of at most 32,768 quads. 5-run alternating A/B of createWorld in the same container: branch mean 3348 ms (range 3081-3711), master c7909b1 mean 3317 ms (range 3069-3649).
 - Tint atlas 512 initial slots (matches the decision file) with a MAX_TEXTURE_SIZE guard; sorted translucent index reset deferred until quarantine is reclaimed; ocean translucency pixel test; test title reworded.
 - "outsideRenderPass queueSerial": still seen in CI (1 of 4 shards this run, m22a heap test, passed on retry; m13h in the previous run). Not reproduced locally and not shown to be unrelated to the new page/upload pattern; master comparison is the reviewer's (0 of 10 runs). Open for the owner.
 
 ## What was built
 
-Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures (texelFetch at u_drawBase + gl_DrawID); shared 1024-px-wide 2D tint atlas (slot*2 grass, slot*2+1 foliage; slot 0 plains); arena free-range reuse with four-draw-frame quarantine and direct arena uploads. E's temporary 65,536-quad page sizes were reverted in `fa456e1`; the final runtime is the pre-E page sizes with A's draw-data ring and F's frame-count quarantine. B/C staging changes are reverted, and D's render-call audit added no runtime work.
+Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures; shared 2D tint atlas; arena reuse with F's four-draw-frame quarantine. G prepares streamed/edit arena data, lazy index fills, tint and draw-data texture updates, translucent sorting writes, LOD uploads, and wireframe indices before the frame's first clear or draw. A debug-only counter reports terrain GPU writes after that boundary. E's temporary 65,536-quad page sizes were reverted; B/C staging changes remain reverted; D's audit added no runtime work.
 
 ## A/B (same container, SwiftShader)
 
@@ -160,9 +160,10 @@ The RD32 SwiftShader samples are short and noisy; 0.0 ms upload is below the tim
 | D docs-only render-call audit | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate terrain render; its logs contained 14,430 invalid copyBufferSubData warnings from the contaminated B path |
 | B/C revert; A-only validation | `fd99cc1` | 45056603376 | 37 / 0 / 0 / 22 | 59 | QueueSerial remained; no copyBufferSubData warnings |
 | E 65,536-quad pages (reverted) | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial and scaling limit remained |
-| F four-frame terrain quarantine | `820f0b1` | 45131052066 | 0 / 0 / 0 / 0 | 0 | All shards passed; first clean run; owner rerun required |
+| F four-frame terrain quarantine | `820f0b1` | 45131052066; 45138816097 | 0 / 0 / 0 / 0; 4 / 0 / 0 / 0 | 0; 4 | Repeat run had queueSerial and M04 flakes |
+| G pre-draw terrain upload phase | `ed697bd` | 45156849018; full rerun pending | 0* / 0 / 0 / 0 | 0 observed | Shard 1 log is partial (cancelled at 90m); shard 4 had 4 failed and 2 flaky M18a/M18b menu checks |
 
-Earlier branch runs: 44906419565 = 57 (38 / 0 / 0 / 19); 44911258811 = 65 (41 / 0 / 4 / 20); 44915434533 = 57 (34 / 0 / 0 / 23). No A–E variant cleared queueSerial across all shards.
+Earlier branch runs: 44906419565 = 57 (38 / 0 / 0 / 19); 44911258811 = 65 (41 / 0 / 4 / 20); 44915434533 = 57 (34 / 0 / 0 / 23). No experiment has met the two-full-run acceptance criterion; G has only one incomplete Verify run so far.
 
 ## Review round 5 — E revert and experiment F
 
@@ -189,9 +190,9 @@ Verify run `45131052066` on F head `820f0b177b3395fc3b47ebe10a278e36772cd404` co
 | 8 | 3 | 1 | 6 | 1 / 1 / 1 |
 | 16 | 11 | 75 | 88 | 2 / 2 / 1 |
 
-Pixel identity remained exact in all four CI viewpoints (`diffPerDraw: 0`); the ocean view measured 62.0% water coverage and 16 translucent submissions versus 347 per-draw submissions. This is the first clean F Verify run. The required second clean run is pending: the local `GH_TOKEN` is invalid and the GitHub connector cannot rerun all successful jobs, so the owner needs to choose “Re-run all jobs” on run `45131052066`.
+Pixel identity remained exact in all four CI viewpoints (`diffPerDraw: 0`); the ocean view measured 62.0% water coverage and 16 translucent submissions versus 347 per-draw submissions. The repeat F run `45138816097` on docs commit `53db13f` used the same F code as `820f0b1`: shard counts were 4 / 0 / 0 / 0. `m04:221` failed all three attempts; `m04:277` flaked once at 67 px vs 64. F therefore did not satisfy the two-clean-run criterion.
 
-### Experiment table A-F
+### Experiment table A-G
 
 | Experiment | Commit | Verify run | Shard 1 / 2 / 3 / 4 | Total | Result |
 |---|---|---:|---:|---:|---|
@@ -200,10 +201,17 @@ Pixel identity remained exact in all four CI viewpoints (`diffPerDraw: 0`); the 
 | C tint staging (reverted) | `69f18de` | 45039393236 | 277 / 259 / 208 / 402 | 1,146 | Reverted with B |
 | D render-call audit (docs only) | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate render; run contaminated by B warnings |
 | E 65,536-quad pages (reverted) | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial remained; scaling limit remained |
-| F four-frame terrain quarantine | `820f0b1` | 45131052066 | 0 / 0 / 0 / 0 | 0 | All shards passed; second run pending owner rerun |
+| F four-frame terrain quarantine | `820f0b1` | 45131052066; 45138816097 | 0 / 0 / 0 / 0; 4 / 0 / 0 / 0 | 0; 4 | Repeat run had queueSerial and M04 flakes |
+| G pre-draw terrain upload phase | `ed697bd` | 45156849018; full rerun pending | 0* / 0 / 0 / 0 | 0 observed | Shard 1 log is partial (cancelled at 90m); shard 4 had 4 failed and 2 flaky M18a/M18b menu checks |
 
 E revert commit `fa456e1` restored the prior page capacities as a separate commit before F. No Verify run was started on the revert-only tree; F is tested on top of it. Run 45131052066 completed successfully on F's exact head `820f0b177b3395fc3b47ebe10a278e36772cd404` (PR merge commit `d045529ad119c0bbb9bfdb777ca43cee9ce1bb15`). The `queueSerial` grep counts were 0 / 0 / 0 / 0; the logs had no WebGL warnings/errors, `INVALID_OPERATION`, `copyBufferSubData`, console errors, page errors, or failed requests. E2E totals were 53 / 53 / 53 / 52 passed on shards 1–4, and shard 1 also passed typecheck, lint, placeholders and all 1,600 unit tests.
 
 CI scaling at RD8 measured 3 opaque+cutout and 1 translucent submission (6 total), with pages 1 / 1 / 1. RD16 measured 11 opaque+cutout and 75 translucent submissions (88 total), with pages 2 / 2 / 1. All four pixel-identity views had `diffPerDraw: 0`; the ocean view measured a 62.0% water share and 16 translucent submissions versus 347 per-draw submissions.
 
-This is the first clean F Verify run. A second clean run on the same F commit is required. `gh auth status` reports the local `GH_TOKEN` is invalid, and the GitHub connector has no rerun-all action; the owner needs to choose “Re-run all jobs” on run 45131052066.
+The repeat F run `45138816097` on docs commit `53db13f` used the same F code as `820f0b1`: shard counts were 4 / 0 / 0 / 0. `m04:221` failed all three attempts and `m04:277` flaked once at 67 px vs 64. F therefore did not satisfy the two-clean-run criterion.
+
+## Review round 6 — experiment G: pre-draw terrain upload phase
+
+Commit `ed697bd638b6c232835239d2ef6e094af57fa3f4` moves terrain uploads before the frame's first clear or draw. `WorldManager.prepareFrame` handles streamed and edit mesh uploads and prepares culling/sort state; `ChunkRenderer.prepareFrame` writes sorted translucent indices and the draw-data texture and prepares wireframe indices; tint-atlas and lazy arena/index writes occur during that same upload phase. Streaming pump slices defer GPU uploads until this phase, including create-world and wait-for-terrain barriers. The draw-data ring and F frame-count quarantine remain unchanged. No page sizes, page caps, budgets, pixel tests or fixture thresholds changed.
+
+The debug-only `terrainGpuWritesAfterFirstDraw` counter is exposed in render stats, and `terrainGpuWritesAfterFirstDrawMax` is included in frame stats for flight logs. The render-pass boundary is the first clear or draw. In Verify run `45156849018`, the RD8 settled and RD16 scaling values were 0; M22a's sampled-window maximum was 0 (frame CPU p95 9.8 ms, upload p95 5.9 ms). The shard-1 M04 flight sample also recorded a maximum of 0. RD8 measured 3 opaque+cutout and 1 translucent submission (6 total), with 3 pages (1/1/1); RD16 measured 11 + 75 submissions (88 total), with 5 pages (2/2/1). All four pixel-identity views remained exact (`diffPerDraw: 0`). The available shard logs had queueSerial grep counts 0 / 0 / 0 / 0, but shard 1 was cancelled at the 90-minute job timeout, so its count covers only the partial log. Shards 2 and 3 passed; shard 4 reported 46 passed, 4 failed, and 2 flaky tests. The four failures and two flaky tests were M18a/M18b world-start checks waiting for `#main-menu` to become hidden. No `INVALID_OPERATION` or `copyBufferSubData` warning appeared. The GitHub connector cannot re-run all jobs; the owner must use “Re-run all jobs” on run `45156849018` to get the required second run on the same G code SHA.
