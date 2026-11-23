@@ -9,7 +9,7 @@ import {
   type BatchSectionEntry,
 } from '../../src/render/terrain-batcher';
 import { ColumnTintCache, TINT_DEFAULT_SLOT } from '../../src/render/tint-cache';
-import { DrawFenceTimeline, TerrainArena } from '../../src/render/terrain-arena';
+import { TerrainArena } from '../../src/render/terrain-arena';
 import { GLWrapper } from '../../src/render/gl';
 import { quadIndices } from '../../src/render/shared-quads';
 
@@ -249,11 +249,14 @@ describe('PERF-batch terrain draw batching', () => {
     });
   });
 
-  describe('arena range reuse with fence quarantine and page growth policy', () => {
-    function makeFencedArena(initialPageQuads = 16, maxPageQuads = 128) {
-      let fenceId = 1;
-      const signaled = new Set<WebGLSync>();
-      const deletedFences: WebGLSync[] = [];
+  describe('arena range reuse with frame-count quarantine and page growth policy', () => {
+    function makeArena(initialPageQuads = 16, maxPageQuads = 128) {
+      const syncCalls = {
+        fenceSync: vi.fn(),
+        clientWaitSync: vi.fn(),
+        getSyncParameter: vi.fn(),
+        deleteSync: vi.fn(),
+      };
       const gl = {
         ARRAY_BUFFER: 1,
         ELEMENT_ARRAY_BUFFER: 2,
@@ -263,10 +266,6 @@ describe('PERF-batch terrain draw batching', () => {
         COPY_WRITE_BUFFER: 6,
         STREAM_DRAW: 7,
         STATIC_DRAW: 8,
-        SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
-        ALREADY_SIGNALED: 0x911a,
-        CONDITION_SATISFIED: 0x911c,
-        TIMEOUT_EXPIRED: 0x911b,
         createVertexArray: () => ({}),
         createBuffer: () => ({}),
         deleteVertexArray: vi.fn(),
@@ -278,15 +277,11 @@ describe('PERF-batch terrain draw batching', () => {
         enableVertexAttribArray: vi.fn(),
         vertexAttribIPointer: vi.fn(),
         copyBufferSubData: vi.fn(),
-        fenceSync: () => ({ id: fenceId++ }) as unknown as WebGLSync,
-        clientWaitSync: (sync: WebGLSync) => (signaled.has(sync) ? 0x911a : 0x911b),
-        deleteSync: (sync: WebGLSync) => {
-          deletedFences.push(sync);
-        },
+        ...syncCalls,
       } as unknown as WebGL2RenderingContext;
       const wrapper = new GLWrapper(gl, false);
       const arena = new TerrainArena(wrapper, { initialPageQuads, maxPageQuads });
-      return { arena, wrapper, signaled, deletedFences };
+      return { arena, wrapper, syncCalls };
     }
 
     function makeBucket(quads: number) {
@@ -300,7 +295,7 @@ describe('PERF-batch terrain draw batching', () => {
     }
 
     it('merges adjacent streamed vertex chunks into one bufferSubData per upload batch', () => {
-      const { arena, wrapper } = makeFencedArena(64, 64);
+      const { arena, wrapper } = makeArena(64, 64);
       const gl = wrapper.gl as unknown as { bufferSubData: ReturnType<typeof vi.fn> };
       gl.bufferSubData.mockClear();
       const a = arena.upload(makeBucket(8));
@@ -318,100 +313,60 @@ describe('PERF-batch terrain draw batching', () => {
       expect(calls()[0]![4]).toBe(128);
     });
 
-    it('shares one fence per draw frame across arenas and polls only the oldest pending fence', () => {
-      const { arena: arenaA, wrapper, signaled } = makeFencedArena(16, 64);
-      const gl = wrapper.gl as unknown as Record<string, ReturnType<typeof vi.fn> | unknown>;
-      let fenceCalls = 0;
-      let waitCalls = 0;
-      const origFence = gl.fenceSync as () => WebGLSync;
-      const origWait = gl.clientWaitSync as (s: WebGLSync) => number;
-      gl.fenceSync = () => (fenceCalls++, origFence());
-      gl.clientWaitSync = (s: WebGLSync) => (waitCalls++, origWait(s));
-      const timeline = new DrawFenceTimeline(wrapper);
-      const a = new TerrainArena(wrapper, { initialPageQuads: 16, maxPageQuads: 64, timeline });
-      const b = new TerrainArena(wrapper, { initialPageQuads: 16, maxPageQuads: 64, timeline });
-      const ua = a.upload(makeBucket(8));
-      const ub = b.upload(makeBucket(8));
-      void arenaA;
+    it('ages each range from its own last draw and makes no WebGL sync calls', () => {
+      const { arena, wrapper, syncCalls } = makeArena(16, 64);
 
-      timeline.begin();
-      a.beginDrawFrame();
-      b.beginDrawFrame();
-      a.markUsed(ua);
-      b.markUsed(ub);
-      timeline.end();
-      a.endDrawFrame();
-      b.endDrawFrame();
-      expect(fenceCalls).toBe(1);
-
-      a.free(ua);
-      expect(ua.page.quarantined).toHaveLength(1);
-
-      // Several unsignalled frames: each begin polls the single oldest fence once.
-      waitCalls = 0;
-      for (let i = 0; i < 3; i++) {
-        timeline.begin();
-        timeline.end();
-      }
-      expect(waitCalls).toBe(3);
-      expect(ua.page.quarantined).toHaveLength(1);
-
-      const fence = (timeline as unknown as { fences: Array<{ fence: WebGLSync }> }).fences[0]!
-        .fence;
-      signaled.add(fence);
-      timeline.begin();
-      a.beginDrawFrame();
-      expect(ua.page.quarantined).toHaveLength(0);
-    });
-
-    it('quarantines freed ranges from drawn pages until the frame fence signals', () => {
-      const { arena, wrapper, signaled, deletedFences } = makeFencedArena(16, 64);
-
-      // Allocate two 8-quad ranges filling the 16-quad first page
       const a = arena.upload(makeBucket(8));
       const b = arena.upload(makeBucket(8));
       expect(a.page).toBe(b.page);
       expect(a.quads.offset).toBe(0);
       expect(b.quads.offset).toBe(8);
 
-      // Draw frame 1 using this page and insert its frame fence
+      // Both ranges are drawn in frame 1; only b is drawn in frame 2.
       arena.beginDrawFrame();
       arena.markUsed(a);
       arena.markUsed(b);
       arena.endDrawFrame();
-
-      // Free 'a' before frame 1's fence has signaled -> range [0..8) is quarantined
+      arena.beginDrawFrame();
+      arena.markUsed(b);
+      arena.endDrawFrame();
       arena.free(a);
       expect(a.page.quarantined).toHaveLength(1);
 
-      // Allocating 8 quads while 'a' is still quarantined cannot overwrite [0..8), so it grows a second page
-      const c = arena.upload(makeBucket(8));
-      expect(c.page).not.toBe(a.page);
-      expect(arena.pages).toHaveLength(2);
+      // Two later completed draws of b age a's range by three frames, not four.
+      for (let i = 0; i < 2; i++) {
+        arena.beginDrawFrame();
+        arena.markUsed(b);
+        arena.endDrawFrame();
+      }
+      expect(a.page.quarantined).toHaveLength(1);
+      const blocked = arena.upload(makeBucket(8));
+      expect(blocked.page).not.toBe(a.page);
 
-      // Now signal the fence for frame 1 and poll
-      const fenceObj = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
-        .timeline.fences[0]!.fence;
-      signaled.add(fenceObj);
-      arena.pollFences();
-      expect(deletedFences).toContain(fenceObj);
+      // The fourth completed frame after a's last draw releases its range even as b stays in use.
+      arena.beginDrawFrame();
+      arena.markUsed(b);
+      arena.endDrawFrame();
       expect(a.page.quarantined).toHaveLength(0);
+      const c = arena.upload(makeBucket(8));
+      expect(c.page).toBe(a.page);
+      expect(c.quads.offset).toBe(a.quads.offset);
 
-      // Next 8-quad allocation reuses the reclaimed hole [0..8) in page 1!
-      const d = arena.upload(makeBucket(8));
-      expect(d.page).toBe(a.page);
-      expect(d.quads.offset).toBe(0);
+      expect(syncCalls.fenceSync).not.toHaveBeenCalled();
+      expect(syncCalls.clientWaitSync).not.toHaveBeenCalled();
+      expect(syncCalls.getSyncParameter).not.toHaveBeenCalled();
+      expect(syncCalls.deleteSync).not.toHaveBeenCalled();
 
-      // Freeing all allocations releases all GPU pages back to 0
       arena.free(b);
       arena.free(c);
-      arena.free(d);
-      expect(arena.pages).toHaveLength(0);
+      arena.free(blocked);
+      expect(wrapper.getCounts().vaos).toBe(1); // page remains quarantined after b's latest draw
+      arena.releaseAll();
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
     });
 
     it('grows page capacities exponentially up to maxPageQuads only when existing pages have no room', () => {
-      const { arena, wrapper } = makeFencedArena(16, 64);
+      const { arena, wrapper } = makeArena(16, 64);
 
       const p1 = arena.upload(makeBucket(16));
       expect(p1.page.quadCapacity).toBe(16);
@@ -440,72 +395,60 @@ describe('PERF-batch terrain draw batching', () => {
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
     });
 
-    it('deletes a page that was emptied, quarantined, then signalled', () => {
-      const { arena, wrapper, signaled } = makeFencedArena(16, 64);
+    it('deletes an emptied page after four completed draw frames', () => {
+      const { arena, wrapper } = makeArena(16, 64);
       const a = arena.upload(makeBucket(8));
       arena.beginDrawFrame();
       arena.markUsed(a);
       arena.endDrawFrame();
 
-      // Emptied while the draw fence is pending: the range is quarantined and the page stays.
+      // Emptying the drawn page quarantines its range and keeps the page alive.
       arena.free(a);
       expect(a.page.allocations).toBe(0);
       expect(a.page.quarantined).toHaveLength(1);
       expect(arena.pages).toHaveLength(1);
       expect(wrapper.getCounts()).toMatchObject({ buffers: 3, vaos: 1 });
 
-      // Still pending after a poll: nothing is deleted yet.
-      arena.pollFences();
-      expect(arena.pages).toHaveLength(1);
+      for (let i = 0; i < 3; i++) {
+        arena.beginDrawFrame();
+        arena.endDrawFrame();
+        expect(arena.pages).toHaveLength(1);
+        expect(a.page.quarantined).toHaveLength(1);
+      }
 
-      // Signalled: the empty page's buffers and VAO are deleted.
-      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
-        .timeline.fences[0]!.fence;
-      signaled.add(fence);
-      arena.pollFences();
+      // Idle render frames count because none referenced this range.
+      arena.beginDrawFrame();
+      arena.endDrawFrame();
       expect(arena.pages).toHaveLength(0);
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
     });
 
-    it('an idle draw frame with a pending fence does not reclaim quarantined ranges', () => {
-      const { arena, signaled } = makeFencedArena(16, 64);
+    it('counts idle draw frames only when no draw referenced the quarantined range', () => {
+      const { arena, wrapper } = makeArena(16, 64);
       const a = arena.upload(makeBucket(8));
-      const b = arena.upload(makeBucket(8));
       arena.beginDrawFrame();
       arena.markUsed(a);
-      arena.markUsed(b);
-      arena.endDrawFrame(); // fence 1, unsignalled
+      arena.endDrawFrame();
       arena.free(a);
       expect(a.page.quarantined).toHaveLength(1);
 
-      // Frames that draw nothing from this arena (culled, or an arena that is often empty).
+      // Three idle completed frames are not enough to release a range last drawn in frame 1.
       for (let i = 0; i < 3; i++) {
         arena.beginDrawFrame();
         arena.endDrawFrame();
         expect(a.page.quarantined).toHaveLength(1);
       }
-      // The freed range cannot be handed out while the GPU may still read it.
-      const c = arena.upload(makeBucket(8));
-      expect(c.page === a.page && c.quads.offset === a.quads.offset).toBe(false);
 
-      // Emptying the page behind the pending fence must not delete it either.
-      arena.free(b);
-      arena.free(c);
-      arena.beginDrawFrame();
-      arena.endDrawFrame();
-      expect(arena.pages).toContain(a.page);
-
-      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
-        .timeline.fences[0]!.fence;
-      signaled.add(fence);
+      // The fourth idle frame completes the quarantine and deletes the empty page.
       arena.beginDrawFrame();
       arena.endDrawFrame();
       expect(a.page.quarantined).toHaveLength(0);
       expect(arena.pages).toHaveLength(0);
+      expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
     });
 
     it('fills the index buffer of a large page lazily in bounded chunks', () => {
-      const { arena, wrapper } = makeFencedArena(131_072, 131_072);
+      const { arena, wrapper } = makeArena(131_072, 131_072);
       const gl = wrapper.gl as unknown as {
         bufferData: ReturnType<typeof vi.fn>;
         bufferSubData: ReturnType<typeof vi.fn>;
@@ -530,15 +473,15 @@ describe('PERF-batch terrain draw batching', () => {
       arena.free(a);
     });
 
-    it('defers resetting a sorted translucent range until its quarantine is reclaimed', () => {
-      const { arena, wrapper, signaled } = makeFencedArena(16, 64);
+    it('defers resetting a sorted translucent range until four frames after its last draw', () => {
+      const { arena, wrapper } = makeArena(16, 64);
       const gl = wrapper.gl as unknown as { bufferSubData: ReturnType<typeof vi.fn> };
       const a = arena.upload(makeBucket(8));
       const b = arena.upload(makeBucket(8));
       arena.beginDrawFrame();
       arena.markUsed(a);
       arena.markUsed(b);
-      arena.endDrawFrame(); // fence pending
+      arena.endDrawFrame();
       arena.updateSortedIndices(a, new Uint32Array(48));
       const writes = () => gl.bufferSubData.mock.calls.length;
       const before = writes();
@@ -547,10 +490,13 @@ describe('PERF-batch terrain draw batching', () => {
       expect(a.page.quarantined).toHaveLength(1);
       expect(a.page.quarantined[0]!.restoreIndices).toBe(true);
 
-      const fence = (arena as unknown as { timeline: { fences: Array<{ fence: WebGLSync }> } })
-        .timeline.fences[0]!.fence;
-      signaled.add(fence);
-      arena.pollFences();
+      for (let i = 0; i < 3; i++) {
+        arena.beginDrawFrame();
+        arena.endDrawFrame();
+      }
+      expect(writes()).toBe(before);
+      arena.beginDrawFrame();
+      arena.endDrawFrame();
       expect(writes()).toBe(before + 1);
       const last = gl.bufferSubData.mock.calls[gl.bufferSubData.mock.calls.length - 1]!;
       expect(last[1]).toBe(0);
@@ -558,8 +504,8 @@ describe('PERF-batch terrain draw batching', () => {
       arena.free(b);
     });
 
-    it('releaseAll deletes every page, quarantined range and pending fence without waiting', () => {
-      const { arena, wrapper, deletedFences } = makeFencedArena(16, 64);
+    it('releaseAll deletes every page and quarantined range', () => {
+      const { arena, wrapper, syncCalls } = makeArena(16, 64);
       const a = arena.upload(makeBucket(16));
       const b = arena.upload(makeBucket(16));
       const c = arena.upload(makeBucket(4));
@@ -567,13 +513,16 @@ describe('PERF-batch terrain draw batching', () => {
       arena.markUsed(a);
       arena.markUsed(b);
       arena.endDrawFrame();
-      arena.free(a); // quarantined behind an unsignalled fence
+      arena.free(a); // quarantined for four completed draw frames
       expect(arena.pages.length).toBeGreaterThanOrEqual(2);
       expect(a.page.quarantined).toHaveLength(1);
 
       arena.releaseAll();
       expect(arena.pages).toHaveLength(0);
-      expect(deletedFences).toHaveLength(1);
+      expect(syncCalls.fenceSync).not.toHaveBeenCalled();
+      expect(syncCalls.clientWaitSync).not.toHaveBeenCalled();
+      expect(syncCalls.getSyncParameter).not.toHaveBeenCalled();
+      expect(syncCalls.deleteSync).not.toHaveBeenCalled();
       expect(wrapper.getCounts()).toMatchObject({ buffers: 0, vaos: 0 });
       expect(c.pendingUpload).toBe(false);
 
