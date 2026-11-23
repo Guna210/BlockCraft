@@ -14,6 +14,8 @@ export interface FrameStatsSnapshot {
   uploadMsMax: number;
   glCheckMsP95: number;
   glCheckMsMax: number;
+  /** Maximum debug count of terrain GPU writes after the first clear/draw in a sampled frame. */
+  terrainGpuWritesAfterFirstDrawMax: number;
   /** Streaming tasks outside the frame callback (pump slices, worker-result handlers). */
   pumpMsP95: number;
   pumpMsMax: number;
@@ -44,6 +46,7 @@ export class FrameStats {
   private recentFrameCount = 0;
   private nextRecentFrame = 0;
   private drawCallsMax = 0;
+  private terrainGpuWritesAfterFirstDrawMax = 0;
 
   reset(): void {
     this.pump = [];
@@ -53,10 +56,21 @@ export class FrameStats {
     this.recentFrameCount = 0;
     this.nextRecentFrame = 0;
     this.drawCallsMax = 0;
+    this.terrainGpuWritesAfterFirstDrawMax = 0;
   }
 
-  record(frameCpuMs: number, uploadMs: number, glCheckMs: number, drawCalls = 0): void {
+  record(
+    frameCpuMs: number,
+    uploadMs: number,
+    glCheckMs: number,
+    drawCalls = 0,
+    terrainGpuWritesAfterFirstDraw = 0,
+  ): void {
     this.drawCallsMax = Math.max(this.drawCallsMax, drawCalls);
+    this.terrainGpuWritesAfterFirstDrawMax = Math.max(
+      this.terrainGpuWritesAfterFirstDrawMax,
+      terrainGpuWritesAfterFirstDraw,
+    );
     if (this.frameCpu.length >= MAX_SAMPLES) {
       const drop = MAX_SAMPLES / 2;
       this.frameCpu.splice(0, drop);
@@ -100,6 +114,7 @@ export class FrameStats {
       uploadMsMax: max(this.upload),
       glCheckMsP95: percentile95(this.glCheck),
       glCheckMsMax: max(this.glCheck),
+      terrainGpuWritesAfterFirstDrawMax: this.terrainGpuWritesAfterFirstDrawMax,
       pumpMsP95: percentile95(this.pump),
       pumpMsMax: max(this.pump),
     };

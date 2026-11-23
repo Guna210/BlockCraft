@@ -321,14 +321,21 @@ export interface GPUSectionMesh {
 }
 
 interface PendingSectionUpload {
+  sx: number;
+  sy: number;
+  sz: number;
   meshData: SectionMeshData;
-  gpuMesh: GPUSectionMesh;
+  gpuMesh: GPUSectionMesh | null;
+  hasBlockLight: boolean;
+  hasWallTorch: boolean;
+  dedicatedPage: boolean;
   fadeFromMs: number | null | undefined;
   hadSections: boolean;
   nextBucket: number;
 }
 
 export interface TerrainBatchStatsSnapshot {
+  terrainGpuWritesAfterFirstDraw: number;
   opaqueCutoutSubmissions: number;
   translucentSubmissions: number;
   programSwitches: number;
@@ -371,6 +378,13 @@ export class ChunkRenderer {
     () => null,
   );
   private readonly drawDataTextureRing = new DrawDataTextureRing();
+  private drawDataTextureIndex = -1;
+  private preparedViewProjMatrix: mat4 | null = null;
+  private preparedAtlasTexture: WebGLTexture | null = null;
+  private preparedAtlas: TextureAtlas | null = null;
+  private preparedWireframe = false;
+  private preparedWireStartDraw = 0;
+  private preparedFrame = false;
   private drawDataTexHeight = 0;
   private drawDataSnapshot = new Float32Array(0);
   private drawDataSnapshotCount = 0;
@@ -641,6 +655,7 @@ export class ChunkRenderer {
     const cutoutPages = this.cutoutArena.pages.length;
     const translucentPages = this.translucentArena.pages.length;
     return {
+      terrainGpuWritesAfterFirstDraw: this.glWrapper.getLastTerrainGpuWritesAfterFirstDraw(),
       opaqueCutoutSubmissions: this.lastOpaqueCutoutSubmissions,
       translucentSubmissions: this.lastTranslucentSubmissions,
       programSwitches: this.lastProgramSwitches,
@@ -676,6 +691,7 @@ export class ChunkRenderer {
     for (let i = 0; i < this.drawDataTextures.length; i++) {
       const tex = this.glWrapper.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
+      this.glWrapper.recordTerrainGpuWrite?.();
       gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, DRAW_DATA_TEX_WIDTH, requiredHeight);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -691,7 +707,7 @@ export class ChunkRenderer {
 
   private uploadDrawDataTexture(rows: number): void {
     const drawCount = this.batcher.getTotalDraws();
-    if (rows <= 0 || drawCount <= 0) return;
+    if (drawCount <= 0) return;
 
     this.ensureDrawDataTextures(this.batcher.getTextureHeight());
     const usedFloats = drawCount * FLOATS_PER_DRAW;
@@ -706,6 +722,7 @@ export class ChunkRenderer {
     }
 
     const textureIndex = this.drawDataTextureRing.acquire(!unchanged);
+    this.drawDataTextureIndex = textureIndex;
     const tex = this.drawDataTextures[textureIndex]!;
     const gl = this.glWrapper.gl;
     if (this.activeUnit !== DRAW_DATA_UNIT) {
@@ -716,14 +733,19 @@ export class ChunkRenderer {
     this.lastTextureBinds++;
 
     if (!unchanged) {
+      const rowsToUpload = Math.max(
+        rows,
+        Math.ceil((drawCount * FLOATS_PER_DRAW) / (DRAW_DATA_TEX_WIDTH * 4)),
+      );
       const uploadStart = renderPhaseStats.start();
+      this.glWrapper.recordTerrainGpuWrite?.();
       gl.texSubImage2D(
         gl.TEXTURE_2D,
         0,
         0,
         0,
         DRAW_DATA_TEX_WIDTH,
-        rows,
+        rowsToUpload,
         gl.RGBA,
         gl.FLOAT,
         this.batcher.drawData,
@@ -786,6 +808,7 @@ export class ChunkRenderer {
     this.activeUnit = EMISSIVE_TEXTURE_UNIT;
     gl.bindTexture(gl.TEXTURE_2D, this.emissiveTexture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -925,6 +948,8 @@ export class ChunkRenderer {
       pending = this.pendingSectionUploads.get(key)!;
     }
     if (pending.fadeFromMs === undefined) pending.fadeFromMs = fadeFromMs;
+    pending.gpuMesh ??= this.createPendingGPUSectionMesh(pending);
+    const gpuMesh = pending.gpuMesh;
 
     while (pending.nextBucket < 3) {
       const remaining = Math.max(0, budgetMs - (performance.now() - uploadClockStart));
@@ -935,10 +960,10 @@ export class ChunkRenderer {
       const bucketIndex = pending.nextBucket;
       const bucket =
         bucketIndex === 0
-          ? pending.gpuMesh.opaque
+          ? gpuMesh.opaque
           : bucketIndex === 1
-            ? pending.gpuMesh.cutout
-            : pending.gpuMesh.translucent;
+            ? gpuMesh.cutout
+            : gpuMesh.translucent;
       if (!bucket) {
         pending.nextBucket++;
         continue;
@@ -954,7 +979,6 @@ export class ChunkRenderer {
     this.pendingSectionUploads.delete(key);
     this.removeSectionMesh(key);
     this.visibilityMasks.set(sx, sy, sz, meshData.visibilityMask);
-    const gpuMesh = pending.gpuMesh;
     if (gpuMesh.opaque || gpuMesh.cutout || gpuMesh.translucent) {
       const bookkeepingStart = renderPhaseStats.start();
       this.tintCache.onSectionAdded(sx, sy, sz);
@@ -975,7 +999,7 @@ export class ChunkRenderer {
     return gpuMesh;
   }
 
-  /** Reserve arena ranges and create GPU pages before the frame-budgeted transfer begins. */
+  /** Keep worker results CPU-side until the next frame's terrain upload phase. */
   public prepareSectionUpload(
     sx: number,
     sy: number,
@@ -989,7 +1013,6 @@ export class ChunkRenderer {
     if (existing) this.cancelPendingSectionUpload(key);
 
     const bookkeepingStart = renderPhaseStats.start();
-    const arenaBuffers = meshData.arenaBuffers;
     let hasWallTorch = meshData.hasWallTorch;
     if (hasWallTorch === undefined) {
       hasWallTorch = false;
@@ -1003,9 +1026,30 @@ export class ChunkRenderer {
         }
       }
     }
-    const gpuMesh: GPUSectionMesh = {
-      hasWallTorch,
+    this.pendingSectionUploads.set(key, {
+      sx,
+      sy,
+      sz,
+      meshData,
+      gpuMesh: null,
       hasBlockLight: meshData.hasBlockLight ?? true,
+      hasWallTorch,
+      dedicatedPage,
+      fadeFromMs: undefined,
+      hadSections: (this.columnMeshes.get(`${sx},${sz}`)?.length ?? 0) > 0,
+      nextBucket: 0,
+    });
+    renderPhaseStats.end('meshBookkeepingMs', bookkeepingStart);
+  }
+
+  /** Materializes a queued worker result only from `uploadSectionMesh` during the upload phase. */
+  private createPendingGPUSectionMesh(pending: PendingSectionUpload): GPUSectionMesh {
+    const { meshData, sx, sy, sz, dedicatedPage } = pending;
+    const arenaBuffers = meshData.arenaBuffers;
+    const key = `${sx},${sy},${sz}`;
+    return {
+      hasWallTorch: pending.hasWallTorch,
+      hasBlockLight: pending.hasBlockLight,
       key,
       sx,
       sy,
@@ -1039,14 +1083,6 @@ export class ChunkRenderer {
       translucentVisibleGeneration: 0,
       sortRank: 0,
     };
-    this.pendingSectionUploads.set(key, {
-      meshData,
-      gpuMesh,
-      fadeFromMs: undefined,
-      hadSections: (this.columnMeshes.get(`${sx},${sz}`)?.length ?? 0) > 0,
-      nextBucket: 0,
-    });
-    renderPhaseStats.end('meshBookkeepingMs', bookkeepingStart);
   }
 
   public removeSectionMesh(key: string): void {
@@ -1110,7 +1146,7 @@ export class ChunkRenderer {
    */
   public removeColumnMeshesExcept(cx: number, cz: number, keep: ReadonlySet<string>): boolean {
     for (const [key, pending] of this.pendingSectionUploads)
-      if (pending.gpuMesh.sx === cx && pending.gpuMesh.sz === cz && !keep.has(key))
+      if (pending.sx === cx && pending.sz === cz && !keep.has(key))
         this.cancelPendingSectionUpload(key);
     this.visibilityMasks.retain(cx, cz, keep);
     const list = this.columnMeshes.get(`${cx},${cz}`);
@@ -1195,14 +1231,20 @@ export class ChunkRenderer {
     this.cutoutArena.releaseAll();
     this.translucentArena.releaseAll();
     this.batcher.resetCapacity();
-    this.ensureDrawDataTextures(this.batcher.getTextureHeight());
-    this.tintCache.clearAll();
+    this.tintCache.clearAllWithDeferredGpuWrites(true);
     this.boundVao = null;
   }
 
   public beginUploadBatch(): void {
     const frame = ++this.uploadFrame;
     this.uploadTintUnitReady = false;
+    this.drawDataTextureIndex = -1;
+    this.ensureDrawDataTextures(this.batcher.getTextureHeight());
+    this.tintCache.applyPendingAtlasReset();
+    this.drawDataTextureRing.beginFrame();
+    this.opaqueArena.beginUploadFrame();
+    this.cutoutArena.beginUploadFrame();
+    this.translucentArena.beginUploadFrame();
     this.opaqueArena.beginUploadBatch(frame);
     this.cutoutArena.beginUploadBatch(frame);
     this.translucentArena.beginUploadBatch(frame);
@@ -1218,15 +1260,16 @@ export class ChunkRenderer {
     const pending = this.pendingSectionUploads.get(key);
     if (!pending) return;
     this.pendingSectionUploads.delete(key);
-    this.freeGPUBucketMesh(pending.gpuMesh.opaque);
-    this.freeGPUBucketMesh(pending.gpuMesh.cutout);
-    this.freeGPUBucketMesh(pending.gpuMesh.translucent);
+    if (pending.gpuMesh) {
+      this.freeGPUBucketMesh(pending.gpuMesh.opaque);
+      this.freeGPUBucketMesh(pending.gpuMesh.cutout);
+      this.freeGPUBucketMesh(pending.gpuMesh.translucent);
+    }
   }
 
   private cancelPendingColumnUploads(sx: number, sz: number): void {
     for (const [key, pending] of this.pendingSectionUploads)
-      if (pending.gpuMesh.sx === sx && pending.gpuMesh.sz === sz)
-        this.cancelPendingSectionUpload(key);
+      if (pending.sx === sx && pending.sz === sz) this.cancelPendingSectionUpload(key);
   }
 
   private createGPUBucketMesh(
@@ -1298,8 +1341,9 @@ export class ChunkRenderer {
     }
 
     const lineEbo = this.glWrapper.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineEbo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, lineEbo);
+    this.glWrapper.recordTerrainGpuWrite?.();
+    gl.bufferData(gl.COPY_WRITE_BUFFER, lineIndices, gl.STATIC_DRAW);
     bucket.lineEbo = lineEbo;
     return lineEbo;
   }
@@ -1625,9 +1669,41 @@ export class ChunkRenderer {
     sceneFramebuffer: WebGLFramebuffer | null = null,
     bloomEnabled = false,
   ): void {
+    this.beginUploadBatch();
+    try {
+      this.prepareFrame(
+        viewProjMatrix,
+        atlasTexture,
+        atlas,
+        world,
+        bloomEnabled && sceneFramebuffer !== null,
+      );
+      this.endUploadBatch();
+      this.drawPrepared(drawPlayer, sceneFramebuffer);
+    } catch (error) {
+      this.endUploadBatch();
+      throw error;
+    }
+  }
+
+  /** Computes draw lists and performs every terrain upload before the frame is cleared or drawn. */
+  public prepareFrame(
+    viewProjMatrix: mat4,
+    atlasTexture: WebGLTexture,
+    atlas: TextureAtlas,
+    world?: import('../world/world').World | null,
+    bloomEnabled = false,
+  ): void {
+    if (this.preparedFrame)
+      throw new Error('Terrain frame prepared before the prior frame was drawn');
     const gl = this.glWrapper.gl;
-    this.bloomActive = bloomEnabled && sceneFramebuffer !== null;
+    this.bloomActive = bloomEnabled;
     const lod = this.lodAtmosphere?.lod;
+
+    this.preparedViewProjMatrix = viewProjMatrix;
+    this.preparedAtlasTexture = atlasTexture;
+    this.preparedAtlas = atlas;
+    this.preparedFrame = true;
 
     this.lastOpaqueCutoutSubmissions = 0;
     this.lastTranslucentSubmissions = 0;
@@ -1636,18 +1712,6 @@ export class ChunkRenderer {
     this.lastVaoBinds = 0;
     this.activeLightingVariant = -1;
     this.boundVao = null;
-
-    this.drawDataTextureRing.beginFrame();
-    this.opaqueArena.beginDrawFrame();
-    this.cutoutArena.beginDrawFrame();
-    this.translucentArena.beginDrawFrame();
-
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
-    this.lastTextureBinds++;
 
     const visibilityStart = renderPhaseStats.start();
     const planeStart = renderPhaseStats.start();
@@ -1860,26 +1924,70 @@ export class ChunkRenderer {
       }
     }
 
-    // Bind the shared 2D tint atlas once per frame on unit 1
+    // Upload the draw-data ring texture only when its payload changed.
+    this.uploadDrawDataTexture(this.batcher.getDirtyRows());
+
+    this.fluidTime = fluidAnimation.sample(nowMs);
+    this.windTime = windAnimation.sample(nowMs, this.worldPaused || fluidAnimation.pausedState);
+    mat4.invert(this.inverseViewProj, viewProjMatrix);
+    lod?.prepare(planes, this.cameraPos);
+
+    this.preparedWireframe = wireframeEnabled;
+    this.preparedWireStartDraw = wireStartDraw;
+    if (wireframeEnabled) {
+      for (let c = 0; c < this.visColumnCount; c++) {
+        const list = columns[c]!;
+        for (let m = 0; m < list.length; m++) {
+          const mesh = list[m]!;
+          for (let pass = 0; pass < 3; pass++) {
+            const bucket = pass === 0 ? mesh.opaque : pass === 1 ? mesh.cutout : mesh.translucent;
+            if (bucket) this.wireframeBuffer(bucket);
+          }
+        }
+      }
+    }
+
+    if (this.bloomActive) {
+      this.getEmissiveTexture(atlas);
+    }
+  }
+
+  /** Executes the already prepared terrain and entity draws after the frame's clear and sky. */
+  public drawPrepared(
+    drawPlayer?: () => number,
+    sceneFramebuffer: WebGLFramebuffer | null = null,
+  ): void {
+    if (!this.preparedFrame || !this.preparedViewProjMatrix || !this.preparedAtlas) return;
+    const gl = this.glWrapper.gl;
+    const viewProjMatrix = this.preparedViewProjMatrix;
+    const atlas = this.preparedAtlas;
+    const lod = this.lodAtmosphere?.lod;
+    const translucentMeshes = this.visibleTranslucent;
+    const wireframeEnabled = this.preparedWireframe;
+    const wireStartDraw = this.preparedWireStartDraw;
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.activeTexture(gl.TEXTURE0);
+    this.activeUnit = 0;
+    gl.bindTexture(gl.TEXTURE_2D, this.preparedAtlasTexture);
+    this.lastTextureBinds++;
     if (this.tintCache.texture) {
       gl.activeTexture(gl.TEXTURE0 + TINT_ATLAS_UNIT);
       this.activeUnit = TINT_ATLAS_UNIT;
       gl.bindTexture(gl.TEXTURE_2D, this.tintCache.texture);
       this.lastTextureBinds++;
     }
-
-    // Bind the draw-data ring texture on unit 2; upload only when its payload changed.
-    this.uploadDrawDataTexture(this.batcher.getDirtyRows());
-
-    this.fluidTime = fluidAnimation.sample(nowMs);
-    this.windTime = windAnimation.sample(nowMs, this.worldPaused || fluidAnimation.pausedState);
-    mat4.invert(this.inverseViewProj, viewProjMatrix);
-
-    if (this.bloomActive) {
-      const emissiveTex = this.getEmissiveTexture(atlas);
+    if (this.drawDataTextureIndex >= 0) {
+      gl.activeTexture(gl.TEXTURE0 + DRAW_DATA_UNIT);
+      this.activeUnit = DRAW_DATA_UNIT;
+      gl.bindTexture(gl.TEXTURE_2D, this.drawDataTextures[this.drawDataTextureIndex]!);
+      this.lastTextureBinds++;
+    }
+    if (this.bloomActive && this.emissiveTexture) {
       gl.activeTexture(gl.TEXTURE0 + EMISSIVE_TEXTURE_UNIT);
       this.activeUnit = EMISSIVE_TEXTURE_UNIT;
-      gl.bindTexture(gl.TEXTURE_2D, emissiveTex);
+      gl.bindTexture(gl.TEXTURE_2D, this.emissiveTexture);
       this.lastTextureBinds++;
       gl.drawBuffers(this.drawBuf2);
     }
@@ -1891,7 +1999,6 @@ export class ChunkRenderer {
     this.submitPassCommands(0, this.opaqueArena, viewProjMatrix, atlas);
     renderPhaseStats.end('opaquePassMs', opaquePassStart);
 
-    lod?.prepare(planes, this.cameraPos);
     if (this.bloomActive && lod && this.lodAtmosphere) gl.drawBuffers(this.drawBuf1);
     const lodDraws =
       lod && this.lodAtmosphere
@@ -1972,7 +2079,7 @@ export class ChunkRenderer {
       // Wireframe draw metadata was packed before the frame's single texture upload.
       let cursor = wireStartDraw;
       for (let c = 0; c < this.visColumnCount; c++) {
-        const list = columns[c]!;
+        const list = this.visColumns[c]!;
         for (let m = 0; m < list.length; m++) {
           const mesh = list[m]!;
           for (let pass = 0; pass < 3; pass++) {
@@ -1984,7 +2091,7 @@ export class ChunkRenderer {
               this.uniform1i(this.locIsCutout, UNIFORM_CACHE_SLOT.isCutout, 0);
               this.uniform1i(this.locDrawBase, UNIFORM_CACHE_SLOT.drawBase, cursor++);
               this.bindVao(bucket.vao);
-              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.wireframeBuffer(bucket));
+              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bucket.lineEbo);
               this.glWrapper.drawElements(gl.LINES, bucket.lineIndexCount, gl.UNSIGNED_INT, 0);
               // The VAO records its element buffer: put the triangle indices back for the next frame.
               bucket.arena.bindSharedIndices(bucket.allocation);
@@ -2000,14 +2107,16 @@ export class ChunkRenderer {
     this.bindVao(null);
 
     this.drawDataTextureRing.endFrame();
-    this.opaqueArena.endDrawFrame();
-    this.cutoutArena.endDrawFrame();
-    this.translucentArena.endDrawFrame();
+    this.drawDataTextureIndex = -1;
+    this.preparedFrame = false;
+    this.preparedViewProjMatrix = null;
+    this.preparedAtlasTexture = null;
+    this.preparedAtlas = null;
 
     renderStats.drawCalls = drawCalls;
     renderStats.triangles = triangles;
     // chunksLoaded and chunksMeshed come from the streamer (WorldManager); only the draw knows
     // how many section meshes were visible.
-    renderStats.chunksVisible = meshes.length;
+    renderStats.chunksVisible = this.lastVisible.length;
   }
 }

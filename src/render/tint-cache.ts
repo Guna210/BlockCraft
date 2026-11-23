@@ -44,6 +44,7 @@ export class ColumnTintCache {
   private readonly freeSlots: number[] = [];
   private readonly slotDataGrass: Array<Uint8Array | null> = [];
   private readonly slotDataFoliage: Array<Uint8Array | null> = [];
+  private pendingAtlasReset = false;
 
   private plainsGrassTexture: WebGLTexture | null = null;
   private plainsFoliageTexture: WebGLTexture | null = null;
@@ -132,6 +133,7 @@ export class ColumnTintCache {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, width, height);
     renderPhaseStats.end('tintTextureBindingMs', bindingStart);
     return tex;
@@ -149,7 +151,9 @@ export class ColumnTintCache {
     const [gx, gy] = tintAtlasCellOrigin(slot, false);
     const [fx, fy] = tintAtlasCellOrigin(slot, true);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texSubImage2D(gl.TEXTURE_2D, 0, gx, gy, 16, 16, gl.RGB, gl.UNSIGNED_BYTE, grassData);
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texSubImage2D(gl.TEXTURE_2D, 0, fx, fy, 16, 16, gl.RGB, gl.UNSIGNED_BYTE, foliageData);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     renderPhaseStats.end('tintTextureUploadMs', uploadStart);
@@ -200,6 +204,7 @@ export class ColumnTintCache {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     renderPhaseStats.end('tintTextureBindingMs', bindingStart);
     const uploadStart = renderPhaseStats.start();
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
     renderPhaseStats.end('tintTextureUploadMs', uploadStart);
     return tex;
@@ -211,6 +216,7 @@ export class ColumnTintCache {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     renderPhaseStats.end('tintTextureBindingMs', bindingStart);
     const uploadStart = renderPhaseStats.start();
+    this.glWrapper.recordTerrainGpuWrite?.();
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 16, 16, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
     renderPhaseStats.end('tintTextureUploadMs', uploadStart);
   }
@@ -340,6 +346,11 @@ export class ColumnTintCache {
   }
 
   public clearAll(): void {
+    this.clearAllWithDeferredGpuWrites(false);
+  }
+
+  /** Clears CPU ownership now and optionally defers a grown atlas recreation to frame upload. */
+  public clearAllWithDeferredGpuWrites(deferGpuWrites: boolean): void {
     for (const colKey of Array.from(this.columnTextures.keys())) {
       this.freeColumnTextures(colKey);
     }
@@ -347,6 +358,10 @@ export class ColumnTintCache {
     this.freeSlots.length = 0;
     this.nextSlot = 1;
     if (this.useSharedAtlas && this.slotCapacity > this.initialCapacity) {
+      if (deferGpuWrites) {
+        this.pendingAtlasReset = true;
+        return;
+      }
       if (this.sharedTexture) this.glWrapper.deleteTexture(this.sharedTexture);
       this.slotCapacity = this.initialCapacity;
       this.sharedTexture = this.createSharedAtlasTexture(this.slotCapacity);
@@ -354,6 +369,18 @@ export class ColumnTintCache {
       this.plainsPair.grassTexture = this.sharedTexture;
       this.plainsPair.foliageTexture = this.sharedTexture;
     }
+  }
+
+  /** Applies a teardown shrink queued outside the frame's terrain upload phase. */
+  public applyPendingAtlasReset(): void {
+    if (!this.pendingAtlasReset) return;
+    if (this.sharedTexture) this.glWrapper.deleteTexture(this.sharedTexture);
+    this.slotCapacity = this.initialCapacity;
+    this.sharedTexture = this.createSharedAtlasTexture(this.slotCapacity);
+    this.uploadSlotCells(TINT_DEFAULT_SLOT, this.plainsGrassData, this.plainsFoliageData);
+    this.plainsPair.grassTexture = this.sharedTexture;
+    this.plainsPair.foliageTexture = this.sharedTexture;
+    this.pendingAtlasReset = false;
   }
 
   public destroy(): void {

@@ -38,6 +38,11 @@ export class GLWrapper {
   public readonly debugInspection: boolean;
   private onErrorCallback?: () => void;
   private onDrawSubmission?: () => void;
+  private debugFrameActive = false;
+  private debugFirstDrawSeen = false;
+  private frameTerrainGpuWritesAfterFirstDraw = 0;
+  private pendingTerrainGpuWritesAfterFrame = 0;
+  private lastTerrainGpuWritesAfterFirstDraw = 0;
 
   private counts: ResourceCounts = {
     buffers: 0,
@@ -69,7 +74,39 @@ export class GLWrapper {
     this.drainErrors();
   }
 
+  beginDebugFrame(): void {
+    if (!this.debugInspection) return;
+    this.debugFrameActive = true;
+    this.debugFirstDrawSeen = false;
+    this.frameTerrainGpuWritesAfterFirstDraw = this.pendingTerrainGpuWritesAfterFrame;
+    this.pendingTerrainGpuWritesAfterFrame = 0;
+  }
+
+  endDebugFrame(): number {
+    if (!this.debugInspection) return 0;
+    this.debugFrameActive = false;
+    this.lastTerrainGpuWritesAfterFirstDraw = this.frameTerrainGpuWritesAfterFirstDraw;
+    return this.lastTerrainGpuWritesAfterFirstDraw;
+  }
+
+  /** A clear starts the render pass on backends that begin it before their first draw call. */
+  recordRenderPassStart(): void {
+    if (this.debugInspection) this.debugFirstDrawSeen = true;
+  }
+
+  getLastTerrainGpuWritesAfterFirstDraw(): number {
+    return this.debugInspection ? this.lastTerrainGpuWritesAfterFirstDraw : 0;
+  }
+
+  /** Counts terrain data uploads after the first WebGL draw of this frame, in debug builds only. */
+  recordTerrainGpuWrite(): void {
+    if (!this.debugInspection || !this.debugFirstDrawSeen) return;
+    if (this.debugFrameActive) this.frameTerrainGpuWritesAfterFirstDraw++;
+    else this.pendingTerrainGpuWritesAfterFrame++;
+  }
+
   recordDrawSubmission(): void {
+    if (this.debugInspection) this.debugFirstDrawSeen = true;
     this.onDrawSubmission?.();
   }
 

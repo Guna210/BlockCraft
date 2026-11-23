@@ -111,6 +111,7 @@ export class TerrainArena {
   private frame = 0;
   private currentDrawFrame = 0;
   private completedDrawFrame = 0;
+  private drawFrameOpen = false;
   private readonly initialPageQuads: number;
   private readonly maxPageQuads: number;
   private debugVertexArray: WebGLVertexArrayObject | null = null;
@@ -179,6 +180,7 @@ export class TerrainArena {
     const start = renderPhaseStats.start();
     const clockStart = performance.now();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.runPage.vertices);
+    this.wrapper.recordTerrainGpuWrite?.();
     gl.bufferSubData(gl.ARRAY_BUFFER, this.runStartByte, this.runScratch!, 0, this.runWords);
     this.runWords = 0;
     this.runPage = null;
@@ -186,16 +188,27 @@ export class TerrainArena {
     renderPhaseStats.add('arenaUploadMs', performance.now() - clockStart);
   }
 
-  /** Starts one terrain render frame and reclaims ranges whose four-frame quarantine elapsed. */
-  public beginDrawFrame(): void {
+  /** Completes the prior frame, then opens the next frame before its upload phase starts. */
+  public beginUploadFrame(): void {
     this.flushRun();
+    if (this.drawFrameOpen) {
+      this.completedDrawFrame = this.currentDrawFrame;
+      this.drawFrameOpen = false;
+    }
     this.currentDrawFrame = this.completedDrawFrame + 1;
+    this.drawFrameOpen = true;
     this.reclaimQuarantined();
+  }
+
+  /** Starts one terrain render frame for direct callers and unit tests. */
+  public beginDrawFrame(): void {
+    this.beginUploadFrame();
   }
 
   /** Completes one terrain render frame, including an idle frame with no draw from this arena. */
   public endDrawFrame(): void {
     this.completedDrawFrame = this.currentDrawFrame;
+    this.drawFrameOpen = false;
     this.reclaimQuarantined();
   }
 
@@ -239,6 +252,7 @@ export class TerrainArena {
     const vertices = new Uint32Array(allocation.vertices.length / 4);
     gl.getBufferSubData(gl.COPY_READ_BUFFER, allocation.vertices.offset, vertices);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.debugVertexBuffer);
+    this.wrapper.recordTerrainGpuWrite?.();
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
     return this.debugVertexBuffer;
   }
@@ -256,6 +270,7 @@ export class TerrainArena {
     this.debugVertexArray ??= this.wrapper.createVertexArray();
     gl.bindVertexArray(this.debugVertexArray);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.debugIndexBuffer);
+    this.wrapper.recordTerrainGpuWrite?.();
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
     gl.bindVertexArray(previousVao);
     return this.debugIndexBuffer;
@@ -297,6 +312,7 @@ export class TerrainArena {
     dedicatedPage: boolean,
     phaseStart: number,
   ): TerrainAllocation {
+    if (this.drawFrameOpen) this.reclaimQuarantined();
     const vertexWords = sources.reduce((total, source) => total + source.length, 0);
     const indexCount = quadCount * 6;
     let page: ArenaPage | undefined;
@@ -400,6 +416,7 @@ export class TerrainArena {
           words,
         );
       } else {
+        this.wrapper.recordTerrainGpuWrite?.();
         gl.bufferData(
           gl.COPY_READ_BUFFER,
           segment.vertices,
@@ -407,6 +424,7 @@ export class TerrainArena {
           segment.sourceWordOffset + allocation.uploadSegmentWordOffset,
           words,
         );
+        this.wrapper.recordTerrainGpuWrite?.();
         gl.copyBufferSubData(gl.COPY_READ_BUFFER, gl.COPY_WRITE_BUFFER, 0, destination, words * 4);
       }
       allocation.uploadSegmentWordOffset += words;
@@ -444,6 +462,7 @@ export class TerrainArena {
   updateSortedIndices(allocation: TerrainAllocation, indices: Uint32Array): void {
     const gl = this.wrapper.gl;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, allocation.page.indices);
+    this.wrapper.recordTerrainGpuWrite?.();
     gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, allocation.indices.offset, indices);
     allocation.indicesSorted = true;
     allocation.sortedIndices = indices;
@@ -470,10 +489,11 @@ export class TerrainArena {
     const page = allocation.page;
     page.allocations--;
     if (
-      allocation.lastUsedDrawFrame > 0 &&
-      this.completedDrawFrame - allocation.lastUsedDrawFrame < QUARANTINE_DRAW_FRAMES
+      restoreIndices ||
+      (allocation.lastUsedDrawFrame > 0 &&
+        this.completedDrawFrame - allocation.lastUsedDrawFrame < QUARANTINE_DRAW_FRAMES)
     ) {
-      // Any write to the range (the sorted-index reset included) waits until it is reclaimed.
+      // Keep sorted-index restoration queued until the next pre-draw upload phase.
       page.quarantined.push({
         quads: allocation.quads,
         lastUsedDrawFrame: allocation.lastUsedDrawFrame,
@@ -481,7 +501,6 @@ export class TerrainArena {
       });
       return;
     }
-    if (restoreIndices) this.writeCanonicalIndices(page, allocation.quads);
     page.quadSpace.free(allocation.quads);
     if (page.allocations !== 0 || page.quarantined.length !== 0) return;
     if (
@@ -506,6 +525,7 @@ export class TerrainArena {
     while (page.indexFilledQuads < endQuad) {
       const start = page.indexFilledQuads;
       const count = Math.min(INDEX_CHUNK_QUADS, page.quadCapacity - start);
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferSubData(gl.COPY_WRITE_BUFFER, start * 24, canonicalIndices(start, count));
       page.indexFilledQuads = start + count;
     }
@@ -517,6 +537,7 @@ export class TerrainArena {
     gl.bindBuffer(gl.COPY_WRITE_BUFFER, page.indices);
     for (let done = 0; done < range.length; done += INDEX_CHUNK_QUADS) {
       const count = Math.min(INDEX_CHUNK_QUADS, range.length - done);
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferSubData(
         gl.COPY_WRITE_BUFFER,
         (range.offset + done) * 24,
@@ -594,6 +615,7 @@ export class TerrainArena {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
     const eager = quadCapacity <= EAGER_INDEX_QUADS;
     if (eager) {
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferData(
         gl.ELEMENT_ARRAY_BUFFER,
         eagerIndexPattern().subarray(0, quadCapacity * 6),
@@ -601,9 +623,11 @@ export class TerrainArena {
       );
     } else {
       // Large pages allocate the index storage now and fill it as sections are allocated.
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadCapacity * 24, gl.STATIC_DRAW);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+    this.wrapper.recordTerrainGpuWrite?.();
     if (initialVertices) gl.bufferData(gl.ARRAY_BUFFER, initialVertices, gl.DYNAMIC_DRAW);
     else gl.bufferData(gl.ARRAY_BUFFER, vertexCapacity, gl.DYNAMIC_DRAW);
     gl.enableVertexAttribArray(0);

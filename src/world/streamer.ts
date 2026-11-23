@@ -40,6 +40,8 @@ export interface ColumnWorkPriority {
 export interface StreamerHost<G, M> {
   /** Keeps camera-driven plan scans out of the render callback in the browser runtime. */
   deferCameraPlanning?: boolean;
+  /** Keeps WebGL uploads in the frame's upload phase instead of asynchronous pump slices. */
+  deferUploadsToFrame?: boolean;
   /** Starts generating a column on a worker. */
   requestGen(cx: number, cz: number): Promise<G>;
   /**
@@ -1397,19 +1399,17 @@ export class Streamer<G, M> {
   }
 
   /**
-   * One slice of between-frame work, about SLICE_MS long: frees, then (only while a region request
-   * is pending) uploads, then storing generated columns and starting mesh jobs, one step each in
-   * turn. Every part does at least one unit while time is left, so the slice overshoots by at most
-   * one unit.
+   * One slice of between-frame work, about SLICE_MS long: frees, optionally uploads when the host
+   * allows frame-less transfers, then stores generated columns and starts mesh jobs. Every part
+   * does at least one unit while time is left, so the slice overshoots by at most one unit.
    */
   private pumpSlice(): void {
     const end = this.host.now() + SLICE_MS;
     if (this.planDirty) this.plan();
     this.freePass(SLICE_MS);
-    // Uploads happen in the frame, inside its upload budget. Only a pending region request
-    // (createWorld, waitForTerrain) may have them done between frames, because it must finish
-    // although the frame loop may be suspended (decisions/M04a-streaming.md).
-    if (this.requests.length > 0 && this.host.now() < end) {
+    // Browser rendering keeps all terrain GPU writes in its pre-draw upload phase, including a
+    // createWorld/waitForTerrain barrier. Other hosts may opt into frame-less uploads.
+    if (!this.host.deferUploadsToFrame && this.requests.length > 0 && this.host.now() < end) {
       this.drainUploads(end - this.host.now());
     }
     if (this.host.now() < end) this.runWork(end);
