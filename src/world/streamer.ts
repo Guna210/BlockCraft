@@ -40,8 +40,8 @@ export interface ColumnWorkPriority {
 export interface StreamerHost<G, M> {
   /** Keeps camera-driven plan scans out of the render callback in the browser runtime. */
   deferCameraPlanning?: boolean;
-  /** Keeps WebGL uploads in the frame's upload phase instead of asynchronous pump slices. */
-  deferUploadsToFrame?: boolean;
+  /** Runs a pinned region's uploads in the host's upload phase even when animation frames stop. */
+  drainRequestUploads?(budgetMs: number): void;
   /** Starts generating a column on a worker. */
   requestGen(cx: number, cz: number): Promise<G>;
   /**
@@ -1399,18 +1399,20 @@ export class Streamer<G, M> {
   }
 
   /**
-   * One slice of between-frame work, about SLICE_MS long: frees, optionally uploads when the host
-   * allows frame-less transfers, then stores generated columns and starts mesh jobs. Every part
+   * One slice of between-frame work, about SLICE_MS long: frees, uploads needed by a region
+   * request, then stores generated columns and starts mesh jobs. Every part
    * does at least one unit while time is left, so the slice overshoots by at most one unit.
    */
   private pumpSlice(): void {
     const end = this.host.now() + SLICE_MS;
     if (this.planDirty) this.plan();
     this.freePass(SLICE_MS);
-    // Browser rendering keeps all terrain GPU writes in its pre-draw upload phase, including a
-    // createWorld/waitForTerrain barrier. Other hosts may opt into frame-less uploads.
-    if (!this.host.deferUploadsToFrame && this.requests.length > 0 && this.host.now() < end) {
-      this.drainUploads(end - this.host.now());
+    if (this.requests.length > 0 && this.deferred.length > 0) {
+      const remaining = end - this.host.now();
+      if (remaining > 0) {
+        if (this.host.drainRequestUploads) this.host.drainRequestUploads(remaining);
+        else this.drainUploads(remaining);
+      }
     }
     if (this.host.now() < end) this.runWork(end);
     this.dispatch(end);

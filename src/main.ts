@@ -436,9 +436,8 @@ async function main() {
         playerController.frame(dt / 1000);
         renderPhaseStats.end('gameUpdateMs', updateStart);
       }
-      if (worldManager.panorama || worldManager.world || worldManager.terrainFramePending)
-        worldManager.prepareFrame(drainLodLink);
     }
+    worldManager.prepareFrame(drainLodLink, !testScene && !!worldManager.world);
     const clearStart = renderPhaseStats.start();
     if (!idleMenu && !drainLodLink) {
       glWrapper.recordRenderPassStart();

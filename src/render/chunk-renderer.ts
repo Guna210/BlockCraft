@@ -1235,12 +1235,17 @@ export class ChunkRenderer {
     this.boundVao = null;
   }
 
-  public beginUploadBatch(): void {
-    const frame = ++this.uploadFrame;
+  /** A load barrier can transfer more sections between draws without aging arena ranges. */
+  public beginUploadSlice(): void {
+    this.tintCache.applyPendingAtlasReset();
     this.uploadTintUnitReady = false;
+  }
+
+  public beginUploadBatch(): void {
+    this.beginUploadSlice();
+    const frame = ++this.uploadFrame;
     this.drawDataTextureIndex = -1;
     this.ensureDrawDataTextures(this.batcher.getTextureHeight());
-    this.tintCache.applyPendingAtlasReset();
     this.drawDataTextureRing.beginFrame();
     this.opaqueArena.beginUploadFrame();
     this.cutoutArena.beginUploadFrame();
@@ -1341,9 +1346,14 @@ export class ChunkRenderer {
     }
 
     const lineEbo = this.glWrapper.createBuffer();
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, lineEbo);
+    // WebGL classifies index buffers on first bind. Use the default VAO for preparation
+    // so the arena VAO keeps its triangle index buffer.
+    gl.bindVertexArray(null);
+    this.boundVao = null;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lineEbo);
     this.glWrapper.recordTerrainGpuWrite?.();
-    gl.bufferData(gl.COPY_WRITE_BUFFER, lineIndices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     bucket.lineEbo = lineEbo;
     return lineEbo;
   }

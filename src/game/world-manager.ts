@@ -678,7 +678,7 @@ export class WorldManager {
   private makeStreamerHost(): StreamerHost<GenResult, MeshResult> {
     return {
       deferCameraPlanning: true,
-      deferUploadsToFrame: true,
+      drainRequestUploads: (budgetMs) => this.drainLoadUploads(budgetMs),
       requestGen: (cx, cz) => this.requestColumn(cx, cz),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
@@ -1981,6 +1981,7 @@ export class WorldManager {
     const cx = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const cz = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
     const radius = fullDetailRadius(radiusChunks, this.configureLod(this.renderDistance));
+    const epoch = this.worldEpoch;
     await this.streamer.requestRegion({
       cx,
       cz,
@@ -1988,12 +1989,14 @@ export class WorldManager {
       meshRadius: radius,
       onMeshProgress,
     });
-    const epoch = this.worldEpoch;
     while (
       epoch === this.worldEpoch &&
       (this.editMeshStarters.length || this.editVersions.size || this.editMeshes.length)
-    )
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    ) {
+      if (this.editMeshStarters.length || this.editMeshes.length)
+        this.drainLoadUploads(UPLOAD_BUDGET_MS);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   /** The streamer's view of `camera`: position, orientation and frustum planes of its current pose. */
@@ -2176,27 +2179,66 @@ export class WorldManager {
     return this.lodRenderer?.needsLinkDrain ?? false;
   }
 
-  get terrainFramePending(): boolean {
-    return this.initialLoadCount > 0;
+  /** Opens the upcoming frame's pre-draw phase even if animation callbacks are suspended. */
+  private drainLoadUploads(budgetMs: number): void {
+    this.glWrapper?.beginDebugFrame();
+    this.chunkRenderer?.beginUploadSlice();
+    this.drainSectionUploads(budgetMs, performance.now());
   }
 
-  /** Runs streaming and every terrain upload before main.ts clears or draws the frame. */
-  public prepareFrame(drainLodLink = false): void {
+  /** A completed section is drawable once the batch flushes, before request waiters resume. */
+  private drainSectionUploads(budgetMs: number, uploadStart: number): void {
+    try {
+      const editUploadStart = renderPhaseStats.start();
+      while (this.editMeshStarters.length && performance.now() - uploadStart < budgetMs / 2)
+        this.editMeshStarters.shift()!();
+      while (this.editMeshes.length && performance.now() - uploadStart < budgetMs) {
+        const edit = this.editMeshes.shift()!;
+        const { result: mesh, serial, primary } = edit;
+        if (this.editVersions.get(mesh.key) !== serial) continue;
+        if (!this.world?.hasColumn(mesh.sx, mesh.sz)) {
+          this.editVersions.delete(mesh.key);
+          continue;
+        }
+        const complete = this.chunkRenderer?.uploadSectionMesh(
+          mesh.sx,
+          mesh.sy,
+          mesh.sz,
+          mesh.meshData,
+          -Infinity,
+          Math.max(0, budgetMs - (performance.now() - uploadStart)),
+        );
+        if (complete === false) {
+          this.editMeshes.unshift(edit);
+          break;
+        }
+        this.editVersions.delete(mesh.key);
+        if (primary && serial === this.editSerial) {
+          this.interactionMeshFrame = this.terrainFrames + 1;
+          this.interactionMeshRevision++;
+        }
+      }
+      renderPhaseStats.end('editUploadMs', editUploadStart);
+      const streamerUploadStart = renderPhaseStats.start();
+      this.streamer.drainUploads(Math.max(0, budgetMs - (performance.now() - uploadStart)));
+      renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
+    } finally {
+      this.chunkRenderer?.endUploadBatch();
+    }
+  }
+
+  /** Services terrain resources on every frame, including frames that only present UI. */
+  public prepareFrame(drainLodLink = false, drawTerrain = true): void {
     this.preparedTerrainFrame = null;
     this.lastUploadMs = 0;
     const saveFrameStart = renderPhaseStats.start();
     this.saves.frame();
     renderPhaseStats.end('saveFrameMs', saveFrameStart);
-    if (drainLodLink) {
-      const uploadStart = performance.now();
-      this.lodRenderer?.upload(uploadStart + UPLOAD_BUDGET_MS, true);
-      this.lastUploadMs = performance.now() - uploadStart;
-      renderPhaseStats.add('uploadOverheadMs', this.lastUploadMs);
-      return;
-    }
-    if (this.world && this.camera) {
+    const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
+    // Until spawn is placed, the camera can still point at the old panorama or dimension.
+    // Keep the load region as the streamer's centre while its lighting snapshot yields.
+    if (this.initialLoadCount === 0 && this.world && this.camera) {
       const streamerUpdateStart = renderPhaseStats.start();
-      const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
       const view = this.streamerView(this.camera);
       lod?.update(
         Math.floor(view.x / 16),
@@ -2207,59 +2249,16 @@ export class WorldManager {
       );
       this.streamer.update(view, performance.now());
       renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
-      const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
-      const uploadStart = performance.now();
-      this.chunkRenderer?.beginUploadBatch();
-      try {
-        const editUploadStart = renderPhaseStats.start();
-        while (
-          this.editMeshStarters.length &&
-          performance.now() - uploadStart < UPLOAD_BUDGET_MS / 2
-        )
-          this.editMeshStarters.shift()!();
-        while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
-          const edit = this.editMeshes.shift()!;
-          const { result: mesh, serial, primary } = edit;
-          if (this.editVersions.get(mesh.key) !== serial) continue;
-          if (!this.world.hasColumn(mesh.sx, mesh.sz)) {
-            this.editVersions.delete(mesh.key);
-            continue;
-          }
-          const complete = this.chunkRenderer?.uploadSectionMesh(
-            mesh.sx,
-            mesh.sy,
-            mesh.sz,
-            mesh.meshData,
-            -Infinity,
-            Math.max(0, UPLOAD_BUDGET_MS - (performance.now() - uploadStart)),
-          );
-          if (complete === false) {
-            this.editMeshes.unshift(edit);
-            break;
-          }
-          this.editVersions.delete(mesh.key);
-          if (primary && serial === this.editSerial) {
-            this.interactionMeshFrame = this.terrainFrames + 1;
-            this.interactionMeshRevision++;
-          }
-        }
-        renderPhaseStats.end('editUploadMs', editUploadStart);
-        this.lastUploadMs = performance.now() - uploadStart;
-        const streamerUploadStart = renderPhaseStats.start();
-        this.streamer.drainUploads(Math.max(0, UPLOAD_BUDGET_MS - this.lastUploadMs));
-        renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
-      } finally {
-        this.chunkRenderer?.endUploadBatch();
-        this.lastUploadMs = performance.now() - uploadStart;
-      }
-      if (lod) {
-        lod.upload(uploadStart + UPLOAD_BUDGET_MS);
-        this.lastUploadMs = performance.now() - uploadStart;
-      }
-      const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
-      renderPhaseStats.add('uploadOverheadMs', Math.max(0, this.lastUploadMs - arenaUploadMs));
     }
-    if (this.initialLoadCount === 0) this.prepareTerrainFrame();
+    const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
+    const uploadStart = performance.now();
+    this.chunkRenderer?.beginUploadBatch();
+    this.drainSectionUploads(UPLOAD_BUDGET_MS, uploadStart);
+    if (this.world) lod?.upload(uploadStart + UPLOAD_BUDGET_MS, drainLodLink);
+    this.lastUploadMs = performance.now() - uploadStart;
+    const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
+    renderPhaseStats.add('uploadOverheadMs', Math.max(0, this.lastUploadMs - arenaUploadMs));
+    if (drawTerrain && !drainLodLink && this.initialLoadCount === 0) this.prepareTerrainFrame();
   }
 
   /** Draws the frame prepared by `prepareFrame`; no terrain uploads are allowed here. */

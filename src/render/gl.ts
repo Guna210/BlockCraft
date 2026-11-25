@@ -75,7 +75,9 @@ export class GLWrapper {
   }
 
   beginDebugFrame(): void {
-    if (!this.debugInspection) return;
+    // A pinned load can start uploading for the next presentation before its rAF arrives.
+    // Preserve every write already observed when that frame resumes.
+    if (!this.debugInspection || this.debugFrameActive) return;
     this.debugFrameActive = true;
     this.debugFirstDrawSeen = false;
     this.frameTerrainGpuWritesAfterFirstDraw = this.pendingTerrainGpuWritesAfterFrame;
