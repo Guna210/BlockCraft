@@ -322,6 +322,7 @@ export class LodRenderer {
       init.texture = this.wrapper.createTexture();
       gl.activeTexture(gl.TEXTURE0 + DATA_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, init.texture);
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32I, LOD_DATA_WIDTH, DATA_ROWS);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -332,6 +333,7 @@ export class LodRenderer {
     if (init.uploadBuffers.length < UPLOAD_BUFFER_COUNT) {
       const buffer = this.wrapper.createBuffer();
       gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, buffer);
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferData(gl.PIXEL_UNPACK_BUFFER, UPLOAD_BUFFER_BYTES, gl.STREAM_DRAW);
       gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
       init.uploadBuffers.push({ buffer, fence: null });
@@ -447,6 +449,7 @@ export class LodRenderer {
       const rows = col === 0 ? Math.max(1, Math.floor(available / LOD_DATA_WIDTH)) : 1;
       const width = rows > 1 ? LOD_DATA_WIDTH : Math.min(available, LOD_DATA_WIDTH - col);
       const slice = rows * width;
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.bufferSubData(
         gl.PIXEL_UNPACK_BUFFER,
         bytes,
@@ -454,6 +457,7 @@ export class LodRenderer {
         tile.sent * LOD_QUAD_WORDS,
         slice * LOD_QUAD_WORDS,
       );
+      this.wrapper.recordTerrainGpuWrite?.();
       gl.texSubImage2D(
         gl.TEXTURE_2D,
         0,

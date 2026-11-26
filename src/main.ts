@@ -408,6 +408,7 @@ async function main() {
 
   function render(time: number) {
     renderPhaseStats.beginFrame();
+    glWrapper.beginDebugFrame();
     renderStats.drawSubmissions = 0;
     // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
     // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
@@ -427,9 +428,21 @@ async function main() {
     // Keep the last frame on screen while the fallback LOD shader waits for
     // outstanding GL commands. The upload work still has its own timed frame.
     const drainLodLink = !testScene && !menu.visible && worldManager.needsLodLinkDrain;
+    if (!testScene) {
+      if (worldManager.panorama) {
+        menu.updateCamera(time);
+      } else if (worldManager.world) {
+        const updateStart = renderPhaseStats.start();
+        playerController.frame(dt / 1000);
+        renderPhaseStats.end('gameUpdateMs', updateStart);
+      }
+    }
+    worldManager.prepareFrame(drainLodLink, !testScene && !!worldManager.world);
     const clearStart = renderPhaseStats.start();
-    if (!idleMenu && !drainLodLink)
+    if (!idleMenu && !drainLodLink) {
+      glWrapper.recordRenderPassStart();
       glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+    }
     renderPhaseStats.end('frameClearMs', clearStart);
     let rendered = false;
     // Menu frames (the panorama) are not game frames: they stay out of the frame statistics.
@@ -443,13 +456,9 @@ async function main() {
         firstFrameResolve = null;
       }
     } else if (worldManager.panorama) {
-      menu.updateCamera(time);
       rendered = worldManager.render();
       measured = false;
     } else if (worldManager.world) {
-      const updateStart = renderPhaseStats.start();
-      playerController.frame(dt / 1000);
-      renderPhaseStats.end('gameUpdateMs', updateStart);
       rendered = worldManager.render(drainLodLink);
     }
     const menuStart = renderPhaseStats.start();
@@ -486,9 +495,16 @@ async function main() {
       frameDrain.endFrame();
       glCheckMs += performance.now() - t;
     }
+    renderStats.terrainGpuWritesAfterFirstDraw = glWrapper.endDebugFrame();
     renderPhaseStats.add('glErrorDrainMs', glCheckMs);
     if (sampled) {
-      frameStats.record(frameCpuMs, uploadMs, glCheckMs, rendered ? renderStats.drawCalls : 0);
+      frameStats.record(
+        frameCpuMs,
+        uploadMs,
+        glCheckMs,
+        rendered ? renderStats.drawCalls : 0,
+        renderStats.terrainGpuWritesAfterFirstDraw,
+      );
       if (rendered) frameCount++;
       renderPhaseStats.endFrame(frameCpuMs);
     }

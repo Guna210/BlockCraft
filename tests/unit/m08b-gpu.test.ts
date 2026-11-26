@@ -94,7 +94,7 @@ it('sorts only translucent near geometry after meaningful camera movement and fr
   expect(drawVaos).toHaveLength(12); // One opaque and two translucent submissions per frame.
   renderer.clearAllMeshes();
   expect(buffers.size).toBe(0);
-  // The renderer retains its two plains tint fallback textures across world resets.
-  expect(textures.size).toBe(2);
+  // The renderer retains its three draw-data ring textures and shared tint atlas across resets.
+  expect(textures.size).toBe(4);
   expect(calls.get('deleteFramebuffer')).toHaveBeenCalledTimes(framebufferCreates);
 });

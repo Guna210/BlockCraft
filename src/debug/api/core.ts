@@ -317,6 +317,7 @@ export interface BlockCraftDebugAPI {
     uploadMsP95: number;
     drawCalls: number;
     drawSubmissions: number;
+    terrainGpuWritesAfterFirstDraw: number;
     triangles: number;
     chunksLoaded: number;
     chunksMeshed: number;
@@ -356,6 +357,7 @@ export const renderStats = {
   uploadMsP95: 0,
   drawCalls: 0,
   drawSubmissions: 0,
+  terrainGpuWritesAfterFirstDraw: 0,
   triangles: 0,
   chunksLoaded: 0,
   chunksMeshed: 0,

@@ -368,6 +368,21 @@ export class WorldManager {
   public lastUploadMs = 0;
 
   private readonly viewProj = mat4.create();
+  private preparedTerrainFrame: {
+    ticks: number;
+    cavern: typeof HOLLOWDEEP_ENVIRONMENT | null;
+    weatherState: ReturnType<typeof getWeather>;
+    rainFactor: number;
+    lightningFlash: number;
+    skyBrightness: number;
+    fogStart: number;
+    fogEnd: number;
+    dayFactor: number;
+    twilightFactor: number;
+    nightFactor: number;
+    sunDir: ReturnType<typeof sunDirection>;
+    postFxActive: boolean;
+  } | null = null;
   private readonly frustumPlanes = new Float64Array(24);
   private readonly reusableStreamerView: StreamerView = {
     x: 0,
@@ -663,6 +678,7 @@ export class WorldManager {
   private makeStreamerHost(): StreamerHost<GenResult, MeshResult> {
     return {
       deferCameraPlanning: true,
+      drainRequestUploads: (budgetMs) => this.drainLoadUploads(budgetMs),
       requestGen: (cx, cz) => this.requestColumn(cx, cz),
       applyGen: (_cx, _cz, res) => {
         const world = this.world;
@@ -1366,6 +1382,7 @@ export class WorldManager {
     this.blockSelection = new BlockSelectionRenderer(this.glWrapper);
     this.entityRenderer?.dispose();
     this.entityRenderer = new EntityRenderer(this.glWrapper);
+    this.entityRenderer.warmUp();
     this.dropRenderer?.dispose();
     this.dropRenderer = new DropRenderer(this.glWrapper, this.atlas);
     this.movingBlockRenderer?.dispose();
@@ -1964,6 +1981,7 @@ export class WorldManager {
     const cx = this.camera ? Math.floor(this.camera.position[0] / 16) : 0;
     const cz = this.camera ? Math.floor(this.camera.position[2] / 16) : 0;
     const radius = fullDetailRadius(radiusChunks, this.configureLod(this.renderDistance));
+    const epoch = this.worldEpoch;
     await this.streamer.requestRegion({
       cx,
       cz,
@@ -1971,12 +1989,14 @@ export class WorldManager {
       meshRadius: radius,
       onMeshProgress,
     });
-    const epoch = this.worldEpoch;
     while (
       epoch === this.worldEpoch &&
       (this.editMeshStarters.length || this.editVersions.size || this.editMeshes.length)
-    )
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    ) {
+      if (this.editMeshStarters.length || this.editMeshes.length)
+        this.drainLoadUploads(UPLOAD_BUDGET_MS);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   /** The streamer's view of `camera`: position, orientation and frustum planes of its current pose. */
@@ -2159,30 +2179,66 @@ export class WorldManager {
     return this.lodRenderer?.needsLinkDrain ?? false;
   }
 
-  /**
-   * Streaming runs first, then deferred mesh uploads while this frame's upload time is under the
-   * budget, then the draw; `lastUploadMs` is the upload time.
-   */
-  public render(drainLodLink = false): boolean {
+  /** Opens the upcoming frame's pre-draw phase even if animation callbacks are suspended. */
+  private drainLoadUploads(budgetMs: number): void {
+    this.glWrapper?.beginDebugFrame();
+    this.chunkRenderer?.beginUploadSlice();
+    this.drainSectionUploads(budgetMs, performance.now());
+  }
+
+  /** A completed section is drawable once the batch flushes, before request waiters resume. */
+  private drainSectionUploads(budgetMs: number, uploadStart: number): void {
+    try {
+      const editUploadStart = renderPhaseStats.start();
+      while (this.editMeshStarters.length && performance.now() - uploadStart < budgetMs / 2)
+        this.editMeshStarters.shift()!();
+      while (this.editMeshes.length && performance.now() - uploadStart < budgetMs) {
+        const edit = this.editMeshes.shift()!;
+        const { result: mesh, serial, primary } = edit;
+        if (this.editVersions.get(mesh.key) !== serial) continue;
+        if (!this.world?.hasColumn(mesh.sx, mesh.sz)) {
+          this.editVersions.delete(mesh.key);
+          continue;
+        }
+        const complete = this.chunkRenderer?.uploadSectionMesh(
+          mesh.sx,
+          mesh.sy,
+          mesh.sz,
+          mesh.meshData,
+          -Infinity,
+          Math.max(0, budgetMs - (performance.now() - uploadStart)),
+        );
+        if (complete === false) {
+          this.editMeshes.unshift(edit);
+          break;
+        }
+        this.editVersions.delete(mesh.key);
+        if (primary && serial === this.editSerial) {
+          this.interactionMeshFrame = this.terrainFrames + 1;
+          this.interactionMeshRevision++;
+        }
+      }
+      renderPhaseStats.end('editUploadMs', editUploadStart);
+      const streamerUploadStart = renderPhaseStats.start();
+      this.streamer.drainUploads(Math.max(0, budgetMs - (performance.now() - uploadStart)));
+      renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
+    } finally {
+      this.chunkRenderer?.endUploadBatch();
+    }
+  }
+
+  /** Services terrain resources on every frame, including frames that only present UI. */
+  public prepareFrame(drainLodLink = false, drawTerrain = true): void {
+    this.preparedTerrainFrame = null;
     this.lastUploadMs = 0;
     const saveFrameStart = renderPhaseStats.start();
     this.saves.frame();
     renderPhaseStats.end('saveFrameMs', saveFrameStart);
-    if (drainLodLink) {
-      const uploadStart = performance.now();
-      this.lodRenderer?.upload(uploadStart + UPLOAD_BUDGET_MS, true);
-      this.lastUploadMs = performance.now() - uploadStart;
-      renderPhaseStats.add('uploadOverheadMs', this.lastUploadMs);
-      return false;
-    }
-    if (this.initialLoadCount > 0) {
-      // A dimension change shows only the warp while the other world loads.
-      this.drawWarp();
-      return false;
-    }
-    if (this.world && this.camera) {
+    const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
+    // Until spawn is placed, the camera can still point at the old panorama or dimension.
+    // Keep the load region as the streamer's centre while its lighting snapshot yields.
+    if (this.initialLoadCount === 0 && this.world && this.camera) {
       const streamerUpdateStart = renderPhaseStats.start();
-      const lod = this.streamer.lodEnabled ? this.lodRenderer : undefined;
       const view = this.streamerView(this.camera);
       lod?.update(
         Math.floor(view.x / 16),
@@ -2193,57 +2249,25 @@ export class WorldManager {
       );
       this.streamer.update(view, performance.now());
       renderPhaseStats.end('streamerUpdateMs', streamerUpdateStart);
-      const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
-      const uploadStart = performance.now();
-      this.chunkRenderer?.beginUploadBatch();
-      try {
-        const editUploadStart = renderPhaseStats.start();
-        while (
-          this.editMeshStarters.length &&
-          performance.now() - uploadStart < UPLOAD_BUDGET_MS / 2
-        )
-          this.editMeshStarters.shift()!();
-        while (this.editMeshes.length && performance.now() - uploadStart < UPLOAD_BUDGET_MS) {
-          const edit = this.editMeshes.shift()!;
-          const { result: mesh, serial, primary } = edit;
-          if (this.editVersions.get(mesh.key) !== serial) continue;
-          if (!this.world.hasColumn(mesh.sx, mesh.sz)) {
-            this.editVersions.delete(mesh.key);
-            continue;
-          }
-          const complete = this.chunkRenderer?.uploadSectionMesh(
-            mesh.sx,
-            mesh.sy,
-            mesh.sz,
-            mesh.meshData,
-            -Infinity,
-            Math.max(0, UPLOAD_BUDGET_MS - (performance.now() - uploadStart)),
-          );
-          if (complete === false) {
-            this.editMeshes.unshift(edit);
-            break;
-          }
-          this.editVersions.delete(mesh.key);
-          if (primary && serial === this.editSerial) {
-            this.interactionMeshFrame = this.terrainFrames + 1;
-            this.interactionMeshRevision++;
-          }
-        }
-        renderPhaseStats.end('editUploadMs', editUploadStart);
-        this.lastUploadMs = performance.now() - uploadStart;
-        const streamerUploadStart = renderPhaseStats.start();
-        this.streamer.drainUploads(Math.max(0, UPLOAD_BUDGET_MS - this.lastUploadMs));
-        renderPhaseStats.end('streamerDrainMs', streamerUploadStart);
-      } finally {
-        this.chunkRenderer?.endUploadBatch();
-        this.lastUploadMs = performance.now() - uploadStart;
-      }
-      if (lod) {
-        lod.upload(uploadStart + UPLOAD_BUDGET_MS);
-        this.lastUploadMs = performance.now() - uploadStart;
-      }
-      const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
-      renderPhaseStats.add('uploadOverheadMs', Math.max(0, this.lastUploadMs - arenaUploadMs));
+    }
+    const arenaUploadStart = renderPhaseStats.currentValue('arenaUploadMs');
+    const uploadStart = performance.now();
+    this.chunkRenderer?.beginUploadBatch();
+    this.drainSectionUploads(UPLOAD_BUDGET_MS, uploadStart);
+    if (this.world) lod?.upload(uploadStart + UPLOAD_BUDGET_MS, drainLodLink);
+    this.lastUploadMs = performance.now() - uploadStart;
+    const arenaUploadMs = renderPhaseStats.currentValue('arenaUploadMs') - arenaUploadStart;
+    renderPhaseStats.add('uploadOverheadMs', Math.max(0, this.lastUploadMs - arenaUploadMs));
+    if (drawTerrain && !drainLodLink && this.initialLoadCount === 0) this.prepareTerrainFrame();
+  }
+
+  /** Draws the frame prepared by `prepareFrame`; no terrain uploads are allowed here. */
+  public render(drainLodLink = false): boolean {
+    if (drainLodLink) return false;
+    if (this.initialLoadCount > 0) {
+      // A dimension change shows only the warp while the other world loads.
+      this.drawWarp();
+      return false;
     }
     const terrainRenderStart = renderPhaseStats.start();
     const rendered = this.drawTerrain();
@@ -2254,8 +2278,14 @@ export class WorldManager {
   private drawTerrainFrame(): void {
     if (!this.glWrapper) return;
     const gl = this.glWrapper.gl;
+    this.glWrapper.beginDebugFrame?.();
+    this.chunkRenderer?.beginUploadBatch?.();
+    this.chunkRenderer?.endUploadBatch?.();
+    this.prepareTerrainFrame();
+    this.glWrapper.recordRenderPassStart?.();
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.drawTerrain();
+    renderStats.terrainGpuWritesAfterFirstDraw = this.glWrapper.endDebugFrame?.() ?? 0;
     if (this.drainGlErrors) this.drainGlErrors();
   }
 
@@ -2272,29 +2302,114 @@ export class WorldManager {
     };
   }
 
-  private drawTerrain(): boolean {
-    if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas) {
-      const setupStart = renderPhaseStats.start();
-      const ticks = getWorldTime();
-      sound.updateListener(this.camera);
-      // The Hollowdeep is an enclosed cavern: no sky, clouds or weather, and its own fog.
-      const cavern = this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT : null;
-      if (this.world && !cavern) {
-        weatherManager.tick(this.world, ticks, this.camera.position);
-      }
-      const weatherState = getWeather();
-      const rainFactor = cavern
-        ? 0
-        : weatherState === 'clear'
-          ? 0.0
-          : weatherState === 'rain'
-            ? 1.0
-            : 1.25;
-      const lightningFlash = cavern ? 0 : weatherManager.flashIntensity;
-      renderPhaseStats.end('terrainSetupMs', setupStart);
+  /** Prepares CPU draw state and terrain resources before the main loop's first clear or draw. */
+  private prepareTerrainFrame(): void {
+    if (!this.chunkRenderer || !this.camera || !this.atlasTexture || !this.atlas) {
+      this.preparedTerrainFrame = null;
+      return;
+    }
+    const setupStart = renderPhaseStats.start();
+    const ticks = getWorldTime();
+    sound.updateListener(this.camera);
+    // The Hollowdeep is an enclosed cavern: no sky, clouds or weather, and its own fog.
+    const cavern = this.dimension === 'hollowdeep' ? HOLLOWDEEP_ENVIRONMENT : null;
+    if (this.world && !cavern) {
+      weatherManager.tick(this.world, ticks, this.camera.position);
+    }
+    const weatherState = getWeather();
+    const rainFactor = cavern
+      ? 0
+      : weatherState === 'clear'
+        ? 0.0
+        : weatherState === 'rain'
+          ? 1.0
+          : 1.25;
+    const lightningFlash = cavern ? 0 : weatherManager.flashIntensity;
+    const maxFogDist = (this.renderDistance - 1) * 16;
+    const skyBrightness = cavern ? cavern.skyLight : skyLightMultiplier(ticks);
+    const underwaterStart = renderPhaseStats.start();
+    if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
+    renderPhaseStats.end('underwaterUpdateMs', underwaterStart);
+    const underwater = this.underwaterView;
+    // Night vision (Glowcap Stew) lifts the light curve's floor while it lasts.
+    if ((this.playerController?.player?.survival.nightVisionTicks ?? 0) > 0)
+      underwater.brightnessFloor = Math.max(underwater.brightnessFloor, NIGHT_VISION_FLOOR);
+    // Exponential fog density as a linear range: the fog is nearly opaque at 2.3 / density.
+    const airFogEnd = cavern ? Math.min(maxFogDist, 2.3 / cavern.fogDensity) : maxFogDist;
+    const airFogStart = cavern ? airFogEnd * 0.15 : maxFogDist * 0.7;
+    const fogStart = underwater.submerged ? underwater.fogStart : airFogStart;
+    const fogEnd = underwater.submerged ? underwater.fogEnd : airFogEnd;
+    const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
+    const sunDir = sunDirection(ticks);
+    const postFxActive =
+      (settings.fxaa || settings.bloom || settings.godRays) && this.glWrapper !== null;
+    this.chunkRenderer.setSkyBrightness?.(skyBrightness);
+    this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
+    this.chunkRenderer.setAtmosphere?.({
+      lod: this.streamer.lodEnabled ? this.lodRenderer : undefined,
+      cameraPos: this.camera.position,
+      cameraYaw: this.camera.yaw,
+      cameraPitch: this.camera.pitch,
+      cameraFov: this.camera.fov,
+      cameraAspect: this.camera.aspect,
+      renderDistance: this.renderDistance,
+      fogStart,
+      fogEnd,
+      underwater,
+      sunDir,
+      dayFactor,
+      twilightFactor,
+      nightFactor,
+      rainFactor,
+      lightningFlash,
+      dimensionFog: cavern?.fogColor ?? null,
+    });
+    mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
+    this.chunkRenderer.prepareFrame?.(
+      this.viewProj,
+      this.atlasTexture,
+      this.atlas,
+      this.world,
+      postFxActive && settings.bloom,
+    );
+    renderPhaseStats.end('terrainSetupMs', setupStart);
+    this.preparedTerrainFrame = {
+      ticks,
+      cavern,
+      weatherState,
+      rainFactor,
+      lightningFlash,
+      skyBrightness,
+      fogStart,
+      fogEnd,
+      dayFactor,
+      twilightFactor,
+      nightFactor,
+      sunDir,
+      postFxActive,
+    };
+  }
 
-      const postFxActive =
-        (settings.fxaa || settings.bloom || settings.godRays) && this.glWrapper !== null;
+  private drawTerrain(): boolean {
+    const frame = this.preparedTerrainFrame;
+    if (this.chunkRenderer && this.camera && this.atlasTexture && this.atlas && frame) {
+      this.preparedTerrainFrame = null;
+      const {
+        ticks,
+        cavern,
+        weatherState,
+        rainFactor,
+        lightningFlash,
+        skyBrightness,
+        fogStart,
+        fogEnd,
+        dayFactor,
+        twilightFactor,
+        nightFactor,
+        sunDir,
+        postFxActive,
+      } = frame;
+      const underwater = this.underwaterView;
       const sceneFbo = postFxActive
         ? (this.postProcessor ??= new PostProcessor(this.glWrapper!)).begin(settings)
         : null;
@@ -2320,112 +2435,77 @@ export class WorldManager {
             )
           : { drawCalls: 0, triangles: 0 };
       renderPhaseStats.end('skyRenderMs', skyStart);
-
-      const maxFogDist = (this.renderDistance - 1) * 16;
-      const skyBrightness = cavern ? cavern.skyLight : skyLightMultiplier(ticks);
-      const underwaterStart = renderPhaseStats.start();
-      if (this.world) this.underwaterView.update(this.world, this.camera.position, skyBrightness);
-      renderPhaseStats.end('underwaterUpdateMs', underwaterStart);
-      const underwater = this.underwaterView;
-      // Night vision (Glowcap Stew) lifts the light curve's floor while it lasts.
-      if ((this.playerController?.player?.survival.nightVisionTicks ?? 0) > 0)
-        underwater.brightnessFloor = Math.max(underwater.brightnessFloor, NIGHT_VISION_FLOOR);
-      // Exponential fog density as a linear range: the fog is nearly opaque at 2.3 / density.
-      const airFogEnd = cavern ? Math.min(maxFogDist, 2.3 / cavern.fogDensity) : maxFogDist;
-      const airFogStart = cavern ? airFogEnd * 0.15 : maxFogDist * 0.7;
-      const fogStart = underwater.submerged ? underwater.fogStart : airFogStart;
-      const fogEnd = underwater.submerged ? underwater.fogEnd : airFogEnd;
-      const { dayFactor, twilightFactor, nightFactor } = skyAtmosphereFactors(ticks);
-      const sunDir = sunDirection(ticks);
-      this.chunkRenderer.setSkyBrightness?.(skyBrightness);
-      this.chunkRenderer.setWorldPaused?.(this.playerController?.loop.paused ?? false);
-      this.chunkRenderer.setAtmosphere?.({
-        lod: this.streamer.lodEnabled ? this.lodRenderer : undefined,
-        cameraPos: this.camera.position,
-        cameraYaw: this.camera.yaw,
-        cameraPitch: this.camera.pitch,
-        cameraFov: this.camera.fov,
-        cameraAspect: this.camera.aspect,
-        renderDistance: this.renderDistance,
-        fogStart,
-        fogEnd,
-        underwater,
-        sunDir,
-        dayFactor,
-        twilightFactor,
-        nightFactor,
-        rainFactor,
-        lightningFlash,
-        dimensionFog: cavern?.fogColor ?? null,
-      });
-
-      mat4.multiply(this.viewProj, this.camera.projectionMatrix, this.camera.viewMatrix);
       const chunkRenderStart = renderPhaseStats.start();
-      this.chunkRenderer.render(
-        this.viewProj,
-        this.atlasTexture,
-        this.atlas,
-        this.world,
-        () => {
-          const entityStart = renderPhaseStats.start();
-          const playerDraws =
-            this.playerModelRenderer?.render(
-              this.playerController,
-              this.viewProj,
-              this.atlasTexture!,
-              this.atlas!,
-              underwater,
+      const drawPlayer = () => {
+        const entityStart = renderPhaseStats.start();
+        const playerDraws =
+          this.playerModelRenderer?.render(
+            this.playerController,
+            this.viewProj,
+            this.atlasTexture!,
+            this.atlas!,
+            underwater,
+            skyBrightness,
+            sunDir,
+            dayFactor,
+            twilightFactor,
+            nightFactor,
+            fogStart,
+            fogEnd,
+            cavern?.fogColor ?? null,
+          ) ?? 0;
+        const entityDraws =
+          this.entityRenderer?.render(
+            this.playerController?.ecs ?? null,
+            this.world,
+            {
+              viewProj: this.viewProj,
+              atlasTexture: this.atlasTexture,
+              eye: this.camera!.position,
+              alpha: this.playerController?.renderAlpha ?? 1,
               skyBrightness,
+              underwater,
               sunDir,
-              dayFactor,
-              twilightFactor,
-              nightFactor,
+              day: dayFactor,
+              twilight: twilightFactor,
+              night: nightFactor,
               fogStart,
               fogEnd,
-              cavern?.fogColor ?? null,
-            ) ?? 0;
-          const entityDraws =
-            this.entityRenderer?.render(
-              this.playerController?.ecs ?? null,
-              this.world,
-              {
-                viewProj: this.viewProj,
-                atlasTexture: this.atlasTexture,
-                eye: this.camera!.position,
-                alpha: this.playerController?.renderAlpha ?? 1,
-                skyBrightness,
-                underwater,
-                sunDir,
-                day: dayFactor,
-                twilight: twilightFactor,
-                night: nightFactor,
-                fogStart,
-                fogEnd,
-                dimensionFog: cavern?.fogColor ?? null,
-              },
-              spawnerMiniatures(this.world),
-            ) ?? 0;
-          const dropDraws =
-            this.dropRenderer?.render(
-              this.playerController,
-              this.viewProj,
-              this.atlasTexture!,
-              skyBrightness,
-            ) ?? 0;
-          const movingDraws =
-            this.movingBlockRenderer?.render(
-              this.world,
-              this.viewProj,
-              this.atlasTexture!,
-              skyBrightness,
-              this.playerController?.renderAlpha ?? 1,
-            ) ?? 0;
-          renderPhaseStats.end('entityRenderMs', entityStart);
-          return playerDraws + entityDraws + dropDraws + movingDraws;
-        },
-        sceneFbo,
-        settings.bloom,
-      );
+              dimensionFog: cavern?.fogColor ?? null,
+            },
+            spawnerMiniatures(this.world),
+          ) ?? 0;
+        const dropDraws =
+          this.dropRenderer?.render(
+            this.playerController,
+            this.viewProj,
+            this.atlasTexture!,
+            skyBrightness,
+          ) ?? 0;
+        const movingDraws =
+          this.movingBlockRenderer?.render(
+            this.world,
+            this.viewProj,
+            this.atlasTexture!,
+            skyBrightness,
+            this.playerController?.renderAlpha ?? 1,
+          ) ?? 0;
+        renderPhaseStats.end('entityRenderMs', entityStart);
+        return playerDraws + entityDraws + dropDraws + movingDraws;
+      };
+      if (this.chunkRenderer.drawPrepared) {
+        this.chunkRenderer.drawPrepared(drawPlayer, sceneFbo);
+      } else {
+        this.chunkRenderer.render(
+          this.viewProj,
+          this.atlasTexture,
+          this.atlas,
+          this.world,
+          drawPlayer,
+          sceneFbo,
+          settings.bloom,
+        );
+      }
       renderPhaseStats.end('chunkRendererMs', chunkRenderStart);
       const portalStart = renderPhaseStats.start();
       this.drawPortals();
