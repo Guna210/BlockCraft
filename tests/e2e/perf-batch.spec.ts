@@ -4,7 +4,7 @@ import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../harness/fixture';
 import { assertNoMissingTexture, assertNotBlank, diffFraction } from '../harness/pixels';
-import { waitForStreamingIdle } from './helpers/flight';
+import { fly, waitForStreamingIdle } from './helpers/flight';
 
 const MAX_MULTI_DRAW_BATCH = 4096; // src/render/terrain-batcher.ts
 const LIGHTING_VARIANT_COUNT = 4;
@@ -173,6 +173,7 @@ test.describe('PERF-batch: Terrain draw batching', () => {
       [rd16, 6],
     ]);
     for (const sample of [rd8, rd16]) {
+      expect(sample.render.terrainGpuWritesAfterFirstDraw).toBe(0);
       const pages = sample.batch.opaquePages + sample.batch.cutoutPages;
       expect(pages, 'opaque + cutout arena pages').toBeLessThanOrEqual(pageCaps.get(sample)!);
       const keyBound = LIGHTING_VARIANT_COUNT * pages;
@@ -478,4 +479,26 @@ test.describe('PERF-batch: Terrain draw batching', () => {
     );
     expect(diffPerDraw, 'ocean batched vs per-section').toBeLessThanOrEqual(0.0005);
   });
+});
+
+test('terrain GPU writes precede drawing throughout the M22a flight', async ({ page }) => {
+  test.setTimeout(600_000);
+  await page.evaluate(async (seed) => {
+    await window.__blockcraft!.createWorld!({
+      name: 'm22a-flight',
+      seed,
+      mode: 'survival',
+      type: 'default',
+    });
+  }, SEED);
+  await waitForStreamingIdle(page, 180_000);
+  const start = await page.evaluate(() => {
+    const p = (window as unknown as Host).WorldManager.getInstance().camera.position;
+    window.__blockcraft!.resetFrameStats!();
+    return { x: p[0]!, y: p[1]!, z: p[2]! };
+  });
+  await fly(page, { from: start, to: { ...start, x: start.x + 1000 }, speed: 30 });
+  const frame = await page.evaluate(() => window.__blockcraft!.getFrameStats!());
+  expect(frame.frames).toBeGreaterThan(10);
+  expect(frame.terrainGpuWritesAfterFirstDrawMax).toBe(0);
 });

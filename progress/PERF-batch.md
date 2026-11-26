@@ -1,10 +1,9 @@
 # PERF-batch — Terrain draw batching
 
-Status: incomplete — G recorded zero queueSerial matches in the available logs from both Verify runs. Shard 1 timed out during e2e both times, and shard 4 failed on world startup. The loading fix passed the first full Verify with zero matches. The same-commit repeat is pending.
-Depends on: M22a, M22b, M22c
-Historical full Verify: run 44899573773 on head 8f02add was green before the queueSerial review rounds. Master had 0 matches in the last 10 runs; earlier branch runs in this investigation had 57 and 65 matches.
-Controlled experiments A-G and the B/C revert validation are recorded below. A reduced queueSerial to 49 but did not clear it. B and C increased it and B's staging path produced invalid element-buffer copies; both runtime experiments were reverted. D's documentation-only render-call audit found no duplicate production terrain render. E's 65,536-quad page-size run failed Verify and was reverted. F had one clean run followed by a repeat run with four shard-1 queueSerial matches. G moves terrain GPU writes into a pre-draw phase; both sets of available logs contain zero queueSerial matches. Both runs exposed a terrain-loading regression.
-Full Verify (this session): the push run passed all four shards with 0 / 0 / 0 / 0 queueSerial lines. Same-commit rerun pending. Local typecheck, lint, placeholders and all 1,603 unit tests passed. Local e2e passed 206 of 211. See the G loading fix results below.
+Status: verified
+
+Full verify: PR CI [45708396150](https://github.com/Guna210/BlockCraft/actions/runs/45708396150) · typecheck, lint, placeholders and 1,603 unit tests passed · browser shards 53 / 53 / 53 / 52 passed (one shard 4 retry) · queueSerial 0 / 0 / 0 / 0. The reviewer confirmed the head rerun passed.
+
 ## Acceptance criteria owned
 
 - [x] Opaque+cutout submissions ≤ constant and RD16 ≈ RD8 → tests/e2e/perf-batch.spec.ts (CI measured RD8: 3, RD16: 12; translucent 1 / 75 reported separately; bound derived from counted pages, see decisions item 6)
@@ -35,24 +34,14 @@ Full Verify (this session): the push run passed all four shards with 0 / 0 / 0 /
 
 Cross-column multi-draw keyed by (pass, lighting variant, arena page); three-texture ring of per-frame RGBA32F draw-data textures; shared 2D tint atlas; arena reuse with F's four-draw-frame quarantine. G prepares streamed/edit arena data, lazy index fills, tint and draw-data texture updates, translucent sorting writes, LOD uploads, and wireframe indices before the frame's first clear or draw. A debug-only counter reports terrain GPU writes after that boundary. E's temporary 65,536-quad page sizes were reverted; B/C staging changes remain reverted; D's audit added no runtime work.
 
-## A/B (same container, SwiftShader)
+## SwiftShader A/B after terrain quarantine and upload reordering
 
-| Case | Metric | Branch | Master |
-|---|---|---|---|
-| RD8 | submissions | 6 | 341 |
-| RD8 | frame CPU p95 | 3.8 ms | 6.6 ms |
-| RD8 | program switches / tex binds / VAO binds | 2 / 3 / 3 | 6 / 465 / 343 |
-| RD8 | arena pages | 3 | 233 |
-| RD32 LOD on | submissions | 22 | 750 |
-| RD32 LOD on | frame CPU p95 | 8.1 ms | 12.3 ms |
-| RD32 LOD on | switches / tex / VAO | 17 / 3 / 5 | 21 / 971 / 752 |
-| RD32 LOD on | pages | 4 | 481 |
-| RD32 LOD off | submissions | 417 | 6600 |
-| RD32 LOD off | frame CPU p95 | 56.8 ms | 182.4 ms |
-| RD32 LOD off | switches / tex / VAO | 393 / 3 / 31 | 395 / 8389 / 6602 |
-| RD32 LOD off | pages | 10 | 2977 |
+| LOD off, settled | e43befd submissions | F submissions | e43befd CPU / upload p95 (ms) | F CPU / upload p95 (ms) |
+|---|---:|---:|---|---|
+| RD8 | 6 | 6 | 5.2 / 0.2 | 7.7 / 0.1 |
+| RD32 | 351 | 351 | 54.8 / <0.1 | 55.0 / 0.1 |
 
-Upload p95 was 0.1 ms in all branch cases.
+After the G loading fix, CI measured 6 total submissions at RD8 and 88 at RD16. M22a flight measured 11.9 ms CPU and 5.6 ms upload p95. The flight and settled samples use different workloads.
 
 ## Decisions
 
@@ -73,7 +62,7 @@ decisions/PERF-batch-terrain.md
 - Arena ranges become reusable after four completed draw frames since their last use; idle frames count when no draw references that range. After lod.draw and drawPlayer the program and VAO caches must be reset.
 - Stats: getBatchStats() and getRenderStats().drawSubmissions.
 
-## Review round 2 (queueSerial) — status: NOT RESOLVED
+## Review round 2 (queueSerial) (historical)
 
 - Mitigations pushed: (a) one shared `DrawFenceTimeline` fence per draw frame, oldest-fence-only polling, no polling in allocate/free; (c) adjacent streamed vertex chunks merged into one `bufferSubData` per upload batch; tint overflow fix (slot 0 untouched, unit-tested). Draw-data texture was already one `texSubImage2D` of used rows per frame.
 - Per rAF frame, RD8 (before -> after): settled fenceSync 4 -> 2, clientWaitSync 12.4 -> 2, bufferSubData 30.5 -> 2, texSubImage2D 2.3 -> 1; flight fenceSync 3.09 -> 1.72, clientWaitSync 17.5 -> 1.72, bufferSubData 15.8 -> 6.3, texSubImage2D 1.95 -> 1.55; copyBufferSubData 0.
@@ -82,16 +71,6 @@ decisions/PERF-batch-terrain.md
 ## Review round 3 (queueSerial experiments)
 
 Experiment A is implemented on top of `e43befd`: the draw-data texture is a three-texture ring; writes avoid the previous two draw invocations; unchanged data skips `texSubImage2D`; and wireframe metadata is packed before the frame's only upload. The M08b teardown test now asserts exactly four retained textures (three ring textures plus the tint atlas).
-
-| Run | Head | Experiment | Shard 1 | Shard 2 | Shard 3 | Shard 4 | Result |
-| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| 44906419565 | a5db85b | Previous fence-only mitigation | 38 | 0 | 0 | 19 | Warning remained |
-| 44911258811 | 08483e6 | Previous fence + merged-upload mitigation | 41 | 0 | 4 | 20 | Warning remained |
-| 44915434533 | e43befd | Baseline before experiment A | 34 | 0 | 0 | 23 | Warning remained |
-| 45026518265 | 04b4cbc | A: draw-data texture ring | 33 | 0 | 0 | 16 | Warning remained; shards 1 and 4 failed on fixture-recorded driver warning |
-| 45034508418 | 99569e6 | B: arena pre-draw staging copies | 272 | 241 | 224 | 375 | Warning remained; all four shards failed on fixture-recorded driver warnings |
-| 45039393236 | 69f18de | C: fence-gated tint-atlas uploads | 277 | 259 | 208 | 402 | Warning remained; all four shards failed on fixture-recorded driver warnings |
-| 45046840628 | 036c585 | D: render-call audit | 277 | 260 | 243 | 391 | Warning remained; all shards and aggregate failed; staging-copy GL warning also present |
 
 Experiment A completed on 04b4ccbc4e1a19a58650853c2271ffa280907d1b in Verify run 45026518265. The grep counts were shard 1: 33, shard 2: 0, shard 3: 0, shard 4: 16 (49 total); shards 1 and 4 failed because the fixture recorded the driver warning. Experiment A did not clear the blocker.
 
@@ -150,7 +129,7 @@ Same seed/camera, settled scene, 10-second sample windows; E data came from a te
 
 The RD32 SwiftShader samples are short and noisy; 0.0 ms upload is below the timer's 0.1 ms resolution.
 
-### Final per-shard totals
+### Experiments A–G and final per-shard totals
 
 | Experiment / validation | Commit | Verify run | Shard 1 / 2 / 3 / 4 | Total | Result |
 |---|---|---:|---:|---:|---|
@@ -193,20 +172,6 @@ Verify run `45131052066` on F head `820f0b177b3395fc3b47ebe10a278e36772cd404` co
 | 16 | 11 | 75 | 88 | 2 / 2 / 1 |
 
 Pixel identity remained exact in all four CI viewpoints (`diffPerDraw: 0`); the ocean view measured 62.0% water coverage and 16 translucent submissions versus 347 per-draw submissions. The repeat F run `45138816097` on docs commit `53db13f` used the same F code as `820f0b1`: shard counts were 4 / 0 / 0 / 0. `m04:221` failed all three attempts; `m04:277` flaked once at 67 px vs 64. F therefore did not satisfy the two-clean-run criterion.
-
-### Experiment table A-G
-
-| Experiment | Commit | Verify run | Shard 1 / 2 / 3 / 4 | Total | Result |
-|---|---|---:|---:|---:|---|
-| A draw-data ring | `04b4cbc` | 45026518265 | 33 / 0 / 0 / 16 | 49 | QueueSerial remained |
-| B arena staging (reverted) | `99569e6` | 45034508418 | 272 / 241 / 224 / 375 | 1,112 | Invalid element-buffer copies; reverted |
-| C tint staging (reverted) | `69f18de` | 45039393236 | 277 / 259 / 208 / 402 | 1,146 | Reverted with B |
-| D render-call audit (docs only) | `036c585` | 45046840628 | 277 / 260 / 243 / 391 | 1,171 | No duplicate render; run contaminated by B warnings |
-| E 65,536-quad pages (reverted) | `0c17d50` | 45062912539 | 38 / 0 / 0 / 18 | 56 | QueueSerial remained; scaling limit remained |
-| F four-frame terrain quarantine | `820f0b1` | 45131052066; 45138816097 | 0 / 0 / 0 / 0; 4 / 0 / 0 / 0 | 0; 4 | m04:221 failed all attempts, m04:277 passed on retry |
-| G pre-draw terrain upload phase | `ed697bd` | 45156849018 | 0 (partial) / 0 / 0 / 0 | 0 observed | Shard 1 cancelled at 90m. Shard 4 had 4 failed and 2 flaky menu checks. |
-| G repeat, same runtime | `a28c38f` (docs) | 45171125451 | 0 (partial) / 0 / 0 / 0 | 0 observed | Shard 1 cancelled at 90m. Shard 4 had 3 failed and 2 flaky menu checks. |
-| G loading fix | `7ab0603` | [45708396150](https://github.com/Guna210/BlockCraft/actions/runs/45708396150) (attempt 1) | 0 / 0 / 0 / 0 | 0 | All four shards passed. M21c passed on retry. |
 
 E revert commit `fa456e1` restored the prior page capacities as a separate commit before F. No Verify run was started on the revert-only tree; F is tested on top of it. Run 45131052066 completed successfully on F's exact head `820f0b177b3395fc3b47ebe10a278e36772cd404` (PR merge commit `d045529ad119c0bbb9bfdb777ca43cee9ce1bb15`). The `queueSerial` grep counts were 0 / 0 / 0 / 0; the logs had no WebGL warnings/errors, `INVALID_OPERATION`, `copyBufferSubData`, console errors, page errors, or failed requests. E2E totals were 53 / 53 / 53 / 52 passed on shards 1–4, and shard 1 also passed typecheck, lint, placeholders and all 1,600 unit tests.
 

@@ -1713,7 +1713,6 @@ export class ChunkRenderer {
     this.preparedViewProjMatrix = viewProjMatrix;
     this.preparedAtlasTexture = atlasTexture;
     this.preparedAtlas = atlas;
-    this.preparedFrame = true;
 
     this.lastOpaqueCutoutSubmissions = 0;
     this.lastTranslucentSubmissions = 0;
@@ -1960,6 +1959,7 @@ export class ChunkRenderer {
     if (this.bloomActive) {
       this.getEmissiveTexture(atlas);
     }
+    this.preparedFrame = true;
   }
 
   /** Executes the already prepared terrain and entity draws after the frame's clear and sky. */

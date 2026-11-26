@@ -1,3 +1,4 @@
+import { mat4 } from 'gl-matrix';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ChunkRenderer } from '../../src/render/chunk-renderer';
 import { DrawDataTextureRing } from '../../src/render/draw-data-texture-ring';
@@ -80,4 +81,25 @@ it('upload slices between animation frames preserve arena quarantine and the dra
   renderer.endUploadBatch();
   expect(arenaFrame).toHaveBeenCalledTimes(3);
   expect(ringFrame).toHaveBeenCalledTimes(1);
+});
+
+it('can prepare the next frame after frame preparation throws', () => {
+  const gl = new Proxy(
+    {},
+    {
+      get: (_, key) => (String(key).toUpperCase() === key ? 0 : () => ({})),
+    },
+  ) as WebGL2RenderingContext;
+  const renderer = new ChunkRenderer(new GLWrapper(gl, false));
+  const matrix = mat4.create();
+  const texture = {} as WebGLTexture;
+  const atlas = {} as Parameters<ChunkRenderer['prepareFrame']>[2];
+  const brokenMatrix = new Proxy(matrix, {
+    get() {
+      throw new Error('matrix unavailable');
+    },
+  });
+  expect(() => renderer.prepareFrame(brokenMatrix, texture, atlas)).toThrow('matrix unavailable');
+  expect(() => renderer.prepareFrame(matrix, texture, atlas)).not.toThrow();
+  expect(() => renderer.prepareFrame(matrix, texture, atlas)).toThrow('prior frame was drawn');
 });
