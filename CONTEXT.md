@@ -51,7 +51,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M22c, plus owner-add
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota). Claude Code cloud builders are fine for fix work (PERF-batch fixes); their permission classifier may block test edits -> owner answers the QUESTION in that session.
 
-Remaining SPEC tasks: M22d (ready, not started), then M23 last (+ M23-fix-N). README after M23.
+Remaining SPEC tasks: M22d (prompt given 2026-11-26, branch claude/m22d; not confirmed launched), then M23 last (+ M23-fix-N). README after M23.
 In flight: none (2026-11-26).
 Next for owner: M22d prompt when asked. Open perf question: owner to send F3 fps without recording, Task Manager GPU 3D %, chrome://gpu GL_RENDERER line (ANGLE backend), to decide on any PERF-2.
 
@@ -107,7 +107,6 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (oldest first; keep the last 20)
-- 2026-11-14: #86 M21b-fix2 opened by Codex; head CI clean (no retries). Answered pending QUESTION: no M21c test edit. Gave reviewer prompt.
 - 2026-11-14: #85 M21c merged (ff53966). Owner chose M21b-fix2 (vitals/death/respawn) first; gave Codex prompt.
 - 2026-11-13: #85 M21c round 2 PASS. Told owner to merge; next: owner picks order of M21b-fix2 (vitals/death/respawn, recommended first) and M21b-fix (containers); M22a/M22c/M22d can start after merge.
 - 2026-11-18: Owner shared Antigravity swarm report (run before M22b). Verified top claims myself; summary now under Perf follow-ups. Gave verdict, no prompt yet.
@@ -127,3 +126,4 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-26: PERF-batch review PASS, head re-run green. Offered final small commit (prepareFrame flag, counter assertion, handoff) before merge.
 - 2026-11-26: Owner merged PERF-batch #91 (master 3de3483). CONTEXT refreshed for compaction: next = owner real-HW trace, then M22d, M23.
 - 2026-11-26: Owner real-HW trace after PERF-batch: ~20 -> ~34 fps while recording, main thread now mostly idle, GPU process still saturated. Asked for fps/GPU%/chrome://gpu before any PERF-2.
+- 2026-11-26: Gave M22d prompt (Codex): new ACCESS tab (subtitles, reducedMotion, highContrast, default off), subtitles emitted in AudioService.play before context check, try/catch boundary in main loop + window error listeners, warn not console.error, debug injectFault, G12 listener clamp fix included as owner extra.
