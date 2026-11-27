@@ -1176,8 +1176,12 @@ export class UiManager {
     };
     this.closeRect = this.layout.closeButton;
     this.controls.close = this.closeRect;
-    this.screenSlots = this.layout.slots.map((rect) => ({ ...rect }));
-    this.layout.slots.forEach((rect, slot) => this.clickTargets.push({ slot, rect }));
+    const inventoryOffset = this.screen === 'crafting' ? CRAFTING_OUTPUT_SLOT + 1 : 0;
+    this.layout.slots.forEach((rect, index) => {
+      const slot = inventoryOffset + index;
+      this.screenSlots[slot] = rect;
+      this.clickTargets.push({ slot, rect });
+    });
 
     const craftX = CRAFT_PANEL_X;
     const craftY = Math.floor((PANEL_H - CRAFT_PANEL_H) / 2);
@@ -1194,15 +1198,6 @@ export class UiManager {
     this.outputRect = this.toCanvasRect(CRAFT_OUTPUT, craftX, craftY, scale, originX, base.originY);
     this.screenSlots[outputId] = this.outputRect;
     this.clickTargets.push({ slot: outputId, rect: this.outputRect });
-
-    if (this.screen === 'crafting') {
-      const firstInventorySlot = 10;
-      this.layout.slots.forEach((rect, slot) => {
-        const mapped = firstInventorySlot + slot;
-        this.screenSlots[mapped] = rect;
-        this.clickTargets.push({ slot: mapped, rect });
-      });
-    }
 
     let bookRects: { search: Rect; filter: Rect; rows: Rect[]; prev: Rect; next: Rect } | null =
       null;
@@ -1688,6 +1683,8 @@ export class UiManager {
       event.button === 0 ? 'left' : event.button === 2 ? 'right' : null;
     const player = this.player;
     if (!button || !player) return;
+    // Only consecutive left clicks on the same slot can collect matching stacks.
+    if (button !== 'left' || this.hoverSlot !== this.lastPick.slot) this.lastPick.slot = -1;
     if (this.hoverClose && button === 'left') return this.close();
     if (this.hoverSearch && button === 'left') {
       this.searchFocused = true;
@@ -1743,7 +1740,7 @@ export class UiManager {
       return;
     }
     this.clickSlot(slot, button);
-    this.lastPick = { slot: player.inventory.cursor ? slot : -1, time: now };
+    this.lastPick = { slot: button === 'left' && player.inventory.cursor ? slot : -1, time: now };
   };
 
   private readonly onMouseUp = (): void => {
