@@ -47,12 +47,12 @@ Last updated: 2026-11-26
 
 ## Task status
 
-Done (merged; notes in `progress/`): every SPEC task M00a–M22c, plus owner-added PERF-batch #91 (master 3de3483, 2026-11-26), M13h (Cinderwraith), M21b-fix2 #86 (protocol v4), M21b-fix #87 (protocol v5), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Latest: M22b #89 (LOD blocky textured, setting `lod` default OFF by owner), M22c #90 (fxaa/bloom/godRays default off; Video tab 9 rows + 3x2 toggle grid), PERF-batch #91. Master SPEC §2.3 has the owner's SwiftShader CI budget tier (48822e0). Last block id on master: 834.
+Done (merged; notes in `progress/`): every SPEC task M00a–M22d (M22d #92, master a971dd6), plus owner-added PERF-batch #91 (master 3de3483, 2026-11-26), M13h (Cinderwraith), M21b-fix2 #86 (protocol v4), M21b-fix #87 (protocol v5), INFRA-ci, INFRA-stream (#70), INFRA-win, BLOCKS-shapes and earlier fix tasks. Latest: M22b #89 (LOD blocky textured, setting `lod` default OFF by owner), M22c #90 (fxaa/bloom/godRays default off; Video tab 9 rows + 3x2 toggle grid), PERF-batch #91. Master SPEC §2.3 has the owner's SwiftShader CI budget tier (48822e0). Last block id on master: 834.
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota). Claude Code cloud builders are fine for fix work (PERF-batch fixes); their permission classifier may block test edits -> owner answers the QUESTION in that session.
 
-Remaining SPEC tasks: M22d (Codex, PR #92, CI green on 3fb86a4, review PASS round 1; owner to merge), then M23 last (+ M23-fix-N). README after M23.
-In flight: M22d PR #92 (Codex).
+Remaining SPEC tasks: M23 (prompt given 2026-11-27, branch claude/m23; not confirmed launched) last (+ M23-fix-N). README after M23.
+In flight: M23 prompt given.
 Next for owner: M22d prompt when asked. Open perf question: owner to send F3 fps without recording, Task Manager GPU 3D %, chrome://gpu GL_RENDERER line (ANGLE backend), to decide on any PERF-2.
 
 PERF-batch summary (decisions/PERF-batch-terrain.md on master): cross-column multi-draw keyed (pass, lighting variant, arena page); draw-data RGBA32F texture ring of 3 (u_drawBase + gl_DrawID); shared tint atlas (512 slots, MAX_TEXTURE_SIZE guard, overflow -> plains slot 0); large pages (1,048,576/524,288/262,144 quads) with lazy chunked index fill; NO terrain fences: 4-completed-draw-frame quarantine; all terrain GPU writes in one upload phase before the frame's first clear/draw (runs every rAF, also during loading); EntityRenderer.warmUp at init (10.8 ms). SwiftShader A/B: RD8 submissions 341 -> 6; RD32 lod-off ~6,600 -> ~351, frame p95 182 -> ~55 ms. Lesson: on ANGLE Vulkan (SwiftShader CI) per-frame fenceSync and writes into GPU-in-use buffers after the first draw trigger "Running out of reserved outsideRenderPass queueSerial" (fixture-fatal); master was 0/10. Owner-approved test edits: m08b-gpu textures toBe(2)->toBe(4); perf-batch.spec own bound = 4 x (opaque+cutout pages) + ceil(draws/4096) with page caps RD8 <= 4, RD16 <= 6.
@@ -107,7 +107,6 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (oldest first; keep the last 20)
-- 2026-11-18: Owner agreed to keep M22b to LOD + loading screen (batching A1/A2 separate later). Gave M22b Codex prompt.
 - 2026-11-18: Gave M22c Codex prompt (parallel with M22b -> smaller model for both, or M22c on Sonnet slot).
 - 2026-11-19: Codex opened #89 (M22b) and #90 (M22c), both CI green. Gave two Sonnet reviewer prompts; merge order #89 then #90 with conflict follow-up.
 - 2026-11-19: Owner rejected #89 LOD visuals (smooth low-poly). Proposed blocky stair-stepped LOD + detail rings (1/2/4 block) + real textures + matching water; owner leaning yes, fix prompt not yet given. Owner sent RD32 Chrome trace: draw-submission bound (see Perf). Recommend batching task right after #89/#90.
@@ -127,3 +126,4 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-27: M22d #92: window 'error'/'unhandledrejection' listeners called preventDefault, which hid pageerror so m00-canary 'page error should fail' passed. Decided: remove preventDefault (keep recovery + save); canary unchanged; loop try/catch still keeps injected faults clean.
 - 2026-11-27: #92 fix pushed (preventDefault removed, canary untouched). Verify run 45943421366 green on 3fb86a4: shards 54/54/54/53+1 flaky (m21c-world, known); shard 4 58 min (PERF-batch run was 50). Gave Sonnet reviewer prompt.
 - 2026-11-27: #92 Sonnet review round 1 PASS, no blocking. Checked handoff: cites run #439 on 86d6deb (last code commit, 54x4 verified by me), head 3fb86a4 docs-only, #440 green. injectFault gated by if(debug). Recommended merge; M23 next.
+- 2026-11-27: Owner merged M22d #92 (master a971dd6). Gave M23 prompt: debug allowed = teleport/look/input/setTimeOfDay/locate/read-only getters only (no giveItem/setBlock/spawn/spawning toggle); circuit needs 7 copper ingots + 4 glass (mine copper ore + sand); 3x proof = local --repeat-each=3 --retries=0 + CI m23 not flaky; target <=15 min on CI (shard limit 90, shard 4 ~58).
