@@ -543,11 +543,9 @@ async function main() {
   }
 
   window.addEventListener('error', (event) => {
-    event.preventDefault();
     recoverFromError(event.error ?? new Error(event.message || 'Unknown browser error'));
   });
   window.addEventListener('unhandledrejection', (event) => {
-    event.preventDefault();
     recoverFromError(event.reason);
   });
 

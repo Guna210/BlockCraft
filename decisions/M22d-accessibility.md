@@ -12,7 +12,9 @@ The full animation-frame body is guarded, and `window.error` plus `window.unhand
 
 For multiplayer, the handler invokes the session's `remoteExit`, skips the local save, and tells the player that the server owns the world. The recovery screen still returns through normal teardown.
 
-The boundary uses one `console.warn` line beginning `[BlockCraft] recovered from error:` because the exception was handled and recovery is active; the warning keeps the fault visible in diagnostics without reporting it as an uncaught console error. Message whitespace is collapsed so the log remains one line.
+The boundary's own report is one `console.warn` line beginning `[BlockCraft] recovered from error:`; whitespace is collapsed to keep it on one line without adding an application-level `console.error` report.
+
+The window-level listeners leave browser errors unprevented so Playwright can still observe exceptions that escape the game loop, while faults caught by `render()` recover without a page error.
 
 ## High contrast
 
