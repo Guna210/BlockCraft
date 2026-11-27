@@ -51,7 +51,7 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M22c, plus owner-add
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota). Claude Code cloud builders are fine for fix work (PERF-batch fixes); their permission classifier may block test edits -> owner answers the QUESTION in that session.
 
-Remaining SPEC tasks: M22d (Codex, PR #92 open, CI red shard 1: m00 canary), then M23 last (+ M23-fix-N). README after M23.
+Remaining SPEC tasks: M22d (Codex, PR #92, CI green on 3fb86a4, in review), then M23 last (+ M23-fix-N). README after M23.
 In flight: M22d PR #92 (Codex).
 Next for owner: M22d prompt when asked. Open perf question: owner to send F3 fps without recording, Task Manager GPU 3D %, chrome://gpu GL_RENDERER line (ANGLE backend), to decide on any PERF-2.
 
@@ -107,7 +107,6 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (oldest first; keep the last 20)
-- 2026-11-13: #85 M21c round 2 PASS. Told owner to merge; next: owner picks order of M21b-fix2 (vitals/death/respawn, recommended first) and M21b-fix (containers); M22a/M22c/M22d can start after merge.
 - 2026-11-18: Owner shared Antigravity swarm report (run before M22b). Verified top claims myself; summary now under Perf follow-ups. Gave verdict, no prompt yet.
 - 2026-11-18: Owner agreed to keep M22b to LOD + loading screen (batching A1/A2 separate later). Gave M22b Codex prompt.
 - 2026-11-18: Gave M22c Codex prompt (parallel with M22b -> smaller model for both, or M22c on Sonnet slot).
@@ -127,3 +126,4 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-26: Owner real-HW trace after PERF-batch: ~20 -> ~34 fps while recording, main thread now mostly idle, GPU process still saturated. Asked for fps/GPU%/chrome://gpu before any PERF-2.
 - 2026-11-26: Gave M22d prompt (Codex): new ACCESS tab (subtitles, reducedMotion, highContrast, default off), subtitles emitted in AudioService.play before context check, try/catch boundary in main loop + window error listeners, warn not console.error, debug injectFault, G12 listener clamp fix included as owner extra.
 - 2026-11-27: M22d #92: window 'error'/'unhandledrejection' listeners called preventDefault, which hid pageerror so m00-canary 'page error should fail' passed. Decided: remove preventDefault (keep recovery + save); canary unchanged; loop try/catch still keeps injected faults clean.
+- 2026-11-27: #92 fix pushed (preventDefault removed, canary untouched). Verify run 45943421366 green on 3fb86a4: shards 54/54/54/53+1 flaky (m21c-world, known); shard 4 58 min (PERF-batch run was 50). Gave Sonnet reviewer prompt.
