@@ -1498,6 +1498,11 @@ export class WorldManager {
     await this.saves.save('manual');
   }
 
+  /** Runs the same complete exit-save path as Save & Quit without tearing down the world yet. */
+  public async saveForRecovery(): Promise<void> {
+    await this.saves.exit();
+  }
+
   private async startWorld(
     opts?: WorldStartOptions,
     restore?: LoadedWorld,

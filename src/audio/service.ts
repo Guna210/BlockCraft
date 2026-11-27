@@ -9,6 +9,7 @@ import { BlockRegistry } from '../world/blocks/registry';
 import { VoxelRaycaster, createRayHit } from '../world/raycast';
 import { weatherManager, getWeather } from '../world/weather';
 import { soundLibrary } from './recipes';
+import { recordSubtitle } from './subtitles';
 import { musicSequenceRecipe } from './recipes/music';
 import type { SoundRecipe, SoundRecipeContext } from './engine';
 import { LCG } from './math';
@@ -98,6 +99,16 @@ const COALESCE_WINDOW_MS = 100;
 const COALESCE_DISTANCE_SQUARED = 25;
 const PENDING_PLAYBACK_WINDOW_MS = 2500;
 const MAX_PENDING_EXPLOSIONS = 64;
+
+/** Applies a smoothed audio parameter value, clamping only gain values to their legal range. */
+export function setAudioParamTarget(
+  param: Pick<AudioParam, 'setTargetAtTime'>,
+  value: number,
+  now: number,
+  clampGain = false,
+): void {
+  param.setTargetAtTime(clampGain ? Math.max(0, value) : value, now, 0.04);
+}
 
 const BLOCK_MATERIALS: Record<
   string,
@@ -281,7 +292,9 @@ class AudioService {
         options.x !== undefined ||
         options.y !== undefined ||
         options.z !== undefined;
-      return this.enqueueExplosion(
+      this.recordSound(id);
+      recordSubtitle(id, options, this.subtitleListener());
+      return this.queueExplosion(
         options.x ?? (positional ? (options.pos?.[0] ?? 0) : this.listenerX),
         options.y ?? (positional ? (options.pos?.[1] ?? 0) : this.listenerY),
         options.z ?? (positional ? (options.pos?.[2] ?? 0) : this.listenerZ),
@@ -289,6 +302,7 @@ class AudioService {
       );
     }
     this.recordSound(id);
+    recordSubtitle(id, options, this.subtitleListener());
     const context = this.context;
     if (!context || context.state !== 'running') return false;
     const recipe = id === 'music.sequence' ? musicSequenceRecipe : soundLibrary[id];
@@ -365,6 +379,11 @@ class AudioService {
   /** Defers all explosion mixing work until after the simulation step that requested it. */
   enqueueExplosion(x: number, y: number, z: number, priority = 2): boolean {
     this.recordSound('entity.explosion');
+    recordSubtitle('entity.explosion', { x, y, z }, this.subtitleListener());
+    return this.queueExplosion(x, y, z, priority);
+  }
+
+  private queueExplosion(x: number, y: number, z: number, priority: number): boolean {
     if (!this.context || this.context.state !== 'running') return false;
     if (this.pendingExplosionCount >= MAX_PENDING_EXPLOSIONS) return false;
     const index = this.pendingExplosionCount++;
@@ -377,6 +396,15 @@ class AudioService {
       window.setTimeout(this.onExplosionPlayback, 0);
     }
     return true;
+  }
+
+  private subtitleListener(): { x: number; y: number; z: number; yaw: number } {
+    return {
+      x: this.listenerX,
+      y: this.listenerY,
+      z: this.listenerZ,
+      yaw: this.listenerYaw,
+    };
   }
 
   private flushPendingExplosions(): void {
@@ -558,13 +586,14 @@ class AudioService {
 
   /** Listener and live volume gains are refreshed once by the rendered camera frame. */
   updateListener(camera: Camera): void {
-    const context = this.context;
-    if (!context) return;
+    if (!camera.position) return;
     this.listenerX = camera.position[0];
     this.listenerY = camera.position[1];
     this.listenerZ = camera.position[2];
     this.listenerYaw = camera.yaw;
     this.listenerPitch = camera.pitch;
+    const context = this.context;
+    if (!context) return;
     if (this.voices.length === 0) return;
     if (this.positionalVoiceCount > 0) this.syncListener(context);
     this.syncVolumes(context);
@@ -1249,25 +1278,25 @@ class AudioService {
   private syncVolumes(context: AudioContext): void {
     const now = context.currentTime;
     if (this.appliedMasterVolume !== settings.masterVolume) {
-      this.setParam(this.masterGain!.gain, settings.masterVolume, now);
+      this.setParam(this.masterGain!.gain, settings.masterVolume, now, true);
       this.appliedMasterVolume = settings.masterVolume;
     }
     if (this.appliedMusicVolume !== settings.musicVolume) {
-      this.setParam(this.musicGain!.gain, settings.musicVolume, now);
+      this.setParam(this.musicGain!.gain, settings.musicVolume, now, true);
       this.appliedMusicVolume = settings.musicVolume;
     }
     if (this.appliedEffectsVolume !== settings.effectsVolume) {
-      this.setParam(this.effectsGain!.gain, settings.effectsVolume, now);
+      this.setParam(this.effectsGain!.gain, settings.effectsVolume, now, true);
       this.appliedEffectsVolume = settings.effectsVolume;
     }
     if (this.appliedAmbientVolume !== settings.ambientVolume) {
-      this.setParam(this.ambientGain!.gain, settings.ambientVolume, now);
+      this.setParam(this.ambientGain!.gain, settings.ambientVolume, now, true);
       this.appliedAmbientVolume = settings.ambientVolume;
     }
   }
 
-  private setParam(param: AudioParam, value: number, now: number): void {
-    param.setTargetAtTime(Math.max(0, value), now, 0.04);
+  private setParam(param: AudioParam, value: number, now: number, clampGain = false): void {
+    setAudioParamTarget(param, value, now, clampGain);
   }
 }
 

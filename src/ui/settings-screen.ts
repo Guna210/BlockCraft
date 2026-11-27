@@ -17,7 +17,7 @@ import {
 import { drawButton, drawInset, drawPanel, fillRect, UI, uiScaleFor } from './ui-kit';
 import { drawText, textWidth } from './pixel-font';
 
-type Tab = 'video' | 'audio' | 'controls-1' | 'controls-2' | 'controls-3';
+type Tab = 'video' | 'audio' | 'access' | 'controls-1' | 'controls-2' | 'controls-3';
 type RangeKey =
   | 'renderDistance'
   | 'fov'
@@ -28,7 +28,17 @@ type RangeKey =
   | 'effectsVolume'
   | 'ambientVolume';
 type BoolKey =
-  'lod' | 'invertY' | 'smoothLighting' | 'particles' | 'fxaa' | 'bloom' | 'godRays' | 'viewBobbing';
+  | 'lod'
+  | 'invertY'
+  | 'smoothLighting'
+  | 'particles'
+  | 'fxaa'
+  | 'bloom'
+  | 'godRays'
+  | 'viewBobbing'
+  | 'subtitles'
+  | 'reducedMotion'
+  | 'highContrast';
 type EnumKey = 'leaves' | 'clouds' | 'guiScale';
 
 interface RangeRow {
@@ -164,9 +174,16 @@ const audioRows: SettingRow[] = [
   },
 ];
 
+const accessRows: BoolRow[] = [
+  { kind: 'bool', key: 'subtitles', label: 'Directional subtitles' },
+  { kind: 'bool', key: 'reducedMotion', label: 'Reduced motion' },
+  { kind: 'bool', key: 'highContrast', label: 'High contrast' },
+];
+
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'video', label: 'VIDEO' },
   { id: 'audio', label: 'AUDIO' },
+  { id: 'access', label: 'ACCESS' },
   { id: 'controls-1', label: 'KEYS 1' },
   { id: 'controls-2', label: 'KEYS 2' },
   { id: 'controls-3', label: 'KEYS 3' },
@@ -228,7 +245,8 @@ export class SettingsScreen {
       '#settings-screen input[type=range]::-webkit-slider-runnable-track{height:4px;background:transparent}' +
       '#settings-screen input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;margin-top:-2px;background:#e2b43a;border:2px solid #15121f}' +
       '#settings-screen input[type=range]::-moz-range-track{height:4px;background:transparent}' +
-      '#settings-screen input[type=range]::-moz-range-thumb{width:6px;height:6px;background:#e2b43a;border:2px solid #15121f;border-radius:0}';
+      '#settings-screen input[type=range]::-moz-range-thumb{width:6px;height:6px;background:#e2b43a;border:2px solid #15121f;border-radius:0}' +
+      '#settings-screen input:focus-visible{outline:3px solid #ffff00;outline-offset:2px}';
     document.head.appendChild(rangeStyle);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKeyDown);
@@ -294,6 +312,12 @@ export class SettingsScreen {
       outline: 'none',
     });
     button.addEventListener('click', onClick);
+    button.addEventListener('focus', () => {
+      if (settings.highContrast) button.style.outline = '3px solid #ffff00';
+    });
+    button.addEventListener('blur', () => {
+      button.style.outline = 'none';
+    });
     this.controls.appendChild(button);
     return button;
   }
@@ -429,6 +453,7 @@ export class SettingsScreen {
       this.canvas.style.height = `${240 * this.scale}px`;
     }
     const ctx = this.ctx;
+    this.root.style.background = settings.highContrast ? '#000000' : 'rgba(9,11,20,.82)';
     ctx.clearRect(0, 0, 320, 240);
     drawPanel(ctx, { x: 1, y: 1, w: 318, h: 238 }, 1);
     const title = this.waitingAction ? 'PRESS KEY OR MOUSE' : 'SETTINGS';
@@ -447,9 +472,9 @@ export class SettingsScreen {
     }
 
     this.controls.replaceChildren();
-    let tabX = 8;
+    let tabX = 5;
     for (const tab of tabs) {
-      const w = 58;
+      const w = 48;
       drawButton(ctx, { x: tabX, y: 23, w, h: 17 }, tab.label, 1, this.tab === tab.id);
       this.addHitTarget(tab.label, tabX, 23, w, 17, () => {
         this.tab = tab.id;
@@ -508,6 +533,17 @@ export class SettingsScreen {
           });
         });
       }
+    } else if (this.tab === 'access') {
+      const startY = 58;
+      const rowHeight = 36;
+      const controlHeight = 24;
+      this.addSettingRows(accessRows, startY, rowHeight, controlHeight);
+      accessRows.forEach((row, index) => {
+        const y = startY + index * rowHeight;
+        drawText(ctx, row.label.toUpperCase(), 9, y + 8, 1, UI.text, UI.outline);
+        const value = settings[row.key] ? 'ON' : 'OFF';
+        drawText(ctx, value, 267, y + 8, 1, UI.accent, UI.outline);
+      });
     } else {
       const group = this.tab === 'controls-1' ? 0 : this.tab === 'controls-2' ? 1 : 2;
       const actions = actionGroups[group]!;

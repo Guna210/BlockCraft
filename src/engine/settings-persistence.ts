@@ -56,6 +56,10 @@ export function normalizeSettings(value: unknown): Settings {
     musicVolume: finiteIn(raw.musicVolume, defaults.musicVolume, 0, 1),
     effectsVolume: finiteIn(raw.effectsVolume, defaults.effectsVolume, 0, 1),
     ambientVolume: finiteIn(raw.ambientVolume, defaults.ambientVolume, 0, 1),
+    subtitles: typeof raw.subtitles === 'boolean' ? raw.subtitles : defaults.subtitles,
+    reducedMotion:
+      typeof raw.reducedMotion === 'boolean' ? raw.reducedMotion : defaults.reducedMotion,
+    highContrast: typeof raw.highContrast === 'boolean' ? raw.highContrast : defaults.highContrast,
     keyBindings: bindings,
   };
   return settings;

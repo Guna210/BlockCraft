@@ -1,6 +1,7 @@
 import { finishBlockDrops } from '../gameplay/block-drops';
 import { BlockInteraction } from '../gameplay/block-interaction';
 import { settings } from './settings';
+import { throwPendingTickFault } from './fault-injection';
 import { TickLoop } from './loop';
 import type { InputEngine, Action } from './input';
 import type { Camera } from '../render/camera';
@@ -71,6 +72,7 @@ export class PlayerController {
   public onTick: (() => void) | null = null;
   public readonly loop = new TickLoop(() => {
     if (this.suspended) return;
+    throwPendingTickFault();
     const tickStart = renderPhaseStats.start();
     this.world?.tick();
     this.previousEye = this.player?.eye ?? 1.62;
@@ -270,7 +272,7 @@ export class PlayerController {
           player.pos[1] + player.eye - center[1],
           player.pos[2] - center[2],
         );
-        if (distance < 32) {
+        if (distance < 32 && !settings.reducedMotion) {
           this.shake = Math.max(this.shake, (1 - distance / 32) * power * 0.012);
           this.shakeUntil = performance.now() + 350;
         }
@@ -618,9 +620,10 @@ export class PlayerController {
     this.camera.position[1] += this.previousEye + (p.eye - this.previousEye) * alpha;
     this.camera.yaw = p.yaw;
     this.camera.pitch = p.pitch;
-    const fov =
-      ((settings.fov * Math.PI) / 180) *
-      (1 + 0.1 * (p.previousSprintFov + (p.sprintFov - p.previousSprintFov) * alpha));
+    const sprintFov = settings.reducedMotion
+      ? 0
+      : p.previousSprintFov + (p.sprintFov - p.previousSprintFov) * alpha;
+    const fov = ((settings.fov * Math.PI) / 180) * (1 + 0.1 * sprintFov);
     if (this.camera.fov !== fov) {
       this.camera.fov = fov;
       this.camera.updateProjection();
@@ -647,14 +650,20 @@ export class PlayerController {
         this.camera.yaw += Math.PI;
         this.camera.pitch = -p.pitch;
       }
-    } else if (settings.viewBobbing && !p.inFluid && !p.climbing && !p.flying) {
+    } else if (
+      settings.viewBobbing &&
+      !settings.reducedMotion &&
+      !p.inFluid &&
+      !p.climbing &&
+      !p.flying
+    ) {
       const distance = p.previousWalkDistance + (p.walkDistance - p.previousWalkDistance) * alpha;
       const amount = p.previousWalkAmount + (p.walkAmount - p.previousWalkAmount) * alpha;
       this.camera.position[1] += Math.sin(distance * Math.PI) * 0.02 * amount;
       this.camera.roll = Math.sin(distance * Math.PI * 0.5) * 0.008 * amount;
     }
     const shakeLeft = this.shakeUntil - performance.now();
-    if (shakeLeft > 0) {
+    if (shakeLeft > 0 && !settings.reducedMotion) {
       const now = performance.now();
       const amount = (this.shake * shakeLeft) / 350;
       this.camera.roll += Math.sin(now * 0.09) * amount;

@@ -31,6 +31,9 @@ export interface BlockCraftDebugAPI {
   }>;
   netFinishBreak?: (x: number, y: number, z: number) => void;
   getSettings?: () => import('../../engine/settings').Settings;
+  getSubtitles?: () => import('../../audio/subtitles').SubtitleLine[];
+  injectFault?: (kind: 'tick') => void;
+  playSound?: (id: string, pos?: [number, number, number]) => boolean;
   setSetting?: (
     key: keyof import('../../engine/settings').Settings,
     value: unknown,

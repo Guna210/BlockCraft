@@ -1,5 +1,5 @@
 import type { InputEngine } from '../engine/input';
-import { settings } from '../engine/settings';
+import { settings, UI_THEME_CHANGE_EVENT } from '../engine/settings';
 import { isActionCode, mouseCode } from '../engine/keybinds';
 import { completeCommand, type CompletionCatalog } from '../game/commands/parser';
 import type { CommandResult } from '../game/commands';
@@ -67,6 +67,8 @@ export class Chat {
     this.form.append(this.hint, this.inputField);
     this.root.append(this.lines, this.form);
     document.body.append(this.root);
+    this.updateTheme();
+    window.addEventListener(UI_THEME_CHANGE_EVENT, this.updateTheme);
     const style = document.createElement('style');
     style.textContent =
       '@keyframes blockcraft-chat-fade{0%,75%{opacity:1}100%{opacity:0}}#chat-lines>div{animation:blockcraft-chat-fade 10s linear forwards}#chat[data-open=true] #chat-lines>div{animation:none;opacity:1}';
@@ -130,6 +132,7 @@ export class Chat {
     this.draft = '';
     this.completion = null;
     this.inputField.focus();
+    this.inputField.style.outline = settings.highContrast ? '2px solid #ffff00' : 'none';
   }
   close(): void {
     if (!this.opened) return;
@@ -162,6 +165,23 @@ export class Chat {
     while (this.lines.children.length > 8) this.lines.firstElementChild!.remove();
     line.addEventListener('animationend', () => line.remove(), { once: true });
   }
+  private readonly updateTheme = (): void => {
+    this.root.style.color = UI.text;
+    this.form.style.background = UI.slot;
+    this.form.style.border = `2px solid ${settings.highContrast ? UI.accent : UI.light}`;
+    this.inputField.style.color = UI.text;
+    this.inputField.style.background = UI.slot;
+    this.hint.style.color = UI.accent;
+    this.inputField.style.outline =
+      this.opened && settings.highContrast ? '2px solid #ffff00' : 'none';
+    for (const child of Array.from(this.lines.children)) {
+      if (!(child instanceof HTMLElement)) continue;
+      const error = child.dataset.error === 'true';
+      child.style.background = UI.outline;
+      child.style.color = error ? UI.accent : UI.text;
+      child.style.borderLeft = `3px solid ${error ? UI.accent : UI.light}`;
+    }
+  };
   private submit(): void {
     const line = this.inputField.value.trim();
     if (!line) {

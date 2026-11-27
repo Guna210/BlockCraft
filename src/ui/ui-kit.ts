@@ -2,7 +2,7 @@ import { drawText, textWidth, GLYPH_HEIGHT } from './pixel-font';
 import { settings } from '../engine/settings';
 
 /** The shared UI palette (ART.md §4: at most 8 colors, bevels lit from the top-left). */
-export const UI = {
+const DEFAULT_UI_TOKENS = {
   outline: '#15121f',
   shade: '#3a3d5a',
   panel: '#555a80',
@@ -11,7 +11,63 @@ export const UI = {
   accent: '#e2b43a',
   text: '#f2eee2',
   highlight: 'rgba(255,255,255,0.35)',
+  border: '#15121f',
+  hoverOutline: '#e2b43a',
 } as const;
+
+export const HIGH_CONTRAST_UI_TOKENS = {
+  outline: '#000000',
+  shade: '#050505',
+  panel: '#050505',
+  light: '#111111',
+  slot: '#080808',
+  accent: '#ffff00',
+  text: '#ffffff',
+  highlight: '#ffff00',
+  border: '#ffffff',
+  hoverOutline: '#ffff00',
+} as const;
+
+/** Tokens are getters so a setting change recolors every canvas UI on its next draw. */
+export const UI = {
+  get outline() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.outline : DEFAULT_UI_TOKENS.outline;
+  },
+  get shade() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.shade : DEFAULT_UI_TOKENS.shade;
+  },
+  get panel() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.panel : DEFAULT_UI_TOKENS.panel;
+  },
+  get light() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.light : DEFAULT_UI_TOKENS.light;
+  },
+  get slot() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.slot : DEFAULT_UI_TOKENS.slot;
+  },
+  get accent() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.accent : DEFAULT_UI_TOKENS.accent;
+  },
+  get text() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.text : DEFAULT_UI_TOKENS.text;
+  },
+  get highlight() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.highlight : DEFAULT_UI_TOKENS.highlight;
+  },
+  get border() {
+    return settings.highContrast ? HIGH_CONTRAST_UI_TOKENS.border : DEFAULT_UI_TOKENS.border;
+  },
+  get hoverOutline() {
+    return settings.highContrast
+      ? HIGH_CONTRAST_UI_TOKENS.hoverOutline
+      : DEFAULT_UI_TOKENS.hoverOutline;
+  },
+} as const;
+
+// Keep the eight-color palette enumerable for the shared-palette invariant. These extra semantic
+// tokens alias existing colors in the default theme and remain available to high-contrast UI.
+Object.defineProperty(UI, 'border', { enumerable: false });
+Object.defineProperty(UI, 'hoverOutline', { enumerable: false });
 
 export interface Rect {
   x: number;
@@ -42,6 +98,20 @@ export function fillRect(
 /** Beveled panel: dark outline with clipped corners, light top-left edge, shaded bottom-right edge. */
 export function drawPanel(ctx: CanvasRenderingContext2D, r: Rect, s: number): void {
   const { x, y, w, h } = r;
+  if (settings.highContrast) {
+    fillRect(ctx, x, y, w, h, UI.panel, s);
+    ctx.save();
+    ctx.strokeStyle = UI.border;
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(
+      x * s + ctx.lineWidth / 2,
+      y * s + ctx.lineWidth / 2,
+      w * s - ctx.lineWidth,
+      h * s - ctx.lineWidth,
+    );
+    ctx.restore();
+    return;
+  }
   fillRect(ctx, x + 1, y, w - 2, h, UI.outline, s);
   fillRect(ctx, x, y + 1, w, h - 2, UI.outline, s);
   fillRect(ctx, x + 1, y + 1, w - 2, h - 2, UI.panel, s);
@@ -53,6 +123,20 @@ export function drawPanel(ctx: CanvasRenderingContext2D, r: Rect, s: number): vo
 
 /** Recessed square: dark top-left edge, light bottom-right edge. Inner area is `w-2` square. */
 export function drawInset(ctx: CanvasRenderingContext2D, r: Rect, s: number): void {
+  if (settings.highContrast) {
+    fillRect(ctx, r.x, r.y, r.w, r.h, UI.slot, s);
+    ctx.save();
+    ctx.strokeStyle = UI.border;
+    ctx.lineWidth = 2 * s;
+    ctx.strokeRect(
+      r.x * s + ctx.lineWidth / 2,
+      r.y * s + ctx.lineWidth / 2,
+      r.w * s - ctx.lineWidth,
+      r.h * s - ctx.lineWidth,
+    );
+    ctx.restore();
+    return;
+  }
   fillRect(ctx, r.x, r.y, r.w, r.h, UI.slot, s);
   fillRect(ctx, r.x, r.y, r.w, 1, UI.outline, s);
   fillRect(ctx, r.x, r.y, 1, r.h, UI.outline, s);
@@ -84,7 +168,18 @@ export function drawButton(
   hover: boolean,
 ): void {
   drawPanel(ctx, r, s);
-  if (hover) fillRect(ctx, r.x + 2, r.y + 2, r.w - 4, r.h - 4, UI.highlight, s);
+  if (hover && settings.highContrast) {
+    ctx.save();
+    ctx.strokeStyle = UI.hoverOutline;
+    ctx.lineWidth = 3 * s;
+    ctx.strokeRect(
+      r.x * s + ctx.lineWidth / 2,
+      r.y * s + ctx.lineWidth / 2,
+      r.w * s - ctx.lineWidth,
+      r.h * s - ctx.lineWidth,
+    );
+    ctx.restore();
+  } else if (hover) fillRect(ctx, r.x + 2, r.y + 2, r.w - 4, r.h - 4, UI.highlight, s);
   const tx = r.x + Math.floor((r.w - textWidth(label)) / 2);
   const ty = r.y + Math.floor((r.h - GLYPH_HEIGHT) / 2);
   drawText(ctx, label, tx * s, ty * s, s, UI.text, UI.outline);
