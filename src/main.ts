@@ -33,6 +33,7 @@ import {
   bedPairAt,
   hostileWithin,
   nextMorningAbsoluteTime,
+  resolveBedRespawn,
   sleepRefusalReason,
 } from './gameplay/death-beds';
 import { getWorldTime } from './world/time';
@@ -257,9 +258,13 @@ async function main() {
       if (refusal === 'day') ui.showMessage('You can only sleep at night');
       else if (refusal === 'hostile') ui.showMessage('Monsters are nearby');
       else
-        ui.fadeToBlackThen(() =>
-          worldManager.setTimeOfDay(nextMorningAbsoluteTime(getWorldTime())),
-        );
+        ui.fadeToBlackThen(() => {
+          const wake = resolveBedRespawn(world, player.spawnPoint, player.pos, (x, y, z, height) =>
+            player.collision.free(x, y, z, height),
+          );
+          playerController.teleport(...wake);
+          worldManager.setTimeOfDay(nextMorningAbsoluteTime(getWorldTime()));
+        });
       return true;
     }
     if (blockId === 'workbench') {
