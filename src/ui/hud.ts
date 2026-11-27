@@ -16,8 +16,9 @@ import {
   fillRect,
   uiScaleFor,
 } from './ui-kit';
-import { GUI_SCALE_CHANGE_EVENT, settings } from '../engine/settings';
+import { GUI_SCALE_CHANGE_EVENT, UI_THEME_CHANGE_EVENT, settings } from '../engine/settings';
 import type { KeybindAction } from '../engine/keybinds';
+import { getSubtitles, subtitleOpacity } from '../audio/subtitles';
 
 const HEART: readonly string[] = [
   '..##.##..',
@@ -539,6 +540,16 @@ function drawHud(
   );
   if (snapshot.xpLevel > 0) {
     const level = String(snapshot.xpLevel);
+    if (settings.highContrast)
+      fillRect(
+        ctx,
+        centerX - Math.floor(textWidth(level) / 2) - 2,
+        xpY - 9,
+        textWidth(level) + 4,
+        9,
+        UI.outline,
+        s,
+      );
     drawText(
       ctx,
       level,
@@ -637,6 +648,8 @@ function drawDebugOverlay(
 export class Hud {
   private hudCanvas!: HTMLCanvasElement;
   private hudContext!: CanvasRenderingContext2D;
+  private subtitleCanvas!: HTMLCanvasElement;
+  private subtitleContext!: CanvasRenderingContext2D;
   private popupCanvas!: HTMLCanvasElement;
   private popupContext!: CanvasRenderingContext2D;
   private debugCanvas!: HTMLCanvasElement;
@@ -668,6 +681,7 @@ export class Hud {
     private readonly screenOpen: () => boolean,
   ) {
     window.addEventListener(GUI_SCALE_CHANGE_EVENT, this.onGuiScaleChange);
+    window.addEventListener(UI_THEME_CHANGE_EVENT, this.onGuiScaleChange);
   }
 
   attach(): void {
@@ -692,6 +706,8 @@ export class Hud {
       .putImageData(new ImageData(this.icons.data, this.icons.width, this.icons.height), 0, 0);
     this.hudCanvas = this.createCanvas('hud-canvas', 2);
     this.hudContext = this.hudCanvas.getContext('2d')!;
+    this.subtitleCanvas = this.createCanvas('subtitle-canvas', 5);
+    this.subtitleContext = this.subtitleCanvas.getContext('2d')!;
     this.popupCanvas = this.createCanvas('hud-item-popup', 3);
     this.popupContext = this.popupCanvas.getContext('2d')!;
     this.debugCanvas = this.createCanvas('f3-overlay', 4);
@@ -726,7 +742,12 @@ export class Hud {
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, Math.round(window.innerWidth * dpr));
     const height = Math.max(1, Math.round(window.innerHeight * dpr));
-    for (const canvas of [this.hudCanvas, this.popupCanvas, this.debugCanvas]) {
+    for (const canvas of [
+      this.hudCanvas,
+      this.popupCanvas,
+      this.debugCanvas,
+      this.subtitleCanvas,
+    ]) {
       canvas.width = width;
       canvas.height = height;
     }
@@ -735,6 +756,35 @@ export class Hud {
   }
 
   private readonly onResize = (): void => this.resizeCanvases();
+
+  private drawSubtitles(): void {
+    const ctx = this.subtitleContext;
+    ctx.clearRect(0, 0, this.size.width, this.size.height);
+    const lines = getSubtitles();
+    if (!lines.length) return;
+    const s = uiScaleFor(this.size.width, this.size.height);
+    const logicalWidth = Math.floor(this.size.width / s);
+    const logicalHeight = Math.floor(this.size.height / s);
+    const captions = lines.map((line) => ({
+      text: line.direction ? `${line.text}, ${line.direction}` : line.text,
+      opacity: subtitleOpacity(line.ageMs),
+    }));
+    const width = Math.max(...captions.map(({ text }) => textWidth(text))) + 10;
+    const height = captions.length * 9 + 8;
+    const panel = {
+      x: Math.max(4, logicalWidth - width - 8),
+      y: Math.max(4, logicalHeight - height - 28),
+      w: Math.min(width, logicalWidth - 12),
+      h: height,
+    };
+    drawPanel(ctx, panel, s);
+    captions.forEach(({ text, opacity }, index) => {
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      drawText(ctx, text, (panel.x + 5) * s, (panel.y + 4 + index * 9) * s, s, UI.text, UI.outline);
+      ctx.restore();
+    });
+  }
 
   private readonly onWheel = (event: WheelEvent): void => {
     const player = this.controller()?.player;
@@ -798,6 +848,7 @@ export class Hud {
     const player = this.controller()?.player;
     if (!player) {
       if (this.hudCanvas) this.hudCanvas.style.display = 'none';
+      if (this.subtitleCanvas) this.subtitleCanvas.style.display = 'none';
       if (this.popupCanvas) this.popupCanvas.style.display = 'none';
       this.cachedHudSnapshot = null;
       this.hudNeedsDraw = true;
@@ -810,6 +861,8 @@ export class Hud {
     this.ensureCanvases();
     const screenOpen = this.screenOpen();
     this.hudCanvas.style.display = screenOpen ? 'none' : 'block';
+    this.subtitleCanvas.style.display = screenOpen ? 'none' : 'block';
+    this.drawSubtitles();
     if (this.debugOpen) this.debugCanvas.style.display = 'block';
     if (screenOpen) this.popupCanvas.style.display = 'none';
     const controller = this.controller();
@@ -831,7 +884,7 @@ export class Hud {
     if (!screenOpen) {
       const elapsed = time - this.hurtAt;
       const heartShake =
-        snapshot.health <= 4 && elapsed >= 0 && elapsed < 320
+        !settings.reducedMotion && snapshot.health <= 4 && elapsed >= 0 && elapsed < 320
           ? Math.floor(elapsed / 42) % 2 === 0
             ? 1
             : -1

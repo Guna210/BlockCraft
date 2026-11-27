@@ -1,6 +1,7 @@
 import {
   defaultSettings,
   GUI_SCALE_CHANGE_EVENT,
+  UI_THEME_CHANGE_EVENT,
   replaceSettings,
   settings,
   type Settings,
@@ -51,6 +52,8 @@ export function applySetting<K extends SettingKey>(key: K, value: Settings[K]): 
     manager.camera.updateProjection();
   }
   notifyGuiScaleChange(previous.guiScale);
+  if (previous.highContrast !== settings.highContrast && typeof window !== 'undefined')
+    window.dispatchEvent(new Event(UI_THEME_CHANGE_EVENT));
   return settings;
 }
 
@@ -72,6 +75,7 @@ export function resetSettings(): Settings {
   replaceSettings(defaults);
   applySettingsToGame();
   notifyGuiScaleChange(previousGuiScale);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(UI_THEME_CHANGE_EVENT));
   persistCurrentSettings();
   return settings;
 }

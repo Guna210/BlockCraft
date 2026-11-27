@@ -6,6 +6,7 @@ export type GuiScaleSetting = 'auto' | 1 | 2 | 3 | 4;
 
 /** Sent only when the chosen GUI scale changes so cached overlays can redraw on demand. */
 export const GUI_SCALE_CHANGE_EVENT = 'blockcraft:gui-scale-change';
+export const UI_THEME_CHANGE_EVENT = 'blockcraft:ui-theme-change';
 
 export interface Settings {
   renderDistance: number;
@@ -29,6 +30,9 @@ export interface Settings {
   musicVolume: number;
   effectsVolume: number;
   ambientVolume: number;
+  subtitles: boolean;
+  reducedMotion: boolean;
+  highContrast: boolean;
   keyBindings: KeyBindings;
 }
 
@@ -53,6 +57,9 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 1,
   effectsVolume: 1,
   ambientVolume: 1,
+  subtitles: false,
+  reducedMotion: false,
+  highContrast: false,
   keyBindings: cloneKeyBindings(DEFAULT_KEY_BINDINGS),
 };
 

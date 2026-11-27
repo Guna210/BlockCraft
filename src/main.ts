@@ -405,128 +405,276 @@ async function main() {
   let fpsTimer = 0;
   const cpuTimes: number[] = [];
   const uploadTimes: number[] = [];
+  let recoveryTripped = false;
+  let recoveryScreen: HTMLElement | null = null;
+
+  function recoveryMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.replace(/\s+/g, ' ').trim().slice(0, 500) || 'Unknown error';
+  }
+
+  function updateRecoveryScreen(errorText: string, saveText: string): void {
+    if (!recoveryScreen) {
+      const root = document.createElement('main');
+      root.id = 'recovery-screen';
+      root.setAttribute('role', 'alertdialog');
+      root.setAttribute('aria-modal', 'true');
+      Object.assign(root.style, {
+        position: 'fixed',
+        inset: '0',
+        zIndex: '10000',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '16px',
+        boxSizing: 'border-box',
+        padding: '32px',
+        background: '#000000',
+        color: '#ffffff',
+        font: '16px monospace',
+        textAlign: 'center',
+      });
+      const title = document.createElement('h1');
+      title.textContent = 'BlockCraft recovered from an error';
+      Object.assign(title.style, { margin: '0', fontSize: '24px' });
+      const error = document.createElement('p');
+      error.dataset.errorMessage = 'true';
+      Object.assign(error.style, { maxWidth: '720px', overflowWrap: 'anywhere', margin: '0' });
+      const save = document.createElement('p');
+      save.dataset.saveStatus = 'true';
+      Object.assign(save.style, { margin: '0', minHeight: '20px' });
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.textContent = 'Back to title';
+      Object.assign(back.style, {
+        padding: '12px 20px',
+        border: '3px solid #ffff00',
+        background: '#050505',
+        color: '#ffffff',
+        font: 'bold 16px monospace',
+        cursor: 'pointer',
+      });
+      back.addEventListener('click', async () => {
+        if (back.disabled) return;
+        back.disabled = true;
+        try {
+          chat.close();
+          creativeInventory.close();
+          settingsScreen.close();
+          ui.close();
+          input.setCapture(false);
+          const teardown = worldManager.quitToMenu();
+          let timeoutId = 0;
+          try {
+            await Promise.race([
+              teardown,
+              new Promise<never>((_, reject) => {
+                timeoutId = window.setTimeout(
+                  () => reject(new Error('World teardown timed out')),
+                  10_000,
+                );
+              }),
+            ]);
+          } finally {
+            window.clearTimeout(timeoutId);
+          }
+          menu.show();
+          root.remove();
+          recoveryScreen = null;
+        } catch {
+          window.location.reload();
+        }
+      });
+      root.append(title, error, save, back);
+      document.body.appendChild(root);
+      recoveryScreen = root;
+      back.focus();
+    }
+    const error = recoveryScreen.querySelector<HTMLElement>('[data-error-message]');
+    const save = recoveryScreen.querySelector<HTMLElement>('[data-save-status]');
+    if (error) error.textContent = `Error: ${errorText}`;
+    if (save) save.textContent = saveText;
+    const back = recoveryScreen.querySelector<HTMLButtonElement>('button');
+    if (back) back.disabled = saveText === 'Saving world…';
+  }
+
+  function recoverFromError(error: unknown): void {
+    if (recoveryTripped) return;
+    recoveryTripped = true;
+    const message = recoveryMessage(error);
+    console.warn(`[BlockCraft] recovered from error: ${message}`);
+    playerController.suspended = true;
+    try {
+      if (document.pointerLockElement) document.exitPointerLock();
+      input.setCapture(true);
+    } catch {
+      // The recovery screen stays available if the browser already released capture.
+    }
+    const multiplayer = worldManager.remoteExit !== null;
+    if (multiplayer) {
+      try {
+        worldManager.remoteExit?.();
+      } catch {
+        // A later error cannot interrupt recovery or produce a second boundary report.
+      }
+      updateRecoveryScreen(
+        message,
+        'Multiplayer session disconnected. The server owns this world; local save skipped.',
+      );
+      return;
+    }
+    updateRecoveryScreen(message, 'Saving world…');
+    const saving = worldManager.saveForRecovery().then(
+      () => ({ ok: true as const }),
+      (failure: unknown) => ({ ok: false as const, reason: recoveryMessage(failure) }),
+    );
+    let timeoutId = 0;
+    const timeout = new Promise<{ ok: false; reason: string }>((resolve) => {
+      timeoutId = window.setTimeout(
+        () => resolve({ ok: false, reason: 'save timed out after 10 seconds' }),
+        10_000,
+      );
+    });
+    void Promise.race([saving, timeout]).then((result) => {
+      window.clearTimeout(timeoutId);
+      updateRecoveryScreen(message, result.ok ? 'World saved' : `Save failed: ${result.reason}`);
+    });
+  }
+
+  window.addEventListener('error', (event) => {
+    recoverFromError(event.error ?? new Error(event.message || 'Unknown browser error'));
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    recoverFromError(event.reason);
+  });
 
   function render(time: number) {
-    renderPhaseStats.beginFrame();
-    glWrapper.beginDebugFrame();
-    renderStats.drawSubmissions = 0;
-    // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
-    // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
-    let glCheckMs = 0;
-    if (frameDrain) {
-      const t = performance.now();
-      frameDrain.beginFrame();
-      glCheckMs += performance.now() - t;
-    }
-    const startTime = performance.now();
-    const dt = time - lastTime;
-    lastTime = time;
+    if (recoveryTripped) return;
+    try {
+      renderPhaseStats.beginFrame();
+      glWrapper.beginDebugFrame();
+      renderStats.drawSubmissions = 0;
+      // Reads the errors of an earlier frame once the GPU has finished it. Not update or draw
+      // submission (SPEC §2.3), so it is outside the frame CPU timer and timed on its own.
+      let glCheckMs = 0;
+      if (frameDrain) {
+        const t = performance.now();
+        frameDrain.beginFrame();
+        glCheckMs += performance.now() - t;
+      }
+      const startTime = performance.now();
+      const dt = time - lastTime;
+      lastTime = time;
 
-    // With no world and no test scene the only thing on the canvas is the static main menu: its
-    // frame stays presented until something on it changes (decisions/M18a-menus.md).
-    const idleMenu = !testScene && !worldManager.world && menu.visible && !menu.needsFrame;
-    // Keep the last frame on screen while the fallback LOD shader waits for
-    // outstanding GL commands. The upload work still has its own timed frame.
-    const drainLodLink = !testScene && !menu.visible && worldManager.needsLodLinkDrain;
-    if (!testScene) {
-      if (worldManager.panorama) {
-        menu.updateCamera(time);
+      // With no world and no test scene the only thing on the canvas is the static main menu: its
+      // frame stays presented until something on it changes (decisions/M18a-menus.md).
+      const idleMenu = !testScene && !worldManager.world && menu.visible && !menu.needsFrame;
+      // Keep the last frame on screen while the fallback LOD shader waits for
+      // outstanding GL commands. The upload work still has its own timed frame.
+      const drainLodLink = !testScene && !menu.visible && worldManager.needsLodLinkDrain;
+      if (!testScene) {
+        if (worldManager.panorama) {
+          menu.updateCamera(time);
+        } else if (worldManager.world) {
+          const updateStart = renderPhaseStats.start();
+          playerController.frame(dt / 1000);
+          renderPhaseStats.end('gameUpdateMs', updateStart);
+        }
+      }
+      worldManager.prepareFrame(drainLodLink, !testScene && !!worldManager.world);
+      const clearStart = renderPhaseStats.start();
+      if (!idleMenu && !drainLodLink) {
+        glWrapper.recordRenderPassStart();
+        glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
+      }
+      renderPhaseStats.end('frameClearMs', clearStart);
+      let rendered = false;
+      // Menu frames (the panorama) are not game frames: they stay out of the frame statistics.
+      let measured = true;
+
+      if (testScene) {
+        testScene.render(dt / 1000, input);
+        rendered = true;
+        if (firstFrameResolve) {
+          firstFrameResolve();
+          firstFrameResolve = null;
+        }
+      } else if (worldManager.panorama) {
+        rendered = worldManager.render();
+        measured = false;
       } else if (worldManager.world) {
-        const updateStart = renderPhaseStats.start();
-        playerController.frame(dt / 1000);
-        renderPhaseStats.end('gameUpdateMs', updateStart);
+        rendered = worldManager.render(drainLodLink);
       }
-    }
-    worldManager.prepareFrame(drainLodLink, !testScene && !!worldManager.world);
-    const clearStart = renderPhaseStats.start();
-    if (!idleMenu && !drainLodLink) {
-      glWrapper.recordRenderPassStart();
-      glWrapper.gl.clear(glWrapper.gl.COLOR_BUFFER_BIT | glWrapper.gl.DEPTH_BUFFER_BIT);
-    }
-    renderPhaseStats.end('frameClearMs', clearStart);
-    let rendered = false;
-    // Menu frames (the panorama) are not game frames: they stay out of the frame statistics.
-    let measured = true;
-
-    if (testScene) {
-      testScene.render(dt / 1000, input);
-      rendered = true;
-      if (firstFrameResolve) {
-        firstFrameResolve();
-        firstFrameResolve = null;
+      const menuStart = renderPhaseStats.start();
+      if (menu.visible) {
+        if (!idleMenu) menu.render();
+        measured = false;
       }
-    } else if (worldManager.panorama) {
-      rendered = worldManager.render();
-      measured = false;
-    } else if (worldManager.world) {
-      rendered = worldManager.render(drainLodLink);
-    }
-    const menuStart = renderPhaseStats.start();
-    if (menu.visible) {
-      if (!idleMenu) menu.render();
-      measured = false;
-    }
-    renderPhaseStats.end('menuRenderMs', menuStart);
+      renderPhaseStats.end('menuRenderMs', menuStart);
 
-    const captureStart = renderPhaseStats.start();
-    if (rendered && measured && !testScene && worldManager.saves.thumbnailCaptureRequested)
-      worldManager.saves.captureThumbnailFrame(canvas);
+      const captureStart = renderPhaseStats.start();
+      if (rendered && measured && !testScene && worldManager.saves.thumbnailCaptureRequested)
+        worldManager.saves.captureThumbnailFrame(canvas);
 
-    if (screenshots.pending && rendered) screenshots.captureAfterRender(canvas);
-    renderPhaseStats.end('captureMs', captureStart);
+      if (screenshots.pending && rendered) screenshots.captureAfterRender(canvas);
+      renderPhaseStats.end('captureMs', captureStart);
 
-    const uiStart = renderPhaseStats.start();
-    ui.frame();
-    renderPhaseStats.end('uiFrameMs', uiStart);
-    const hudStart = renderPhaseStats.start();
-    hud.frame(time);
-    renderPhaseStats.end('hudFrameMs', hudStart);
+      const uiStart = renderPhaseStats.start();
+      ui.frame();
+      renderPhaseStats.end('uiFrameMs', uiStart);
+      const hudStart = renderPhaseStats.start();
+      hud.frame(time);
+      renderPhaseStats.end('hudFrameMs', hudStart);
 
-    const endTime = performance.now();
-    const frameCpuMs = endTime - startTime;
-    const sampled = (rendered || drainLodLink) && measured;
-    if (sampled) cpuTimes.push(frameCpuMs);
-    const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
-    if (sampled) uploadTimes.push(uploadMs);
+      const endTime = performance.now();
+      const frameCpuMs = endTime - startTime;
+      const sampled = (rendered || drainLodLink) && measured;
+      if (sampled) cpuTimes.push(frameCpuMs);
+      const uploadMs = testScene ? 0 : worldManager.lastUploadMs;
+      if (sampled) uploadTimes.push(uploadMs);
 
-    // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
-    if (frameDrain) {
-      const t = performance.now();
-      frameDrain.endFrame();
-      glCheckMs += performance.now() - t;
-    }
-    renderStats.terrainGpuWritesAfterFirstDraw = glWrapper.endDebugFrame();
-    renderPhaseStats.add('glErrorDrainMs', glCheckMs);
-    if (sampled) {
-      frameStats.record(
-        frameCpuMs,
-        uploadMs,
-        glCheckMs,
-        rendered ? renderStats.drawCalls : 0,
-        renderStats.terrainGpuWritesAfterFirstDraw,
-      );
-      if (rendered) frameCount++;
-      renderPhaseStats.endFrame(frameCpuMs);
-    }
-    fpsTimer += dt;
-    if (fpsTimer >= 1000) {
-      renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);
-      frameCount = 0;
-      fpsTimer = 0;
-
-      // Calculate P95 CPU time
-      if (cpuTimes.length > 0) {
-        cpuTimes.sort((a, b) => a - b);
-        const p95Index = Math.floor(cpuTimes.length * 0.95);
-        renderStats.frameCpuMsP95 = cpuTimes[p95Index] || 0;
-        cpuTimes.length = 0;
+      // The fence that lets a later frame read this frame's errors; placed after the timer stopped.
+      if (frameDrain) {
+        const t = performance.now();
+        frameDrain.endFrame();
+        glCheckMs += performance.now() - t;
       }
-      // Same one-second window as the frame CPU time
-      renderStats.uploadMsP95 = percentile95(uploadTimes);
-      uploadTimes.length = 0;
-    }
+      renderStats.terrainGpuWritesAfterFirstDraw = glWrapper.endDebugFrame();
+      renderPhaseStats.add('glErrorDrainMs', glCheckMs);
+      if (sampled) {
+        frameStats.record(
+          frameCpuMs,
+          uploadMs,
+          glCheckMs,
+          rendered ? renderStats.drawCalls : 0,
+          renderStats.terrainGpuWritesAfterFirstDraw,
+        );
+        if (rendered) frameCount++;
+        renderPhaseStats.endFrame(frameCpuMs);
+      }
+      fpsTimer += dt;
+      if (fpsTimer >= 1000) {
+        renderStats.fps = Math.round((frameCount * 1000) / fpsTimer);
+        frameCount = 0;
+        fpsTimer = 0;
 
-    requestAnimationFrame(render);
+        // Calculate P95 CPU time
+        if (cpuTimes.length > 0) {
+          cpuTimes.sort((a, b) => a - b);
+          const p95Index = Math.floor(cpuTimes.length * 0.95);
+          renderStats.frameCpuMsP95 = cpuTimes[p95Index] || 0;
+          cpuTimes.length = 0;
+        }
+        // Same one-second window as the frame CPU time
+        renderStats.uploadMsP95 = percentile95(uploadTimes);
+        uploadTimes.length = 0;
+      }
+
+      requestAnimationFrame(render);
+    } catch (error) {
+      recoverFromError(error);
+    }
   }
 
   // The page boots to the main menu; ready() resolves once it is shown and interactive.
