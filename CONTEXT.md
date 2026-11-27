@@ -51,8 +51,8 @@ Done (merged; notes in `progress/`): every SPEC task M00a–M22c, plus owner-add
 
 Builder slots: 2 Codex + 1 Claude cloud; 2 Codex at once = smaller Codex model (owner quota). Claude Code cloud builders are fine for fix work (PERF-batch fixes); their permission classifier may block test edits -> owner answers the QUESTION in that session.
 
-Remaining SPEC tasks: M22d (prompt given 2026-11-26, branch claude/m22d; not confirmed launched), then M23 last (+ M23-fix-N). README after M23.
-In flight: none (2026-11-26).
+Remaining SPEC tasks: M22d (Codex, PR #92 open, CI red shard 1: m00 canary), then M23 last (+ M23-fix-N). README after M23.
+In flight: M22d PR #92 (Codex).
 Next for owner: M22d prompt when asked. Open perf question: owner to send F3 fps without recording, Task Manager GPU 3D %, chrome://gpu GL_RENDERER line (ANGLE backend), to decide on any PERF-2.
 
 PERF-batch summary (decisions/PERF-batch-terrain.md on master): cross-column multi-draw keyed (pass, lighting variant, arena page); draw-data RGBA32F texture ring of 3 (u_drawBase + gl_DrawID); shared tint atlas (512 slots, MAX_TEXTURE_SIZE guard, overflow -> plains slot 0); large pages (1,048,576/524,288/262,144 quads) with lazy chunked index fill; NO terrain fences: 4-completed-draw-frame quarantine; all terrain GPU writes in one upload phase before the frame's first clear/draw (runs every rAF, also during loading); EntityRenderer.warmUp at init (10.8 ms). SwiftShader A/B: RD8 submissions 341 -> 6; RD32 lod-off ~6,600 -> ~351, frame p95 182 -> ~55 ms. Lesson: on ANGLE Vulkan (SwiftShader CI) per-frame fenceSync and writes into GPU-in-use buffers after the first draw trigger "Running out of reserved outsideRenderPass queueSerial" (fixture-fatal); master was 0/10. Owner-approved test edits: m08b-gpu textures toBe(2)->toBe(4); perf-batch.spec own bound = 4 x (opaque+cutout pages) + ceil(draws/4096) with page caps RD8 <= 4, RD16 <= 6.
@@ -107,7 +107,6 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
   - M07a: water isn't replaceable for placement (revisit with buckets).
 
 ## Log (oldest first; keep the last 20)
-- 2026-11-14: #85 M21c merged (ff53966). Owner chose M21b-fix2 (vitals/death/respawn) first; gave Codex prompt.
 - 2026-11-13: #85 M21c round 2 PASS. Told owner to merge; next: owner picks order of M21b-fix2 (vitals/death/respawn, recommended first) and M21b-fix (containers); M22a/M22c/M22d can start after merge.
 - 2026-11-18: Owner shared Antigravity swarm report (run before M22b). Verified top claims myself; summary now under Perf follow-ups. Gave verdict, no prompt yet.
 - 2026-11-18: Owner agreed to keep M22b to LOD + loading screen (batching A1/A2 separate later). Gave M22b Codex prompt.
@@ -127,3 +126,4 @@ Merge rule: the second PR to merge clicks Update branch and needs a fresh green 
 - 2026-11-26: Owner merged PERF-batch #91 (master 3de3483). CONTEXT refreshed for compaction: next = owner real-HW trace, then M22d, M23.
 - 2026-11-26: Owner real-HW trace after PERF-batch: ~20 -> ~34 fps while recording, main thread now mostly idle, GPU process still saturated. Asked for fps/GPU%/chrome://gpu before any PERF-2.
 - 2026-11-26: Gave M22d prompt (Codex): new ACCESS tab (subtitles, reducedMotion, highContrast, default off), subtitles emitted in AudioService.play before context check, try/catch boundary in main loop + window error listeners, warn not console.error, debug injectFault, G12 listener clamp fix included as owner extra.
+- 2026-11-27: M22d #92: window 'error'/'unhandledrejection' listeners called preventDefault, which hid pageerror so m00-canary 'page error should fail' passed. Decided: remove preventDefault (keep recovery + save); canary unchanged; loop try/catch still keeps injected faults clean.
